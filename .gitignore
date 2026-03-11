@@ -1,0 +1,25 @@
+# WorkBuddy 配置文件
+.workbuddy/
+
+# IDE 配置
+.vscode/
+.idea/
+
+# UE 项目文件
+*.uproject.user
+*.VC.db
+*.suo
+*.sln.cache
+*.sdf
+*.opensdf
+*.VC.opendb
+
+# 编译产物
+Binaries/
+Intermediate/
+Build/
+Saved/
+
+# 临时文件
+*.tmp
+*.log
