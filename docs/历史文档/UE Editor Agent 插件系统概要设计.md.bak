@@ -1,0 +1,72 @@
+# UE Editor Agent 插件系统概要设计 (SDD v0.1)
+
+## 1. 项目概述 (Project Overview)
+本方案旨在开发一个虚幻引擎（Unreal Engine）编辑器插件，通过 **OpenClaw** 接入大模型（LLM），构建一个辅助开发者进行场景搭建、资产操作及底层数据管理的智能体（Agent）。
+
+### 1.1 核心目标
+- **自然语言交互**：通过对话实现场景物体摆放、旋转、缩放。
+- **自动化流水线**：一键生成复杂的场景布局或修改材质属性。
+- **底层控制**：利用 C++ 扩展 Python 无法触及的贴图通道操作等内容。
+- **安全可逆**：所有 AI 操作必须接入 UE 的 Undo/Redo 系统。
+
+### 1.2 整体架构图
+[用户输入] -> [OpenClaw (大脑)] -> [JSON 指令] 
+                                    |
+                                    v (WebSocket)
+[UE 编辑器插件 (执行端)] <-> [Python 脚本层 (逻辑转换)] <-> [C++ 暴露接口 (底层操作)]
+
+
+---
+
+## 2. 系统架构 (System Architecture)
+
+系统采用 **“大脑（OpenClaw）- 神经（WebSocket）- 手脚（UE Plugin）”** 的分层设计。
+
+
+| 层级 | 模块 | 技术选型 | 核心职责 |
+| :--- | :--- | :--- | :--- |
+| **决策层 (Brain)** | **OpenClaw Agent** | Node.js / LLM | 语义解析、任务拆解、生成结构化 JSON 指令。 |
+| **通讯层 (Bridge)** | **WS Connector** | WebSocket | 维持双向长连接，处理指令下发与状态回传。 |
+| **执行层 (Executor)** | **UE Agent Plugin** | Python & C++ | 执行引擎操作，调用底层的编辑器 API。 |
+
+---
+
+## 3. 技术方案选型 (Technical Specifications)
+
+### 3.1 跨进程通讯方案
+- **协议选择**：**WebSocket (WS)**。
+- **理由**：编辑器环境需要实时反馈，WS 支持全双工通信，延迟低于 HTTP 轮询。
+- **实现细节**：
+    - 在 UE 插件启动时开启后台 Python 线程运行 WS 客户端。
+    - 使用 `unreal.register_slate_post_tick_callback` 将网络指令从后台线程安全地投递至 **UE 主线程** 执行，防止引擎崩溃。
+
+### 3.2 逻辑驱动方案 (Hybrid Mode)
+- **Python 驱动层**：
+    - 主体使用 `unreal` 官方库（如 `EditorLevelLibrary`, `AssetRegistryHelpers`）。
+    - 优点：开发效率高，支持动态脚本更新，无需频繁重启编辑器。
+- **C++ 扩展层**：
+    - 继承 `UBlueprintFunctionLibrary` 或 `UEditorSubsystem`。
+    - **职责**：处理贴图通道（Texture Source Data）、批量渲染设置等 Python 限制较多的底层操作。
+    - **暴露方式**：通过 `UFUNCTION(BlueprintCallable)` 宏，使 Python 能够直接调用。
+
+---
+
+## 4. 关键数据流 (Data Flow)
+
+1. **用户输入**：在 OpenClaw 终端或UE插件的对话框中发送 “将当前选中的所有灯光强度调高一倍”。
+2. **OpenClaw 处理**：
+    - 调用 `get_selected_actors` 工具（向 UE 发送请求）。
+    - UE 返回当前选中物体的 `Intensity` 及 ID。
+    - AI 决策：生成 `modify_property` 指令，计算新的数值。
+3. **UE 插件执行**：
+    - **事务开启**：启动 `unreal.ScopedEditorTransaction` 确保可撤销。
+    - **脚本执行**：Python 遍历物体并应用新属性。
+    - **结果反馈**：返回执行成功或具体错误日志。
+
+---
+
+## 5. 待解决的挑战 (Critical Challenges)
+
+- **资产感知的实时性**：如何高效同步项目内数万个资产的路径给 LLM（建议采用 Asset Registry 预索引）。
+- **线程安全**：确保所有涉及 UObject 修改的操作严格在主线程执行。
+- **上下文管理**：当场景物体过多时，需要策略性地筛选传递给 AI 的场景数据。

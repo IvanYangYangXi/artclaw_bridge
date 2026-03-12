@@ -1,0 +1,1 @@
+# 测试规格：明确 Acceptance Criteria (AC)
