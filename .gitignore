@@ -1,25 +1,125 @@
-# WorkBuddy 配置文件
-.workbuddy/
+# ============================================
+# 全局通用忽略
+# ============================================
 
-# IDE 配置
+# IDE / 编辑器配置
 .vscode/
 .idea/
-
-# UE 项目文件
-*.uproject.user
-*.VC.db
+.vs/
 *.suo
+*.user
+*.userosscache
+*.sln.docstates
 *.sln.cache
+*.sln.iml
+*.VC.db
+*.VC.opendb
 *.sdf
 *.opensdf
-*.VC.opendb
 
-# 编译产物
+# 平台特定文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# AI 助手 / 工具配置
+.workbuddy/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node.js
+node_modules/
+package-lock.json
+
+# ============================================
+# Unreal Engine - 通用规则 (递归匹配所有 UE 子项目)
+# ============================================
+
+# UE 编译 / 缓存 / 生成产物
 Binaries/
 Intermediate/
-Build/
+DerivedDataCache/
 Saved/
+Build/
+FileOpenOrder/
 
-# 临时文件
+# 自动保存与备份
+Backup/
+Autosaves/
+
+# 生成的项目/解决方案文件 (可由 GenerateProjectFiles 重建)
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.vsconfig
+Makefile
+CMakeLists.txt
+compile_commands.json
+Directory.Build.props
+UpgradeLog.htm
+
+# 调试符号
+*.pdb
+*.ilk
+
+# 编译目标描述
+*.target
+*.target.xml
+*.modules
+
+# 临时文件和日志
 *.tmp
 *.log
+*.dmp
+
+# 崩溃报告
+CrashReportClient/
+
+# 打包输出
+Packaged/
+Releases/
+
+# ============================================
+# 特定子项目: UEDAgentProj
+# ============================================
+# 以下已由上方通用规则覆盖，如需额外精细控制可在此追加:
+#   Binaries/, Intermediate/, Saved/, DerivedDataCache/, Backup/
+
+# Content 中的开发者个人目录 (非共享资产)
+subprojects/UEDAgentProj/Content/Developers/
+
+# 自动截图
+subprojects/UEDAgentProj/Saved/
+
+# ============================================
+# 保留 (不忽略) 的重要文件 — 用 ! 取消忽略
+# ============================================
+
+# UE 项目描述文件
+!*.uproject
+
+# UE 插件描述文件
+!*.uplugin
+
+# UE 项目 Config 目录 (Default*.ini)
+!subprojects/UEDAgentProj/Config/
+
+# UE 插件源码与资源
+!subprojects/UEDAgentProj/Plugins/UEEditorAgent/Source/**
+!subprojects/UEDAgentProj/Plugins/UEEditorAgent/Resources/**
+!subprojects/UEDAgentProj/Plugins/UEEditorAgent/UEEditorAgent.uplugin
+
+# 游戏模块源码
+!subprojects/UEDAgentProj/Source/**
+
+# ============================================
+# RenderDoc 捕获文件 (通常很大)
+# ============================================
+*.rdc
+*.cap
