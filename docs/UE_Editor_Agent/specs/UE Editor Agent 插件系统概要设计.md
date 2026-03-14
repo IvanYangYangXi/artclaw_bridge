@@ -4,6 +4,8 @@
 本方案旨在开发一个虚幻引擎（Unreal Engine）深度集成的智能体插件。通过 **OpenClaw** 接入大语言模型（LLM），结合 **MCP (Model Context Protocol)** 实现引擎数据与 AI 能力的标准化互联。该 Agent 不仅能通过自然语言执行场景操作，还能利用动态 **Skill 系统** 不断进化，并依托 **UE 原生 UI** 提供专业级开发体验。
 
 ### 1.1 核心目标
+- **UE → LLM**：用户在 UE 编辑器中通过自然语言输入，调用 WorkBuddy/OpenClaw 的大模型能力，帮助解决 UE 开发中的问题
+- **LLM → UE**：用户在 WorkBuddy/OpenClaw 中输入指令，通过插件调用 UE 的功能，实现自动化任务
 - **深层感知与标准化交互**：基于 [Model Context Protocol (MCP)](https://modelcontextprotocol.io)，将 UE 场景层级、资产库定义为 **Resources**，将编辑器操作封装为 **Tools**，实现跨平台的上下文共享。
 - **动态 Skill 进化**：支持运行时热加载由 Python 或 C++ 编写的技能包。开发者可通过 [ClawHub](https://github.com/VoltAgent/awesome-openclaw-skills) 等平台一键发布与分享自定义工作流。
 - **混合界面交互**：集成 **UE 原生 Slate/UMG 对话框**，在涉及高风险操作（如批量删除、参数大幅调整）时进行二次确认。
