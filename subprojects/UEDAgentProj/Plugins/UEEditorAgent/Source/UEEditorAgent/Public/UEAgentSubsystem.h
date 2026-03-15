@@ -7,12 +7,19 @@
 #include "UEAgentSubsystem.generated.h"
 
 
-// 声明动态多播委托：当连接状态改变时通知 UI 刷新颜色
+// 动态多播委托：Blueprint/Python 绑定
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAgentConnectionStatusChanged, bool, bNewStatus);
+
+// 原生多播委托：C++ Slate UI 绑定（性能更优，无需 UObject 上下文）
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAgentConnectionStatusChangedNative, bool /*bNewStatus*/);
 
 /**
  * UUEAgentSubsystem
- * 全局单例，负责协调 OpenClaw 与 UE 编辑器的连接状态
+ * 全局单例，负责协调 AI Agent 平台与 UE 编辑器的连接状态。
+ * 
+ * 宪法约束:
+ *   - 统一管理中心，所有业务逻辑在 UE 插件侧统一管理 (概要设计 §1.1)
+ *   - EditorSubsystem 生命周期管理 (系统架构设计 §2.3)
  */
 UCLASS(BlueprintType)
 class UEEDITORAGENT_API UUEAgentSubsystem : public UEditorSubsystem
@@ -34,13 +41,20 @@ public:
     UFUNCTION(BlueprintPure, Category = "UEAgent")
     bool GetConnectionStatus() const { return bIsConnected; }
 
+    /** 获取插件版本号 */
+    UFUNCTION(BlueprintPure, Category = "UEAgent")
+    FString GetPluginVersion() const;
+
     // --- 暴露属性 ---
 
     /** 连接状态真值 */
     UPROPERTY(BlueprintReadOnly, Category = "UEAgent")
     bool bIsConnected = false;
 
-    /** 状态变更委托：UI 层将绑定此事件以实现图标变色 */
+    /** 状态变更委托（Blueprint/Python）：UI 层将绑定此事件以实现图标变色 */
     UPROPERTY(BlueprintAssignable, Category = "UEAgent")
     FOnAgentConnectionStatusChanged OnConnectionStatusChanged;
+
+    /** 状态变更委托（C++ Native）：Slate UI 绑定用 */
+    FOnAgentConnectionStatusChangedNative OnConnectionStatusChangedNative;
 };
