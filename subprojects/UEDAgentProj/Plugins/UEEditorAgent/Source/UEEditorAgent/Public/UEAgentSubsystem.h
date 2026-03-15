@@ -6,9 +6,9 @@
 #include "EditorSubsystem.h"
 #include "UEAgentSubsystem.generated.h"
 
-
-// 声明动态多播委托：当连接状态改变时通知 UI 刷新颜色
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAgentConnectionStatusChanged, bool, bNewStatus);
+// 声明动态多播委托
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAgentConnectionStatusChanged, bool, bIsConnected);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnServerPortChanged, int32, Port);
 
 /**
  * UUEAgentSubsystem
@@ -33,14 +33,34 @@ public:
     /** 供 UI 绑定使用：查询当前是否在线 */
     UFUNCTION(BlueprintPure, Category = "UEAgent")
     bool GetConnectionStatus() const { return bIsConnected; }
+    
+    /** 设置服务器端口 */
+    UFUNCTION(BlueprintCallable, Category = "UEAgent")
+    void SetServerPort(int32 Port);
+    
+    /** 获取服务器端口 */
+    UFUNCTION(BlueprintPure, Category = "UEAgent")
+    int32 GetServerPort() const { return ServerPort; }
+    
+    /** 获取WebSocket服务器地址 */
+    UFUNCTION(BlueprintPure, Category = "UEAgent")
+    FString GetServerAddress() const;
 
     // --- 暴露属性 ---
 
     /** 连接状态真值 */
     UPROPERTY(BlueprintReadOnly, Category = "UEAgent")
     bool bIsConnected = false;
+    
+    /** 服务器端口 */
+    UPROPERTY(BlueprintReadOnly, Category = "UEAgent")
+    int32 ServerPort = 0;
 
     /** 状态变更委托：UI 层将绑定此事件以实现图标变色 */
     UPROPERTY(BlueprintAssignable, Category = "UEAgent")
     FOnAgentConnectionStatusChanged OnConnectionStatusChanged;
+    
+    /** 服务器端口变更委托 */
+    UPROPERTY(BlueprintAssignable, Category = "UEAgent")
+    FOnServerPortChanged OnServerPortChanged;
 };
