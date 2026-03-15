@@ -14,7 +14,6 @@
 **所有AI生成的文档必须精简、无废话**：
 - 删除冗余解释和重复说明
 - 合并相关章节，使用紧凑的表格
-- 精简示例代码注释，只保留关键说明
 - 避免不必要的附录和辅助章节
 - 使用直接明了的表述方式
 
@@ -109,26 +108,10 @@ docs/
 ## 2. 实现步骤
 分步骤说明实现流程，每个步骤包含：
 - 操作说明
-- 代码示例（带语言标注）
 - 注意事项
 
-## 3. 核心代码
-### 3.1 C++部分
-```cpp
-// 完整代码示例
-```
-
-### 3.2 Python部分
-```python
-# 完整代码示例
-```
-
-### 3.3 配置文件
-```json
-{
-  "完整配置示例": "value"
-}
-```
+## 3. 关键实现说明
+描述实现此功能的关键技术点和注意事项，不提供具体代码
 
 ## 4. 配置参数表
 | 参数名 | 推荐值 | 说明 | 适用范围 |
@@ -185,13 +168,10 @@ docs/
 ## 3. 具体规范
 分条列出详细规则
 
-## 4. 示例
-提供正确和错误的示例对比
-
-## 5. 例外情况
+## 4. 例外情况
 说明哪些情况可以不遵守本规范
 
-## 6. 变更历史
+## 5. 变更历史
 记录规范的修订历史
 ```
 
@@ -206,76 +186,17 @@ docs/
 - **注释**：关键逻辑使用`// NOTE:`, `// TODO:`, `// FIXME:`标注
 - **格式化**：遵循UE官方代码规范
 
-```cpp
-#pragma once
-#include "CoreMinimal.h"
-#include "EditorSubsystem.h"
-#include "UEAgentSubsystem.generated.h"
-
-// NOTE: 编辑器子系统，全局单例
-UCLASS()
-class UEEDITORAGENT_API UUEAgentSubsystem : public UEditorSubsystem
-{
-    GENERATED_BODY()
-
-public:
-    virtual void Initialize(FSubsystemCollectionBase& Collection) override;
-    virtual void Deinitialize() override;
-
-private:
-    // TODO: 添加线程安全机制
-    bool bIsConnected;
-};
-```
-
 ### 4.2 Python规范
 - **导入语句**：按标准库、第三方库、本地模块分组
 - **类型注解**：函数参数和返回值必须添加类型注解
 - **文档字符串**：模块、类、函数必须有docstring
 - **错误处理**：使用try-except捕获异常并记录日志
 
-```python
-import sys
-import asyncio
-from pathlib import Path
-from typing import Optional, Dict, Any
-
-import unreal
-from .logger import ue_log
-
-def setup_python_paths(plugin_root: Path) -> bool:
-    """设置Python路径，确保依赖可以正确导入
-    
-    Args:
-        plugin_root: 插件根目录路径
-        
-    Returns:
-        成功返回True，失败返回False
-    """
-    try:
-        lib_path = plugin_root / "Content" / "Python" / "Lib"
-        if not lib_path.exists():
-            raise FileNotFoundError(f"路径不存在: {lib_path}")
-        sys.path.insert(0, str(lib_path))
-        return True
-    except Exception as e:
-        ue_log.error(f"设置Python路径失败: {e}")
-        return False
-```
-
 ### 4.3 配置文件规范
-```json
-{
-  "plugin": {
-    "name": "UEEditorAgent",
-    "version": "1.0.0",
-    "python_dependencies": {
-      "required_packages": ["websockets", "pydantic"],
-      "install_target": "Content/Python/Lib"
-    }
-  }
-}
-```
+配置采用JSON格式，遵循以下原则：
+- 使用有意义的键名
+- 保持结构清晰，适当使用嵌套
+- 在注释中说明各配置项的用途
 
 ---
 
@@ -325,23 +246,12 @@ def setup_python_paths(plugin_root: Path) -> bool:
 
 ### 7.1 文档完整性检查
 - [ ] **目标明确**：每个步骤都有清晰的里程碑目标（3-5个）
-- [ ] **代码完整**：所有代码示例可以直接复制使用，无语法错误
 - [ ] **配置详尽**：配置参数有默认值、说明和适用范围
 - [ ] **验证可执行**：每个验证项都有具体的操作步骤
 - [ ] **编号一致**：与开发路线图的编号完全匹配
 - [ ] **术语统一**：全文术语使用一致，符合术语表
 - [ ] **路径正确**：所有路径引用使用正确格式
 - [ ] **跨项目标识**：明确标注适用范围（UE/Maya/通用）
-- [ ] **错误处理**：关键代码包含错误处理和日志记录
-- [ ] **性能考虑**：复杂操作有性能说明和优化建议
-
-### 7.2 代码示例质量
-- [ ] 能独立编译/运行
-- [ ] 包含必要的头文件/导入语句
-- [ ] 关键行有注释说明
-- [ ] 符合项目编码规范
-- [ ] 使用实际项目中的类名和函数名
-- [ ] 无硬编码的路径或配置
 
 ---
 
@@ -358,7 +268,7 @@ def setup_python_paths(plugin_root: Path) -> bool:
 1. **标记待更新**：在文档顶部添加 `**状态**：待更新`
 2. **创建任务**：在任务管理工具中创建更新任务
 3. **同步修改**：同时更新代码和文档
-4. **验证更新**：按照7.1-7.2检查清单验证
+4. **验证更新**：按照7.1检查清单验证
 5. **记录变更**：在文档底部"变更历史"中记录
 6. **移除标记**：验证完成后移除待更新标记
 
@@ -427,6 +337,6 @@ def setup_python_paths(plugin_root: Path) -> bool:
 
 ---
 
-**文档版本**：2.0（简化版）
-**最后更新**：2026-03-14
+**文档版本**：3.0（简化版，已移除未验证代码示例）
+**最后更新**：2026-03-15
 **适用范围**：ArtClaw总项目及所有子项目
