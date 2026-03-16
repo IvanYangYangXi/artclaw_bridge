@@ -13,6 +13,7 @@
 #include "Widgets/Input/SMenuAnchor.h"
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/STableRow.h"
+#include "IPythonScriptPlugin.h"
 
 #define LOCTEXT_NAMESPACE "UEAgentDashboard"
 
@@ -388,6 +389,13 @@ FReply SUEAgentDashboard::OnSendClicked()
 		return FReply::Handled();
 	}
 
+	// 防止重复发送
+	if (bIsWaitingForResponse)
+	{
+		AddMessage(TEXT("system"), TEXT("Waiting for AI response..."));
+		return FReply::Handled();
+	}
+
 	// 关闭 Slash 菜单
 	if (SlashMenuAnchor.IsValid())
 	{
@@ -400,10 +408,8 @@ FReply SUEAgentDashboard::OnSendClicked()
 	// 清空输入框
 	InputTextBox->SetText(FText::GetEmpty());
 
-	// TODO: 阶段 3+ 通过 Python bridge 转发给 AI
-	AddMessage(TEXT("assistant"),
-		FString::Printf(TEXT("(Received: \"%s\")\nAI responses will appear here when an MCP client is connected."),
-			*InputText.Left(100)));
+	// 通过 OpenClaw Gateway HTTP API 转发给 AI
+	SendToOpenClaw(InputText);
 
 	return FReply::Handled();
 }
@@ -679,6 +685,106 @@ void SUEAgentDashboard::RebuildMessageList()
 
 	MessageScrollBox->ScrollToEnd();
 }
+
+// ==================================================================
+// OpenClaw Gateway 通信 (阶段 3) — 通过 Python Bridge
+// ==================================================================
+
+
+void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
+{
+	bIsWaitingForResponse = true;
+	AddMessage(TEXT("system"), TEXT("Thinking..."));
+
+	// 转义消息中的引号和特殊字符，安全嵌入 Python 字符串
+	FString EscapedMsg = UserMessage;
+	EscapedMsg.ReplaceInline(TEXT("\\"), TEXT("\\\\"));
+	EscapedMsg.ReplaceInline(TEXT("'"), TEXT("\\'"));
+	EscapedMsg.ReplaceInline(TEXT("\n"), TEXT("\\n"));
+	EscapedMsg.ReplaceInline(TEXT("\r"), TEXT(""));
+
+	// 临时文件路径 — Python 写入响应，C++ 读取
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString ResponseFile = TempDir / TEXT("_openclaw_response.txt");
+
+	// 清除上次响应文件
+	IFileManager::Get().Delete(*ResponseFile, false, false, true);
+
+	// 通过 Python Bridge 异步发送
+	// Python 侧会把结果写入临时文件
+	FString PythonCmd = FString::Printf(
+		TEXT("from openclaw_bridge import send_chat_async_to_file; send_chat_async_to_file('%s', r'%s')"),
+		*EscapedMsg, *ResponseFile);
+
+	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+
+	// 启动定时器轮询临时文件
+	auto Self = SharedThis(this);
+	FString CapturedResponseFile = ResponseFile;
+	PollTimerHandle = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([Self, CapturedResponseFile](float DeltaTime) -> bool
+		{
+			if (!Self->bIsWaitingForResponse)
+			{
+				return false;
+			}
+
+			// 检查响应文件是否存在
+			if (!FPaths::FileExists(CapturedResponseFile))
+			{
+				return true; // 继续等待
+			}
+
+			// 读取响应
+			FString ResponseContent;
+			if (FFileHelper::LoadFileToString(ResponseContent, *CapturedResponseFile))
+			{
+				// 删除临时文件
+				IFileManager::Get().Delete(*CapturedResponseFile, false, false, true);
+
+				// 处理响应
+				Self->HandlePythonResponse(ResponseContent);
+			}
+
+			return false; // 停止轮询
+		}),
+		0.5f // 每 0.5 秒检查一次
+	);
+}
+
+void SUEAgentDashboard::HandlePythonResponse(const FString& Response)
+{
+	bIsWaitingForResponse = false;
+
+	// 移除 "Thinking..." 消息
+	if (Messages.Num() > 0 && Messages.Last().Content == TEXT("Thinking..."))
+	{
+		Messages.RemoveAt(Messages.Num() - 1);
+		RebuildMessageList();
+	}
+
+	if (Response.IsEmpty())
+	{
+		AddMessage(TEXT("system"), TEXT("Empty response from AI."));
+		return;
+	}
+
+	// 检查是否是错误
+	if (Response.StartsWith(TEXT("[Error]")))
+	{
+		AddMessage(TEXT("system"), Response);
+		return;
+	}
+
+	// 显示 AI 回复
+	AddMessage(TEXT("assistant"), Response);
+}
+
+
+// ==================================================================
+// 消息发送者颜色
+// ==================================================================
 
 FSlateColor SUEAgentDashboard::GetSenderColor(const FString& Sender) const
 {

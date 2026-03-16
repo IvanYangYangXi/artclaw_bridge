@@ -263,19 +263,64 @@ MCP Server 中的工具在注册到 OpenClaw 后，命名格式为：
 mcp_<服务器名称>_<原始工具名>
 ```
 
-例如 MCP Server 名为 `my-mcp-server`，提供工具 `get_weather`，则在 OpenClaw 中名为：
+例如 MCP Server 名为 `ue-editor-agent`，提供工具 `run_ue_python`，则在 OpenClaw 中名为：
 
 ```
-mcp_my-mcp-server_get_weather
+mcp_ue-editor-agent_run_ue_python
 ```
 
 Agent 在对话中可直接调用这些工具。
 
 ---
 
+## UE Editor Agent 工具清单
+
+以下是 UE Editor Agent MCP Server 提供的完整工具列表：
+
+### Phase 0~2: Core Tools (10 个)
+
+| OpenClaw 工具名 | 功能 | 风险等级 |
+|-----------------|------|---------|
+| `mcp_ue-editor-agent_run_ue_python` | 执行任意 UE Python 代码 | high |
+| `mcp_ue-editor-agent_get_selected_actors` | 获取当前选中的 Actor 列表 | low |
+| `mcp_ue-editor-agent_get_editor_context` | 获取编辑器完整上下文快照 | low |
+| `mcp_ue-editor-agent_focus_on_actor` | 视口聚焦到指定 Actor | low |
+| `mcp_ue-editor-agent_highlight_actors` | 高亮显示指定 Actor 列表 | low |
+| `mcp_ue-editor-agent_get_viewport_camera` | 获取视口相机位置/旋转 | low |
+| `mcp_ue-editor-agent_set_viewport_camera` | 设置视口相机位置/旋转 | medium |
+| `mcp_ue-editor-agent_get_dynamic_prompt` | 根据编辑器模式生成动态提示词 | low |
+| `mcp_ue-editor-agent_assess_risk` | 评估操作风险等级 | low |
+| `mcp_ue-editor-agent_analyze_error` | 分析错误日志并建议修复 | low |
+
+### Phase 3: Intelligence & Optimization Tools (7 个)
+
+| OpenClaw 工具名 | 功能 | 所属模块 |
+|-----------------|------|---------|
+| `mcp_ue-editor-agent_knowledge_search` | 检索本地知识库 (UE API 文档、项目文档) | knowledge_base |
+| `mcp_ue-editor-agent_knowledge_index` | 索引文档目录到知识库 | knowledge_base |
+| `mcp_ue-editor-agent_knowledge_stats` | 查看知识库统计信息 | knowledge_base |
+| `mcp_ue-editor-agent_memory_get` | 读取项目记忆 (事实/偏好/规范) | memory_store |
+| `mcp_ue-editor-agent_memory_set` | 写入项目记忆 | memory_store |
+| `mcp_ue-editor-agent_memory_search` | 按关键词搜索记忆 | memory_store |
+| `mcp_ue-editor-agent_memory_list` | 列出所有记忆键 | memory_store |
+
+### 动态 Skill 工具 (数量不定)
+
+通过 `Skills/` 目录下的 `.py` 文件动态注册，格式为 `mcp_ue-editor-agent_<skill_name>`。
+文件修改后自动热重载，无需重启。
+
+### MCP Resources
+
+| URI | 说明 |
+|-----|------|
+| `unreal://engine/version` | 引擎版本信息和支持的 API |
+| `unreal://skills/list` | 所有已注册 Skill 的元信息 |
+
+---
+
 ## 为特定 Agent 启用 MCP 工具
 
-如果你的 Agent 使用了 `tools.allow` 白名单，需要将 MCP 工具加入：
+如果你的 Agent 使用了 `tools.allow` 白名单，**必须显式列出每个工具名称**（不支持通配符或插件 ID 整体放行）：
 
 ```jsonc
 {
@@ -286,8 +331,25 @@ Agent 在对话中可直接调用这些工具。
         "tools": {
           "allow": [
             // ... 其他工具 ...
-            "mcp-bridge"                       // 方式1：启用该插件的所有工具
-            // "mcp_my-mcp-server_get_weather" // 方式2：指定具体工具名
+            // Phase 0~2: Core Tools
+            "mcp_ue-editor-agent_run_ue_python",
+            "mcp_ue-editor-agent_get_selected_actors",
+            "mcp_ue-editor-agent_get_editor_context",
+            "mcp_ue-editor-agent_focus_on_actor",
+            "mcp_ue-editor-agent_highlight_actors",
+            "mcp_ue-editor-agent_get_viewport_camera",
+            "mcp_ue-editor-agent_set_viewport_camera",
+            "mcp_ue-editor-agent_get_dynamic_prompt",
+            "mcp_ue-editor-agent_assess_risk",
+            "mcp_ue-editor-agent_analyze_error",
+            // Phase 3: Intelligence Tools
+            "mcp_ue-editor-agent_knowledge_search",
+            "mcp_ue-editor-agent_knowledge_index",
+            "mcp_ue-editor-agent_knowledge_stats",
+            "mcp_ue-editor-agent_memory_get",
+            "mcp_ue-editor-agent_memory_set",
+            "mcp_ue-editor-agent_memory_search",
+            "mcp_ue-editor-agent_memory_list"
           ]
         }
       }
@@ -295,6 +357,8 @@ Agent 在对话中可直接调用这些工具。
   }
 }
 ```
+
+> ⚠️ **注意**: 写 `"mcp-bridge"` 到 allow 列表是**无效的**。OpenClaw 要求列出具体的工具名称。
 
 ---
 
@@ -320,8 +384,8 @@ openclaw-mcp-bridge/
 ├── README.md                          # 本文档
 ├── mcp-bridge/
 │   ├── openclaw.plugin.json           # 插件清单 (manifest)
-│   └── index.ts                       # 插件主代码
-└── openclaw-config-snippet.json       # openclaw.json 配置片段示例
+│   └── index.ts                       # 插件主代码 (TypeScript)
+└── openclaw-config-snippet.json       # openclaw.json 配置片段示例 (含全部 17 个工具白名单)
 ```
 
 部署目标路径：
@@ -331,6 +395,59 @@ openclaw-mcp-bridge/
 ├── openclaw.plugin.json
 └── index.ts
 ```
+
+### 快速部署脚本 (Windows)
+
+```cmd
+@echo off
+set TARGET=%USERPROFILE%\.openclaw\extensions\mcp-bridge
+if not exist "%TARGET%" mkdir "%TARGET%"
+copy /Y mcp-bridge\openclaw.plugin.json "%TARGET%\"
+copy /Y mcp-bridge\index.ts "%TARGET%\"
+echo Deployed to %TARGET%
+```
+
+---
+
+## UE Chat Panel → OpenClaw 双向通信
+
+UE 编辑器内的 Chat Panel 通过 **Python Bridge** 与 OpenClaw Gateway 进行 WebSocket 通信：
+
+```
+┌─────────────────┐      Python         ┌──────────────────┐
+│ UE Dashboard    │  ExecPythonCommand   │ openclaw_bridge.py│
+│ (C++ Slate)     │ ────────────────────►│ (asyncio + ws)   │
+│                 │                      │                  │
+│ SendToOpenClaw()│   File: response.txt │ WebSocket RPC    │
+│       ↓         │ ◄──────────────────  │  connect →       │
+│ FTSTicker Poll  │                      │  chat.send →     │
+│       ↓         │                      │  ← delta/final   │
+│HandlePythonResp │                      │                  │
+└─────────────────┘                      └──────┬───────────┘
+                                                │ ws://127.0.0.1:18789
+                                         ┌──────▼───────────┐
+                                         │ OpenClaw Gateway  │
+                                         │ (WebSocket RPC)   │
+                                         └──────────────────┘
+```
+
+### 前置依赖
+
+```cmd
+REM 在 UE 内置 Python 环境安装 websockets
+"<UE_DIR>\Engine\Binaries\ThirdParty\Python3\Win64\python.exe" -m pip install websockets
+```
+
+### OpenClaw Gateway RPC 协议
+
+OpenClaw Gateway **不是** REST API，而是自定义的 WebSocket RPC 协议：
+
+1. 连接 `ws://127.0.0.1:{port}`
+2. 收到 `{event: "connect.challenge", payload: {nonce: "..."}}`
+3. 发送 `{type: "req", method: "connect", params: {auth: {token: "..."}, ...}}`
+4. 收到 helloOk 响应
+5. 发送 `{type: "req", method: "chat.send", params: {sessionKey: "qi/ue-editor", message: "..."}}`
+6. 收到流式 `delta` / `final` 事件
 
 ---
 

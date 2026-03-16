@@ -21,16 +21,31 @@
   },
 
   "$agents_example": {
-    "$comment": "如果 Agent 使用了 tools.allow 白名单，需加入以下配置",
+    "$comment_1": "Agent 使用 tools.allow 白名单时，需要显式列出所有 MCP 工具名称",
+    "$comment_2": "下面的 allow 列表包含 Phase 0~2 的 10 个 Core Tools 和 Phase 3 的 7 个智能工具",
     "agents": {
       "list": [
         {
           "id": "ue-assistant",
           "tools": {
             "allow": [
-              "mcp-bridge",
               "mcp_ue-editor-agent_run_ue_python",
-              "mcp_ue-editor-agent_analyze_error"
+              "mcp_ue-editor-agent_get_selected_actors",
+              "mcp_ue-editor-agent_get_editor_context",
+              "mcp_ue-editor-agent_focus_on_actor",
+              "mcp_ue-editor-agent_highlight_actors",
+              "mcp_ue-editor-agent_get_viewport_camera",
+              "mcp_ue-editor-agent_set_viewport_camera",
+              "mcp_ue-editor-agent_get_dynamic_prompt",
+              "mcp_ue-editor-agent_assess_risk",
+              "mcp_ue-editor-agent_analyze_error",
+              "mcp_ue-editor-agent_knowledge_search",
+              "mcp_ue-editor-agent_knowledge_index",
+              "mcp_ue-editor-agent_knowledge_stats",
+              "mcp_ue-editor-agent_memory_get",
+              "mcp_ue-editor-agent_memory_set",
+              "mcp_ue-editor-agent_memory_search",
+              "mcp_ue-editor-agent_memory_list"
             ]
           }
         }

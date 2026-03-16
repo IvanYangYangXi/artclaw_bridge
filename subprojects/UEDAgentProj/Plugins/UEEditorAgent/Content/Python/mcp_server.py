@@ -146,6 +146,7 @@ class MCPServer:
         # Resource 注册表 (阶段 2.2)
         self._resource_definitions: list = []
         self._resource_reader = None  # callable(uri) -> dict
+        self._resource_handlers: Dict[str, Any] = {}  # uri -> handler
 
     # --- 属性 ---
 
@@ -445,20 +446,63 @@ class MCPServer:
         uri = params.get("uri", "")
         UELogger.mcp(f"resources/read -> {uri}")
 
-        if self._resource_reader is None:
-            raise ValueError(f"No resource reader registered")
+        # 优先使用 per-URI handler
+        if uri in self._resource_handlers:
+            handler = self._resource_handlers[uri]
+            content_text = handler() if callable(handler) else str(handler)
+            return {
+                "contents": [
+                    {
+                        "uri": uri,
+                        "mimeType": "application/json",
+                        "text": content_text,
+                    }
+                ]
+            }
 
-        import json
-        content = self._resource_reader(uri)
-        return {
-            "contents": [
-                {
-                    "uri": uri,
-                    "mimeType": "application/json",
-                    "text": json.dumps(content, default=str),
-                }
-            ]
-        }
+        # 回退到全局 resource_reader
+        if self._resource_reader is not None:
+            content = self._resource_reader(uri)
+            return {
+                "contents": [
+                    {
+                        "uri": uri,
+                        "mimeType": "application/json",
+                        "text": json.dumps(content, default=str),
+                    }
+                ]
+            }
+
+        raise ValueError(f"No handler for resource: {uri}")
+
+    # --- Tool 注册接口 ---
+
+    # --- Resource 注册接口 ---
+
+    def register_resource(self, uri: str, name: str, description: str,
+                          handler=None, mime_type: str = "application/json") -> None:
+        """
+        注册一个 MCP Resource。
+
+        Args:
+            uri: 资源 URI (e.g. "unreal://engine/version")
+            name: 人类可读名称
+            description: 描述
+            handler: 读取函数，返回字符串内容
+            mime_type: MIME 类型
+
+        宪法约束:
+          - 开发路线图 §2.2: UE 编辑器状态映射为 MCP 资源 URI
+        """
+        self._resource_definitions.append({
+            "uri": uri,
+            "name": name,
+            "description": description,
+            "mimeType": mime_type,
+        })
+        if handler is not None:
+            self._resource_handlers[uri] = handler
+        UELogger.info(f"Resource registered: {uri}")
 
     # --- Tool 注册接口 ---
 
@@ -723,6 +767,9 @@ def start_mcp_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> bool
             # --- 阶段 1.2~1.6: 注册核心工具 ---
             _register_builtin_tools(_mcp_server)
 
+            # --- 阶段 3: 智能与优化子系统 ---
+            _init_phase3_subsystems(_mcp_server)
+
         return success
 
     except Exception as e:
@@ -770,6 +817,58 @@ def _register_builtin_tools(server: MCPServer) -> None:
         register_phase2_heal(server)
     except Exception:
         UELogger.exception("Failed to register Phase 2.7 self-healing tools")
+
+
+def _init_phase3_subsystems(server: MCPServer) -> None:
+    """
+    初始化阶段 3 的所有子系统。
+
+    宪法约束:
+      - 开发路线图 §3: 智能与优化
+      - 系统架构设计 §1.5: Core Tool / Skill 二层体系
+    """
+    # §3.5 版本适配器 — 最先初始化，其他模块可能依赖它
+    try:
+        from ue_version_adapter import init_version_adapter
+        adapter = init_version_adapter(server)
+        UELogger.info(f"Phase 3.5: Version Adapter ready ({adapter.version})")
+    except Exception:
+        UELogger.exception("Phase 3.5: Failed to init version adapter")
+
+    # §3.4 记忆存储
+    try:
+        from memory_store import init_memory_store
+        memory = init_memory_store(server)
+        UELogger.info(f"Phase 3.4: Memory Store ready")
+    except Exception:
+        UELogger.exception("Phase 3.4: Failed to init memory store")
+
+    # §3.2 + 3.3 + 3.6 知识库
+    try:
+        from knowledge_base import init_knowledge_base
+        kb = init_knowledge_base(server)
+        UELogger.info(f"Phase 3.2: Knowledge Base ready ({kb.get_stats()['total_documents']} docs)")
+    except Exception:
+        UELogger.exception("Phase 3.2: Failed to init knowledge base")
+
+    # §3.1 Skill Hub — 最后初始化，依赖 MCP Server 已就绪
+    try:
+        from skill_hub import SkillHub
+        hub = SkillHub(server)
+        count = hub.scan_and_register()
+        hub.start_watching()
+
+        # 注册 Skill 列表资源
+        server.register_resource(
+            uri="unreal://skills/list",
+            name="Skill List",
+            description="All registered AI skills and their capabilities",
+            handler=lambda: json.dumps(hub.get_skill_list(), indent=2),
+        )
+
+        UELogger.info(f"Phase 3.1: Skill Hub ready ({count} skills)")
+    except Exception:
+        UELogger.exception("Phase 3.1: Failed to init skill hub")
 
 
 def stop_mcp_server() -> None:

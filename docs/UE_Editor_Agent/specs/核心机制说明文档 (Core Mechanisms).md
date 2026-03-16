@@ -63,7 +63,61 @@ AI 不是全自动运行，而是在关键节点与开发者协同。
 - **按需采样 (On-demand Sampling)**：
     只有当 AI 明确要求“分析这个材质的参数”时，系统才会读取该资产的具体 Property 字段并转为 JSON 传给模型。
 
+## 7. OpenClaw Gateway Bridge 机制 (v1.3 新增)
+
+UE Chat Panel 与 OpenClaw Gateway 之间通过 **Python Bridge** 通信，解决 Gateway 使用自定义 WebSocket RPC 协议的问题。
+
+### 7.1 为什么不用 HTTP
+
+OpenClaw Gateway 不提供 REST HTTP API。其 Web 端点仅返回 SPA 前端页面。所有业务通信都通过 WebSocket RPC 进行，协议流程为：
+`connect.challenge` → `connect(token)` → `chat.send(sessionKey, message)` → 流式 `delta`/`final` 事件。
+
+### 7.2 为什么不在 C++ 直接实现 WebSocket
+
+OpenClaw RPC 协议包含设备签名认证（Ed25519）、协议版本协商等复杂逻辑。虽然 UE 5.7 内置了 `WebSockets` 模块（`IWebSocket`），但从 C++ 实现完整协议代码量大且维护成本高。
+
+### 7.3 Python Bridge 方案
+
+```
+C++ (UE Game Thread)                    Python (Background Thread)
+─────────────────────                   ──────────────────────────
+1. User types message
+   ↓
+2. SendToOpenClaw(msg)
+   ↓
+3. IPythonScriptPlugin::
+   ExecPythonCommand(
+     "send_chat_async_to_file(msg, path)")
+   ↓                                    4. OpenClawBridge.send_message_async()
+   │                                       ↓
+   │                                    5. asyncio event loop: ws.send(chat.send)
+   │                                       ↓
+   │                                    6. Collect delta events → final text
+   │                                       ↓
+   │                                    7. Write result to file
+   │                                       ↓
+8. FTSTicker polls file  ◄──────────── _openclaw_response.txt
+   ↓
+9. HandlePythonResponse(text)
+   ↓
+10. AddMessage("assistant", text)
+```
+
+### 7.4 模块清单
+
+| 模块 | 语言 | 职责 |
+|------|------|------|
+| `openclaw_bridge.py` | Python | WebSocket 连接管理、RPC 协议实现、chat.send |
+| `SUEAgentDashboard` | C++ | UI 渲染、消息发送/接收、文件轮询 |
+| `IPythonScriptPlugin` | C++ (UE) | C++ → Python 命令执行桥梁 |
+| `FTSTicker` | C++ (UE) | 主线程定时器，0.5s 轮询响应文件 |
+
 ---
 
 **核心流程图解**:
-`用户描述` -> `OpenClaw 路由` -> `MCP Tool 调用` -> `UE Python 胶水层` -> `UE Transaction (Undo)` -> `UE Engine 执行` -> `反馈/UI 确认`
+
+**MCP 通道** (OpenClaw 调用 UE 工具):
+`OpenClaw Agent` → `mcp-bridge` → `MCP WebSocket :8080` → `mcp_server.py` → `UE Python API` → `结果回传`
+
+**Chat 通道** (UE 面板与 AI 对话):
+`UE Chat Panel` → `C++ ExecPythonCommand` → `openclaw_bridge.py` → `OpenClaw Gateway WS :18789` → `AI 推理` → `response.txt` → `C++ FTSTicker` → `UI 显示`

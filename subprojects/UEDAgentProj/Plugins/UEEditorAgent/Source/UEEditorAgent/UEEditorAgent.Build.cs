@@ -45,6 +45,7 @@ public class UEEditorAgent : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
+				"PythonScriptPlugin", // 阶段 3: UE Chat → Python Bridge → OpenClaw Gateway
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

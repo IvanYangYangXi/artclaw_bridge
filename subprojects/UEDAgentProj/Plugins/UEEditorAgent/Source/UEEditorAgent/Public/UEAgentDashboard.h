@@ -5,8 +5,8 @@
 #include "CoreMinimal.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
-
 #include "Widgets/Views/SListView.h"
+#include "Containers/Ticker.h"
 
 class UUEAgentSubsystem;
 class SScrollBox;
@@ -88,6 +88,10 @@ private:
 	void RebuildMessageList();
 	FSlateColor GetSenderColor(const FString& Sender) const;
 
+	// --- OpenClaw Gateway 通信 (阶段 3) — via Python Bridge ---
+	void SendToOpenClaw(const FString& UserMessage);
+	void HandlePythonResponse(const FString& Response);
+
 private:
 	/** Subsystem */
 	TWeakObjectPtr<UUEAgentSubsystem> CachedSubsystem;
@@ -109,6 +113,11 @@ private:
 	TArray<FSlashCommandPtr> AllSlashCommands;
 	TArray<FSlashCommandPtr> FilteredSlashCommands;
 	TSharedPtr<SListView<FSlashCommandPtr>> SlashListView;
+
+	/** OpenClaw Gateway 通信 (via Python Bridge) */
+	bool bIsWaitingForResponse = false;
+	FTSTicker::FDelegateHandle PollTimerHandle;
+	TArray<FString> PendingPythonResult;
 
 	static constexpr int32 MaxMessages = 500;
 };

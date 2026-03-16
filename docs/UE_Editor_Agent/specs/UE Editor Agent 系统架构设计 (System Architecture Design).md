@@ -269,13 +269,85 @@ UE 插件启动
 
 ---
 
-## 6. 架构演进历史
+## 6. OpenClaw Gateway 通信架构 (v1.3 新增)
+
+> **重要发现**：OpenClaw Gateway 使用自定义 **WebSocket RPC 协议**，不是标准 REST HTTP API。
+
+### 6.1 协议概述
+
+```
+┌─────────────────┐                     ┌──────────────────┐
+│ UE Dashboard    │  ExecPythonCommand   │ openclaw_bridge.py│
+│ (C++ Slate)     │ ────────────────────►│ (asyncio + ws)   │
+│                 │                      │                  │
+│ SendToOpenClaw()│   File: response.txt │ WebSocket RPC    │
+│       ↓         │ ◄──────────────────  │  connect →       │
+│ FTSTicker Poll  │                      │  chat.send →     │
+│       ↓         │                      │  ← delta/final   │
+│HandlePythonResp │                      │                  │
+└─────────────────┘                      └──────┬───────────┘
+                                                │ ws://127.0.0.1:18789
+                                         ┌──────▼───────────┐
+                                         │ OpenClaw Gateway  │
+                                         │ (WebSocket RPC)   │
+                                         └──────────────────┘
+```
+
+### 6.2 Gateway WebSocket RPC 帧格式
+
+| 方向 | 类型 | 格式 |
+|------|------|------|
+| Gateway → Client | Event | `{"event": "connect.challenge", "payload": {"nonce": "..."}}`  |
+| Client → Gateway | Request | `{"type": "req", "id": "<uuid>", "method": "connect", "params": {...}}` |
+| Gateway → Client | Response | `{"type": "res", "id": "<uuid>", "payload": {...}}` |
+| Gateway → Client | Stream | `{"event": "chat", "payload": {"state": "delta\|final", "message": "..."}}` |
+
+### 6.3 认证方式
+
+Gateway 支持多种认证方式，UE Agent 使用最简单的 **Token 认证**：
+
+```json
+{
+    "auth": { "token": "<gateway.auth.token from openclaw.json>" },
+    "role": "operator",
+    "scopes": ["operator.admin"]
+}
+```
+
+### 6.4 C++ ↔ Python 数据传递
+
+由于 UE 的 `IPythonScriptPlugin::ExecPythonCommand` 不直接返回复杂数据，采用**临时文件传递**模式：
+
+1. C++ 调用 `ExecPythonCommand("send_chat_async_to_file('msg', 'path')")`
+2. Python 在后台线程完成 AI 对话
+3. Python 将响应写入 `Saved/UEAgent/_openclaw_response.txt`
+4. C++ 通过 `FTSTicker` 每 0.5 秒轮询文件是否存在
+5. 文件出现后读取内容 → 删除文件 → `HandlePythonResponse()`
+
+### 6.5 前置依赖
+
+| 依赖 | 安装方式 | 说明 |
+|------|----------|------|
+| `websockets` | `pip install websockets` (UE 内置 Python) | OpenClaw Gateway WS 通信 |
+
+---
+
+## 7. 架构演进历史
 
 | 版本 | 日期 | 核心变更 | 原因 |
 | :--- | :--- | :--- | :--- |
 | v1.0 | 2026-03-15 | 初始版本 | 基础架构设计 |
 | v1.1 | 2026-03-15 | 多平台支持 + 混合同步模式 | 支持WorkBuddy/OpenClaw等多客户端；优化Token使用 |
-| **v1.2** | **2026-03-16** | **Core Tool / Skill 二层体系 + OpenClaw 白名单策略** | **Phase 0~2 实践经验沉淀；解决 Skill 扩展时的注册膨胀问题** |
+| v1.2 | 2026-03-16 | Core Tool / Skill 二层体系 + OpenClaw 白名单策略 | Phase 0~2 实践经验沉淀；解决 Skill 扩展时的注册膨胀问题 |
+| **v1.3** | **2026-03-16** | **OpenClaw WS RPC 协议 + Python Bridge + Phase 3 子系统** | **Phase 3 实现：双向通信、知识库、记忆、版本适配** |
+
+### v1.3 关键改进
+
+1. **OpenClaw Gateway 协议文档化**：记录 WS RPC 协议的帧格式、认证方式、chat.send 流程
+2. **Python Bridge 架构**：C++ Slate UI → Python `openclaw_bridge.py` → OpenClaw Gateway WS 的三层桥接
+3. **C++↔Python 数据传递**：临时文件 + FTSTicker 轮询模式，避免 ExecPythonCommand 返回值限制
+4. **Phase 3 子系统集成**：`_init_phase3_subsystems()` 按依赖顺序初始化 4 个子系统
+5. **MCP 接口扩展**：从 10 个 Core Tool 扩展到 10 + 7 = 17 个工具 + 2 个资源
 
 ### v1.2 关键改进
 
@@ -289,7 +361,7 @@ UE 插件启动
 
 1. **多平台支持**：从单一OpenClaw扩展到支持WorkBuddy、OpenClaw、Claude Desktop等多个MCP客户端
 2. **Skill统一管理**：Skill Hub从OpenClaw迁移到UE插件侧，所有客户端共享
-3. **混合同步模式**：从纯推送改为“按需拉取 + 关键推送”，节省70%+ Token消耗
+3. **混合同步模式**：从纯推送改为"按需拉取 + 关键推送"，节省70%+ Token消耗
 4. **多客户端协调器**：新增Multi-Client Coordinator组件，管理多个连接并统一推送
 
 ---
