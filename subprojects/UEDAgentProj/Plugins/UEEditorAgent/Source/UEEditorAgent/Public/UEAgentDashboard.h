@@ -12,6 +12,7 @@ class UUEAgentSubsystem;
 class SScrollBox;
 class SMultiLineEditableTextBox;
 class SMenuAnchor;
+class SCheckBox;
 
 /**
  * SUEAgentDashboard
@@ -67,14 +68,21 @@ private:
 
 	// --- 按钮回调 ---
 	FReply OnToggleStatusClicked();
-	FReply OnTestConnectionClicked();
+	FReply OnConnectClicked();
+	FReply OnDisconnectClicked();
+	FReply OnDiagnoseClicked();
 	FReply OnViewLogsClicked();
 	FReply OnSendClicked();
-	FReply OnClearClicked();
+	FReply OnNewChatClicked();
 
 	// --- 聊天输入回调 ---
 	void OnInputTextChanged(const FText& NewText);
 	void OnInputTextCommitted(const FText& NewText, ETextCommit::Type CommitType);
+
+	// --- 发送模式切换 ---
+	void OnSendModeChanged(ECheckBoxState NewState);
+	bool ShouldSendOnEnter() const;
+	FText GetSendHintText() const;
 
 	// --- Slash 命令菜单 ---
 	void InitSlashCommands();
@@ -87,6 +95,12 @@ private:
 	void AddMessage(const FString& Sender, const FString& Content, bool bIsCode = false);
 	void RebuildMessageList();
 	FSlateColor GetSenderColor(const FString& Sender) const;
+
+	// --- OpenClaw Bridge 连接管理 ---
+	void ConnectOpenClawBridge();
+	void DisconnectOpenClawBridge();
+	void RunDiagnoseConnection();
+	void HandleSlashCommand(const FString& Command, const FString& Args);
 
 	// --- OpenClaw Gateway 通信 (阶段 3) — via Python Bridge ---
 	void SendToOpenClaw(const FString& UserMessage);
@@ -113,6 +127,10 @@ private:
 	TArray<FSlashCommandPtr> AllSlashCommands;
 	TArray<FSlashCommandPtr> FilteredSlashCommands;
 	TSharedPtr<SListView<FSlashCommandPtr>> SlashListView;
+
+	/** 发送模式: true = Enter 直接发送, false = Ctrl+Enter 发送 */
+	bool bEnterToSend = true;
+	TSharedPtr<SCheckBox> SendModeCheckBox;
 
 	/** OpenClaw Gateway 通信 (via Python Bridge) */
 	bool bIsWaitingForResponse = false;

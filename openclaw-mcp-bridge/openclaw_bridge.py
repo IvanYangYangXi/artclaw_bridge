@@ -672,6 +672,16 @@ def get_last_response() -> str:
     return ''
 
 
+def connect(gateway_url: str = "", token: str = "") -> bool:
+    """连接到 OpenClaw Gateway (connect 按钮调用)"""
+    return init_bridge(gateway_url, token)
+
+
+def disconnect():
+    """断开 OpenClaw Gateway 连接"""
+    shutdown()
+
+
 def is_connected() -> bool:
     """检查连接状态"""
     return _bridge is not None and _bridge.is_connected()

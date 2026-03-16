@@ -9,6 +9,7 @@
 #include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Input/SMenuAnchor.h"
 #include "Widgets/Views/SListView.h"
@@ -94,7 +95,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			.AutoWrapText(true)
 		]
 
-		// 操作按钮
+		// 操作按钮 (紧凑排列)
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		.Padding(0.0f, 4.0f, 0.0f, 0.0f)
@@ -102,18 +103,42 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
-			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			.Padding(0.0f, 0.0f, 3.0f, 0.0f)
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("TestConnectionBtn", "Test Connection"))
-				.OnClicked(this, &SUEAgentDashboard::OnTestConnectionClicked)
+				.Text(LOCTEXT("ConnectBtn", "Connect"))
+				.ToolTipText(LOCTEXT("ConnectTip", "Connect to OpenClaw Gateway"))
+				.OnClicked(this, &SUEAgentDashboard::OnConnectClicked)
+				.ContentPadding(FMargin(6.0f, 2.0f))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 3.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("DisconnectBtn", "Disconnect"))
+				.ToolTipText(LOCTEXT("DisconnectTip", "Disconnect from OpenClaw Gateway"))
+				.OnClicked(this, &SUEAgentDashboard::OnDisconnectClicked)
+				.ContentPadding(FMargin(6.0f, 2.0f))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 3.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("DiagnoseBtn", "Diagnose"))
+				.ToolTipText(LOCTEXT("DiagnoseTip", "Run 6-step connection diagnostics"))
+				.OnClicked(this, &SUEAgentDashboard::OnDiagnoseClicked)
+				.ContentPadding(FMargin(6.0f, 2.0f))
 			]
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("ViewLogsBtn", "View Logs"))
+				.Text(LOCTEXT("ViewLogsBtn", "Logs"))
+				.ToolTipText(LOCTEXT("ViewLogsTip", "Open Output Log"))
 				.OnClicked(this, &SUEAgentDashboard::OnViewLogsClicked)
+				.ContentPadding(FMargin(6.0f, 2.0f))
 			]
 		];
 
@@ -190,12 +215,11 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		// ========== 输入区域 ==========
 		+ SVerticalBox::Slot()
 		.AutoHeight()
-		.MaxHeight(160.0f)
-		.Padding(6.0f, 4.0f, 6.0f, 6.0f)
+		.Padding(4.0f, 2.0f, 4.0f, 4.0f)
 		[
 			SNew(SVerticalBox)
 
-			// Slash 命令菜单锚点 (浮在输入框上方)
+			// Slash 命令菜单锚点
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
@@ -203,47 +227,95 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				.Placement(MenuPlacement_AboveAnchor)
 				.Method(EPopupMethod::UseCurrentWindow)
 				[
-					// 输入行: 多行输入 + 按钮
+					// 输入框 + 发送按钮 (横向排列)
 					SNew(SHorizontalBox)
 
-					// 多行输入框
+					// 多行输入框 (设置最小高度)
 					+ SHorizontalBox::Slot()
 					.FillWidth(1.0f)
 					.Padding(0.0f, 0.0f, 4.0f, 0.0f)
 					[
-						SAssignNew(InputTextBox, SMultiLineEditableTextBox)
-						.HintText(LOCTEXT("InputHint", "Ask AI anything... (type / for commands)"))
-						.AutoWrapText(true)
-						.OnTextChanged(this, &SUEAgentDashboard::OnInputTextChanged)
-						.OnTextCommitted(this, &SUEAgentDashboard::OnInputTextCommitted)
+						SNew(SBox)
+						.MinDesiredHeight(52.0f)
+						.MaxDesiredHeight(120.0f)
+						[
+							SAssignNew(InputTextBox, SMultiLineEditableTextBox)
+							.HintText(this, &SUEAgentDashboard::GetSendHintText)
+							.AutoWrapText(true)
+							.OnTextChanged(this, &SUEAgentDashboard::OnInputTextChanged)
+							.OnTextCommitted(this, &SUEAgentDashboard::OnInputTextCommitted)
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+						]
 					]
 
-					// 按钮列
+					// 发送按钮 (底部对齐)
 					+ SHorizontalBox::Slot()
 					.AutoWidth()
 					.VAlign(VAlign_Bottom)
+					.Padding(0.0f, 0.0f, 0.0f, 1.0f)
 					[
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot()
-						.AutoHeight()
-						.Padding(0.0f, 0.0f, 0.0f, 2.0f)
-						[
-							SNew(SButton)
-							.Text(LOCTEXT("SendBtn", "Send"))
-							.ToolTipText(LOCTEXT("SendTip", "Send message (Ctrl+Enter)"))
-							.OnClicked(this, &SUEAgentDashboard::OnSendClicked)
-						]
-						+ SVerticalBox::Slot()
-						.AutoHeight()
-						[
-							SNew(SButton)
-							.Text(LOCTEXT("ClearBtn", "Clear"))
-							.ToolTipText(LOCTEXT("ClearTip", "Clear chat history"))
-							.OnClicked(this, &SUEAgentDashboard::OnClearClicked)
-						]
+						SNew(SButton)
+						.Text(LOCTEXT("SendBtn", "\u25B6"))  // ▶ 符号
+						.ToolTipText(LOCTEXT("SendTip", "Send message"))
+						.OnClicked(this, &SUEAgentDashboard::OnSendClicked)
+						.ContentPadding(FMargin(8.0f, 6.0f))
 					]
 				]
 				.MenuContent(SlashMenuContent)
+			]
+
+			// 底部工具栏: /new + 弹性间距 + Enter to Send
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 2.0f, 0.0f, 0.0f)
+			[
+				SNew(SHorizontalBox)
+
+				// /new 按钮 (小号紧凑)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("NewChatBtn", "+ New Chat"))
+					.ToolTipText(LOCTEXT("NewChatTip", "Start a new conversation (/new)"))
+					.OnClicked(this, &SUEAgentDashboard::OnNewChatClicked)
+					.ContentPadding(FMargin(4.0f, 1.0f))
+					.ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("SimpleButton"))
+				]
+
+				// 弹性间距
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				[
+					SNullWidget::NullWidget
+				]
+
+				// 发送模式: [☑] Enter to Send
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0.0f, 0.0f, 2.0f, 0.0f)
+					[
+						SAssignNew(SendModeCheckBox, SCheckBox)
+						.IsChecked(bEnterToSend ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+						.OnCheckStateChanged(this, &SUEAgentDashboard::OnSendModeChanged)
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("EnterToSendLabel", "Enter to Send"))
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 7))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.45f, 0.45f, 0.45f)))
+					]
+				]
 			]
 		]
 	];
@@ -252,7 +324,10 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	AddMessage(TEXT("assistant"),
 		TEXT("Hello! I'm the UE Editor Agent.\n\n")
 		TEXT("Type / to see available commands, or ask me anything.\n")
-		TEXT("Connect an MCP client to enable AI responses."));
+		TEXT("Commands: /new, /connect, /disconnect, /diagnose, /status, /help"));
+
+	// 打开面板时自动连接 OpenClaw Bridge
+	ConnectOpenClawBridge();
 }
 
 SUEAgentDashboard::~SUEAgentDashboard()
@@ -361,12 +436,21 @@ FReply SUEAgentDashboard::OnToggleStatusClicked()
 	return FReply::Handled();
 }
 
-FReply SUEAgentDashboard::OnTestConnectionClicked()
+FReply SUEAgentDashboard::OnConnectClicked()
 {
-	if (CachedSubsystem.IsValid())
-	{
-		CachedSubsystem->SetConnectionStatus(!CachedSubsystem->GetConnectionStatus());
-	}
+	ConnectOpenClawBridge();
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnDisconnectClicked()
+{
+	DisconnectOpenClawBridge();
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnDiagnoseClicked()
+{
+	RunDiagnoseConnection();
 	return FReply::Handled();
 }
 
@@ -389,6 +473,29 @@ FReply SUEAgentDashboard::OnSendClicked()
 		return FReply::Handled();
 	}
 
+	// 关闭 Slash 菜单
+	if (SlashMenuAnchor.IsValid())
+	{
+		SlashMenuAnchor->SetIsOpen(false);
+	}
+
+	// 清空输入框
+	InputTextBox->SetText(FText::GetEmpty());
+
+	// 检查是否为 Slash 命令
+	if (InputText.StartsWith(TEXT("/")))
+	{
+		// 解析命令和参数
+		FString Command, Args;
+		if (!InputText.Split(TEXT(" "), &Command, &Args))
+		{
+			Command = InputText;
+			Args = TEXT("");
+		}
+		HandleSlashCommand(Command.ToLower(), Args.TrimStartAndEnd());
+		return FReply::Handled();
+	}
+
 	// 防止重复发送
 	if (bIsWaitingForResponse)
 	{
@@ -396,28 +503,26 @@ FReply SUEAgentDashboard::OnSendClicked()
 		return FReply::Handled();
 	}
 
-	// 关闭 Slash 菜单
-	if (SlashMenuAnchor.IsValid())
-	{
-		SlashMenuAnchor->SetIsOpen(false);
-	}
-
 	// 添加用户消息
 	AddMessage(TEXT("user"), InputText);
 
-	// 清空输入框
-	InputTextBox->SetText(FText::GetEmpty());
-
-	// 通过 OpenClaw Gateway HTTP API 转发给 AI
+	// 通过 OpenClaw Python Bridge 转发给 AI
 	SendToOpenClaw(InputText);
 
 	return FReply::Handled();
 }
 
-FReply SUEAgentDashboard::OnClearClicked()
+FReply SUEAgentDashboard::OnNewChatClicked()
 {
 	Messages.Empty();
 	RebuildMessageList();
+	AddMessage(TEXT("system"), TEXT("New conversation started."));
+	// 可选: 通知 Python Bridge 重置 session
+	IPythonScriptPlugin::Get()->ExecPythonCommand(
+		TEXT("try:\n")
+		TEXT("    from openclaw_bridge import _bridge\n")
+		TEXT("    if _bridge: _bridge._session_key = ''\n")
+		TEXT("except: pass"));
 	return FReply::Handled();
 }
 
@@ -433,11 +538,40 @@ void SUEAgentDashboard::OnInputTextChanged(const FText& NewText)
 
 void SUEAgentDashboard::OnInputTextCommitted(const FText& NewText, ETextCommit::Type CommitType)
 {
-	// Ctrl+Enter 发送 (SMultiLineEditableTextBox 的 OnEnter 默认换行)
 	if (CommitType == ETextCommit::OnEnter)
 	{
-		OnSendClicked();
+		if (bEnterToSend)
+		{
+			// Enter 直接发送模式
+			OnSendClicked();
+		}
+		// 否则 Enter 换行 (SMultiLineEditableTextBox 默认行为)
+		// Ctrl+Enter 在 SMultiLineEditableTextBox 中也触发 OnEnter，
+		// 所以在非 Enter 直发模式下也能发送
 	}
+}
+
+// ==================================================================
+// 发送模式
+// ==================================================================
+
+void SUEAgentDashboard::OnSendModeChanged(ECheckBoxState NewState)
+{
+	bEnterToSend = (NewState == ECheckBoxState::Checked);
+}
+
+bool SUEAgentDashboard::ShouldSendOnEnter() const
+{
+	return bEnterToSend;
+}
+
+FText SUEAgentDashboard::GetSendHintText() const
+{
+	if (bEnterToSend)
+	{
+		return LOCTEXT("InputHintEnter", "Ask AI anything... (Enter to send, Shift+Enter for newline, / for commands)");
+	}
+	return LOCTEXT("InputHintCtrlEnter", "Ask AI anything... (Ctrl+Enter to send, Enter for newline, / for commands)");
 }
 
 // ==================================================================
@@ -454,17 +588,28 @@ void SUEAgentDashboard::InitSlashCommands()
 	};
 
 	AllSlashCommands = {
-		MakeCmd(TEXT("/select"),    TEXT("Show currently selected actors")),
-		MakeCmd(TEXT("/create"),    TEXT("Create an actor (e.g. /create StaticMesh Cube)")),
-		MakeCmd(TEXT("/delete"),    TEXT("Delete selected actors")),
-		MakeCmd(TEXT("/material"),  TEXT("Inspect or modify materials")),
-		MakeCmd(TEXT("/camera"),    TEXT("Get or set viewport camera")),
-		MakeCmd(TEXT("/level"),     TEXT("Show level information")),
-		MakeCmd(TEXT("/assets"),    TEXT("Search or list assets")),
-		MakeCmd(TEXT("/run"),       TEXT("Execute Python code directly")),
-		MakeCmd(TEXT("/status"),    TEXT("Show agent connection status")),
-		MakeCmd(TEXT("/clear"),     TEXT("Clear chat history")),
-		MakeCmd(TEXT("/help"),      TEXT("Show all available commands")),
+		// --- 会话管理 ---
+		MakeCmd(TEXT("/new"),        TEXT("Start a new conversation")),
+		MakeCmd(TEXT("/clear"),      TEXT("Clear chat history (alias for /new)")),
+
+		// --- 连接管理 ---
+		MakeCmd(TEXT("/connect"),    TEXT("Connect to OpenClaw Gateway")),
+		MakeCmd(TEXT("/disconnect"), TEXT("Disconnect from OpenClaw Gateway")),
+		MakeCmd(TEXT("/diagnose"),   TEXT("Run connection diagnostics")),
+		MakeCmd(TEXT("/status"),     TEXT("Show agent connection status")),
+
+		// --- AI 工具 ---
+		MakeCmd(TEXT("/select"),     TEXT("Show currently selected actors")),
+		MakeCmd(TEXT("/create"),     TEXT("Create an actor (e.g. /create StaticMesh Cube)")),
+		MakeCmd(TEXT("/delete"),     TEXT("Delete selected actors")),
+		MakeCmd(TEXT("/material"),   TEXT("Inspect or modify materials")),
+		MakeCmd(TEXT("/camera"),     TEXT("Get or set viewport camera")),
+		MakeCmd(TEXT("/level"),      TEXT("Show level information")),
+		MakeCmd(TEXT("/assets"),     TEXT("Search or list assets")),
+		MakeCmd(TEXT("/run"),        TEXT("Execute Python code directly")),
+
+		// --- 帮助 ---
+		MakeCmd(TEXT("/help"),       TEXT("Show all available commands")),
 	};
 }
 
@@ -541,52 +686,100 @@ void SUEAgentDashboard::OnSlashCommandSelected(FSlashCommandPtr Item, ESelectInf
 		return;
 	}
 
-	// 处理内置命令
-	if (Item->Command == TEXT("/clear"))
+	const FString& Cmd = Item->Command;
+
+	// 从命令中解析参数部分 (如果输入框有额外内容)
+	FString InputArgs;
+	if (InputTextBox.IsValid())
 	{
-		OnClearClicked();
-		if (InputTextBox.IsValid())
+		FString FullInput = InputTextBox->GetText().ToString();
+		if (FullInput.StartsWith(Cmd))
 		{
-			InputTextBox->SetText(FText::GetEmpty());
-		}
-	}
-	else if (Item->Command == TEXT("/help"))
-	{
-		FString HelpText = TEXT("Available commands:\n");
-		for (const auto& Cmd : AllSlashCommands)
-		{
-			HelpText += FString::Printf(TEXT("  %s - %s\n"), *Cmd->Command, *Cmd->Description);
-		}
-		AddMessage(TEXT("system"), HelpText);
-		if (InputTextBox.IsValid())
-		{
-			InputTextBox->SetText(FText::GetEmpty());
-		}
-	}
-	else if (Item->Command == TEXT("/status"))
-	{
-		FString StatusText = FString::Printf(TEXT("Connection: %s\nServer: %s"),
-			bCachedIsConnected ? TEXT("Connected") : TEXT("Disconnected"),
-			CachedSubsystem.IsValid() ? *CachedSubsystem->GetServerAddress() : TEXT("N/A"));
-		AddMessage(TEXT("system"), StatusText);
-		if (InputTextBox.IsValid())
-		{
-			InputTextBox->SetText(FText::GetEmpty());
-		}
-	}
-	else
-	{
-		// 将命令填入输入框并追加空格，等待用户补充参数
-		if (InputTextBox.IsValid())
-		{
-			InputTextBox->SetText(FText::FromString(Item->Command + TEXT(" ")));
+			InputArgs = FullInput.Mid(Cmd.Len()).TrimStartAndEnd();
 		}
 	}
 
-	// 关闭菜单
+	// 处理命令
+	HandleSlashCommand(Cmd, InputArgs);
+
+	// 清空输入框并关闭菜单
+	if (InputTextBox.IsValid())
+	{
+		InputTextBox->SetText(FText::GetEmpty());
+	}
 	if (SlashMenuAnchor.IsValid())
 	{
 		SlashMenuAnchor->SetIsOpen(false);
+	}
+}
+
+// ==================================================================
+// Slash 命令处理 (集中路由)
+// ==================================================================
+
+void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString& Args)
+{
+	if (Command == TEXT("/new") || Command == TEXT("/clear"))
+	{
+		OnNewChatClicked();
+	}
+	else if (Command == TEXT("/connect"))
+	{
+		ConnectOpenClawBridge();
+	}
+	else if (Command == TEXT("/disconnect"))
+	{
+		DisconnectOpenClawBridge();
+	}
+	else if (Command == TEXT("/diagnose"))
+	{
+		RunDiagnoseConnection();
+	}
+	else if (Command == TEXT("/status"))
+	{
+		FString StatusText = FString::Printf(
+			TEXT("Connection: %s\nServer: %s\nMessages: %d"),
+			bCachedIsConnected ? TEXT("Connected") : TEXT("Disconnected"),
+			CachedSubsystem.IsValid() ? *CachedSubsystem->GetServerAddress() : TEXT("N/A"),
+			Messages.Num());
+		AddMessage(TEXT("system"), StatusText);
+	}
+	else if (Command == TEXT("/help"))
+	{
+		FString HelpText = TEXT("Available commands:\n");
+		HelpText += TEXT("\n  Session:\n");
+		HelpText += TEXT("    /new         - Start a new conversation\n");
+		HelpText += TEXT("    /clear       - Alias for /new\n");
+		HelpText += TEXT("\n  Connection:\n");
+		HelpText += TEXT("    /connect     - Connect to OpenClaw Gateway\n");
+		HelpText += TEXT("    /disconnect  - Disconnect from Gateway\n");
+		HelpText += TEXT("    /diagnose    - Run connection diagnostics\n");
+		HelpText += TEXT("    /status      - Show connection status\n");
+		HelpText += TEXT("\n  AI Tools:\n");
+		for (const auto& Cmd : AllSlashCommands)
+		{
+			// 跳过已列出的命令
+			if (Cmd->Command == TEXT("/new") || Cmd->Command == TEXT("/clear") ||
+				Cmd->Command == TEXT("/connect") || Cmd->Command == TEXT("/disconnect") ||
+				Cmd->Command == TEXT("/diagnose") || Cmd->Command == TEXT("/status") ||
+				Cmd->Command == TEXT("/help"))
+			{
+				continue;
+			}
+			HelpText += FString::Printf(TEXT("    %-12s - %s\n"), *Cmd->Command, *Cmd->Description);
+		}
+		AddMessage(TEXT("system"), HelpText);
+	}
+	else
+	{
+		// AI 工具命令: 将 "/command args" 整合成自然语言发送给 AI
+		FString FullMessage = Command;
+		if (!Args.IsEmpty())
+		{
+			FullMessage += TEXT(" ") + Args;
+		}
+		AddMessage(TEXT("user"), FullMessage);
+		SendToOpenClaw(FullMessage);
 	}
 }
 
@@ -687,9 +880,100 @@ void SUEAgentDashboard::RebuildMessageList()
 }
 
 // ==================================================================
-// OpenClaw Gateway 通信 (阶段 3) — 通过 Python Bridge
+// OpenClaw Bridge 连接管理
 // ==================================================================
 
+void SUEAgentDashboard::ConnectOpenClawBridge()
+{
+	AddMessage(TEXT("system"), TEXT("Connecting to OpenClaw Gateway..."));
+
+	FString PythonCmd = TEXT(
+		"from openclaw_bridge import connect\n"
+		"connect()\n"
+		"import time; time.sleep(1.5)\n"
+		"from openclaw_bridge import is_connected\n"
+		"if is_connected():\n"
+		"    print('[LogUEAgent] OpenClaw Bridge connected successfully')\n"
+		"else:\n"
+		"    print('[LogUEAgent] OpenClaw Bridge connection pending...')\n"
+	);
+	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+
+	// 延迟检查连接状态
+	auto Self = SharedThis(this);
+	FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([Self](float) -> bool
+		{
+			FString CheckCmd = TEXT(
+				"from openclaw_bridge import is_connected\n"
+				"_ue_bridge_connected = is_connected()\n"
+			);
+			IPythonScriptPlugin::Get()->ExecPythonCommand(*CheckCmd);
+			// 由于无法直接返回 Python 值，通过文件或日志间接确认
+			Self->AddMessage(TEXT("system"), TEXT("OpenClaw Bridge connect requested. Check status with /status."));
+			return false;
+		}),
+		2.0f
+	);
+}
+
+void SUEAgentDashboard::DisconnectOpenClawBridge()
+{
+	FString PythonCmd = TEXT(
+		"from openclaw_bridge import shutdown\n"
+		"shutdown()\n"
+		"print('[LogUEAgent] OpenClaw Bridge disconnected')\n"
+	);
+	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+	AddMessage(TEXT("system"), TEXT("OpenClaw Bridge disconnected."));
+}
+
+void SUEAgentDashboard::RunDiagnoseConnection()
+{
+	AddMessage(TEXT("system"), TEXT("Running connection diagnostics..."));
+
+	// 诊断结果写入临时文件，然后轮询读取
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString DiagFile = TempDir / TEXT("_diagnose_result.txt");
+
+	// 清除上次结果
+	IFileManager::Get().Delete(*DiagFile, false, false, true);
+
+	FString PythonCmd = FString::Printf(
+		TEXT("from openclaw_bridge import diagnose_connection\n"
+			 "result = diagnose_connection()\n"
+			 "with open(r'%s', 'w', encoding='utf-8') as f:\n"
+			 "    f.write(result)\n"),
+		*DiagFile);
+	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+
+	// 轮询诊断结果文件
+	auto Self = SharedThis(this);
+	FString CapturedFile = DiagFile;
+	FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([Self, CapturedFile](float) -> bool
+		{
+			if (!FPaths::FileExists(CapturedFile))
+			{
+				return true; // 继续等待
+			}
+
+			FString Content;
+			if (FFileHelper::LoadFileToString(Content, *CapturedFile))
+			{
+				IFileManager::Get().Delete(*CapturedFile, false, false, true);
+				Self->AddMessage(TEXT("system"), Content);
+			}
+			return false;
+		}),
+		0.5f
+	);
+}
+
+// ==================================================================
+// OpenClaw Gateway 通信 (阶段 3) — 通过 Python Bridge
+// ==================================================================
 
 void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 {
