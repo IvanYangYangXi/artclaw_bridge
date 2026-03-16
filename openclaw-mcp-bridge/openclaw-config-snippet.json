@@ -1,5 +1,6 @@
 {
   "$comment": "将以下内容合并到 ~/.openclaw/openclaw.json 的 plugins 部分",
+  "$doc": "详见 docs/specs/openClaw集成方案.md §5",
 
   "plugins": {
     "allow": ["mcp-bridge"],
@@ -8,13 +9,32 @@
         "enabled": true,
         "config": {
           "servers": {
-            "my-mcp-server": {
+            "ue-editor-agent": {
               "type": "websocket",
-              "url": "ws://127.0.0.1:8080"
+              "url": "ws://127.0.0.1:8080",
+              "$comment": "UE Editor Agent MCP Server (自动端口探测 8080+)"
             }
           }
         }
       }
+    }
+  },
+
+  "$agents_example": {
+    "$comment": "如果 Agent 使用了 tools.allow 白名单，需加入以下配置",
+    "agents": {
+      "list": [
+        {
+          "id": "ue-assistant",
+          "tools": {
+            "allow": [
+              "mcp-bridge",
+              "mcp_ue-editor-agent_run_ue_python",
+              "mcp_ue-editor-agent_analyze_error"
+            ]
+          }
+        }
+      ]
     }
   }
 }

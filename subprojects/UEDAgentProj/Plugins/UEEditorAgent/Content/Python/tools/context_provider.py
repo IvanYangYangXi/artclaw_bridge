@@ -439,11 +439,31 @@ def register_tools(mcp_server) -> None:
         handler=_handle_set_viewport_camera,
     )
 
-    UELogger.info("Phase 2 tools registered: 5 tools")
+    # --- 2.5: 编辑器模式智能过滤 / 动态 Prompt ---
+    mcp_server.register_tool(
+        name="get_dynamic_prompt",
+        description=(
+            "Get a dynamic system prompt based on the current editor mode and context. "
+            "Use this at the start of a task to get mode-specific guidance. "
+            "Returns preferred APIs, current selection summary, and contextual hints."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "task_intent": {
+                    "type": "string",
+                    "description": "Brief description of what the user wants to do (optional)",
+                },
+            },
+        },
+        handler=_handle_get_dynamic_prompt,
+    )
+
+    UELogger.info("Phase 2 tools registered: 7 tools")
 
 
 # ============================================================================
-# 5. Tool Handlers (阶段 2.4)
+# 5. Tool Handlers (阶段 2.4 / 2.5)
 # ============================================================================
 
 def _handle_focus_on_actor(arguments: dict) -> str:
@@ -471,8 +491,34 @@ def _handle_focus_on_actor(arguments: dict) -> str:
             # 选中 Actor（会在视口中高亮）
             unreal.EditorLevelLibrary.set_selected_level_actors([target])
 
-        # 聚焦视口
-        unreal.EditorLevelLibrary.pilot_level_actor(target)
+        # 聚焦视口到选中 Actor (使用 GEditor 内置聚焦)
+        # 先选中再执行 "FocusViewportOnSelection" 命令
+        unreal.EditorLevelLibrary.set_selected_level_actors([target])
+
+        # 获取 actor 的位置，将相机设置到附近
+        loc = target.get_actor_location()
+        rot = target.get_actor_rotation()
+
+        # 使用 bounds 来计算合适的相机距离
+        try:
+            origin = unreal.Vector()
+            extent = unreal.Vector()
+            target.get_actor_bounds(False, origin, extent)
+            max_extent = max(abs(extent.x), abs(extent.y), abs(extent.z), 100.0)
+            # 相机放在 actor 前方，距离为 extent 的 2.5 倍
+            cam_offset = max_extent * 2.5
+            cam_loc = unreal.Vector(
+                loc.x - cam_offset * 0.7,
+                loc.y - cam_offset * 0.7,
+                loc.z + cam_offset * 0.5,
+            )
+            cam_rot = unreal.Rotator(-20.0, 45.0, 0.0)
+            unreal.EditorLevelLibrary.set_level_viewport_camera_info(cam_loc, cam_rot)
+        except Exception:
+            # Fallback: 直接设置到 actor 位置偏移
+            cam_loc = unreal.Vector(loc.x - 500, loc.y - 500, loc.z + 300)
+            cam_rot = unreal.Rotator(-20.0, 45.0, 0.0)
+            unreal.EditorLevelLibrary.set_level_viewport_camera_info(cam_loc, cam_rot)
 
         return json.dumps({
             "success": True,
@@ -481,6 +527,93 @@ def _handle_focus_on_actor(arguments: dict) -> str:
 
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)})
+
+
+def _handle_get_dynamic_prompt(arguments: dict) -> str:
+    """
+    根据当前编辑器模式生成动态 Prompt，供 OpenClaw Agent 使用。
+
+    宪法约束:
+      - 开发路线图 §2.5: 根据当前模式动态调整 AI 的 System Prompt
+      - 集成方案 §8 Phase 2: feature/openclaw-editor-mode-filter
+    """
+    task_intent = arguments.get("task_intent", "")
+
+    mode = detect_editor_mode()
+    mode_ctx = get_mode_context(mode)
+
+    # 获取选中信息
+    try:
+        selection = unreal.EditorLevelLibrary.get_selected_level_actors()
+        sel_count = len(selection)
+        sel_summary = []
+        for a in selection[:5]:  # 最多展示 5 个
+            sel_summary.append(f"{a.get_actor_label()} ({a.get_class().get_name()})")
+    except Exception:
+        sel_count = 0
+        sel_summary = []
+
+    # 获取关卡信息
+    try:
+        world = unreal.EditorLevelLibrary.get_editor_world()
+        level_name = str(world.get_name()) if world else "Unknown"
+        all_count = len(unreal.EditorLevelLibrary.get_all_level_actors())
+    except Exception:
+        level_name = "Unknown"
+        all_count = 0
+
+    # 引擎版本
+    try:
+        engine_ver = str(unreal.SystemLibrary.get_engine_version())
+    except Exception:
+        engine_ver = "5.x"
+
+    # 构建动态 Prompt
+    prompt_parts = [
+        f"## Current UE Editor Context",
+        f"- Engine: Unreal Engine {engine_ver}",
+        f"- Level: {level_name} ({all_count} actors)",
+        f"- Editor Mode: {mode_ctx.get('mode', 'unknown')}",
+        f"- Selected: {sel_count} actor(s)",
+    ]
+
+    if sel_summary:
+        prompt_parts.append(f"- Selection: {', '.join(sel_summary)}")
+
+    prompt_parts.append(f"\n## Mode-Specific Guidance")
+    prompt_parts.append(f"- {mode_ctx.get('hint', '')}")
+
+    preferred = mode_ctx.get("preferred_apis", [])
+    if preferred:
+        prompt_parts.append(f"- Preferred APIs: {', '.join(preferred)}")
+
+    prompt_parts.append(f"\n## Important Rules")
+    prompt_parts.append(f"- All code runs via `run_ue_python`. Use `import unreal` at the top.")
+    prompt_parts.append(f"- Shortcut variables available: S (selected actors), W (world), L (EditorLevelLibrary), A (EditorAssetLibrary), U (unreal module)")
+    prompt_parts.append(f"- Wrap destructive operations carefully. The system will auto-wrap in ScopedEditorTransaction for Ctrl+Z support.")
+    prompt_parts.append(f"- After modifying actors, consider calling `focus_on_actor` or `highlight_actors` to give visual feedback.")
+
+    if task_intent:
+        prompt_parts.append(f"\n## User Intent")
+        prompt_parts.append(f"- \"{task_intent}\"")
+
+        # 任务感知提示
+        intent_lower = task_intent.lower()
+        if any(k in intent_lower for k in ["material", "材质", "贴图", "texture"]):
+            prompt_parts.append(f"- Hint: For material tasks, use `unreal.MaterialEditingLibrary` and `unreal.EditorAssetLibrary`.")
+        elif any(k in intent_lower for k in ["light", "灯光", "照明"]):
+            prompt_parts.append(f"- Hint: For lighting, create/modify PointLight, SpotLight, DirectionalLight actors.")
+        elif any(k in intent_lower for k in ["delete", "remove", "删除", "清理"]):
+            prompt_parts.append(f"- Hint: Deletion is high-risk. The system will prompt user confirmation.")
+        elif any(k in intent_lower for k in ["layout", "布局", "排列", "align"]):
+            prompt_parts.append(f"- Hint: Use actor transforms (location, rotation, scale) to arrange objects.")
+
+    return json.dumps({
+        "prompt": "\n".join(prompt_parts),
+        "mode": mode_ctx,
+        "selection_count": sel_count,
+        "engine_version": engine_ver,
+    }, default=str)
 
 
 def _handle_highlight_actors(arguments: dict) -> str:
@@ -503,6 +636,27 @@ def _handle_highlight_actors(arguments: dict) -> str:
 
         if found:
             unreal.EditorLevelLibrary.set_selected_level_actors(found)
+
+            # 自动聚焦到选中 Actor 群体的中心
+            if len(found) == 1:
+                loc = found[0].get_actor_location()
+                cam_loc = unreal.Vector(loc.x - 500, loc.y - 500, loc.z + 300)
+                cam_rot = unreal.Rotator(-20.0, 45.0, 0.0)
+                unreal.EditorLevelLibrary.set_level_viewport_camera_info(cam_loc, cam_rot)
+            elif len(found) > 1:
+                # 计算中心点
+                cx, cy, cz = 0.0, 0.0, 0.0
+                for a in found:
+                    l = a.get_actor_location()
+                    cx += l.x
+                    cy += l.y
+                    cz += l.z
+                cx /= len(found)
+                cy /= len(found)
+                cz /= len(found)
+                cam_loc = unreal.Vector(cx - 800, cy - 800, cz + 500)
+                cam_rot = unreal.Rotator(-25.0, 45.0, 0.0)
+                unreal.EditorLevelLibrary.set_level_viewport_camera_info(cam_loc, cam_rot)
 
         return json.dumps({
             "success": True,
