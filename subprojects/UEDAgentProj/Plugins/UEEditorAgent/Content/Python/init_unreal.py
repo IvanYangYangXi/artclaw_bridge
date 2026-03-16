@@ -543,6 +543,22 @@ def _check_offline_bundle() -> bool:
         return False
 
 
+def _check_dependencies_fast() -> bool:
+    """
+    快速检测依赖是否已安装（不安装，仅检测）。
+
+    Returns:
+        True 如果所有必需包都已可用
+    """
+    _ensure_lib_dir()
+    _add_lib_to_path()
+
+    for import_name, _ in _REQUIRED_PACKAGES:
+        if not _check_package_available(import_name):
+            return False
+    return True
+
+
 def _install_dependencies():
     """
     主依赖安装流程。
@@ -670,6 +686,7 @@ def _is_mcp_server_alive(host: str = "127.0.0.1", port: int = 8080, timeout: flo
         return False
 
 
+
 def _start_mcp_gateway():
     """
     启动 MCP WebSocket 通信网关 (阶段 1.1)。
@@ -678,15 +695,19 @@ def _start_mcp_gateway():
       1. 检测 MCP Server 是否已在运行 (端口 8080)
       2. 如果已在运行 → 跳过，避免重复启动
       3. 如果未运行 → 先尝试关闭残留实例，再启动新实例
-      4. 启动后验证端口是否真正开始监听
+      4. 端口就绪验证通过 deferred tick 异步完成，不阻塞主线程
 
     宪法约束:
       - 开发路线图 §1.1: WebSocket 服务器在插件启动时自动启动
       - 系统架构设计 §1.2: WebSocket 传输层
     """
-    import time
-
+    import builtins as _bi
     host, port = "127.0.0.1", 8080
+
+    # 步骤 0: 防止并发/重复启动（用 builtins 跨 exec 持久化）
+    if getattr(_bi, '_UE_MCP_GATEWAY_STARTING', False):
+        UELogger.info("MCP Gateway startup already in progress, skipping duplicate call")
+        return
 
     # 步骤 1: 检测是否已在运行
     if _is_mcp_server_alive(host, port):
@@ -694,49 +715,60 @@ def _start_mcp_gateway():
         sync_connection_state(False)  # 等 client 连接后再改 True
         return
 
-    # 步骤 2: 清理可能残留的旧实例
+    _bi._UE_MCP_GATEWAY_STARTING = True
+
+    # 步骤 2: 清理可能残留的旧实例（非阻塞：不 sleep）
     UELogger.info(f"MCP Server not detected on {host}:{port}, starting...")
     try:
         from mcp_server import stop_mcp_server, _mcp_server
         if _mcp_server is not None:
             UELogger.info("Cleaning up stale MCP Server instance...")
             stop_mcp_server()
-            time.sleep(0.5)  # 给端口释放一点时间
     except (ImportError, Exception) as e:
         UELogger.info(f"No stale instance to clean: {e}")
 
-    # 步骤 3: 启动新实例
+    # 步骤 3: 启动新实例（start_mcp_server 内部通过 slate tick 驱动 asyncio，不阻塞）
     try:
         from mcp_server import start_mcp_server
         success = start_mcp_server(host="localhost", port=port)
         if not success:
             UELogger.warning("MCP Gateway start_mcp_server returned False")
+            _bi._UE_MCP_GATEWAY_STARTING = False
             return
     except ImportError as e:
         UELogger.warning(f"MCP Server module not available: {e}")
+        _bi._UE_MCP_GATEWAY_STARTING = False
         return
     except Exception:
         UELogger.exception("MCP Gateway startup error")
+        _bi._UE_MCP_GATEWAY_STARTING = False
         return
 
-    # 步骤 4: 验证启动成功 (等待最多 3 秒)
-    for i in range(6):
-        time.sleep(0.5)
+    # 步骤 4: 异步验证端口就绪（通过 tick 回调，不用 time.sleep）
+    _verify_counter = [0]
+    _max_checks = 600  # 600 次 tick，覆盖启动期间低帧率场景（约 10 秒超时）
+
+    def _verify_tick(delta_time):
+        _verify_counter[0] += 1
         if _is_mcp_server_alive(host, port):
-            UELogger.info(f"MCP Gateway started successfully on {host}:{port}")
+            UELogger.info(f"MCP Gateway verified on {host}:{port} (after {_verify_counter[0]} ticks)")
+            unreal.unregister_slate_post_tick_callback(_verify_handle)
             return
+        # 也检查递增端口
+        for alt_port in range(port + 1, port + 5):
+            if _is_mcp_server_alive(host, alt_port):
+                UELogger.info(f"MCP Gateway verified on {host}:{alt_port} (after {_verify_counter[0]} ticks)")
+                unreal.unregister_slate_post_tick_callback(_verify_handle)
+                return
+        if _verify_counter[0] >= _max_checks:
+            UELogger.warning(
+                f"MCP Gateway startup may have failed — "
+                f"port {port} not responding after {_max_checks} ticks. "
+                f"Use /diagnose to troubleshoot."
+            )
+            unreal.unregister_slate_post_tick_callback(_verify_handle)
 
-    # 也检查递增端口 (端口冲突时可能绑到 8081 等)
-    for alt_port in range(port + 1, port + 5):
-        if _is_mcp_server_alive(host, alt_port):
-            UELogger.info(f"MCP Gateway started on alternate port {host}:{alt_port}")
-            return
-
-    UELogger.warning(
-        f"MCP Gateway startup may have failed — "
-        f"port {port} not responding after 3s. "
-        f"Use /diagnose to troubleshoot."
-    )
+    _verify_handle = unreal.register_slate_post_tick_callback(_verify_tick)
 
 
 def _register_shutdown_hook():
@@ -758,44 +790,133 @@ def _register_shutdown_hook():
     atexit.register(_on_shutdown)
 
 
+def _deferred_startup():
+    """
+    延迟启动：在后台线程中执行耗时的依赖安装和 MCP 网关启动。
+
+    通过 unreal.register_slate_post_tick_callback 在下一帧触发，
+    避免阻塞编辑器启动。
+    """
+    import threading
+
+    def _bg_work():
+        try:
+            # 步骤 1: 安装缺失依赖（可能触发 pip install）
+            deps_ok = _install_dependencies()
+
+            if not deps_ok:
+                UELogger.warning("Deferred startup: dependencies incomplete, MCP Gateway skipped")
+                return
+
+            # 步骤 2: 启动 MCP 网关（这里面有端口探测 + asyncio 初始化）
+            # 注意：_start_mcp_gateway 内部的 start_mcp_server 会注册
+            # slate_post_tick_callback，必须在主线程执行。
+            # 所以我们用 _schedule_on_game_thread 把它排回主线程。
+            _schedule_mcp_start_on_game_thread()
+
+        except Exception:
+            UELogger.exception("Deferred startup error")
+
+    thread = threading.Thread(target=_bg_work, daemon=True, name="UEAgent-DeferredInit")
+    thread.start()
+    UELogger.info("Deferred startup dispatched to background thread")
+
+
+def _schedule_mcp_start_on_game_thread():
+    """
+    将 MCP 网关启动排回主线程执行。
+
+    MCP Server 的 asyncio bridge 需要注册 slate_post_tick_callback，
+    这个 API 必须在主线程调用。
+    """
+    _pending_init_callbacks = []
+    _init_lock = __import__('threading').Lock()
+
+    def _do_start():
+        try:
+            _start_mcp_gateway()
+            _register_shutdown_hook()
+            UELogger.info("MCP Gateway started (from game thread)")
+        except Exception:
+            UELogger.exception("MCP Gateway start failed (from game thread)")
+
+    def _tick_init(delta_time):
+        # 只执行一次，然后注销自己
+        try:
+            _do_start()
+        finally:
+            unreal.unregister_slate_post_tick_callback(_tick_handle)
+
+    _tick_handle = unreal.register_slate_post_tick_callback(_tick_init)
+
+
 def _initialize():
     """
     插件 Python 层初始化入口。
 
     执行顺序：
-    1. 安装日志重定向 (0.4)
-    2. 安装异常处理器 (0.4)
-    3. 安装依赖 (0.5)
-    4. 同步初始状态 (0.2 延续)
-    5. 启动 MCP 网关 (1.1)
+    1. 安装日志重定向 (0.4) — 同步，极快
+    2. 安装异常处理器 (0.4) — 同步，极快
+    3. 快速检测依赖 — 同步，仅 import 检查
+    4a. 依赖已就绪 → 延迟到首个 Slate tick 启动 MCP 网关
+    4b. 依赖缺失 → 延迟到后台线程安装，安装完成后回主线程启动 MCP
+
+    注意：本函数可能在 Engine Init 阶段被调用（Slate 尚未 tick），
+    因此 MCP 启动必须通过 slate_post_tick_callback 延迟执行。
     """
-    # --- 阶段 0.4: 日志系统 ---
+    # --- 阶段 0.4: 日志系统（极快） ---
     _install_stream_redirectors()
     _install_exception_hook()
     UELogger.info("=" * 60)
     UELogger.info("UE Claw Bridge - Python Layer Initializing")
     UELogger.info("=" * 60)
 
-    # --- 阶段 0.5: 依赖隔离 ---
-    deps_ok = _install_dependencies()
+    # --- 快速依赖检测（仅 import 检查，不安装） ---
+    deps_ready = _check_dependencies_fast()
 
-    # --- 状态同步 ---
-    UELogger.info("-" * 40)
-    if deps_ok:
-        UELogger.info("Python layer initialization complete")
-    else:
-        UELogger.warning("Python layer initialized with missing dependencies")
-
-    # 初始化连接状态（默认离线，等待 MCP 网关启动后更新）
+    # 初始化连接状态（默认离线）
     sync_connection_state(False)
 
-    # --- 阶段 1.1: MCP WebSocket 通信网关 ---
-    if deps_ok:
-        _start_mcp_gateway()
-        _register_shutdown_hook()
+    if deps_ready:
+        # 依赖已就绪 → 延迟到首个 Slate tick 再启动 MCP
+        # 不在这里直接调用 _start_mcp_gateway()，因为 Engine Init 阶段
+        # Slate 还没 tick，asyncio bridge 无法运转
+        UELogger.info("All dependencies ready, deferring MCP Gateway to first Slate tick...")
+        UELogger.info("-" * 40)
+
+        def _deferred_mcp_tick(delta_time):
+            """首个 Slate tick 回调：启动 MCP 网关"""
+            try:
+                _start_mcp_gateway()
+                _register_shutdown_hook()
+                UELogger.info("Python layer initialization complete")
+            except Exception:
+                UELogger.exception("Deferred MCP Gateway start failed")
+            finally:
+                unreal.unregister_slate_post_tick_callback(_deferred_mcp_handle)
+
+        _deferred_mcp_handle = unreal.register_slate_post_tick_callback(_deferred_mcp_tick)
     else:
-        UELogger.warning("Skipping MCP Gateway (missing dependencies)")
+        # 依赖缺失 → 后台安装，不阻塞编辑器
+        UELogger.info("Missing dependencies detected, deferring install to background...")
+        UELogger.info("-" * 40)
+        UELogger.info("Python layer initialized (MCP Gateway pending dependency install)")
+        _deferred_startup()
 
 
-# 自动执行初始化
-_initialize()
+# ============================================================================
+# 5. 初始化守卫 — 防止重复执行
+# ============================================================================
+# UE PythonScriptPlugin 可能多次 exec 本文件（Engine Init 阶段 + 延迟加载阶段），
+# C++ 端的 ConnectOpenClawBridge 也会 import 并调用 _start_mcp_gateway。
+#
+# 关键：UE 的 exec() 不走 sys.modules 缓存，所以模块级变量每次都被重置。
+# 必须用 builtins 或全局字典来跨 exec 持久化标志。
+
+import builtins as _builtins
+
+if not getattr(_builtins, '_UE_AGENT_INITIALIZED', False):
+    _builtins._UE_AGENT_INITIALIZED = True
+    _initialize()
+else:
+    UELogger.info("Python layer already initialized, skipping duplicate _initialize()")

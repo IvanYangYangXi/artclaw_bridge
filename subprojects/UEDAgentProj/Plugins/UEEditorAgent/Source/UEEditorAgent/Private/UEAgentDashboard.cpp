@@ -19,6 +19,9 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Misc/MessageDialog.h"
 #include "IPythonScriptPlugin.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+#include "Dom/JsonObject.h"
 
 #define LOCTEXT_NAMESPACE "UEAgentDashboard"
 
@@ -333,21 +336,30 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	// 打开面板时自动连接 OpenClaw Bridge
 	ConnectOpenClawBridge();
 
-	// 检查 MCP Server 状态并提示
+	// MCP Server 状态检查延迟到 3 秒后执行，避免在启动阶段误报
+	// （MCP Server 通过 Slate tick 异步启动，Dashboard 构造时可能还没就绪）
 	{
-		FString CheckMcpCmd = TEXT(
-			"import socket\n"
-			"_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
-			"_s.settimeout(0.5)\n"
-			"try:\n"
-			"    _s.connect(('127.0.0.1', 8080))\n"
-			"    _s.close()\n"
-			"    print('[LogUEAgent] MCP Server: port 8080 OK')\n"
-			"except:\n"
-			"    _s.close()\n"
-			"    print('[LogUEAgent_Error] MCP Server: port 8080 NOT listening')\n"
+		auto Self = SharedThis(this);
+		FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateLambda([Self](float) -> bool
+			{
+				FString CheckMcpCmd = TEXT(
+					"import socket\n"
+					"_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+					"_s.settimeout(0.5)\n"
+					"try:\n"
+					"    _s.connect(('127.0.0.1', 8080))\n"
+					"    _s.close()\n"
+					"    print('[LogUEAgent] MCP Server: port 8080 OK')\n"
+					"except:\n"
+					"    _s.close()\n"
+					"    print('[LogUEAgent_Error] MCP Server: port 8080 NOT listening')\n"
+				);
+				IPythonScriptPlugin::Get()->ExecPythonCommand(*CheckMcpCmd);
+				return false; // 只执行一次
+			}),
+			3.0f // 延迟 3 秒
 		);
-		IPythonScriptPlugin::Get()->ExecPythonCommand(*CheckMcpCmd);
 	}
 }
 
@@ -1024,10 +1036,11 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 {
 	AddMessage(TEXT("system"), TEXT("Connecting..."));
 
-	// 检测 UE MCP Server，不存在则自动重启
+	// 检测 UE MCP Server 是否就绪（只检查，不重复启动；
+	// init_unreal.py 已通过 Slate tick 延迟启动 MCP，这里只需等待）
 	FString CheckMcp = TEXT(
 		"import socket\n"
-		"def _check_and_start_mcp():\n"
+		"def _check_mcp_ready():\n"
 		"    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
 		"    s.settimeout(0.5)\n"
 		"    try:\n"
@@ -1036,10 +1049,8 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 		"        print('[LogUEAgent] MCP Server: OK')\n"
 		"    except:\n"
 		"        s.close()\n"
-		"        print('[LogUEAgent] MCP Server: DOWN, restarting...')\n"
-		"        from init_unreal import _start_mcp_gateway\n"
-		"        _start_mcp_gateway()\n"
-		"_check_and_start_mcp()\n"
+		"        print('[LogUEAgent] MCP Server: not ready yet (init_unreal will start it)')\n"
+		"_check_mcp_ready()\n"
 	);
 	IPythonScriptPlugin::Get()->ExecPythonCommand(*CheckMcp);
 
@@ -1144,8 +1155,11 @@ void SUEAgentDashboard::RunDiagnoseConnection()
 			}
 
 			FString Content;
-			if (FFileHelper::LoadFileToString(Content, *CapturedFile))
+			TArray<uint8> DiagBytes;
+			if (FFileHelper::LoadFileToArray(DiagBytes, *CapturedFile))
 			{
+				FUTF8ToTCHAR DiagConverter(reinterpret_cast<const ANSICHAR*>(DiagBytes.GetData()), DiagBytes.Num());
+				Content = FString(DiagConverter.Length(), DiagConverter.Get());
 				IFileManager::Get().Delete(*CapturedFile, false, false, true);
 				Self->AddMessage(TEXT("system"), Content);
 			}
@@ -1162,6 +1176,8 @@ void SUEAgentDashboard::RunDiagnoseConnection()
 void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 {
 	bIsWaitingForResponse = true;
+	StreamLinesRead = 0;
+	bHasStreamingMessage = false;
 	AddMessage(TEXT("system"), TEXT("Thinking..."));
 
 	// 转义消息中的引号和特殊字符，安全嵌入 Python 字符串
@@ -1175,9 +1191,11 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString ResponseFile = TempDir / TEXT("_openclaw_response.txt");
+	FString StreamFile = TempDir / TEXT("_openclaw_response_stream.jsonl");
 
 	// 清除上次响应文件
 	IFileManager::Get().Delete(*ResponseFile, false, false, true);
+	IFileManager::Get().Delete(*StreamFile, false, false, true);
 
 	// 通过 Python Bridge 异步发送
 	// Python 侧会把结果写入临时文件
@@ -1190,26 +1208,77 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 	// 启动定时器轮询临时文件
 	auto Self = SharedThis(this);
 	FString CapturedResponseFile = ResponseFile;
+	FString CapturedStreamFile = StreamFile;
 	PollTimerHandle = FTSTicker::GetCoreTicker().AddTicker(
-		FTickerDelegate::CreateLambda([Self, CapturedResponseFile](float DeltaTime) -> bool
+		FTickerDelegate::CreateLambda([Self, CapturedResponseFile, CapturedStreamFile](float DeltaTime) -> bool
 		{
 			if (!Self->bIsWaitingForResponse)
 			{
 				return false;
 			}
 
-			// 检查响应文件是否存在
+			// --- 流式文件轮询: 读取新增行并实时显示 ---
+			if (FPaths::FileExists(CapturedStreamFile))
+			{
+				// 用 UTF-8 读取流式文件（Python 以 UTF-8 写入）
+				FString StreamContent;
+				TArray<uint8> RawBytes;
+				if (FFileHelper::LoadFileToArray(RawBytes, *CapturedStreamFile))
+				{
+					// 手动从 UTF-8 转换为 FString
+					FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
+					StreamContent = FString(Converter.Length(), Converter.Get());
+					TArray<FString> Lines;
+					StreamContent.ParseIntoArrayLines(Lines);
+
+					// 只处理新增的行
+					for (int32 i = Self->StreamLinesRead; i < Lines.Num(); i++)
+					{
+						const FString& Line = Lines[i];
+						if (Line.IsEmpty()) continue;
+
+						// 使用 UE JSON 解析器，比手工字符串操作更可靠
+						TSharedPtr<FJsonObject> JsonObj;
+						TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Line);
+						if (FJsonSerializer::Deserialize(Reader, JsonObj) && JsonObj.IsValid())
+						{
+							FString EventType = JsonObj->GetStringField(TEXT("type"));
+							FString EventText = JsonObj->GetStringField(TEXT("text"));
+
+							if (!EventText.IsEmpty())
+							{
+								if (EventType == TEXT("thinking"))
+								{
+									Self->UpdateStreamingMessage(TEXT("thinking"), EventText);
+								}
+								else if (EventType == TEXT("delta"))
+								{
+									Self->UpdateStreamingMessage(TEXT("assistant"), EventText);
+								}
+							}
+						}
+					}
+					Self->StreamLinesRead = Lines.Num();
+				}
+			}
+
+			// --- 最终响应文件轮询 ---
 			if (!FPaths::FileExists(CapturedResponseFile))
 			{
 				return true; // 继续等待
 			}
 
-			// 读取响应
+			// 读取响应（UTF-8）
 			FString ResponseContent;
-			if (FFileHelper::LoadFileToString(ResponseContent, *CapturedResponseFile))
+			TArray<uint8> RespBytes;
+			if (FFileHelper::LoadFileToArray(RespBytes, *CapturedResponseFile))
 			{
+				FUTF8ToTCHAR RespConverter(reinterpret_cast<const ANSICHAR*>(RespBytes.GetData()), RespBytes.Num());
+				ResponseContent = FString(RespConverter.Length(), RespConverter.Get());
+
 				// 删除临时文件
 				IFileManager::Get().Delete(*CapturedResponseFile, false, false, true);
+				IFileManager::Get().Delete(*CapturedStreamFile, false, false, true);
 
 				// 处理响应
 				Self->HandlePythonResponse(ResponseContent);
@@ -1217,20 +1286,91 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 
 			return false; // 停止轮询
 		}),
-		0.5f // 每 0.5 秒检查一次
+		0.25f // 每 0.25 秒检查一次（流式需要更快）
 	);
+}
+
+void SUEAgentDashboard::UpdateStreamingMessage(const FString& Sender, const FString& Content)
+{
+	if (Content.IsEmpty()) return;
+
+	// 流式消息统一用 "streaming" 标识，以区分最终回复的颜色
+	FString StreamSender = (Sender == TEXT("thinking")) ? TEXT("thinking") : TEXT("streaming");
+
+	if (!bHasStreamingMessage)
+	{
+		// 替换 "Thinking..." 消息
+		if (Messages.Num() > 0 && Messages.Last().Content == TEXT("Thinking..."))
+		{
+			Messages.RemoveAt(Messages.Num() - 1);
+		}
+		// 添加流式消息
+		FChatMessage Msg;
+		Msg.Sender = StreamSender;
+		Msg.Content = Content;
+		Msg.Timestamp = FDateTime::Now();
+		Messages.Add(MoveTemp(Msg));
+		bHasStreamingMessage = true;
+	}
+	else
+	{
+		// 更新最后一条消息（如果 sender 类型相同则更新内容，否则追加新消息）
+		if (Messages.Num() > 0 && Messages.Last().Sender == StreamSender)
+		{
+			Messages.Last().Content = Content;
+		}
+		else
+		{
+			// Sender 类型变了（例如从 thinking 变成 streaming），追加新消息
+			FChatMessage Msg;
+			Msg.Sender = StreamSender;
+			Msg.Content = Content;
+			Msg.Timestamp = FDateTime::Now();
+			Messages.Add(MoveTemp(Msg));
+		}
+	}
+
+	RebuildMessageList();
+	// 自动滚动到底部
+	if (MessageScrollBox.IsValid())
+	{
+		MessageScrollBox->ScrollToEnd();
+	}
 }
 
 void SUEAgentDashboard::HandlePythonResponse(const FString& Response)
 {
 	bIsWaitingForResponse = false;
 
-	// 移除 "Thinking..." 消息
-	if (Messages.Num() > 0 && Messages.Last().Content == TEXT("Thinking..."))
+	// 移除 "Thinking..." 消息（如果流式显示还没替换掉的话）
+	if (!bHasStreamingMessage && Messages.Num() > 0 && Messages.Last().Content == TEXT("Thinking..."))
 	{
 		Messages.RemoveAt(Messages.Num() - 1);
 		RebuildMessageList();
 	}
+
+	// 如果有流式消息，移除它们（最终回复会替代）
+	// 找到最后的 thinking/流式消息并移除
+	if (bHasStreamingMessage)
+	{
+		// 从末尾往前找，移除所有流式 thinking/streaming 消息
+		while (Messages.Num() > 0)
+		{
+			const FString& LastSender = Messages.Last().Sender;
+			if (LastSender == TEXT("thinking") || LastSender == TEXT("streaming"))
+			{
+				Messages.RemoveAt(Messages.Num() - 1);
+			}
+			else
+			{
+				break;
+			}
+		}
+		RebuildMessageList();
+	}
+
+	bHasStreamingMessage = false;
+	StreamLinesRead = 0;
 
 	if (Response.IsEmpty())
 	{
@@ -1263,6 +1403,16 @@ FSlateColor SUEAgentDashboard::GetSenderColor(const FString& Sender) const
 	else if (Sender == TEXT("assistant"))
 	{
 		return FSlateColor(FLinearColor(0.4f, 0.9f, 0.4f));
+	}
+	else if (Sender == TEXT("streaming"))
+	{
+		// 流式消息：较灰的绿色，区分最终回复
+		return FSlateColor(FLinearColor(0.45f, 0.6f, 0.45f));
+	}
+	else if (Sender == TEXT("thinking"))
+	{
+		// 淡紫色，区分 thinking 过程
+		return FSlateColor(FLinearColor(0.7f, 0.5f, 0.9f));
 	}
 	else
 	{

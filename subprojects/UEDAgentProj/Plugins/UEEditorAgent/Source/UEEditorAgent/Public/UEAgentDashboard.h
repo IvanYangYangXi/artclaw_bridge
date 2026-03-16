@@ -108,6 +108,10 @@ private:
 	void SendToOpenClaw(const FString& UserMessage);
 	void HandlePythonResponse(const FString& Response);
 
+	// --- 流式显示辅助 ---
+	/** 更新 "Thinking..." 消息为流式内容 */
+	void UpdateStreamingMessage(const FString& Sender, const FString& Content);
+
 private:
 	/** Subsystem */
 	TWeakObjectPtr<UUEAgentSubsystem> CachedSubsystem;
@@ -138,6 +142,11 @@ private:
 	bool bIsWaitingForResponse = false;
 	FTSTicker::FDelegateHandle PollTimerHandle;
 	TArray<FString> PendingPythonResult;
+
+	/** 流式显示: 已读取的流式文件行数 */
+	int32 StreamLinesRead = 0;
+	/** 流式显示: 是否已显示过 thinking 消息 */
+	bool bHasStreamingMessage = false;
 
 	static constexpr int32 MaxMessages = 500;
 };

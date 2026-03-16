@@ -720,14 +720,18 @@ class _UEAsyncBridge:
 
         这是核心机制：让 asyncio 协程在 UE 主线程上增量执行，
         不阻塞编辑器 UI。
+
+        每次 tick 多跑几轮 step，加速启动阶段的 asyncio 任务完成。
         """
         if self._loop is None or self._loop.is_closed():
             return
 
         try:
-            # 运行所有就绪的回调和已完成的 Future
-            self._loop.stop()
-            self._loop.run_forever()
+            # 多跑几轮，加速 websockets server 启动
+            # 每轮只执行就绪回调，不会阻塞
+            for _ in range(10):
+                self._loop.stop()
+                self._loop.run_forever()
         except Exception as e:
             UELogger.error(f"Async tick error: {e}")
 

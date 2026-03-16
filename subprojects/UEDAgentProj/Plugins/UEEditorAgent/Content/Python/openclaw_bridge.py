@@ -92,6 +92,10 @@ class OpenClawBridge:
 
         # 回调: 收到 AI 流式消息时
         self.on_ai_message: Optional[Callable[[str, str], None]] = None  # (state, text)
+        # 回调: 收到 AI thinking 内容时
+        self.on_ai_thinking: Optional[Callable[[str, str], None]] = None  # (state, thinking_text)
+        # 当前活跃的 chat runId（用于过滤事件，只处理属于当前聊天的事件）
+        self._active_run_id: Optional[str] = None
 
     # ------------------------------------------------------------------
     # 公开 API (同步, 供 C++ 调用)
@@ -365,18 +369,35 @@ class OpenClawBridge:
                             else:
                                 fut.set_result(msg.get("payload"))
 
-                # 事件帧
-                elif msg.get("event"):
-                    event_name = msg["event"]
+                # 事件帧 (type == "event")
+                elif msg_type == "event" or msg.get("event"):
+                    event_name = msg.get("event", "")
                     payload = msg.get("payload", {})
 
                     # chat 流式事件
                     if event_name == "chat":
                         self._handle_chat_event(payload)
 
+                    # agent 事件 — 包含 assistant/thinking 流式文本
+                    # Gateway 对 assistant stream 既发 agent 又发 chat，
+                    # 但某些场景下 chat 可能不发，所以也从 agent 提取文本
+                    elif event_name == "agent":
+                        self._handle_agent_event(payload)
+
                     # tick 保活
                     elif event_name == "tick":
                         pass  # 心跳，忽略
+
+                    # health 状态 — 静默忽略
+                    elif event_name == "health":
+                        pass
+
+                    else:
+                        # 调试: 记录未知事件名
+                        UELogger.debug(
+                            f"OpenClaw Bridge: unhandled event '{event_name}', "
+                            f"payload keys: {list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__}"
+                        )
 
         except Exception as e:
             if not self._stop_event.is_set():
@@ -389,18 +410,31 @@ class OpenClawBridge:
         session_key = payload.get("sessionKey", "")
         run_id = payload.get("runId", "")
 
+        # 按 runId 过滤：只处理属于当前聊天的事件
+        if self._active_run_id and run_id and run_id != self._active_run_id:
+            return
+
         # 解析 message 结构 —— OpenClaw 的 message 格式为:
-        # {content: [{type: "text", text: "..."}, ...], role: "assistant"}
+        # {content: [{type: "text", text: "..."}, {type: "thinking", thinking: "..."}, ...], role: "assistant"}
         text = ""
+        thinking_text = ""
         if isinstance(message, dict):
             content = message.get("content", "")
             if isinstance(content, list):
                 # 标准格式: content 是数组
                 text_parts = []
+                thinking_parts = []
                 for block in content:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        text_parts.append(block.get("text", ""))
+                    if isinstance(block, dict):
+                        block_type = block.get("type", "")
+                        if block_type == "text":
+                            text_parts.append(block.get("text", ""))
+                        elif block_type == "thinking":
+                            thinking_parts.append(
+                                block.get("thinking", "") or block.get("text", "")
+                            )
                 text = "".join(text_parts)
+                thinking_text = "".join(thinking_parts)
             elif isinstance(content, str):
                 # 简化格式: content 是字符串
                 text = content
@@ -408,6 +442,10 @@ class OpenClawBridge:
                 text = message.get("text", "")
         elif isinstance(message, str):
             text = message
+
+        # 通知 thinking 回调
+        if self.on_ai_thinking and thinking_text:
+            self.on_ai_thinking(state, thinking_text)
 
         if self.on_ai_message and text:
             self.on_ai_message(state, text)
@@ -426,6 +464,49 @@ class OpenClawBridge:
             for fid, fut in list(self._pending.items()):
                 if hasattr(fut, '_chat_session_key') and not fut.done():
                     fut.set_result(text)
+
+    def _handle_agent_event(self, payload: dict):
+        """
+        处理 agent 事件 — 从 stream 字段提取 assistant/thinking 文本。
+
+        agent 事件格式:
+          {runId, stream, data, sessionKey, seq, ts}
+          stream: "assistant" | "thinking" | "lifecycle" | "tool_use" | ...
+          data: {text: "累积全文", delta: "增量片段", ...}
+
+        当 stream == "assistant" 时，data.text 是到目前为止的累积全文，
+        等同于 chat delta 事件的 message.content[0].text。
+        """
+        stream = payload.get("stream", "")
+        data = payload.get("data", {})
+        run_id = payload.get("runId", "")
+
+        # 按 runId 过滤：只处理属于当前聊天的事件
+        if self._active_run_id and run_id and run_id != self._active_run_id:
+            return
+
+        if not isinstance(data, dict):
+            return
+
+        text = data.get("text", "")
+
+        if stream == "assistant" and text:
+            # assistant 流式文本 — 转发给 on_ai_message (state="delta")
+            if self.on_ai_message:
+                self.on_ai_message("delta", text)
+
+        elif stream == "thinking":
+            thinking_text = data.get("thinking", "") or data.get("text", "")
+            if self.on_ai_thinking and thinking_text:
+                self.on_ai_thinking("delta", thinking_text)
+
+        elif stream == "lifecycle":
+            phase = data.get("phase", "")
+            if phase in ("end", "error"):
+                # 生命周期结束 — 触发 final
+                state = "error" if phase == "error" else "final"
+                if self.on_ai_message:
+                    self.on_ai_message(state, text or "")
 
     async def _rpc_request(self, method: str, params: dict,
                            timeout: float = 120.0) -> Any:
@@ -492,6 +573,7 @@ class OpenClawBridge:
                 # 需要等待 final 事件
                 if status in ("started", "streaming", "accepted", "running"):
                     run_id = result.get("runId", "")
+                    self._active_run_id = run_id  # 记录当前 runId，用于事件过滤
                     UELogger.info(
                         f"OpenClaw chat started (runId={run_id[:8]}...), "
                         f"waiting for AI response..."
@@ -550,6 +632,7 @@ class OpenClawBridge:
             return "[Error] AI response timed out"
         finally:
             self.on_ai_message = original_handler
+            self._active_run_id = None  # 清除，允许下次聊天
 
 
 # ---------------------------------------------------------------------------
@@ -643,6 +726,7 @@ def send_chat_async(message: str, callback_name: str = ""):
 def send_chat_async_to_file(message: str, output_file: str):
     """
     异步发送消息，完成后将结果写入文件。
+    同时将流式 thinking/delta 写入 stream 文件供 C++ 实时读取。
 
     C++ 侧轮询该文件是否存在来获取响应。
     这是最可靠的跨语言通信方式。
@@ -655,21 +739,58 @@ def send_chat_async_to_file(message: str, output_file: str):
     if not _bridge:
         init_bridge()
 
+    # 流式文件：与 output_file 同目录，后缀改为 _stream.jsonl
+    stream_file = output_file.replace(".txt", "_stream.jsonl")
+    # 清除上次的流式文件
+    try:
+        if os.path.exists(stream_file):
+            os.remove(stream_file)
+    except Exception:
+        pass
+
+    def _write_stream_event(event_type: str, state: str, text: str):
+        """追写一行 JSON 到流式文件"""
+        try:
+            import json as _json
+            line = _json.dumps({
+                "type": event_type,
+                "state": state,
+                "text": text,
+            }, ensure_ascii=False)
+            with open(stream_file, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
+
+    def _on_thinking(state: str, text: str):
+        _write_stream_event("thinking", state, text)
+
+    def _on_delta(state: str, text: str):
+        _write_stream_event("delta", state, text)
+
     def _on_result(result: str):
+        # 写入最终结果（保持原有行为）
         try:
             with open(output_file, "w", encoding="utf-8") as f:
                 f.write(result)
             UELogger.info(f"OpenClaw response written to {output_file}")
         except Exception as e:
             UELogger.mcp_error(f"Failed to write response file: {e}")
-            # 写入错误信息
             try:
                 with open(output_file, "w", encoding="utf-8") as f:
                     f.write(f"[Error] Failed to write response: {e}")
             except Exception:
                 pass
 
+        # 清理回调
+        if _bridge:
+            _bridge.on_ai_thinking = None
+            _bridge.on_ai_message = None
+
     if _bridge:
+        # 设置流式回调
+        _bridge.on_ai_thinking = _on_thinking
+        _bridge.on_ai_message = _on_delta
         _bridge.send_message_async(message, _on_result)
     else:
         # 直接写错误
