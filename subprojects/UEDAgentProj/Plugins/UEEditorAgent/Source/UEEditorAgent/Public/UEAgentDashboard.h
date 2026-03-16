@@ -6,12 +6,21 @@
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 
+#include "Widgets/Views/SListView.h"
+
 class UUEAgentSubsystem;
+class SScrollBox;
+class SMultiLineEditableTextBox;
+class SMenuAnchor;
 
 /**
  * SUEAgentDashboard
- * 可停靠的 Dashboard 面板，实时显示插件版本号、连接状态、统计信息。
- * 通过绑定 UUEAgentSubsystem 的委托实现状态变更自动刷新。
+ * 一体化 Agent 面板：顶部状态信息 + 底部聊天区域 (阶段 2.1 合并优化)
+ *
+ * 功能:
+ *   - 状态栏: 版本号、连接状态、服务器地址（可折叠）
+ *   - 聊天区: 消息历史滚动列表
+ *   - 输入区: 多行文本输入，支持 "/" 快捷命令提示
  *
  * 宪法约束:
  *   - C++ 负责 UI / 生命周期 / 主线程调度 (系统架构设计 §2.3)
@@ -24,50 +33,82 @@ public:
 	SLATE_BEGIN_ARGS(SUEAgentDashboard) {}
 	SLATE_END_ARGS()
 
-	/** 构造 Slate 控件树 */
 	void Construct(const FArguments& InArgs);
-
-	/** 析构时解绑委托 */
 	virtual ~SUEAgentDashboard() override;
 
 private:
-	// --- 委托回调 ---
+	// --- 消息模型 ---
+	struct FChatMessage
+	{
+		FString Sender;   // "user", "assistant", "system"
+		FString Content;
+		FDateTime Timestamp;
+		bool bIsCode = false;
+	};
 
-	/** 当 UUEAgentSubsystem 连接状态变更时触发（Dynamic Delegate 回调） */
+	// --- Slash 命令模型 ---
+	struct FSlashCommand
+	{
+		FString Command;      // 例如 "/select"
+		FString Description;  // 例如 "List selected actors"
+	};
+	typedef TSharedPtr<FSlashCommand> FSlashCommandPtr;
+
+	// --- 委托回调 ---
 	void HandleConnectionStatusChanged(bool bNewStatus);
 
-	// --- 辅助方法 ---
-
-	/** 获取连接状态显示文本 */
+	// --- 状态栏辅助方法 ---
 	FText GetConnectionStatusText() const;
-
-	/** 获取连接状态颜色 */
 	FSlateColor GetConnectionStatusColor() const;
-
-	/** 获取版本号文本 */
 	FText GetVersionText() const;
-
-	/** 获取 MCP 服务器地址文本 */
 	FText GetServerAddressText() const;
-
-	/** 获取统计信息文本 */
 	FText GetStatsText() const;
+	FText GetStatusSummaryText() const;
 
 	// --- 按钮回调 ---
-
-	/** "Open Chat" 按钮：打开 Chat Panel Tab (阶段 2.1) */
-	FReply OnOpenChatClicked();
-
-	/** "Test Connection" 按钮：切换连接状态 */
+	FReply OnToggleStatusClicked();
 	FReply OnTestConnectionClicked();
-
-	/** "View Logs" 按钮：打开 Output Log */
 	FReply OnViewLogsClicked();
+	FReply OnSendClicked();
+	FReply OnClearClicked();
+
+	// --- 聊天输入回调 ---
+	void OnInputTextChanged(const FText& NewText);
+	void OnInputTextCommitted(const FText& NewText, ETextCommit::Type CommitType);
+
+	// --- Slash 命令菜单 ---
+	void InitSlashCommands();
+	void UpdateSlashSuggestions(const FString& InputText);
+	TSharedRef<ITableRow> GenerateSlashCommandRow(
+		FSlashCommandPtr Item, const TSharedRef<STableViewBase>& OwnerTable);
+	void OnSlashCommandSelected(FSlashCommandPtr Item, ESelectInfo::Type SelectInfo);
+
+	// --- 聊天辅助方法 ---
+	void AddMessage(const FString& Sender, const FString& Content, bool bIsCode = false);
+	void RebuildMessageList();
+	FSlateColor GetSenderColor(const FString& Sender) const;
 
 private:
-	/** 缓存的 Subsystem 指针 */
+	/** Subsystem */
 	TWeakObjectPtr<UUEAgentSubsystem> CachedSubsystem;
-
-	/** 当前连接状态（本地缓存，用于 UI 绑定） */
 	bool bCachedIsConnected = false;
+
+	/** 状态栏折叠 */
+	bool bStatusExpanded = false;
+	TSharedPtr<SWidget> StatusDetailWidget;
+
+	/** 消息历史 */
+	TArray<FChatMessage> Messages;
+	TSharedPtr<SScrollBox> MessageScrollBox;
+
+	/** 多行输入框 */
+	TSharedPtr<SMultiLineEditableTextBox> InputTextBox;
+
+	/** Slash 命令菜单 */
+	TSharedPtr<SMenuAnchor> SlashMenuAnchor;
+	TArray<FSlashCommandPtr> AllSlashCommands;
+	TArray<FSlashCommandPtr> FilteredSlashCommands;
+	TSharedPtr<SListView<FSlashCommandPtr>> SlashListView;
+
+	static constexpr int32 MaxMessages = 500;
 };

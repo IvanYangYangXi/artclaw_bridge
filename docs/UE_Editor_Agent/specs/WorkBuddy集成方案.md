@@ -1,6 +1,6 @@
 # WorkBuddy 集成方案
 
-> **定位**：WorkBuddy是AI Agent平台层的第一个接入目标，与UE插件之间通过MCP协议通信。本文档描述UE + WorkBuddy完整链路的集成方案，也是ArtClaw整套基建的第一个实战验证。
+> **定位**：WorkBuddy是AI Agent平台层的第一个接入目标，与UE插件之间通过MCP协议通信。本文档描述UE + WorkBuddy完整链路的集成方案，也是ArtClaw整套基建的第一个实战验证（现改为UE + openClaw优先）。
 
 ---
 
