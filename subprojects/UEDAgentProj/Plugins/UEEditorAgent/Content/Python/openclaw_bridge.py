@@ -121,11 +121,28 @@ class OpenClawBridge:
     def stop(self):
         """停止连接"""
         self._stop_event.set()
-        if self._loop:
-            self._loop.call_soon_threadsafe(self._loop.stop)
-        if self._thread:
-            self._thread.join(timeout=3.0)
         self._connected = False
+
+        # 关闭 WebSocket 连接（触发 _message_loop 退出）
+        if self._ws:
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._ws.close(), self._loop
+                )
+            except Exception:
+                pass
+
+        # 停止 event loop
+        if self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._loop.stop)
+
+        # 等待线程退出
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=5.0)
+
+        self._ws = None
+        self._loop = None
+        self._thread = None
         UELogger.info("OpenClaw Bridge: stopped")
 
     def is_connected(self) -> bool:

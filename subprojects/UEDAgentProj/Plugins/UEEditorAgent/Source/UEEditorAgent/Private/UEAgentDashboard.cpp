@@ -978,17 +978,54 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 	);
 	IPythonScriptPlugin::Get()->ExecPythonCommand(*CheckMcp);
 
-	// 连接 OpenClaw Bridge (Chat 通道)
-	FString ConnectBridge = TEXT(
-		"from openclaw_bridge import connect\n"
-		"connect()\n"
-		"print('[LogUEAgent] OpenClaw Bridge connect requested')\n"
+	// 连接 OpenClaw Bridge (Chat 通道) + 检查结果
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString StatusFile = TempDir / TEXT("_connect_status.txt");
+	IFileManager::Get().Delete(*StatusFile, false, false, true);
+
+	FString ConnectBridge = FString::Printf(
+		TEXT("import time\n"
+			 "from openclaw_bridge import connect, is_connected\n"
+			 "connect()\n"
+			 "time.sleep(1.5)\n"
+			 "status = 'ok' if is_connected() else 'fail'\n"
+			 "with open(r'%s', 'w') as f:\n"
+			 "    f.write(status)\n"),
+		*StatusFile
 	);
 	IPythonScriptPlugin::Get()->ExecPythonCommand(*ConnectBridge);
 
-	AddMessage(TEXT("system"),
-		TEXT("OpenClaw Bridge connect requested.\n"
-			 "If OpenClaw MCP Bridge is not connected, try: openclaw daemon restart"));
+	// 轮询连接结果
+	auto Self = SharedThis(this);
+	FString CapturedFile = StatusFile;
+	FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([Self, CapturedFile](float) -> bool
+		{
+			if (!FPaths::FileExists(CapturedFile))
+			{
+				return true;
+			}
+
+			FString Status;
+			FFileHelper::LoadFileToString(Status, *CapturedFile);
+			IFileManager::Get().Delete(*CapturedFile, false, false, true);
+			Status.TrimStartAndEndInline();
+
+			if (Status == TEXT("ok"))
+			{
+				Self->AddMessage(TEXT("system"), TEXT("OpenClaw Bridge: Connected."));
+			}
+			else
+			{
+				Self->AddMessage(TEXT("system"),
+					TEXT("OpenClaw Bridge: Connection failed.\n"
+						 "Check: 1) OpenClaw is running  2) Gateway port 18789  3) /diagnose"));
+			}
+			return false;
+		}),
+		0.5f
+	);
 }
 
 void SUEAgentDashboard::DisconnectOpenClawBridge()
@@ -1015,10 +1052,13 @@ void SUEAgentDashboard::RunDiagnoseConnection()
 	IFileManager::Get().Delete(*DiagFile, false, false, true);
 
 	// 优先使用完整 Health Check，fallback 到 diagnose_connection
+	// 强制 reload 确保使用最新代码
 	FString PythonCmd = FString::Printf(
-		TEXT("try:\n"
-			 "    from health_check import run_health_check\n"
-			 "    result = run_health_check()\n"
+		TEXT("import importlib\n"
+			 "try:\n"
+			 "    import health_check\n"
+			 "    importlib.reload(health_check)\n"
+			 "    result = health_check.run_health_check()\n"
 			 "except ImportError:\n"
 			 "    from openclaw_bridge import diagnose_connection\n"
 			 "    result = diagnose_connection()\n"
