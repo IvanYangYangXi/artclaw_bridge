@@ -3,16 +3,27 @@
 #include "UEAgentSubsystem.h"
 #include "Interfaces/IPluginManager.h"
 
+// ------------------------------------------------------------------
+// 日志分类定义 (阶段 0.4)
+//
+// 宪法约束:
+//   - 开发路线图 §0.5: 定义 LogUEAgent 分类
+//   - 可在 Output Log 过滤器中单独查看 Agent 日志
+// ------------------------------------------------------------------
+DEFINE_LOG_CATEGORY(LogUEAgent);
+DEFINE_LOG_CATEGORY(LogUEAgent_MCP);
+DEFINE_LOG_CATEGORY(LogUEAgent_Error);
+
 void UUEAgentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
     bIsConnected = false; // 初始化为断开状态
-    UE_LOG(LogTemp, Log, TEXT("UEAgent: Subsystem Initialized."));
+    UE_LOG(LogUEAgent, Log, TEXT("Subsystem Initialized (v%s)"), *GetPluginVersion());
 }
 
 void UUEAgentSubsystem::Deinitialize()
 {
-    UE_LOG(LogTemp, Log, TEXT("UEAgent: Subsystem Deinitializing."));
+    UE_LOG(LogUEAgent, Log, TEXT("Subsystem Deinitializing."));
     Super::Deinitialize();
 }
 
@@ -26,7 +37,7 @@ void UUEAgentSubsystem::SetConnectionStatus(bool bInIsConnected)
         OnConnectionStatusChanged.Broadcast(bIsConnected);
         OnConnectionStatusChangedNative.Broadcast(bIsConnected);
 
-        UE_LOG(LogTemp, Warning, TEXT("UEAgent: Connection Status Updated -> %s"),
+        UE_LOG(LogUEAgent, Log, TEXT("Connection Status Updated -> %s"),
             bIsConnected ? TEXT("CONNECTED") : TEXT("DISCONNECTED"));
     }
 }

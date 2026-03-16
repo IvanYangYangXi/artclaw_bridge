@@ -6,6 +6,22 @@
 #include "EditorSubsystem.h"
 #include "UEAgentSubsystem.generated.h"
 
+// ------------------------------------------------------------------
+// 日志分类声明 (阶段 0.4)
+//
+// 宪法约束:
+//   - 开发路线图 §0.5: 定义 LogUEAgent 分类，带颜色区分的日志
+//   - 系统架构设计 §2.3: C++ 负责生命周期 / UI / 主线程调度
+// ------------------------------------------------------------------
+
+/** 通用 Agent 日志 - 插件生命周期、状态变更 */
+DECLARE_LOG_CATEGORY_EXTERN(LogUEAgent, Log, All);
+
+/** MCP 通信日志 - 协议交互、连接管理 */
+DECLARE_LOG_CATEGORY_EXTERN(LogUEAgent_MCP, Log, All);
+
+/** 错误日志 - 异常、崩溃保护 */
+DECLARE_LOG_CATEGORY_EXTERN(LogUEAgent_Error, Log, All);
 
 // 动态多播委托：Blueprint/Python 绑定
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAgentConnectionStatusChanged, bool, bNewStatus);
