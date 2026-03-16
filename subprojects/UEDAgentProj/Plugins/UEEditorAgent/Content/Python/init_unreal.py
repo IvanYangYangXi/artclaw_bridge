@@ -628,6 +628,46 @@ def sync_connection_state(is_online: bool):
 # 4. 初始化入口
 # ============================================================================
 
+def _start_mcp_gateway():
+    """
+    启动 MCP WebSocket 通信网关 (阶段 1.1)。
+
+    宪法约束:
+      - 开发路线图 §1.1: WebSocket 服务器在插件启动时自动启动
+      - 系统架构设计 §1.2: WebSocket 传输层
+    """
+    try:
+        from mcp_server import start_mcp_server
+        success = start_mcp_server(host="localhost", port=8080)
+        if success:
+            UELogger.info("MCP Gateway startup scheduled")
+        else:
+            UELogger.warning("MCP Gateway failed to start (non-fatal)")
+    except ImportError as e:
+        UELogger.warning(f"MCP Server module not available: {e}")
+    except Exception:
+        UELogger.exception("MCP Gateway startup error")
+
+
+def _register_shutdown_hook():
+    """
+    注册编辑器关闭时的清理回调。
+
+    确保 MCP 服务器在编辑器关闭时正确释放端口。
+    """
+    import atexit
+
+    def _on_shutdown():
+        UELogger.info("Editor shutting down, stopping MCP Gateway...")
+        try:
+            from mcp_server import stop_mcp_server
+            stop_mcp_server()
+        except Exception:
+            pass
+
+    atexit.register(_on_shutdown)
+
+
 def _initialize():
     """
     插件 Python 层初始化入口。
@@ -637,6 +677,7 @@ def _initialize():
     2. 安装异常处理器 (0.4)
     3. 安装依赖 (0.5)
     4. 同步初始状态 (0.2 延续)
+    5. 启动 MCP 网关 (1.1)
     """
     # --- 阶段 0.4: 日志系统 ---
     _install_stream_redirectors()
@@ -657,6 +698,13 @@ def _initialize():
 
     # 初始化连接状态（默认离线，等待 MCP 网关启动后更新）
     sync_connection_state(False)
+
+    # --- 阶段 1.1: MCP WebSocket 通信网关 ---
+    if deps_ok:
+        _start_mcp_gateway()
+        _register_shutdown_hook()
+    else:
+        UELogger.warning("Skipping MCP Gateway (missing dependencies)")
 
 
 # 自动执行初始化

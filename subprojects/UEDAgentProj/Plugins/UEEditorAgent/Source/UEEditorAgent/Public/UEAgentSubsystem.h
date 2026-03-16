@@ -61,11 +61,33 @@ public:
     UFUNCTION(BlueprintPure, Category = "UEAgent")
     FString GetPluginVersion() const;
 
+    // --- MCP 网关接口 (阶段 1.1) ---
+
+    /** 供 Python MCP 网关调用：设置当前监听端口 */
+    UFUNCTION(BlueprintCallable, Category = "UEAgent|MCP")
+    void SetServerPort(int32 InPort);
+
+    /** 获取 MCP 服务器地址（ws://host:port） */
+    UFUNCTION(BlueprintPure, Category = "UEAgent|MCP")
+    FString GetServerAddress() const;
+
+    /** 获取当前连接的客户端数量 */
+    UFUNCTION(BlueprintPure, Category = "UEAgent|MCP")
+    int32 GetClientCount() const { return ClientCount; }
+
     // --- 暴露属性 ---
 
     /** 连接状态真值 */
     UPROPERTY(BlueprintReadOnly, Category = "UEAgent")
     bool bIsConnected = false;
+
+    /** MCP 服务器监听端口 (0 表示未启动) */
+    UPROPERTY(BlueprintReadOnly, Category = "UEAgent|MCP")
+    int32 ServerPort = 0;
+
+    /** 连接的 MCP 客户端数量 */
+    UPROPERTY(BlueprintReadOnly, Category = "UEAgent|MCP")
+    int32 ClientCount = 0;
 
     /** 状态变更委托（Blueprint/Python）：UI 层将绑定此事件以实现图标变色 */
     UPROPERTY(BlueprintAssignable, Category = "UEAgent")

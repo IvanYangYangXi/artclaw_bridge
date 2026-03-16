@@ -4,14 +4,20 @@
 #include "UEEditorAgentStyle.h"
 #include "UEEditorAgentCommands.h"
 #include "UEAgentDashboard.h"
+#include "UEAgentChatPanel.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Framework/Docking/TabManager.h"
+#include "WorkspaceMenuStructure.h"
+#include "WorkspaceMenuStructureModule.h"
 
 static const FName UEEditorAgentTabName("UEEditorAgent");
 
 // Dashboard Tab 的全局唯一标识
 const FName FUEEditorAgentModule::DashboardTabName("UEEditorAgentDashboard");
+
+// Chat Tab 的全局唯一标识 (阶段 2.1)
+const FName FUEEditorAgentModule::ChatTabName("UEEditorAgentChat");
 
 #define LOCTEXT_NAMESPACE "FUEEditorAgentModule"
 
@@ -34,6 +40,9 @@ void FUEEditorAgentModule::StartupModule()
 
 	// 注册可停靠的 Dashboard Tab
 	RegisterDashboardTab();
+
+	// 注册可停靠的 Chat Tab (阶段 2.1)
+	RegisterChatTab();
 }
 
 void FUEEditorAgentModule::ShutdownModule()
@@ -46,6 +55,7 @@ void FUEEditorAgentModule::ShutdownModule()
 
 	// 注销 Tab Spawner
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(DashboardTabName);
+	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(ChatTabName);
 }
 
 void FUEEditorAgentModule::PluginButtonClicked()
@@ -101,6 +111,27 @@ TSharedRef<SDockTab> FUEEditorAgentModule::SpawnDashboardTab(const FSpawnTabArgs
 		.TabRole(ETabRole::NomadTab)
 		[
 			SNew(SUEAgentDashboard)
+		];
+}
+
+void FUEEditorAgentModule::RegisterChatTab()
+{
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
+		ChatTabName,
+		FOnSpawnTab::CreateRaw(this, &FUEEditorAgentModule::SpawnChatTab))
+		.SetDisplayName(LOCTEXT("ChatTabTitle", "UE Agent Chat"))
+		.SetMenuType(ETabSpawnerMenuType::Enabled)  // 在 Window 菜单中可见
+		.SetGroup(WorkspaceMenu::GetMenuStructure().GetToolsCategory())
+		.SetIcon(FSlateIcon(FUEEditorAgentStyle::GetStyleSetName(),
+			"UEEditorAgent.PluginAction"));
+}
+
+TSharedRef<SDockTab> FUEEditorAgentModule::SpawnChatTab(const FSpawnTabArgs& Args)
+{
+	return SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		[
+			SNew(SUEAgentChatPanel)
 		];
 }
 

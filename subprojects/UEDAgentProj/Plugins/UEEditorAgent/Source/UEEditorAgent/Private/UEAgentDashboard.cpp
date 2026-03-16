@@ -70,30 +70,52 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				]
 			]
 
-			// ========== 连接状态 ==========
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+		// ========== 连接状态 ==========
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("StatusLabel", "Status: "))
-					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				[
-					SNew(STextBlock)
-					.Text(this, &SUEAgentDashboard::GetConnectionStatusText)
-					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
-					.ColorAndOpacity(this, &SUEAgentDashboard::GetConnectionStatusColor)
-				]
+				SNew(STextBlock)
+				.Text(LOCTEXT("StatusLabel", "Status: "))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
 			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(STextBlock)
+				.Text(this, &SUEAgentDashboard::GetConnectionStatusText)
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+				.ColorAndOpacity(this, &SUEAgentDashboard::GetConnectionStatusColor)
+			]
+		]
 
-			// ========== 统计信息 ==========
+		// ========== MCP 服务器地址 (阶段 1.1) ==========
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("ServerLabel", "Server: "))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(STextBlock)
+				.Text(this, &SUEAgentDashboard::GetServerAddressText)
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+			]
+		]
+
+		// ========== 统计信息 ==========
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			.Padding(0.0f, 8.0f, 0.0f, 12.0f)
@@ -109,6 +131,16 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			.AutoHeight()
 			[
 				SNew(SHorizontalBox)
+
+				// "Open Chat" 按钮 (阶段 2.1)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("OpenChatBtn", "Open Chat"))
+					.OnClicked(this, &SUEAgentDashboard::OnOpenChatClicked)
+				]
 
 				// "Test Connection" 按钮
 				+ SHorizontalBox::Slot()
@@ -181,12 +213,30 @@ FText SUEAgentDashboard::GetVersionText() const
 	return LOCTEXT("VersionUnknown", "Unknown");
 }
 
+FText SUEAgentDashboard::GetServerAddressText() const
+{
+	if (CachedSubsystem.IsValid())
+	{
+		FString Address = CachedSubsystem->GetServerAddress();
+		if (!Address.IsEmpty())
+		{
+			return FText::FromString(Address);
+		}
+	}
+	return LOCTEXT("ServerNotStarted", "Not started");
+}
+
 FText SUEAgentDashboard::GetStatsText() const
 {
-	// 基础统计信息（后续阶段会接入 MCP 真实数据）
+	int32 Connections = 0;
+	if (CachedSubsystem.IsValid())
+	{
+		Connections = CachedSubsystem->GetClientCount();
+	}
+
 	FString StatsStr = FString::Printf(
 		TEXT("Skills Loaded: 0\nActive Connections: %d\nPending Commands: 0"),
-		bCachedIsConnected ? 1 : 0
+		Connections
 	);
 	return FText::FromString(StatsStr);
 }
@@ -194,6 +244,13 @@ FText SUEAgentDashboard::GetStatsText() const
 // ------------------------------------------------------------------
 // 按钮回调
 // ------------------------------------------------------------------
+
+FReply SUEAgentDashboard::OnOpenChatClicked()
+{
+	// 打开 / 聚焦 Chat Panel Tab (阶段 2.1)
+	FGlobalTabmanager::Get()->TryInvokeTab(FName("UEEditorAgentChat"));
+	return FReply::Handled();
+}
 
 FReply SUEAgentDashboard::OnTestConnectionClicked()
 {

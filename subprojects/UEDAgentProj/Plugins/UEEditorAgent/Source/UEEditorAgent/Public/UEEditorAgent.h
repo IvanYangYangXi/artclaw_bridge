@@ -34,12 +34,21 @@ private:
 	/** 注册可停靠的 Nomad Tab Spawner */
 	void RegisterDashboardTab();
 
+	/** 注册 Chat Panel 的 Nomad Tab Spawner (阶段 2.1) */
+	void RegisterChatTab();
+
 	/** Tab 生成工厂方法 */
 	TSharedRef<class SDockTab> SpawnDashboardTab(const class FSpawnTabArgs& Args);
+
+	/** Chat Tab 生成工厂方法 (阶段 2.1) */
+	TSharedRef<class SDockTab> SpawnChatTab(const class FSpawnTabArgs& Args);
 
 private:
 	TSharedPtr<class FUICommandList> PluginCommands;
 
 	/** Dashboard Tab 标识名 */
 	static const FName DashboardTabName;
+
+	/** Chat Tab 标识名 (阶段 2.1) */
+	static const FName ChatTabName;
 };

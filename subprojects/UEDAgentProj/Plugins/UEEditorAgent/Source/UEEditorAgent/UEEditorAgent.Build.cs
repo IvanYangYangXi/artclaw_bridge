@@ -41,6 +41,7 @@ public class UEEditorAgent : ModuleRules
 				"EditorFramework",
 				"UnrealEd",
 				"ToolMenus",	     // 阶段 0.3 菜单注册所需
+			"WorkspaceMenuStructure", // 阶段 2.1 Chat Tab 注册所需
 				"CoreUObject",
 				"Engine",
 				"Slate",

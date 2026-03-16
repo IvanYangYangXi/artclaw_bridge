@@ -51,3 +51,22 @@ FString UUEAgentSubsystem::GetPluginVersion() const
     }
     return TEXT("Unknown");
 }
+
+// ------------------------------------------------------------------
+// MCP 网关接口 (阶段 1.1)
+// ------------------------------------------------------------------
+
+void UUEAgentSubsystem::SetServerPort(int32 InPort)
+{
+    ServerPort = InPort;
+    UE_LOG(LogUEAgent_MCP, Log, TEXT("MCP Server port set to %d"), InPort);
+}
+
+FString UUEAgentSubsystem::GetServerAddress() const
+{
+    if (ServerPort > 0)
+    {
+        return FString::Printf(TEXT("ws://localhost:%d"), ServerPort);
+    }
+    return TEXT("");
+}

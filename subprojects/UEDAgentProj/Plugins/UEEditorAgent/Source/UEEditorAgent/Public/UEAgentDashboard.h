@@ -47,10 +47,16 @@ private:
 	/** 获取版本号文本 */
 	FText GetVersionText() const;
 
+	/** 获取 MCP 服务器地址文本 */
+	FText GetServerAddressText() const;
+
 	/** 获取统计信息文本 */
 	FText GetStatsText() const;
 
 	// --- 按钮回调 ---
+
+	/** "Open Chat" 按钮：打开 Chat Panel Tab (阶段 2.1) */
+	FReply OnOpenChatClicked();
 
 	/** "Test Connection" 按钮：切换连接状态 */
 	FReply OnTestConnectionClicked();
