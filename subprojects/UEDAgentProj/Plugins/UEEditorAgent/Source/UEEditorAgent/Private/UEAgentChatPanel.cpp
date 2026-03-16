@@ -7,6 +7,7 @@
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Widgets/Text/SMultiLineEditableText.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SEditableTextBox.h"
 
@@ -260,17 +261,19 @@ void SUEAgentChatPanel::RebuildMessageList()
 				]
 			]
 
-			// 消息内容
+			// 消息内容 (可选中/复制)
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			.Padding(8.0f, 0.0f, 0.0f, 4.0f)
 			[
-				SNew(STextBlock)
+				SNew(SMultiLineEditableText)
 				.Text(FText::FromString(Msg.Content))
 				.Font(Msg.bIsCode
 					? FCoreStyle::GetDefaultFontStyle("Mono", 9)
 					: FCoreStyle::GetDefaultFontStyle("Regular", 10))
 				.AutoWrapText(true)
+				.IsReadOnly(true)
+				.AllowContextMenu(true)
 			]
 		];
 	}

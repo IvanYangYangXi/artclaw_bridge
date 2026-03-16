@@ -52,6 +52,7 @@ private:
 	{
 		FString Command;      // 例如 "/select"
 		FString Description;  // 例如 "List selected actors"
+		bool bIsLocal = false; // true = 本地执行, false = 发送给 AI
 	};
 	typedef TSharedPtr<FSlashCommand> FSlashCommandPtr;
 

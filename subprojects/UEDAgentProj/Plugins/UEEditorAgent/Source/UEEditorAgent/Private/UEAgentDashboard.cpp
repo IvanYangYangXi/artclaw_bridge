@@ -9,6 +9,7 @@
 #include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Widgets/Text/SMultiLineEditableText.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
@@ -536,15 +537,49 @@ FReply SUEAgentDashboard::OnSendClicked()
 
 FReply SUEAgentDashboard::OnNewChatClicked()
 {
+	// 1) 本地清屏
 	Messages.Empty();
 	RebuildMessageList();
 	AddMessage(TEXT("system"), TEXT("New conversation started."));
-	// 可选: 通知 Python Bridge 重置 session
+
+	// 2) 重置 Python Bridge 的 session key
 	IPythonScriptPlugin::Get()->ExecPythonCommand(
 		TEXT("try:\n")
 		TEXT("    from openclaw_bridge import _bridge\n")
 		TEXT("    if _bridge: _bridge._session_key = ''\n")
 		TEXT("except: pass"));
+
+	// 3) 发送 /new 给 AI（重置远端会话），静默处理不显示 Thinking
+	{
+		FString EscapedMsg = TEXT("/new");
+		FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+		IFileManager::Get().MakeDirectory(*TempDir, true);
+		FString ResponseFile = TempDir / TEXT("_openclaw_newchat_response.txt");
+		IFileManager::Get().Delete(*ResponseFile, false, false, true);
+
+		FString PythonCmd = FString::Printf(
+			TEXT("from openclaw_bridge import send_chat_async_to_file; send_chat_async_to_file('%s', r'%s')"),
+			*EscapedMsg, *ResponseFile);
+		IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+
+		// 静默丢弃 /new 的响应（只是为了触发 AI 侧重置）
+		auto Self = SharedThis(this);
+		FString CapturedFile = ResponseFile;
+		FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateLambda([Self, CapturedFile](float) -> bool
+			{
+				if (!FPaths::FileExists(CapturedFile))
+				{
+					return true;
+				}
+				// 读取并丢弃响应文件
+				IFileManager::Get().Delete(*CapturedFile, false, false, true);
+				return false;
+			}),
+			0.5f
+		);
+	}
+
 	return FReply::Handled();
 }
 
@@ -632,36 +667,33 @@ FText SUEAgentDashboard::GetSendHintText() const
 
 void SUEAgentDashboard::InitSlashCommands()
 {
-	auto MakeCmd = [](const FString& Cmd, const FString& Desc) -> FSlashCommandPtr {
+	auto MakeCmd = [](const FString& Cmd, const FString& Desc, bool bLocal) -> FSlashCommandPtr {
 		auto Item = MakeShared<FSlashCommand>();
 		Item->Command = Cmd;
 		Item->Description = Desc;
+		Item->bIsLocal = bLocal;
 		return Item;
 	};
 
 	AllSlashCommands = {
-		// --- 会话管理 ---
-		MakeCmd(TEXT("/new"),        TEXT("Start a new conversation")),
-		MakeCmd(TEXT("/clear"),      TEXT("Clear chat history (alias for /new)")),
+		// --- 本地命令 (不转发，本地执行) ---
+		MakeCmd(TEXT("/connect"),    TEXT("[本地] 连接 OpenClaw 网关"), true),
+		MakeCmd(TEXT("/disconnect"), TEXT("[本地] 断开 OpenClaw 网关连接"), true),
+		MakeCmd(TEXT("/diagnose"),   TEXT("[本地] 运行连接诊断"), true),
+		MakeCmd(TEXT("/status"),     TEXT("[本地] 显示连接状态"), true),
+		MakeCmd(TEXT("/help"),       TEXT("[本地] 显示所有可用命令"), true),
+		MakeCmd(TEXT("/clear"),      TEXT("[本地] 清空聊天记录"), true),
 
-		// --- 连接管理 ---
-		MakeCmd(TEXT("/connect"),    TEXT("Connect to OpenClaw Gateway")),
-		MakeCmd(TEXT("/disconnect"), TEXT("Disconnect from OpenClaw Gateway")),
-		MakeCmd(TEXT("/diagnose"),   TEXT("Run connection diagnostics")),
-		MakeCmd(TEXT("/status"),     TEXT("Show agent connection status")),
-
-		// --- AI 工具 ---
-		MakeCmd(TEXT("/select"),     TEXT("Show currently selected actors")),
-		MakeCmd(TEXT("/create"),     TEXT("Create an actor (e.g. /create StaticMesh Cube)")),
-		MakeCmd(TEXT("/delete"),     TEXT("Delete selected actors")),
-		MakeCmd(TEXT("/material"),   TEXT("Inspect or modify materials")),
-		MakeCmd(TEXT("/camera"),     TEXT("Get or set viewport camera")),
-		MakeCmd(TEXT("/level"),      TEXT("Show level information")),
-		MakeCmd(TEXT("/assets"),     TEXT("Search or list assets")),
-		MakeCmd(TEXT("/run"),        TEXT("Execute Python code directly")),
-
-		// --- 帮助 ---
-		MakeCmd(TEXT("/help"),       TEXT("Show all available commands")),
+		// --- AI 命令 (选中后发送给 AI Agent) ---
+		MakeCmd(TEXT("/new"),        TEXT("[AI] 开始新会话"), false),
+		MakeCmd(TEXT("/select"),     TEXT("[AI] 查看选中物体"), false),
+		MakeCmd(TEXT("/create"),     TEXT("[AI] 创建物体 (如 /create StaticMesh Cube)"), false),
+		MakeCmd(TEXT("/delete"),     TEXT("[AI] 删除选中物体"), false),
+		MakeCmd(TEXT("/material"),   TEXT("[AI] 材质操作"), false),
+		MakeCmd(TEXT("/camera"),     TEXT("[AI] 相机操作"), false),
+		MakeCmd(TEXT("/level"),      TEXT("[AI] 关卡信息"), false),
+		MakeCmd(TEXT("/assets"),     TEXT("[AI] 资产搜索"), false),
+		MakeCmd(TEXT("/run"),        TEXT("[AI] 执行 Python 代码"), false),
 	};
 }
 
@@ -707,10 +739,39 @@ void SUEAgentDashboard::UpdateSlashSuggestions(const FString& InputText)
 TSharedRef<ITableRow> SUEAgentDashboard::GenerateSlashCommandRow(
 	FSlashCommandPtr Item, const TSharedRef<STableViewBase>& OwnerTable)
 {
+	// 根据命令类型选择不同颜色
+	FLinearColor TypeColor = Item->bIsLocal
+		? FLinearColor(0.4f, 0.9f, 0.4f)  // 本地命令 - 绿色
+		: FLinearColor(0.4f, 0.7f, 1.0f); // AI 命令 - 蓝色
+
+	FLinearColor TypeBgColor = Item->bIsLocal
+		? FLinearColor(0.1f, 0.3f, 0.1f, 0.3f)  // 本地命令背景 - 深绿色半透明
+		: FLinearColor(0.1f, 0.2f, 0.3f, 0.3f); // AI 命令背景 - 深蓝色半透明
+
+	FString TypeLabel = Item->bIsLocal ? TEXT("本地") : TEXT("AI");
+
 	return SNew(STableRow<FSlashCommandPtr>, OwnerTable)
 		.Padding(FMargin(6.0f, 3.0f))
 		[
 			SNew(SHorizontalBox)
+			// 类型标签 (本地/AI)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SBorder)
+				.BorderBackgroundColor(FSlateColor(TypeBgColor))
+				.BorderImage(FCoreStyle::Get().GetBrush("ToolPanel.GroupBorder"))
+				.Padding(FMargin(4.0f, 1.0f))
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(TypeLabel))
+					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 8))
+					.ColorAndOpacity(FSlateColor(TypeColor))
+				]
+			]
+			// 命令名
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.Padding(0.0f, 0.0f, 12.0f, 0.0f)
@@ -718,8 +779,9 @@ TSharedRef<ITableRow> SUEAgentDashboard::GenerateSlashCommandRow(
 				SNew(STextBlock)
 				.Text(FText::FromString(Item->Command))
 				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
-				.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.8f, 1.0f)))
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.9f, 0.9f)))
 			]
+			// 描述
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
 			[
@@ -751,10 +813,7 @@ void SUEAgentDashboard::OnSlashCommandSelected(FSlashCommandPtr Item, ESelectInf
 		}
 	}
 
-	// 处理命令
-	HandleSlashCommand(Cmd, InputArgs);
-
-	// 清空输入框并关闭菜单
+	// 清空输入框并关闭菜单 (必须在 HandleSlashCommand 之前，因为 SendToOpenClaw 会检查输入)
 	if (InputTextBox.IsValid())
 	{
 		InputTextBox->SetText(FText::GetEmpty());
@@ -763,6 +822,9 @@ void SUEAgentDashboard::OnSlashCommandSelected(FSlashCommandPtr Item, ESelectInf
 	{
 		SlashMenuAnchor->SetIsOpen(false);
 	}
+
+	// 处理命令
+	HandleSlashCommand(Cmd, InputArgs);
 }
 
 // ==================================================================
@@ -771,9 +833,13 @@ void SUEAgentDashboard::OnSlashCommandSelected(FSlashCommandPtr Item, ESelectInf
 
 void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString& Args)
 {
-	if (Command == TEXT("/new") || Command == TEXT("/clear"))
+	// --- 本地命令 (不转发，本地执行) ---
+	if (Command == TEXT("/clear"))
 	{
-		OnNewChatClicked();
+		// 纯本地清屏，不发 /new 给 AI
+		Messages.Empty();
+		RebuildMessageList();
+		AddMessage(TEXT("system"), TEXT("Chat cleared."));
 	}
 	else if (Command == TEXT("/connect"))
 	{
@@ -818,23 +884,19 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 	}
 	else if (Command == TEXT("/help"))
 	{
-		FString HelpText = TEXT("Available commands:\n");
-		HelpText += TEXT("\n  Session:\n");
-		HelpText += TEXT("    /new         - Start a new conversation\n");
-		HelpText += TEXT("    /clear       - Alias for /new\n");
-		HelpText += TEXT("\n  Connection:\n");
-		HelpText += TEXT("    /connect     - Connect to OpenClaw Gateway\n");
-		HelpText += TEXT("    /disconnect  - Disconnect from Gateway\n");
-		HelpText += TEXT("    /diagnose    - Run connection diagnostics\n");
-		HelpText += TEXT("    /status      - Show connection status\n");
-		HelpText += TEXT("\n  AI Tools:\n");
+		FString HelpText = TEXT("可用命令列表:\n");
+		HelpText += TEXT("\n  [本地命令 - 本地执行]:\n");
+		HelpText += TEXT("    /connect     - 连接 OpenClaw 网关\n");
+		HelpText += TEXT("    /disconnect  - 断开 OpenClaw 网关连接\n");
+		HelpText += TEXT("    /diagnose    - 运行连接诊断\n");
+		HelpText += TEXT("    /status      - 显示连接状态\n");
+		HelpText += TEXT("    /clear       - 清空聊天记录\n");
+		HelpText += TEXT("    /help        - 显示所有可用命令\n");
+		HelpText += TEXT("\n  [AI 命令 - 发送给 AI Agent]:\n");
 		for (const auto& Cmd : AllSlashCommands)
 		{
-			// 跳过已列出的命令
-			if (Cmd->Command == TEXT("/new") || Cmd->Command == TEXT("/clear") ||
-				Cmd->Command == TEXT("/connect") || Cmd->Command == TEXT("/disconnect") ||
-				Cmd->Command == TEXT("/diagnose") || Cmd->Command == TEXT("/status") ||
-				Cmd->Command == TEXT("/help"))
+			// 只显示 AI 命令
+			if (Cmd->bIsLocal)
 			{
 				continue;
 			}
@@ -842,9 +904,10 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 		}
 		AddMessage(TEXT("system"), HelpText);
 	}
+	// --- AI 命令 (选中后将命令文字直接作为消息发送给 AI Agent) ---
 	else
 	{
-		// AI 工具命令: 将 "/command args" 整合成自然语言发送给 AI
+		// 将 "/command args" 整合成完整命令发送给 AI
 		FString FullMessage = Command;
 		if (!Args.IsEmpty())
 		{
@@ -933,17 +996,19 @@ void SUEAgentDashboard::RebuildMessageList()
 				]
 			]
 
-			// 消息内容
+			// 消息内容 (可选中/复制)
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			.Padding(12.0f, 0.0f, 0.0f, 4.0f)
 			[
-				SNew(STextBlock)
+				SNew(SMultiLineEditableText)
 				.Text(FText::FromString(Msg.Content))
 				.Font(Msg.bIsCode
 					? FCoreStyle::GetDefaultFontStyle("Mono", 9)
 					: FCoreStyle::GetDefaultFontStyle("Regular", 10))
 				.AutoWrapText(true)
+				.IsReadOnly(true)
+				.AllowContextMenu(true)
 			]
 		];
 	}

@@ -148,7 +148,7 @@ class OpenClawBridge:
     def is_connected(self) -> bool:
         return self._connected
 
-    def send_message(self, message: str, timeout: float = 120.0) -> str:
+    def send_message(self, message: str, timeout: float = 300.0) -> str:
         """
         发送消息给 AI 并等待完整回复 (同步阻塞)。
 
@@ -473,7 +473,7 @@ class OpenClawBridge:
         }
 
         try:
-            result = await self._rpc_request("chat.send", params, timeout=120.0)
+            result = await self._rpc_request("chat.send", params, timeout=300.0)
 
             # chat.send 可能返回直接结果或通过事件流
             if result is None:
@@ -496,7 +496,7 @@ class OpenClawBridge:
                         f"OpenClaw chat started (runId={run_id[:8]}...), "
                         f"waiting for AI response..."
                     )
-                    return await self._wait_for_final(timeout=120.0)
+                    return await self._wait_for_final(timeout=300.0)
 
                 # 同步返回 (某些场景下 Gateway 直接在 res 帧返回完整结果)
                 msg = result.get("message", "")

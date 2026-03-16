@@ -21,6 +21,7 @@ import os
 import traceback
 import functools
 import logging
+import asyncio
 from datetime import datetime
 
 import unreal
@@ -247,28 +248,58 @@ def log_mcp_call(func):
     """
     MCP 调用装饰器：自动记录请求/响应到 LogUEAgent_MCP 分类。
 
+    支持同步函数和异步协程函数。
+
     用法::
 
         @log_mcp_call
         def handle_tool_call(method, params):
             ...
 
+        @log_mcp_call
+        async def async_handle_tool_call(method, params):
+            ...
+
     宪法约束:
       - 概要设计 §2.2: MCP Tool 封装
       - 核心机制 §1: 自动能力发现
     """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        func_name = func.__name__
-        UELogger.mcp(f">>> {func_name} called | args={args}, kwargs={kwargs}")
-        try:
-            result = func(*args, **kwargs)
-            UELogger.mcp(f"<<< {func_name} returned | result={result}")
-            return result
-        except Exception as e:
-            UELogger.mcp_error(f"!!! {func_name} raised {type(e).__name__}: {e}")
-            raise
-    return wrapper
+    # 判断是否是协程函数
+    if asyncio.iscoroutinefunction(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            func_name = func.__name__
+            # 检测 ping 消息：检查字符串参数中是否包含 "ping" method
+            is_ping = False
+            for arg in args:
+                if isinstance(arg, str) and '"method":"ping"' in arg.replace(' ', ''):
+                    is_ping = True
+                    break
+            # ping 消息静默跳过，不输出任何日志
+            if is_ping:
+                return await func(*args, **kwargs)
+            UELogger.mcp(f">>> {func_name} called | args={args}, kwargs={kwargs}")
+            try:
+                result = await func(*args, **kwargs)
+                UELogger.mcp(f"<<< {func_name} returned | result={result}")
+                return result
+            except Exception as e:
+                UELogger.mcp_error(f"!!! {func_name} raised {type(e).__name__}: {e}")
+                raise
+        return async_wrapper
+    else:
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            func_name = func.__name__
+            UELogger.mcp(f">>> {func_name} called | args={args}, kwargs={kwargs}")
+            try:
+                result = func(*args, **kwargs)
+                UELogger.mcp(f"<<< {func_name} returned | result={result}")
+                return result
+            except Exception as e:
+                UELogger.mcp_error(f"!!! {func_name} raised {type(e).__name__}: {e}")
+                raise
+        return sync_wrapper
 
 
 # ============================================================================
