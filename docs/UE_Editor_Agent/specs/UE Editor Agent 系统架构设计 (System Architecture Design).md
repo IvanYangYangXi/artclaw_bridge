@@ -17,7 +17,8 @@
 
 ### 1.3 核心执行层 (Execution Layer - UE Plugin - Unified Management)
 *   **MCP Server**: 驻留在 UE 进程内的服务器，支持多客户端并发连接，统一分发指令。
-*   **Skill Hub (统一管理)**: **Skill管理中心**，统一加载/卸载/热重载所有Skill，向所有MCP客户端暴露统一接口。
+*   **Core Tool Registry**: 注册底层原子工具（§1.5 定义），随插件启动加载，数量稳定（10~20个）。
+*   **Skill Hub (统一管理)**: **Skill管理中心**，统一加载/卸载/热重载所有业务 Skill（§1.5 定义），向所有MCP客户端暴露统一接口。
 *   **Resource Manager**: 提供按需拉取（Pull-on-Demand）机制，AI需要时才获取UE上下文，节省Token。
 *   **Native UI Bridge**: 负责唤起 Slate 或 UMG 对话框，处理 AI 操作的人机确认。
 *   **Multi-Client Coordinator**: 管理多个MCP客户端连接，推送关键事件通知到所有客户端。
@@ -180,12 +181,109 @@ graph TD
 
 ---
 
+## 1.5 Core Tool 与 Skill 二层体系 (Two-Tier Capability Model)
+
+> **v1.2 新增** — 基于阶段 0~2 实践经验，明确 Tool 和 Skill 的分层定义与增长模型。
+
+### 1.5.1 定义
+
+| 概念 | 定位 | 注册方式 | 生命周期 | 增长模型 |
+|------|------|----------|----------|----------|
+| **Core Tool** | 底层原子操作（系统调用级） | `mcp_server.register_tool()` 硬编码 | 随插件启动，不可热重载 | **稳定**，10~20 个封顶 |
+| **Skill** | 高层业务逻辑（应用程序级） | `@ue_agent.tool` 装饰器 + 自动发现 | 热重载，保存即生效 | **持续增长**，50~500+ |
+
+### 1.5.2 Core Tool 清单（冻结集合）
+
+Core Tool 是底层基础设施，只有在引擎能力边界扩展时才新增。当前已冻结的 Core Tool：
+
+| 类别 | Tool | 说明 |
+|------|------|------|
+| **执行** | `run_ue_python` | 万能执行器，覆盖任意 Python 代码执行 |
+| **感知** | `get_selected_actors` | 获取选中 Actor |
+| | `get_editor_context` | 获取编辑器上下文（模式、关卡信息） |
+| | `get_viewport_camera` | 获取视口相机位置 |
+| | `get_dynamic_prompt` | 根据模式和上下文生成动态 Prompt |
+| **操作** | `focus_on_actor` | 视口聚焦到指定 Actor |
+| | `highlight_actors` | 批量选中并聚焦 Actor 群 |
+| | `set_viewport_camera` | 设置视口相机 |
+| **安全** | `assess_risk` | 风险评估 |
+| | `analyze_error` | 错误分析与修复建议 |
+
+**新增 Core Tool 的条件**（三选二）：
+1. 无法通过 `run_ue_python` 实现（需要 C++ 底层能力）
+2. 调用频率极高，值得独立优化
+3. 需要特殊的安全审查或权限控制
+
+### 1.5.3 Skill 与 Core Tool 的关系
+
+```
+Skill（业务层，可无限扩展）
+  │
+  ├── "一键优化关卡灯光"     → 调用 run_ue_python + focus_on_actor
+  ├── "批量重命名符合项目规范" → 调用 run_ue_python + get_selected_actors
+  ├── "自动检测材质贴图分辨率" → 调用 run_ue_python + highlight_actors
+  └── "赛博朋克风灯光预设"    → 调用 run_ue_python
+        │
+Core Tool（基础设施层，数量稳定）
+  │
+  ├── run_ue_python ─── exec() ─── unreal Python API
+  ├── focus_on_actor ── EditorLevelLibrary
+  └── ...
+```
+
+**关键约束**：
+- Skill 只能调用 Core Tool 或 UE Python API，不能直接操作底层 C++ / RHI
+- `run_ue_python` 永远作为"万能后门"共存，因为 Skill 无法覆盖所有场景
+- Skill 的 Prompt 描述应优先引导 AI 使用已有 Skill，仅在无匹配时 fallback 到 `run_ue_python`
+
+### 1.5.4 Skill Hub 扫描与注册流程（阶段 3 实现）
+
+```
+UE 插件启动
+  │
+  ├── 1. 加载 Core Tool（硬编码，即时完成）
+  │
+  └── 2. 扫描 Skills/ 目录
+        │
+        ├── 发现 @ue_agent.tool 装饰器
+        ├── inspect 提取签名 + docstring
+        ├── 转换为 MCP Tool Definition (JSON-Schema)
+        ├── 注册到 MCP Server
+        │
+        └── 发送 notifications/tools/list_changed 通知所有客户端
+```
+
+### 1.5.5 OpenClaw 工具白名单策略
+
+**问题**：OpenClaw 的 `tools.allow` 需要显式列出每个工具名。当 Skill 数量增长到 100+ 时，手动维护不可行。
+
+**解决方案（按优先级）**：
+
+1. **移除 `tools.allow`**（推荐）：如果 Agent 只通过 mcp-bridge 使用 UE 工具，直接移除白名单约束，信任 MCP Server 暴露的所有工具。
+2. **前缀通配**：在 OpenClaw 支持通配符后，使用 `mcp_ue-editor-agent_*` 一条规则覆盖所有。
+3. **自动同步脚本**：Skill Hub 注册新工具时，自动更新 `openclaw.json` 的白名单（阶段 4 实现）。
+
+**当前阶段（Phase 0~2）的临时方案**：
+- Core Tool 手动列在 `tools.allow`（数量固定，不会膨胀）
+- Skill 注册后触发 `notifications/tools/list_changed`，由 mcp-bridge 自动同步到 OpenClaw（阶段 3 实现）
+
+---
+
 ## 6. 架构演进历史
 
 | 版本 | 日期 | 核心变更 | 原因 |
 | :--- | :--- | :--- | :--- |
 | v1.0 | 2026-03-15 | 初始版本 | 基础架构设计 |
-| **v1.1** | **2026-03-15** | **多平台支持 + 混合同步模式** | **支持WorkBuddy/OpenClaw等多客户端；优化Token使用** |
+| v1.1 | 2026-03-15 | 多平台支持 + 混合同步模式 | 支持WorkBuddy/OpenClaw等多客户端；优化Token使用 |
+| **v1.2** | **2026-03-16** | **Core Tool / Skill 二层体系 + OpenClaw 白名单策略** | **Phase 0~2 实践经验沉淀；解决 Skill 扩展时的注册膨胀问题** |
+
+### v1.2 关键改进
+
+1. **二层体系定义**：明确 Core Tool（底层原子，10~20 个封顶）与 Skill（业务逻辑，可无限扩展）的边界
+2. **Core Tool 冻结清单**：定义当前 10 个 Core Tool 及新增条件（三选二）
+3. **OpenClaw 白名单策略**：明确当前手动配置 + 未来自动同步的演进路径
+4. **Skill Hub 注册流程**：明确 `@ue_agent.tool` 装饰器 → inspect → MCP Schema → 通知客户端的标准链路
+5. **`run_ue_python` 定位明确**：永远作为"万能后门"与 Skill 共存，Skill 优先、run_ue_python 兜底
 
 ### v1.1 关键改进
 

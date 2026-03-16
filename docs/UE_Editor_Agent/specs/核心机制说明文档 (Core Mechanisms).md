@@ -1,13 +1,22 @@
 # UE Editor Agent - 核心机制说明文档 (Core Mechanisms)
 
-## 1. 自动能力发现机制 (Auto-Discovery Mechanism)
-为了实现“写完 Python 逻辑，AI 立即能用”，系统构建了一套基于反射的自动映射机制。
+## 1. 能力注册与发现机制 (Capability Registration & Discovery)
 
+系统采用 **Core Tool / Skill 二层体系**（参见系统架构设计 §1.5）：
+
+### 1.1 Core Tool 注册（启动时，硬编码）
+Core Tool 是底层原子操作，数量稳定（10~20 个），随插件启动一次性注册：
+- **注册方式**：`mcp_server.register_tool()` 在 `init_unreal.py` / `universal_proxy.py` / `context_provider.py` 中硬编码
+- **不可热重载**：Core Tool 变更需要修改源码并重启 UE
+- **当前已冻结清单**：`run_ue_python`, `get_selected_actors`, `get_editor_context`, `focus_on_actor`, `highlight_actors`, `get_viewport_camera`, `set_viewport_camera`, `get_dynamic_prompt`, `assess_risk`, `analyze_error`
+
+### 1.2 Skill 自动发现（运行时，装饰器驱动）— 阶段 3 实现
+Skill 是高层业务逻辑，数量持续增长，支持热重载：
 - **工作流**：
-    1. **扫描器 (Scanner)**：UE 插件启动时，遍历 `Skills/` 目录下的所有 Python 脚本。
+    1. **扫描器 (Scanner)**：UE 插件启动时（及 Skills/ 目录变更时），遍历 `Skills/` 目录下的所有 Python 脚本。
     2. **内省 (Introspection)**：利用 Python `inspect` 库提取带有 `@ue_agent.tool` 装饰器的函数签名、类型注解及 Docstring。
     3. **Schema 转换**：将 Python 元数据转换为 **MCP Tool Definition (JSON-Schema)**。
-    4. **注册 (Registration)**：通过 MCP 协议向 OpenClaw 发送 `notifications/initialized`，宣告可用工具集。
+    4. **注册 (Registration)**：追加注册到 MCP Server，并向所有客户端发送 `notifications/tools/list_changed`。
 
 ## 2. 动态 Skill 热加载机制 (Dynamic Hot-Reload)
 支持在不重启虚幻引擎的情况下，实时更新 Agent 的能力。
