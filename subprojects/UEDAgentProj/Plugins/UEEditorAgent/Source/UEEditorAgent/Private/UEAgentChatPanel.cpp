@@ -105,7 +105,7 @@ void SUEAgentChatPanel::Construct(const FArguments& InArgs)
 
 	// 添加欢迎消息
 	AddMessage(TEXT("assistant"),
-		TEXT("Hello! I'm the UE Editor Agent. I can help you with level editing, asset management, and more.\n\n")
+		TEXT("Hello! I'm the UE Claw Bridge AI Assistant. I can help you with level editing, asset management, and more.\n\n")
 		TEXT("Try asking me to:\n")
 		TEXT("  - List selected actors\n")
 		TEXT("  - Create objects in the scene\n")

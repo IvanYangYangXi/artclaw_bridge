@@ -206,7 +206,7 @@ def verify_bundle(bundle_dir: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="UE Editor Agent - Dependency Bundle Manager"
+        description="UE Claw Bridge - Dependency Bundle Manager"
     )
     parser.add_argument(
         "--python-version", default="3.11",
@@ -234,7 +234,7 @@ def main():
         sys.exit(0 if ok else 1)
 
     print("=" * 50)
-    print("UE Editor Agent - Dependency Bundle Creator")
+    print("UE Claw Bridge - Dependency Bundle Creator")
     print("=" * 50)
 
     success = download_wheels(

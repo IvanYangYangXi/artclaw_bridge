@@ -628,25 +628,84 @@ def sync_connection_state(is_online: bool):
 # 4. 初始化入口
 # ============================================================================
 
+def _is_mcp_server_alive(host: str = "127.0.0.1", port: int = 8080, timeout: float = 1.0) -> bool:
+    """检测 MCP Server 是否正在监听"""
+    import socket
+    try:
+        s = socket.create_connection((host, port), timeout=timeout)
+        s.close()
+        return True
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        return False
+
+
 def _start_mcp_gateway():
     """
     启动 MCP WebSocket 通信网关 (阶段 1.1)。
+
+    流程:
+      1. 检测 MCP Server 是否已在运行 (端口 8080)
+      2. 如果已在运行 → 跳过，避免重复启动
+      3. 如果未运行 → 先尝试关闭残留实例，再启动新实例
+      4. 启动后验证端口是否真正开始监听
 
     宪法约束:
       - 开发路线图 §1.1: WebSocket 服务器在插件启动时自动启动
       - 系统架构设计 §1.2: WebSocket 传输层
     """
+    import time
+
+    host, port = "127.0.0.1", 8080
+
+    # 步骤 1: 检测是否已在运行
+    if _is_mcp_server_alive(host, port):
+        UELogger.info(f"MCP Server already running on {host}:{port}")
+        sync_connection_state(False)  # 等 client 连接后再改 True
+        return
+
+    # 步骤 2: 清理可能残留的旧实例
+    UELogger.info(f"MCP Server not detected on {host}:{port}, starting...")
+    try:
+        from mcp_server import stop_mcp_server, _mcp_server
+        if _mcp_server is not None:
+            UELogger.info("Cleaning up stale MCP Server instance...")
+            stop_mcp_server()
+            time.sleep(0.5)  # 给端口释放一点时间
+    except (ImportError, Exception) as e:
+        UELogger.info(f"No stale instance to clean: {e}")
+
+    # 步骤 3: 启动新实例
     try:
         from mcp_server import start_mcp_server
-        success = start_mcp_server(host="localhost", port=8080)
-        if success:
-            UELogger.info("MCP Gateway startup scheduled")
-        else:
-            UELogger.warning("MCP Gateway failed to start (non-fatal)")
+        success = start_mcp_server(host="localhost", port=port)
+        if not success:
+            UELogger.warning("MCP Gateway start_mcp_server returned False")
+            return
     except ImportError as e:
         UELogger.warning(f"MCP Server module not available: {e}")
+        return
     except Exception:
         UELogger.exception("MCP Gateway startup error")
+        return
+
+    # 步骤 4: 验证启动成功 (等待最多 3 秒)
+    for i in range(6):
+        time.sleep(0.5)
+        if _is_mcp_server_alive(host, port):
+            UELogger.info(f"MCP Gateway started successfully on {host}:{port}")
+            return
+
+    # 也检查递增端口 (端口冲突时可能绑到 8081 等)
+    for alt_port in range(port + 1, port + 5):
+        if _is_mcp_server_alive(host, alt_port):
+            UELogger.info(f"MCP Gateway started on alternate port {host}:{alt_port}")
+            return
+
+    UELogger.warning(
+        f"MCP Gateway startup may have failed — "
+        f"port {port} not responding after 3s. "
+        f"Use /diagnose to troubleshoot."
+    )
 
 
 def _register_shutdown_hook():
@@ -683,7 +742,7 @@ def _initialize():
     _install_stream_redirectors()
     _install_exception_hook()
     UELogger.info("=" * 60)
-    UELogger.info("UE Editor Agent - Python Layer Initializing")
+    UELogger.info("UE Claw Bridge - Python Layer Initializing")
     UELogger.info("=" * 60)
 
     # --- 阶段 0.5: 依赖隔离 ---

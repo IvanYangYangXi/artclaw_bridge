@@ -78,6 +78,7 @@ private:
 	// --- 聊天输入回调 ---
 	void OnInputTextChanged(const FText& NewText);
 	void OnInputTextCommitted(const FText& NewText, ETextCommit::Type CommitType);
+	FReply OnInputKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent);
 
 	// --- 发送模式切换 ---
 	void OnSendModeChanged(ECheckBoxState NewState);

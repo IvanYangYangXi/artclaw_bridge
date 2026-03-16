@@ -89,7 +89,7 @@ void FUEEditorAgentModule::RegisterDashboardTab()
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
 		DashboardTabName,
 		FOnSpawnTab::CreateRaw(this, &FUEEditorAgentModule::SpawnDashboardTab))
-		.SetDisplayName(LOCTEXT("DashboardTabTitle", "UE Editor Agent"))
+		.SetDisplayName(LOCTEXT("DashboardTabTitle", "UE Claw Bridge"))
 		.SetMenuType(ETabSpawnerMenuType::Hidden)  // 不在 Window 菜单重复显示
 		.SetIcon(FSlateIcon(FUEEditorAgentStyle::GetStyleSetName(),
 			"UEEditorAgent.PluginAction"));

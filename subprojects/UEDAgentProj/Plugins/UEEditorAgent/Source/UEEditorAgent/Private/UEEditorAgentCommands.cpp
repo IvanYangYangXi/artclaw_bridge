@@ -6,7 +6,7 @@
 
 void FUEEditorAgentCommands::RegisterCommands()
 {
-	UI_COMMAND(PluginAction, "UEEditorAgent", "Execute UEEditorAgent action", EUserInterfaceActionType::Button, FInputChord());
+	UI_COMMAND(PluginAction, "UE Claw Bridge", "Open UE Claw Bridge panel", EUserInterfaceActionType::Button, FInputChord());
 }
 
 #undef LOCTEXT_NAMESPACE

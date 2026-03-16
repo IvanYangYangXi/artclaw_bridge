@@ -274,7 +274,7 @@ class OpenClawBridge:
                 "maxProtocol": _PROTOCOL_VERSION,
                 "client": {
                     "id": _CLIENT_NAME,
-                    "displayName": "UE Editor Agent",
+                    "displayName": "UE Claw Bridge",
                     "version": _CLIENT_VERSION,
                     "platform": "win32",
                     "mode": "cli",
@@ -674,7 +674,7 @@ def get_last_response() -> str:
 
 def connect(gateway_url: str = "", token: str = "") -> bool:
     """连接到 OpenClaw Gateway (connect 按钮调用)"""
-    return init_bridge(gateway_url, token)
+    return init_bridge()
 
 
 def disconnect():

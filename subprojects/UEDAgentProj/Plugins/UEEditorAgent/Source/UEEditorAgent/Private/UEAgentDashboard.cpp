@@ -7,6 +7,7 @@
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/Layout/SExpandableArea.h"
+#include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -14,6 +15,8 @@
 #include "Widgets/Input/SMenuAnchor.h"
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/STableRow.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Misc/MessageDialog.h"
 #include "IPythonScriptPlugin.h"
 
 #define LOCTEXT_NAMESPACE "UEAgentDashboard"
@@ -239,12 +242,13 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 						.MinDesiredHeight(52.0f)
 						.MaxDesiredHeight(120.0f)
 						[
-							SAssignNew(InputTextBox, SMultiLineEditableTextBox)
-							.HintText(this, &SUEAgentDashboard::GetSendHintText)
-							.AutoWrapText(true)
-							.OnTextChanged(this, &SUEAgentDashboard::OnInputTextChanged)
-							.OnTextCommitted(this, &SUEAgentDashboard::OnInputTextCommitted)
-							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+						SAssignNew(InputTextBox, SMultiLineEditableTextBox)
+						.HintText(LOCTEXT("InputHintDefault", "Ask AI anything... (Enter to send, / for commands)"))
+						.AutoWrapText(true)
+						.OnTextChanged(this, &SUEAgentDashboard::OnInputTextChanged)
+						.OnTextCommitted(this, &SUEAgentDashboard::OnInputTextCommitted)
+						.OnKeyDownHandler(this, &SUEAgentDashboard::OnInputKeyDown)
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
 						]
 					]
 
@@ -255,10 +259,10 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					.Padding(0.0f, 0.0f, 0.0f, 1.0f)
 					[
 						SNew(SButton)
-						.Text(LOCTEXT("SendBtn", "\u25B6"))  // ▶ 符号
+						.Text(LOCTEXT("SendBtn", "Send"))
 						.ToolTipText(LOCTEXT("SendTip", "Send message"))
 						.OnClicked(this, &SUEAgentDashboard::OnSendClicked)
-						.ContentPadding(FMargin(8.0f, 6.0f))
+						.ContentPadding(FMargin(6.0f, 4.0f))
 					]
 				]
 				.MenuContent(SlashMenuContent)
@@ -281,14 +285,13 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					.ToolTipText(LOCTEXT("NewChatTip", "Start a new conversation (/new)"))
 					.OnClicked(this, &SUEAgentDashboard::OnNewChatClicked)
 					.ContentPadding(FMargin(4.0f, 1.0f))
-					.ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("SimpleButton"))
 				]
 
 				// 弹性间距
 				+ SHorizontalBox::Slot()
 				.FillWidth(1.0f)
 				[
-					SNullWidget::NullWidget
+					SNew(SSpacer)
 				]
 
 				// 发送模式: [☑] Enter to Send
@@ -322,12 +325,29 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 
 	// 欢迎消息
 	AddMessage(TEXT("assistant"),
-		TEXT("Hello! I'm the UE Editor Agent.\n\n")
+		TEXT("Hello! I'm the UE Claw Bridge AI Assistant.\n\n")
 		TEXT("Type / to see available commands, or ask me anything.\n")
 		TEXT("Commands: /new, /connect, /disconnect, /diagnose, /status, /help"));
 
 	// 打开面板时自动连接 OpenClaw Bridge
 	ConnectOpenClawBridge();
+
+	// 检查 MCP Server 状态并提示
+	{
+		FString CheckMcpCmd = TEXT(
+			"import socket\n"
+			"_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+			"_s.settimeout(0.5)\n"
+			"try:\n"
+			"    _s.connect(('127.0.0.1', 8080))\n"
+			"    _s.close()\n"
+			"    print('[LogUEAgent] MCP Server: port 8080 OK')\n"
+			"except:\n"
+			"    _s.close()\n"
+			"    print('[LogUEAgent_Error] MCP Server: port 8080 NOT listening')\n"
+		);
+		IPythonScriptPlugin::Get()->ExecPythonCommand(*CheckMcpCmd);
+	}
 }
 
 SUEAgentDashboard::~SUEAgentDashboard()
@@ -358,9 +378,11 @@ void SUEAgentDashboard::HandleConnectionStatusChanged(bool bNewStatus)
 
 FText SUEAgentDashboard::GetConnectionStatusText() const
 {
-	return bCachedIsConnected
-		? LOCTEXT("Connected", "Connected")
-		: LOCTEXT("Disconnected", "Disconnected");
+	if (bCachedIsConnected)
+	{
+		return LOCTEXT("Connected", "Connected");
+	}
+	return LOCTEXT("Disconnected", "Disconnected");
 }
 
 FSlateColor SUEAgentDashboard::GetConnectionStatusColor() const
@@ -538,17 +560,47 @@ void SUEAgentDashboard::OnInputTextChanged(const FText& NewText)
 
 void SUEAgentDashboard::OnInputTextCommitted(const FText& NewText, ETextCommit::Type CommitType)
 {
-	if (CommitType == ETextCommit::OnEnter)
+	// SMultiLineEditableTextBox 在按 Enter 时不触发 OnTextCommitted,
+	// 键盘发送逻辑已移至 OnInputKeyDown。
+	// 此回调仅在失去焦点时触发 (CommitType == OnUserMovedFocus)
+}
+
+FReply SUEAgentDashboard::OnInputKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
+{
+	const FKey Key = InKeyEvent.GetKey();
+
+	if (Key == EKeys::Enter)
 	{
+		const bool bCtrl = InKeyEvent.IsControlDown();
+		const bool bShift = InKeyEvent.IsShiftDown();
+
 		if (bEnterToSend)
 		{
-			// Enter 直接发送模式
-			OnSendClicked();
+			// Enter to Send 模式:
+			//   Enter = 发送
+			//   Shift+Enter = 换行
+			if (!bShift && !bCtrl)
+			{
+				OnSendClicked();
+				return FReply::Handled();
+			}
+			// Shift+Enter: 不拦截，让 SMultiLineEditableTextBox 处理换行
 		}
-		// 否则 Enter 换行 (SMultiLineEditableTextBox 默认行为)
-		// Ctrl+Enter 在 SMultiLineEditableTextBox 中也触发 OnEnter，
-		// 所以在非 Enter 直发模式下也能发送
+		else
+		{
+			// Ctrl+Enter to Send 模式:
+			//   Ctrl+Enter = 发送
+			//   Enter = 换行
+			if (bCtrl)
+			{
+				OnSendClicked();
+				return FReply::Handled();
+			}
+			// 普通 Enter: 不拦截，让 SMultiLineEditableTextBox 处理换行
+		}
 	}
+
+	return FReply::Unhandled();
 }
 
 // ==================================================================
@@ -738,11 +790,31 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 	else if (Command == TEXT("/status"))
 	{
 		FString StatusText = FString::Printf(
-			TEXT("Connection: %s\nServer: %s\nMessages: %d"),
+			TEXT("MCP Client: %s\nMCP Server: %s\nMessages: %d\nSend Mode: %s"),
 			bCachedIsConnected ? TEXT("Connected") : TEXT("Disconnected"),
 			CachedSubsystem.IsValid() ? *CachedSubsystem->GetServerAddress() : TEXT("N/A"),
-			Messages.Num());
+			Messages.Num(),
+			bEnterToSend ? TEXT("Enter to Send") : TEXT("Ctrl+Enter to Send"));
 		AddMessage(TEXT("system"), StatusText);
+
+		// 检查 MCP Server + OpenClaw Bridge 状态
+		FString PythonCheck = TEXT(
+			"import socket\n"
+			"_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+			"_s.settimeout(0.5)\n"
+			"mcp_ok = False\n"
+			"try:\n"
+			"    _s.connect(('127.0.0.1', 8080))\n"
+			"    mcp_ok = True\n"
+			"except: pass\n"
+			"finally: _s.close()\n"
+			"from openclaw_bridge import is_connected as _oc_connected\n"
+			"oc_ok = _oc_connected()\n"
+			"_mcp_s = 'OK' if mcp_ok else 'DOWN'\n"
+			"_oc_s = 'Connected' if oc_ok else 'Disconnected'\n"
+			"print(f'[LogUEAgent] Status: MCP Server={_mcp_s}, OpenClaw Bridge={_oc_s}')\n"
+		);
+		IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCheck);
 	}
 	else if (Command == TEXT("/help"))
 	{
@@ -885,36 +957,38 @@ void SUEAgentDashboard::RebuildMessageList()
 
 void SUEAgentDashboard::ConnectOpenClawBridge()
 {
-	AddMessage(TEXT("system"), TEXT("Connecting to OpenClaw Gateway..."));
+	AddMessage(TEXT("system"), TEXT("Connecting..."));
 
-	FString PythonCmd = TEXT(
+	// 检测 UE MCP Server，不存在则自动重启
+	FString CheckMcp = TEXT(
+		"import socket\n"
+		"def _check_and_start_mcp():\n"
+		"    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+		"    s.settimeout(0.5)\n"
+		"    try:\n"
+		"        s.connect(('127.0.0.1', 8080))\n"
+		"        s.close()\n"
+		"        print('[LogUEAgent] MCP Server: OK')\n"
+		"    except:\n"
+		"        s.close()\n"
+		"        print('[LogUEAgent] MCP Server: DOWN, restarting...')\n"
+		"        from init_unreal import _start_mcp_gateway\n"
+		"        _start_mcp_gateway()\n"
+		"_check_and_start_mcp()\n"
+	);
+	IPythonScriptPlugin::Get()->ExecPythonCommand(*CheckMcp);
+
+	// 连接 OpenClaw Bridge (Chat 通道)
+	FString ConnectBridge = TEXT(
 		"from openclaw_bridge import connect\n"
 		"connect()\n"
-		"import time; time.sleep(1.5)\n"
-		"from openclaw_bridge import is_connected\n"
-		"if is_connected():\n"
-		"    print('[LogUEAgent] OpenClaw Bridge connected successfully')\n"
-		"else:\n"
-		"    print('[LogUEAgent] OpenClaw Bridge connection pending...')\n"
+		"print('[LogUEAgent] OpenClaw Bridge connect requested')\n"
 	);
-	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+	IPythonScriptPlugin::Get()->ExecPythonCommand(*ConnectBridge);
 
-	// 延迟检查连接状态
-	auto Self = SharedThis(this);
-	FTSTicker::GetCoreTicker().AddTicker(
-		FTickerDelegate::CreateLambda([Self](float) -> bool
-		{
-			FString CheckCmd = TEXT(
-				"from openclaw_bridge import is_connected\n"
-				"_ue_bridge_connected = is_connected()\n"
-			);
-			IPythonScriptPlugin::Get()->ExecPythonCommand(*CheckCmd);
-			// 由于无法直接返回 Python 值，通过文件或日志间接确认
-			Self->AddMessage(TEXT("system"), TEXT("OpenClaw Bridge connect requested. Check status with /status."));
-			return false;
-		}),
-		2.0f
-	);
+	AddMessage(TEXT("system"),
+		TEXT("OpenClaw Bridge connect requested.\n"
+			 "If OpenClaw MCP Bridge is not connected, try: openclaw daemon restart"));
 }
 
 void SUEAgentDashboard::DisconnectOpenClawBridge()
@@ -930,7 +1004,7 @@ void SUEAgentDashboard::DisconnectOpenClawBridge()
 
 void SUEAgentDashboard::RunDiagnoseConnection()
 {
-	AddMessage(TEXT("system"), TEXT("Running connection diagnostics..."));
+	AddMessage(TEXT("system"), TEXT("Running environment health check..."));
 
 	// 诊断结果写入临时文件，然后轮询读取
 	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
@@ -940,9 +1014,14 @@ void SUEAgentDashboard::RunDiagnoseConnection()
 	// 清除上次结果
 	IFileManager::Get().Delete(*DiagFile, false, false, true);
 
+	// 优先使用完整 Health Check，fallback 到 diagnose_connection
 	FString PythonCmd = FString::Printf(
-		TEXT("from openclaw_bridge import diagnose_connection\n"
-			 "result = diagnose_connection()\n"
+		TEXT("try:\n"
+			 "    from health_check import run_health_check\n"
+			 "    result = run_health_check()\n"
+			 "except ImportError:\n"
+			 "    from openclaw_bridge import diagnose_connection\n"
+			 "    result = diagnose_connection()\n"
 			 "with open(r'%s', 'w', encoding='utf-8') as f:\n"
 			 "    f.write(result)\n"),
 		*DiagFile);

@@ -14,6 +14,9 @@
 | 3 | [握手失败后重试刷屏](#issue-3-握手失败后重试刷屏) | 🟡 中等 | ✅ 已修复 | 2026-03-16 |
 | 4 | [chat.send 返回 started 被当作最终结果](#issue-4-chatsend-返回-started-被当作最终结果) | 🔴 致命 | ✅ 已修复 | 2026-03-16 |
 | 5 | [message.content 格式解析错误](#issue-5-messagecontent-格式解析错误) | 🔴 致命 | ✅ 已修复 | 2026-03-16 |
+| 6 | [MCP Server 端口占用 (热重载)](#issue-6-mcp-server-端口占用-热重载) | 🟡 中等 | ✅ 已修复 | 2026-03-16 |
+| 7 | [connect() 参数签名不匹配](#issue-7-connect-参数签名不匹配) | 🔴 致命 | ✅ 已修复 | 2026-03-16 |
+| 8 | [SimpleButton 样式不存在](#issue-8-simplebutton-样式不存在) | 🔴 致命 | ✅ 已修复 | 2026-03-16 |
 
 ---
 

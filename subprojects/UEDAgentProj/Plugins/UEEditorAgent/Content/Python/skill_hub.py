@@ -267,7 +267,7 @@ class SkillHub:
             UELogger.info(f"SkillHub: watching {self._skills_dir}")
         except Exception as e:
             # fallback: 使用定时轮询
-            UELogger.mcp_error(
+            UELogger.info(
                 f"DirectoryWatcher unavailable ({e}), using polling fallback"
             )
             self._start_polling_watcher()

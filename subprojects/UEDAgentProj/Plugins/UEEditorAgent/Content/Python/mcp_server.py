@@ -52,7 +52,7 @@ WS_PING_INTERVAL = 20  # 秒
 WS_PING_TIMEOUT = 10   # 秒
 
 # 服务器信息
-SERVER_NAME = "UE Editor Agent"
+SERVER_NAME = "UE Claw Bridge"
 SERVER_VERSION = "1.0.0"
 
 
@@ -572,13 +572,33 @@ class MCPServer:
         """启动 WebSocket 服务器（内部异步方法）"""
         self._actual_port = self._find_available_port()
 
-        self._server = await ws_serve(
-            self._connection_handler,
-            self._host,
-            self._actual_port,
-            ping_interval=WS_PING_INTERVAL,
-            ping_timeout=WS_PING_TIMEOUT,
-        )
+        # 尝试绑定，如果端口仍被占用（竞态条件/热重载残留），自动递增
+        max_retries = MAX_PORT_PROBE
+        for attempt in range(max_retries):
+            try:
+                self._server = await ws_serve(
+                    self._connection_handler,
+                    self._host,
+                    self._actual_port,
+                    ping_interval=WS_PING_INTERVAL,
+                    ping_timeout=WS_PING_TIMEOUT,
+                )
+                break  # 绑定成功
+            except OSError as e:
+                if e.errno == 10048 or "address already in use" in str(e).lower():
+                    UELogger.warning(
+                        f"Port {self._actual_port} still occupied "
+                        f"(attempt {attempt+1}/{max_retries}), trying next..."
+                    )
+                    self._actual_port += 1
+                else:
+                    raise
+        else:
+            UELogger.mcp_error(
+                f"Failed to bind any port in range "
+                f"{self._port}-{self._actual_port}"
+            )
+            return
 
         self._running = True
         UELogger.info(f"MCP Server started: {self.server_address}")
