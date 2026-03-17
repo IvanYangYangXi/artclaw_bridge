@@ -249,6 +249,7 @@ class OpenClawBridge:
             except Exception as e:
                 UELogger.warning(f"OpenClaw Bridge: connection error ({e}), retry in {backoff:.0f}s")
 
+            was_connected = self._connected
             self._connected = False
             self._ws = None
 
@@ -257,6 +258,19 @@ class OpenClawBridge:
                 if not fut.done():
                     fut.set_exception(ConnectionError("WebSocket disconnected"))
             self._pending.clear()
+
+            # 通知 on_ai_message 回调连接断开，
+            # 这会触发 _wait_for_final 中的 _capture 设置 final_event，
+            # 使调用方立即解除阻塞而非等到 300s 超时
+            if was_connected and self.on_ai_message:
+                try:
+                    self.on_ai_message(
+                        "error",
+                        "[Connection lost] OpenClaw Gateway disconnected (may be restarting). "
+                        "Click 'Connect' or /connect to reconnect."
+                    )
+                except Exception:
+                    pass
 
             if self._stop_event.is_set():
                 break
