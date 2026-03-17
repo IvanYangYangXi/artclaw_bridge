@@ -159,14 +159,24 @@ def register_skill_tools(mcp_server, skill_hub) -> None:
         handler=lambda args: _handle_skill_manage(skill_hub, args),
     )
 
-    # --- skill_generate: 保留，自然语言生成 ---
+    # --- skill_generate: 自然语言生成 (v2 对话式) ---
     mcp_server.register_tool(
         name="skill_generate",
         description=(
             "Generate a new skill from a natural language description. "
             "Analyzes the intent, determines category/software, generates "
             "manifest.json + __init__.py + README.md. "
-            "Returns generated file contents for review before activation."
+            "Returns generated file contents for review before activation.\n\n"
+            "WORKFLOW (AI-driven conversational skill creation):\n"
+            "1. User describes what they want → AI calls this tool with description\n"
+            "2. Tool auto-detects UE version, software, infers category/risk_level\n"
+            "3. AI reviews the result, presents a summary to the user for confirmation\n"
+            "4. If user confirms → AI calls skill_manage(action='create') to install\n"
+            "5. If user wants changes → AI adjusts parameters and re-generates\n\n"
+            "AI can pass pre-inferred fields (name, display_name, category, risk_level) "
+            "to override the tool's fallback inference. Fields left empty will be auto-inferred.\n\n"
+            "The tool returns needs_confirmation=true — AI MUST show the summary to the "
+            "user and wait for confirmation before calling skill_manage(action='create')."
         ),
         input_schema={
             "type": "object",
@@ -175,19 +185,34 @@ def register_skill_tools(mcp_server, skill_hub) -> None:
                     "type": "string",
                     "description": "Natural language description of the desired skill",
                 },
+                "name": {
+                    "type": "string",
+                    "description": "Skill name in snake_case (AI-inferred, or leave empty for auto)",
+                },
+                "display_name": {
+                    "type": "string",
+                    "description": "Human-readable display name (AI-inferred, or leave empty for auto)",
+                },
                 "category": {
                     "type": "string",
                     "description": f"Hint for category: {sorted(VALID_CATEGORIES)}",
                 },
+                "risk_level": {
+                    "type": "string",
+                    "description": f"Risk level: {sorted(VALID_RISK_LEVELS)} (AI-inferred based on read/write/delete)",
+                },
                 "software": {
                     "type": "string",
-                    "description": f"Target software: {sorted(VALID_SOFTWARE)}",
-                    "default": "unreal_engine",
+                    "description": f"Target software: {sorted(VALID_SOFTWARE)} (auto-detected from environment if empty)",
                 },
                 "target_layer": {
                     "type": "string",
                     "description": "Target layer: user (default), team, custom",
                     "default": "user",
+                },
+                "author": {
+                    "type": "string",
+                    "description": "Author name (optional)",
                 },
             },
             "required": ["description"],
@@ -653,46 +678,113 @@ def _handle_skill_disable(hub, arguments: dict) -> str:
 # Phase B5 新增 Handlers
 # ============================================================================
 
+def _collect_environment_context() -> dict:
+    """自动收集当前 UE 环境上下文 (B1: 3.7 Skill 创建交互优化)"""
+    ctx = {"software": "unreal_engine"}
+    try:
+        import unreal
+        # UE 版本
+        ctx["ue_version"] = str(unreal.SystemLibrary.get_engine_version())
+        # 项目名
+        project_path = str(unreal.Paths.get_project_file_path())
+        if project_path:
+            ctx["project_name"] = project_path.split("/")[-1].split("\\")[-1].replace(".uproject", "")
+        # 当前关卡
+        world = unreal.EditorLevelLibrary.get_editor_world()
+        if world:
+            ctx["current_level"] = world.get_name()
+    except Exception as e:
+        ctx["_env_error"] = str(e)
+    return ctx
+
+
+def _infer_risk_level(description: str) -> str:
+    """从描述推断风险级别 (B4: 3.7 优化)"""
+    desc_lower = description.lower()
+
+    # 高危操作关键词
+    high_keywords = ["delete", "remove", "drop", "删除", "移除", "清除", "清空"]
+    for kw in high_keywords:
+        if kw in desc_lower:
+            return "high"
+
+    # 中危操作关键词（可撤销的修改）
+    medium_keywords = [
+        "rename", "set", "modify", "change", "move", "batch", "replace",
+        "重命名", "设置", "修改", "移动", "批量", "替换", "编辑",
+    ]
+    for kw in medium_keywords:
+        if kw in desc_lower:
+            return "medium"
+
+    return "low"
+
+
 def _handle_skill_generate(hub, arguments: dict) -> str:
     """
-    自然语言生成 Skill (stub)。
+    自然语言生成 Skill — v2 对话式 (3.7 Skill 创建交互优化)
 
-    真正的 AI 生成逻辑由上层 Agent (如 OpenClaw/Claude) 驱动:
+    由上层 AI Agent (OpenClaw/Claude) 驱动:
       1. Agent 调用此 Tool，传入自然语言描述
-      2. 此 Tool 解析意图，创建 scaffold
-      3. 返回生成的文件内容供 Agent 审查/修改
-      4. Agent 可后续调用 skill_create 完成安装
+      2. 此 Tool 自动收集 UE 环境上下文 + 推断元数据
+      3. 返回推断结果 + scaffold 供 Agent 展示给用户确认
+      4. 用户确认后 Agent 调用 skill_manage(action=create) 安装
 
-    当前实现：基于关键词分析创建基础 scaffold，
-    不含真正的 AI 代码生成（留给 Agent 层完成）。
+    AI Agent 负责: name 精细推断、display_name、多轮追问
+    此 Tool 负责: 环境收集、fallback 推断、scaffold 生成
     """
     description = arguments.get("description", "")
     category = arguments.get("category", "")
-    software = arguments.get("software", "unreal_engine")
+    software = arguments.get("software", "")
     target_layer = arguments.get("target_layer", "user")
+    # v2 新增: AI 可直接传入推断好的字段
+    name = arguments.get("name", "")
+    display_name = arguments.get("display_name", "")
+    risk_level = arguments.get("risk_level", "")
+    author = arguments.get("author", "")
 
     if not description:
         return json.dumps({"success": False, "error": "description is required"})
 
-    # 从自然语言描述推断 Skill 名称
-    name = _infer_skill_name(description)
+    # B1: 自动收集环境上下文
+    env_context = _collect_environment_context()
 
-    # 从描述推断 category (如果未指定)
+    # software: 优先用传入值，其次环境检测值
+    if not software:
+        software = env_context.get("software", "unreal_engine")
+
+    # name: 优先用 AI 传入值，其次 fallback 推断
+    if not name:
+        name = _infer_skill_name(description)
+
+    # display_name: 优先用 AI 传入值
+    if not display_name:
+        display_name = description[:60]
+
+    # category: 优先用传入值，其次推断
     if not category:
         category = _infer_category(description)
+
+    # risk_level: 优先用传入值，其次推断
+    if not risk_level:
+        risk_level = _infer_risk_level(description)
+
+    # author
+    if not author:
+        author = "AI Generated"
 
     # 生成 manifest
     manifest_data = {
         "manifest_version": "1.0",
         "name": name,
-        "display_name": description[:50],
+        "display_name": display_name,
         "description": description,
         "version": "1.0.0",
-        "author": "AI Generated",
+        "author": author,
         "license": "MIT",
         "software": software,
         "category": category,
-        "risk_level": "low",
+        "risk_level": risk_level,
         "dependencies": [],
         "tags": [category, "ai-generated"],
         "entry_point": "__init__.py",
@@ -704,12 +796,21 @@ def _handle_skill_generate(hub, arguments: dict) -> str:
         ]
     }
 
+    # 添加 software_version（如果有 UE 版本信息）
+    ue_ver = env_context.get("ue_version", "")
+    if ue_ver and software == "unreal_engine":
+        # 提取主版本号 e.g. "5.5.1-0+++UE5" -> "5.5"
+        parts = ue_ver.split(".")
+        if len(parts) >= 2:
+            min_ver = f"{parts[0]}.{parts[1]}"
+            manifest_data["software_version"] = {"min": min_ver}
+
     # 生成 __init__.py scaffold
-    init_code = _generate_init_code(name, description, category, "low", "advanced")
+    init_code = _generate_init_code(name, description, category, risk_level, "advanced")
 
     # 生成 README
     readme = (
-        f"# {description[:50]}\n\n"
+        f"# {display_name}\n\n"
         f"**AI Generated Skill**\n\n"
         f"## Description\n\n{description}\n\n"
         f"## Usage\n\nThis skill is auto-loaded by ArtClaw Skill Hub.\n\n"
@@ -721,8 +822,12 @@ def _handle_skill_generate(hub, arguments: dict) -> str:
     return json.dumps({
         "success": True,
         "skill_name": name,
+        "display_name": display_name,
         "inferred_category": category,
+        "inferred_risk_level": risk_level,
+        "environment": env_context,
         "target_layer": target_layer,
+        "needs_confirmation": True,
         "generated_files": {
             "manifest.json": manifest_data,
             "__init__.py": init_code,
@@ -730,7 +835,7 @@ def _handle_skill_generate(hub, arguments: dict) -> str:
         },
         "next_steps": [
             f"Review the generated code above",
-            f"Call skill_create with name='{name}' to install, or",
+            f"Call skill_manage with action='create' and name='{name}' to install, or",
             f"Modify the __init__.py code and save to Skills/{_layer_dir(target_layer)}/{name}/",
         ],
         "message": (

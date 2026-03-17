@@ -358,83 +358,61 @@ CLI 解析意图，提取关键信息
 
 ## 8. UE 编辑器内集成
 
-### 8.1 自然语言创建 Skill（核心交互）
+### 8.1 对话式 Skill 创建（核心交互 — v2）
 
-**设计原则**: 创建 Skill 本身是一个 Skill（`artclaw.skill.create`）。用户通过**特定自然语言指令**触发，执行文档规定的完整流程。
+> **v2 更新 (2026-03-17)**: 移除 C++ 模态对话框，改为 AI 对话式创建。
+> 详见 `docs/UE_Editor_Agent/features/阶段 3 智能增强/3.7 Skill创建交互优化方案.md`
 
-**触发方式区分**:
+**设计原则**: 创建 Skill 应该是一次自然对话，而不是填表单。用户只需说一句话，AI 自动推断所有能推断的字段，需要确认的通过聊天追问。
 
-| 场景 | 用户输入 | AI 响应 |
-|------|----------|---------|
-| **常规对话** | "帮我创建一个技能" / "怎么创建技能" | 正常对话回应，解释 Skill 概念 |
-| **调用 Artclaw Skill** | "**用 artclaw 创建一个技能**" / "**artclaw 创建技能**：批量重命名 Actor" | 触发 `artclaw.skill.create`，执行完整流程 |
-
-**关键区分词**: 输入中包含 "artclaw" / "artclaw skill" / "使用 artclaw" 等明确调用标识时，才触发 Skill 创建流程。
-
-**Artclaw Skill 创建流程** (`artclaw.skill.create`):
+**流程**:
 ```
-用户输入: "用 artclaw 创建一个 UE 技能，读取母材质生成使用文档"
+用户: "帮我创建一个 artclaw 技能，批量重命名场景中的 Actor 并加前缀"
         ↓
-AI 识别: 调用 artclaw.skill.create
+[所有消息统一发给 AI，不再 C++ 侧拦截]
         ↓
-Skill 内部执行:
-  1. 解析意图 → 确定 category (material)
-  2. 检查 C++ 需求 → 判断是否需要 C++ 接口
-  3. 选择目录 → skills/unreal_engine/material/
-  4. 生成 manifest.json（按规范填写）
-  5. 生成 __init__.py（含错误处理、返回值格式）
-  6. 生成 README.md
+AI 自动收集上下文:
+  • 调用 get_editor_context() → UE 版本
+  • 推断 category / risk_level / name / display_name
         ↓
-如需要 C++:
-  → 记录到 docs/c++_requirements.md
-  → **弹窗提示用户**: "此 Skill 需要 C++ 接口支持，是否继续？"
-  → **用户确认后**，方可修改 C++
-  → 如用户取消，Skill 以纯 Python 可用功能运行
+AI 展示确认摘要:
+  "📦 名称: batch_rename_actors_prefix
+   📂 分类: scene
+   🎯 软件: unreal_engine (UE 5.5)
+   ⚠️ 风险: medium
+   确认创建？"
         ↓
-展示预览 → 用户确认
+用户确认 → AI 调用 skill_manage(action=create)
         ↓
-自动安装到对应目录层级 (00_official/01_team/02_user)
-        ↓
-热加载并注册到 MCP
-        ↓
-提示: "Skill 'generate_material_doc' 已创建并激活"
+自动安装 + 热加载 + 注册到 MCP
 ```
 
-**包含的文档要求**:
-- ✅ 目录存放规则（按 software/category 分层）
-- ✅ C++ 需求判断与确认流程
-- ✅ manifest.json 规范填写
-- ✅ 错误处理模式
-- ✅ 返回值标准格式
-- ✅ 版本匹配与加载优先级
+**AI 自动获取/推断的字段**:
+- `software` — 环境检测（UE 内 = unreal_engine）
+- `software_version` — 从 `get_editor_context()` 获取 UE 版本
+- `name` — AI 从描述推断 snake_case 名称
+- `display_name` — AI 生成人类可读名称
+- `category` — AI 语义分析分类
+- `risk_level` — AI 根据读/写/删除判断
 
-**实现方式**:
-- Skill 名称: `artclaw.skill.create` / `artclaw.skill.generate`
-- 通过 CLI `artclaw skill generate` 执行生成
-- 生成过程中实时反馈进度
-- 支持"撤销创建"操作
+**需要追问的场景**（通过聊天，非弹窗）:
+- 描述模糊无法确定功能
+- 涉及多个 DCC 软件
+- 可能需要 C++ 接口
+- 目标层级不确定
 
-### 8.2 备用入口：快捷按钮
+### 8.2 备用入口：Create Skill 按钮
 
-对于不熟悉自然语言指令的用户，保留 **"Create Skill"** 按钮作为备用入口：
+保留按钮，但行为改为在聊天输入框填充引导文本:
 
 ```
-┌─────────────────────────────────────┐
-│  UE Editor Agent                    │
-├─────────────────────────────────────┤
-│  [Chat] [Skills] [Settings]         │
-├─────────────────────────────────────┤
-│                                     │
-│  💡 提示: 直接输入"创建一个技能..."  │
-│     或点击 [Create Skill] 按钮      │
-│                                     │
-│  ┌─────────────────────────────┐   │
-│  │ 输入自然语言描述...          │   │
-│  └─────────────────────────────┘   │
-│                                     │
-└─────────────────────────────────────┘
+[用户点击 Create Skill]
+  → 输入框自动填充: "Create an artclaw skill: "
+  → 用户继续输入描述
+  → 发送给 AI，走对话式流程
 ```
-7. 提示用户新 Skill 已可用
+
+如 AI 未连接，提示用户先执行 `/connect`。
 
 ---
 

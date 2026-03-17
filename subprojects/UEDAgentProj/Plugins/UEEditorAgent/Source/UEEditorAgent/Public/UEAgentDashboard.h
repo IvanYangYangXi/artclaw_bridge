@@ -203,43 +203,10 @@ private:
 	/** 是否处于编辑模式 */
 	bool bQuickInputEditMode = false;
 
-	// --- Skill 创建集成 (阶段 D) ---
+	// --- Skill 创建集成 (阶段 D — v2 对话式) ---
 
-	/** D1: "Create Skill" 按钮回调 */
+	/** "Create Skill" 按钮回调: 在输入框填充引导文本 */
 	FReply OnCreateSkillClicked();
-
-	/** D2: 打开自然语言 Skill 输入对话框 */
-	void OpenSkillCreationDialog();
-
-	/** D3: 启动 Skill 生成并显示进度 */
-	void StartSkillGeneration(const FString& Description, const FString& Category, const FString& Software);
-
-	/** D3: 轮询 Skill 生成进度 */
-	void PollSkillGenerationProgress();
-
-	/** D4: 打开预览与确认界面 */
-	void OpenSkillPreviewDialog(const FString& PreviewJson);
-
-	/** ArtClaw Skill 触发检测: 检查用户输入是否包含 artclaw 触发词 */
-	bool IsArtclawSkillTrigger(const FString& InputText) const;
-
-	/** 从触发消息中提取 Skill 描述部分 */
-	FString ExtractSkillDescription(const FString& InputText) const;
-
-	/** C++ 需求弹窗确认 (D4 子流程) */
-	bool ShowCppRequirementDialog(const FString& SkillName, const TArray<FString>& CppRequirements);
-
-	/** Skill 生成状态 */
-	bool bIsGeneratingSkill = false;
-
-	/** Skill 生成进度文件路径 */
-	FString SkillProgressFile;
-
-	/** Skill 生成结果文件路径 */
-	FString SkillResultFile;
-
-	/** Skill 生成轮询句柄 */
-	FTSTicker::FDelegateHandle SkillPollHandle;
 
 	static constexpr int32 MaxMessages = 500;
 };
