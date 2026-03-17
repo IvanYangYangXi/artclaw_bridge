@@ -1,8 +1,14 @@
 """
-skill_hub.py - Skill 热加载器与统一管理中心
-=============================================
+skill_hub.py - Skill 热加载器与统一管理中心 (Phase B Enhanced)
+================================================================
 
-阶段 3.1: Dynamic Skill Hub
+阶段 3.1 + Phase B: Dynamic Skill Hub with Layered Loading
+
+Phase B 增强:
+  B1: 分层加载机制 (00_official/01_team/02_user/99_custom)
+  B2: manifest.json 解析与验证
+  B3: 软件版本匹配
+  B4: Skill 冲突检测
 
 宪法约束:
   - 系统架构设计 §1.3: Skill Hub 统一加载/卸载/热重载所有 Skill
@@ -10,11 +16,7 @@ skill_hub.py - Skill 热加载器与统一管理中心
   - 核心机制 §1.2: @ue_agent.tool 装饰器 + 自动发现
   - 核心机制 §2: importlib.reload + DirectoryWatcher
   - 开发路线图 §3.1: Skills/ 目录实时文件监控
-
-设计说明:
-  - Core Tool 在各 tools/*.py 中硬编码注册（Phase 0~2 已完成）
-  - Skill 在 Skills/ 目录下通过 @ue_agent.tool 装饰器声明
-  - Skill Hub 负责扫描、注册、热重载、通知客户端
+  - skill-management-system.md §5: 分层加载优先级
 """
 
 from __future__ import annotations
@@ -28,11 +30,24 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import unreal
 
 from init_unreal import UELogger
+
+# Phase B 模块
+from skill_manifest import (
+    SkillManifest, parse_manifest, validate_manifest, scan_skill_dir,
+    ManifestValidationError,
+)
+from skill_version import (
+    matches_software_version, select_best_match, version_distance,
+)
+from skill_conflict import (
+    ConflictDetector, ConflictReport, SkillConflict, ToolConflict,
+    LAYER_PRIORITY, LAYER_DISPLAY,
+)
 
 # ============================================================================
 # 1. @ue_agent.tool 装饰器
@@ -58,7 +73,6 @@ def tool(
 
     宪法约束:
       - 核心机制 §1.2: @ue_agent.tool 装饰器 + 自动发现
-      - 系统架构设计 §1.5.1: Skill 注册方式
 
     Args:
         name: Tool 名称。默认使用函数名。
@@ -94,12 +108,7 @@ def tool(
 
 
 def _generate_schema_from_hints(func: Callable) -> dict:
-    """
-    从函数签名的 type hints 生成 JSON Schema。
-
-    宪法约束:
-      - 核心机制 §1: inspect 提取签名 + docstring → Schema 转换
-    """
+    """从函数签名的 type hints 生成 JSON Schema。"""
     sig = inspect.signature(func)
     properties = {}
     required = []
@@ -142,17 +151,35 @@ def _generate_schema_from_hints(func: Callable) -> dict:
 
     return schema
 
+# ============================================================================
+# 2. 分层加载配置
+# ============================================================================
+
+# 层级目录名称 → 来源标识
+LAYER_DIRS = {
+    "00_official": "official",
+    "01_team": "team",
+    "02_user": "user",
+    "99_custom": "custom",
+}
+
+# 层级加载顺序（按目录名排序，数字越小优先级越高）
+LAYER_ORDER = sorted(LAYER_DIRS.keys())
+
 
 # ============================================================================
-# 2. Skill Hub 核心
+# 3. Skill Hub 核心（Phase B 增强版）
 # ============================================================================
 
 class SkillHub:
     """
-    Skill 管理中心。
+    Skill 管理中心 (Phase B Enhanced)。
 
     职责:
-      - 扫描 Skills/ 目录发现 @ue_agent.tool 装饰的函数
+      - 分层扫描 Skills/ 目录 (00_official → 01_team → 02_user → 99_custom)
+      - 解析并验证每个 Skill 的 manifest.json
+      - 检测软件版本兼容性
+      - 检测 Skill/Tool 冲突并按优先级解决
       - 注册到 MCP Server
       - 监控文件变更，热重载
       - 变更后通知所有 MCP 客户端
@@ -160,6 +187,7 @@ class SkillHub:
     宪法约束:
       - 系统架构设计 §1.3: Skill Hub (统一管理)
       - 系统架构设计 §1.5.4: Skill Hub 扫描与注册流程
+      - skill-management-system.md §5: 分层加载
     """
 
     def __init__(self, mcp_server, skills_dir: Optional[str] = None):
@@ -168,86 +196,291 @@ class SkillHub:
         self._registered_skills: Dict[str, dict] = {}  # skill_name -> info
         self._watcher_handle = None
 
+        # Phase B: 增强状态
+        self._manifests: Dict[str, SkillManifest] = {}  # skill_name -> manifest
+        self._all_manifests: List[SkillManifest] = []  # 所有发现的 manifest (含冲突)
+        self._conflict_report: Optional[ConflictReport] = None
+        self._disabled_skills: Set[str] = set()  # 被禁用的 Skill 名称
+        self._conflict_detector = ConflictDetector(self._disabled_skills)
+
+        # 软件环境信息
+        self._current_software = "unreal_engine"
+        self._current_version = self._detect_ue_version()
+
+        # MCP Tool 排除列表：这些工具函数保留在代码中（可通过 run_ue_python 调用），
+        # 但不暴露为 MCP Tool（减少 AI 工具选择噪音）
+        self._excluded_tools: Set[str] = {
+            # scene_ops.py — 写操作由 run_ue_python 替代
+            "spawn_actor",
+            "delete_actors",
+            "set_actor_transform",
+            "rename_actor",
+            "duplicate_actors",
+            # asset_ops.py
+            "does_asset_exist",
+            # material_ops.py — 写操作由 run_ue_python 替代
+            "set_actor_material",
+            "create_material_instance",
+            # level_ops.py — 写操作由 run_ue_python 替代
+            "save_current_level",
+            "save_all_dirty_packages",
+            "open_level",
+            "set_viewport_camera",
+        }
+
         # 确定 Skills 目录
         if skills_dir:
             self._skills_dir = Path(skills_dir)
         else:
-            # 默认: 插件的 Content/Python/Skills/
             plugin_python_dir = Path(__file__).parent
             self._skills_dir = plugin_python_dir / "Skills"
 
-        # 确保目录存在
-        self._skills_dir.mkdir(parents=True, exist_ok=True)
+        # 确保分层目录存在
+        self._ensure_layer_dirs()
 
         # 将 Skills 目录加入 sys.path
         skills_str = str(self._skills_dir)
         if skills_str not in sys.path:
             sys.path.insert(0, skills_str)
 
-        UELogger.info(f"SkillHub initialized: {self._skills_dir}")
+        UELogger.info(f"SkillHub initialized: {self._skills_dir} (UE {self._current_version})")
 
+    # ------------------------------------------------------------------
+    # 初始化辅助
+    # ------------------------------------------------------------------
+
+    def _detect_ue_version(self) -> str:
+        """检测当前 UE 版本"""
+        try:
+            version = unreal.SystemLibrary.get_engine_version()
+            # 格式如 "5.4.1-0+++UE5+Release-5.4" → 提取 "5.4.1"
+            import re
+            match = re.match(r"(\d+\.\d+(?:\.\d+)?)", str(version))
+            if match:
+                return match.group(1)
+            return str(version)
+        except Exception:
+            return "5.4"  # fallback
+
+    def _ensure_layer_dirs(self) -> None:
+        """确保分层目录存在"""
+        self._skills_dir.mkdir(parents=True, exist_ok=True)
+        for layer_dir_name in LAYER_DIRS.keys():
+            layer_path = self._skills_dir / layer_dir_name
+            layer_path.mkdir(exist_ok=True)
     # ------------------------------------------------------------------
     # 公开接口
     # ------------------------------------------------------------------
 
     def scan_and_register(self) -> int:
         """
-        扫描 Skills/ 目录，发现并注册所有 Skill。
+        分层扫描 Skills/ 目录，发现、验证并注册所有 Skill。
+
+        Phase B 增强流程:
+          1. 按层级顺序扫描 00_official → 01_team → 02_user → 99_custom
+          2. 解析每个 Skill 的 manifest.json
+          3. 验证软件版本兼容性
+          4. 检测冲突并按优先级解决
+          5. 加载 Python 模块并注册到 MCP Server
 
         Returns:
             注册的 Skill 数量
-
-        宪法约束:
-          - 系统架构设计 §1.5.4: 扫描 → 发现 → 注册 → 通知
         """
-        UELogger.info(f"Scanning Skills directory: {self._skills_dir}")
+        UELogger.info(f"SkillHub: scanning layers in {self._skills_dir}")
 
-        # 清空之前的装饰器注册表（保留 Core Tool 的注册）
+        # 清空之前的状态
         _DECORATED_SKILLS.clear()
+        self._all_manifests.clear()
+        self._manifests.clear()
 
-        # 查找所有 .py 文件
-        py_files = list(self._skills_dir.glob("*.py"))
-        py_files.extend(self._skills_dir.glob("**/*.py"))
-        # 去重
-        py_files = list(set(py_files))
+        # 阶段 1: 按层级扫描所有 manifest
+        for layer_dir_name in LAYER_ORDER:
+            layer_path = self._skills_dir / layer_dir_name
+            layer_id = LAYER_DIRS[layer_dir_name]
 
-        # 排除 __init__.py 和 __pycache__
-        py_files = [
-            f for f in py_files
-            if f.name != "__init__.py" and "__pycache__" not in str(f)
-        ]
+            if not layer_path.exists():
+                continue
 
-        if not py_files:
-            UELogger.info("No skill files found in Skills/ directory")
-            self._create_example_skill()
-            # 重新扫描
-            py_files = list(self._skills_dir.glob("*.py"))
-            py_files = [f for f in py_files if f.name != "__init__.py"]
+            self._scan_layer(layer_path, layer_id)
 
-        # 加载每个模块
-        loaded_count = 0
-        for py_file in py_files:
-            try:
-                self._load_skill_module(py_file)
-                loaded_count += 1
-            except Exception as e:
-                UELogger.mcp_error(f"Failed to load skill {py_file.name}: {e}")
-                traceback.print_exc()
-
-        # 将装饰器注册表中的 Skill 注册到 MCP Server
-        new_skills = 0
-        for skill_name, info in _DECORATED_SKILLS.items():
-            if skill_name not in self._registered_skills:
-                self._register_skill_to_mcp(skill_name, info)
-                new_skills += 1
+        # 也扫描 Skills/ 根目录中的 .py 文件 (向后兼容)
+        self._scan_legacy_files()
 
         UELogger.info(
-            f"SkillHub: loaded {loaded_count} modules, "
-            f"registered {new_skills} new skills "
-            f"(total: {len(self._registered_skills)})"
+            f"SkillHub: discovered {len(self._all_manifests)} skill(s) across layers"
+        )
+
+        # 阶段 2: 冲突检测与解决
+        self._conflict_report = self._conflict_detector.detect(self._all_manifests)
+        if self._conflict_report.has_conflicts:
+            UELogger.info(f"SkillHub: {self._conflict_report.summary()}")
+
+        resolved = self._conflict_detector.resolve(self._all_manifests)
+
+        # 阶段 3: 版本过滤
+        compatible = []
+        for m in resolved:
+            if m.software == "universal" or m.software == self._current_software:
+                if matches_software_version(m.software_version, self._current_version):
+                    compatible.append(m)
+                else:
+                    UELogger.info(
+                        f"SkillHub: skipping {m.name} "
+                        f"(requires {m.software} {m.software_version.min_version or '*'}"
+                        f"-{m.software_version.max_version or '*'}, "
+                        f"current: {self._current_version})"
+                    )
+            else:
+                UELogger.info(
+                    f"SkillHub: skipping {m.name} "
+                    f"(for {m.software}, current: {self._current_software})"
+                )
+
+        # 阶段 4: 加载 Python 模块并注册
+        new_skills = 0
+        for manifest in compatible:
+            try:
+                self._load_and_register_skill(manifest)
+                self._manifests[manifest.name] = manifest
+                new_skills += 1
+            except Exception as e:
+                UELogger.mcp_error(
+                    f"Failed to load skill {manifest.name}: {e}"
+                )
+                traceback.print_exc()
+
+        UELogger.info(
+            f"SkillHub: registered {new_skills} skills "
+            f"(total tools: {len(self._registered_skills)})"
         )
 
         return new_skills
+
+    def _scan_layer(self, layer_path: Path, layer_id: str) -> None:
+        """
+        扫描一个层级目录，查找所有 Skill 包。
+
+        Skill 包的识别条件: 子目录中包含 manifest.json
+        """
+        if not layer_path.is_dir():
+            return
+
+        for entry in sorted(layer_path.iterdir()):
+            if not entry.is_dir():
+                continue
+            if entry.name.startswith("_") or entry.name.startswith("."):
+                continue
+
+            manifest_file = entry / "manifest.json"
+            if not manifest_file.exists():
+                # 检查子目录是否是 category 分组 (如 material/, scene/)
+                for sub_entry in sorted(entry.iterdir()):
+                    if sub_entry.is_dir() and (sub_entry / "manifest.json").exists():
+                        self._parse_and_collect(sub_entry, layer_id)
+                continue
+
+            self._parse_and_collect(entry, layer_id)
+
+    def _parse_and_collect(self, skill_dir: Path, layer_id: str) -> None:
+        """解析一个 Skill 目录的 manifest 并收集"""
+        manifest_path = str(skill_dir / "manifest.json")
+        manifest, errors = parse_manifest(manifest_path)
+
+        has_errors = any(e.severity == "error" for e in errors)
+        if has_errors:
+            for e in errors:
+                if e.severity == "error":
+                    UELogger.mcp_error(f"SkillHub: {skill_dir.name}: {e}")
+            return
+
+        if manifest is None:
+            return
+
+        # 记录警告
+        for e in errors:
+            if e.severity == "warning":
+                UELogger.info(f"SkillHub: {manifest.name}: {e}")
+
+        manifest.source_layer = layer_id
+        manifest.source_dir = str(skill_dir)
+        self._all_manifests.append(manifest)
+
+    def _scan_legacy_files(self) -> None:
+        """
+        向后兼容: 扫描 Skills/ 根目录中的独立 .py 文件。
+
+        这些文件没有 manifest.json，使用 @ue_tool 装饰器声明。
+        """
+        for py_file in sorted(self._skills_dir.glob("*.py")):
+            if py_file.name == "__init__.py" or "__pycache__" in str(py_file):
+                continue
+
+            # 加载模块以发现装饰器声明的 Skill
+            try:
+                self._load_skill_module(py_file)
+            except Exception as e:
+                UELogger.mcp_error(f"Failed to load legacy skill {py_file.name}: {e}")
+
+        # 收集装饰器注册的 Skill 作为 custom 层级
+        for tool_name, info in _DECORATED_SKILLS.items():
+            if tool_name in self._registered_skills:
+                continue
+            if tool_name in self._excluded_tools:
+                continue
+            self._register_skill_to_mcp(tool_name, info)
+    def _load_and_register_skill(self, manifest: SkillManifest) -> None:
+        """
+        加载一个 Skill 的 Python 模块并注册所有 Tool 到 MCP。
+
+        Args:
+            manifest: 已验证的 SkillManifest
+        """
+        skill_dir = Path(manifest.source_dir)
+        entry_file = skill_dir / manifest.entry_point
+
+        if not entry_file.exists():
+            raise FileNotFoundError(f"Entry point not found: {entry_file}")
+
+        module_name = f"ue_skill_{manifest.name}"
+
+        # 确保 Skill 目录在 sys.path 中
+        skill_dir_str = str(skill_dir.parent)
+        if skill_dir_str not in sys.path:
+            sys.path.insert(0, skill_dir_str)
+
+        # 加载模块
+        spec = importlib.util.spec_from_file_location(module_name, str(entry_file))
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot create module spec for {entry_file}")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+
+        self._loaded_modules[module_name] = module
+
+        # 注册装饰器声明的 Tool
+        for tool_entry in manifest.tools:
+            tool_name = tool_entry.name
+            if tool_name in _DECORATED_SKILLS:
+                info = _DECORATED_SKILLS[tool_name]
+                info["manifest"] = manifest
+                info["source_layer"] = manifest.source_layer
+                self._register_skill_to_mcp(tool_name, info)
+            else:
+                UELogger.info(
+                    f"SkillHub: tool '{tool_name}' declared in manifest "
+                    f"but not found via @ue_tool decorator in {manifest.name}"
+                )
+
+        UELogger.info(
+            f"  Loaded skill: {manifest.name} v{manifest.version} "
+            f"[{manifest.source_layer}] ({len(manifest.tools)} tools)"
+        )
+
+    # ------------------------------------------------------------------
+    # 文件监控
+    # ------------------------------------------------------------------
 
     def start_watching(self) -> None:
         """
@@ -258,7 +491,6 @@ class SkillHub:
           - 开发路线图 §3.1: 实时文件监控
         """
         try:
-            # 使用 UE 的 DirectoryWatcher
             dir_watcher = unreal.DirectoryWatcher()
             self._watcher_handle = dir_watcher.watch(
                 str(self._skills_dir),
@@ -266,7 +498,6 @@ class SkillHub:
             )
             UELogger.info(f"SkillHub: watching {self._skills_dir}")
         except Exception as e:
-            # fallback: 使用定时轮询
             UELogger.info(
                 f"DirectoryWatcher unavailable ({e}), using polling fallback"
             )
@@ -277,22 +508,105 @@ class SkillHub:
         self._watcher_handle = None
         UELogger.info("SkillHub: stopped watching")
 
+    # ------------------------------------------------------------------
+    # 查询接口
+    # ------------------------------------------------------------------
+
     def get_skill_list(self) -> List[dict]:
         """
         获取已注册的所有 Skill 信息（不含 handler）。
 
         用于 unreal://skills/list Resource。
         """
-        return [
-            {
+        result = []
+        for skill_name, info in self._registered_skills.items():
+            manifest = self._manifests.get(info.get("manifest_name", ""))
+            entry = {
                 "name": info["name"],
                 "description": info.get("description", ""),
                 "category": info.get("category", "general"),
                 "risk_level": info.get("risk_level", "low"),
                 "source_file": info.get("source_file", ""),
+                "source_layer": info.get("source_layer", "custom"),
             }
-            for info in self._registered_skills.values()
-        ]
+            if manifest:
+                entry["version"] = manifest.version
+                entry["display_name"] = manifest.display_name
+                entry["author"] = manifest.author
+                entry["software"] = manifest.software
+                entry["tags"] = manifest.tags
+            result.append(entry)
+        return result
+
+    def get_skill_info(self, skill_name: str) -> Optional[dict]:
+        """获取单个 Skill 的详细信息"""
+        manifest = self._manifests.get(skill_name)
+        if manifest:
+            return manifest.to_dict()
+
+        info = self._registered_skills.get(skill_name)
+        if info:
+            return {k: v for k, v in info.items()
+                    if not k.startswith("_") and k != "handler"}
+        return None
+
+    def get_skills_by_layer(self, layer: str) -> List[dict]:
+        """按层级获取 Skill 列表"""
+        result = []
+        for m in self._all_manifests:
+            if m.source_layer == layer:
+                result.append(m.to_dict())
+        return result
+
+    def get_skills_by_category(self, category: str) -> List[dict]:
+        """按分类获取 Skill 列表"""
+        result = []
+        for m in self._manifests.values():
+            if m.category == category:
+                result.append(m.to_dict())
+        return result
+
+    def get_conflict_report(self) -> Optional[dict]:
+        """获取冲突检测报告"""
+        if self._conflict_report:
+            return self._conflict_report.to_dict()
+        return None
+
+    def get_disabled_skills(self) -> List[str]:
+        """获取被禁用的 Skill 列表"""
+        return list(self._disabled_skills)
+    # ------------------------------------------------------------------
+    # Skill 管理操作
+    # ------------------------------------------------------------------
+
+    def enable_skill(self, skill_name: str) -> bool:
+        """启用一个被禁用的 Skill"""
+        if skill_name in self._disabled_skills:
+            self._disabled_skills.discard(skill_name)
+            self._conflict_detector = ConflictDetector(self._disabled_skills)
+            UELogger.info(f"SkillHub: enabled skill '{skill_name}'")
+            self.scan_and_register()  # 重新扫描
+            return True
+        return False
+
+    def disable_skill(self, skill_name: str) -> bool:
+        """禁用一个 Skill"""
+        if skill_name in self._manifests or skill_name in self._registered_skills:
+            self._disabled_skills.add(skill_name)
+            self._conflict_detector = ConflictDetector(self._disabled_skills)
+
+            # 注销该 Skill 的所有 Tool
+            manifest = self._manifests.get(skill_name)
+            if manifest:
+                for t in manifest.tools:
+                    self._mcp_server.unregister_tool(t.name)
+                    self._registered_skills.pop(t.name, None)
+                del self._manifests[skill_name]
+
+            UELogger.info(f"SkillHub: disabled skill '{skill_name}'")
+            self._notify_tools_changed(f"disabled:{skill_name}")
+            return True
+        return False
 
     def reload_skill(self, module_name: str) -> bool:
         """
@@ -344,9 +658,7 @@ class SkillHub:
                 f"(-{len(old_skills)} +{len(new_skills)} skills)"
             )
 
-            # 通知所有客户端
             self._notify_tools_changed(module_name)
-
             return True
 
         except Exception as e:
@@ -375,6 +687,16 @@ class SkillHub:
 
     def _register_skill_to_mcp(self, skill_name: str, info: dict) -> None:
         """将 Skill 注册到 MCP Server"""
+        # 排除列表过滤
+        if skill_name in self._excluded_tools:
+            UELogger.info(f"  Skipped tool (excluded): {skill_name}")
+            return
+
+        # 记录 manifest 关联
+        manifest = info.get("manifest")
+        if manifest:
+            info["manifest_name"] = manifest.name
+
         self._mcp_server.register_tool(
             name=skill_name,
             description=info["description"],
@@ -382,46 +704,52 @@ class SkillHub:
             handler=info["handler"],
         )
         self._registered_skills[skill_name] = info
-
     def _on_directory_changed(self, changes):
         """DirectoryWatcher 回调"""
         for change in changes:
             file_path = Path(str(change.filename))
-            if file_path.suffix != ".py":
+            if file_path.suffix not in (".py", ".json"):
                 continue
 
             UELogger.info(f"SkillHub: detected change in {file_path.name}")
 
-            # 找到对应的模块名
-            module_name = f"ue_skill_{file_path.stem}"
-            if module_name in self._loaded_modules:
-                self.reload_skill(module_name)
-            else:
-                # 新文件，加载并注册
-                try:
-                    self._load_skill_module(file_path)
-                    new_skills = [
-                        (k, v) for k, v in _DECORATED_SKILLS.items()
-                        if v.get("module") == module_name
-                    ]
-                    for name, info in new_skills:
-                        self._register_skill_to_mcp(name, info)
+            if file_path.name == "manifest.json":
+                # manifest 变更 → 完全重新扫描
+                self.scan_and_register()
+                self._notify_tools_changed("manifest_changed")
+                return
 
-                    self._notify_tools_changed(module_name)
-                except Exception as e:
-                    UELogger.mcp_error(f"Failed to load new skill {file_path.name}: {e}")
+            if file_path.suffix == ".py":
+                module_name = f"ue_skill_{file_path.stem}"
+                if module_name in self._loaded_modules:
+                    self.reload_skill(module_name)
+                else:
+                    try:
+                        self._load_skill_module(file_path)
+                        new_skills = [
+                            (k, v) for k, v in _DECORATED_SKILLS.items()
+                            if v.get("module") == module_name
+                        ]
+                        for name, info in new_skills:
+                            self._register_skill_to_mcp(name, info)
+                        self._notify_tools_changed(module_name)
+                    except Exception as e:
+                        UELogger.mcp_error(
+                            f"Failed to load new skill {file_path.name}: {e}"
+                        )
 
     def _start_polling_watcher(self):
         """轮询方式的文件监控（fallback）"""
         self._file_mtimes: Dict[str, float] = {}
 
-        # 记录初始状态
-        for py_file in self._skills_dir.glob("*.py"):
+        # 记录初始状态 — 递归扫描所有层级
+        for py_file in self._skills_dir.rglob("*.py"):
             self._file_mtimes[str(py_file)] = py_file.stat().st_mtime
+        for json_file in self._skills_dir.rglob("manifest.json"):
+            self._file_mtimes[str(json_file)] = json_file.stat().st_mtime
 
-        # 注册 Slate tick 回调做定期检查
         self._poll_counter = 0
-        self._poll_interval = 60  # 每 60 tick 检查一次 (约 1 秒)
+        self._poll_interval = 60  # 每 60 tick 检查一次
 
         def _poll_tick(delta_time):
             self._poll_counter += 1
@@ -436,33 +764,24 @@ class SkillHub:
     def _check_file_changes(self):
         """检查文件变更"""
         current_files = {}
-        for py_file in self._skills_dir.glob("*.py"):
-            if py_file.name == "__init__.py":
+        for py_file in self._skills_dir.rglob("*.py"):
+            if "__pycache__" in str(py_file):
                 continue
             current_files[str(py_file)] = py_file.stat().st_mtime
+        for json_file in self._skills_dir.rglob("manifest.json"):
+            current_files[str(json_file)] = json_file.stat().st_mtime
 
-        # 检查修改和新增
+        changed = False
         for fpath, mtime in current_files.items():
             old_mtime = self._file_mtimes.get(fpath)
             if old_mtime is None or mtime > old_mtime:
-                file_path = Path(fpath)
-                module_name = f"ue_skill_{file_path.stem}"
-                UELogger.info(f"SkillHub: file changed: {file_path.name}")
+                changed = True
+                UELogger.info(f"SkillHub: file changed: {Path(fpath).name}")
 
-                if module_name in self._loaded_modules:
-                    self.reload_skill(module_name)
-                else:
-                    try:
-                        self._load_skill_module(file_path)
-                        new_skills = [
-                            (k, v) for k, v in _DECORATED_SKILLS.items()
-                            if v.get("module") == module_name
-                        ]
-                        for name, info in new_skills:
-                            self._register_skill_to_mcp(name, info)
-                        self._notify_tools_changed(module_name)
-                    except Exception as e:
-                        UELogger.mcp_error(f"Failed to load {file_path.name}: {e}")
+        if changed:
+            # 重新完整扫描
+            self.scan_and_register()
+            self._notify_tools_changed("polling_refresh")
 
         self._file_mtimes = current_files
 
@@ -481,146 +800,66 @@ class SkillHub:
             asyncio.ensure_future(_send(), loop=loop)
 
     def _create_example_skill(self):
-        """在 Skills/ 目录创建示例 Skill 文件"""
-        example_path = self._skills_dir / "example_skills.py"
-        if example_path.exists():
+        """在 Skills/99_custom/ 目录创建示例 Skill 文件"""
+        custom_dir = self._skills_dir / "99_custom"
+        example_dir = custom_dir / "example_skill"
+        example_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest_path = example_dir / "manifest.json"
+        if manifest_path.exists():
             return
 
-        example_code = '''"""
-Example Skills - UE Editor Agent
-================================
+        manifest = {
+            "manifest_version": "1.0",
+            "name": "example_skill",
+            "display_name": "示例技能",
+            "description": "Example skill demonstrating ArtClaw skill structure",
+            "version": "1.0.0",
+            "author": "ArtClaw",
+            "license": "MIT",
+            "software": "unreal_engine",
+            "category": "utils",
+            "risk_level": "low",
+            "tags": ["example"],
+            "entry_point": "__init__.py",
+            "tools": [
+                {
+                    "name": "example_hello",
+                    "description": "A simple hello world skill for testing"
+                }
+            ]
+        }
+        manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
-示例 Skill 文件。将 .py 文件放入 Skills/ 目录即可自动发现。
-使用 @ue_agent.tool 装饰器声明 MCP Tool。
-
-保存文件后 Skill Hub 会自动热重载，无需重启 UE。
-"""
-
-# 导入装饰器 — 从 skill_hub 模块导入
+        init_path = example_dir / "__init__.py"
+        init_code = '''"""Example Skill - demonstrates ArtClaw skill structure"""
 from skill_hub import tool as ue_tool
 import json
 
 try:
     import unreal
 except ImportError:
-    unreal = None  # 允许在 UE 外部测试
-
+    unreal = None
 
 @ue_tool(
-    name="list_actor_classes",
-    description="List all unique actor classes in the current level. "
-                "Useful for understanding what types of objects exist.",
-    category="level",
+    name="example_hello",
+    description="A simple hello world skill for testing. Returns a greeting.",
+    category="utils",
     risk_level="low",
 )
-def list_actor_classes(arguments: dict) -> str:
-    """统计当前关卡中所有 Actor 的类别分布"""
-    if unreal is None:
-        return json.dumps({"error": "Not running in UE"})
-
-    actors = unreal.EditorLevelLibrary.get_all_level_actors()
-    class_counts = {}
-    for actor in actors:
-        cls_name = actor.get_class().get_name()
-        class_counts[cls_name] = class_counts.get(cls_name, 0) + 1
-
-    # 按数量排序
-    sorted_classes = sorted(class_counts.items(), key=lambda x: -x[1])
-
+def example_hello(arguments: dict) -> str:
+    """示例技能: 返回问候语"""
+    name = arguments.get("name", "World")
     return json.dumps({
-        "total_actors": len(actors),
-        "unique_classes": len(class_counts),
-        "classes": [
-            {"class": cls, "count": cnt}
-            for cls, cnt in sorted_classes[:50]
-        ],
+        "success": True,
+        "message": f"Hello, {name}! ArtClaw Skill Hub is working.",
     })
-
-
-@ue_tool(
-    name="find_actors_by_name",
-    description="Find actors in the level by name pattern (case-insensitive substring match). "
-                "Returns actor names, classes, and locations.",
-    category="level",
-    risk_level="low",
-)
-def find_actors_by_name(arguments: dict) -> str:
-    """按名称模式搜索 Actor"""
-    if unreal is None:
-        return json.dumps({"error": "Not running in UE"})
-
-    pattern = arguments.get("pattern", "").lower()
-    if not pattern:
-        return json.dumps({"error": "pattern is required"})
-
-    limit = arguments.get("limit", 20)
-
-    actors = unreal.EditorLevelLibrary.get_all_level_actors()
-    results = []
-
-    for actor in actors:
-        label = str(actor.get_actor_label())
-        if pattern in label.lower():
-            loc = actor.get_actor_location()
-            results.append({
-                "name": label,
-                "class": actor.get_class().get_name(),
-                "location": {"x": loc.x, "y": loc.y, "z": loc.z},
-            })
-            if len(results) >= limit:
-                break
-
-    return json.dumps({
-        "pattern": pattern,
-        "found": len(results),
-        "actors": results,
-    })
-
-
-@ue_tool(
-    name="get_level_stats",
-    description="Get comprehensive statistics about the current level: "
-                "actor counts, bounding box, memory estimates.",
-    category="level",
-    risk_level="low",
-)
-def get_level_stats(arguments: dict) -> str:
-    """获取当前关卡的详细统计信息"""
-    if unreal is None:
-        return json.dumps({"error": "Not running in UE"})
-
-    actors = unreal.EditorLevelLibrary.get_all_level_actors()
-
-    stats = {
-        "total_actors": len(actors),
-        "static_meshes": 0,
-        "lights": 0,
-        "cameras": 0,
-        "blueprints": 0,
-        "other": 0,
-    }
-
-    for actor in actors:
-        cls = actor.get_class().get_name()
-        if "StaticMeshActor" in cls:
-            stats["static_meshes"] += 1
-        elif "Light" in cls:
-            stats["lights"] += 1
-        elif "Camera" in cls:
-            stats["cameras"] += 1
-        elif "Blueprint" in cls or cls.endswith("_C"):
-            stats["blueprints"] += 1
-        else:
-            stats["other"] += 1
-
-    return json.dumps(stats)
 '''
-        example_path.write_text(example_code, encoding="utf-8")
-        UELogger.info(f"SkillHub: created example skill at {example_path}")
-
+        init_path.write_text(init_code, encoding="utf-8")
+        UELogger.info(f"SkillHub: created example skill at {example_dir}")
 
 # ============================================================================
-# 3. 模块级便捷接口
+# 4. 模块级便捷接口
 # ============================================================================
 
 # 全局单例
@@ -640,16 +879,17 @@ def init_skill_hub(mcp_server, skills_dir: Optional[str] = None) -> SkillHub:
     _skill_hub_instance.start_watching()
 
     # 注册 skills/list Resource
-    mcp_server.register_resource(
-        uri="unreal://skills/list",
-        name="Available Skills",
-        description="List all registered skills (Core Tools + dynamic Skills)",
-        handler=lambda: json.dumps({
-            "core_tools": len(mcp_server._tools) - len(_skill_hub_instance._registered_skills),
-            "skills": _skill_hub_instance.get_skill_list(),
-            "total": len(mcp_server._tools),
-        }),
-    ) if hasattr(mcp_server, 'register_resource') else None
+    if hasattr(mcp_server, 'register_resource'):
+        mcp_server.register_resource(
+            uri="unreal://skills/list",
+            name="Available Skills",
+            description="List all registered skills (Core Tools + dynamic Skills)",
+            handler=lambda: json.dumps({
+                "core_tools": len(mcp_server._tools) - len(_skill_hub_instance._registered_skills),
+                "skills": _skill_hub_instance.get_skill_list(),
+                "total": len(mcp_server._tools),
+            }),
+        )
 
     return _skill_hub_instance
 

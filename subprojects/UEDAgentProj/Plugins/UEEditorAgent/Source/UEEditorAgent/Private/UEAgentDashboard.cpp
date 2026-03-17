@@ -8,11 +8,13 @@
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/Layout/SSpacer.h"
+#include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Text/SMultiLineEditableText.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
+#include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SMenuAnchor.h"
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/STableRow.h"
@@ -22,6 +24,10 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
+#include "Misc/Guid.h"
+#include "Misc/FileHelper.h"
+#include "Dom/JsonValue.h"
+#include "Serialization/JsonWriter.h"
 
 #define LOCTEXT_NAMESPACE "UEAgentDashboard"
 
@@ -219,6 +225,48 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			SNew(SSeparator)
 		]
 
+		// ========== 快捷输入分栏 (可折叠) ==========
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SAssignNew(QuickInputExpandableArea, SExpandableArea)
+			.InitiallyCollapsed(true)
+			.AreaTitle(LOCTEXT("QuickInputTitle", "Quick Inputs"))
+			.BodyContent()
+			[
+				SNew(SBox)
+				.Padding(FMargin(8.0f, 4.0f, 8.0f, 4.0f))
+				[
+					SNew(SVerticalBox)
+
+					// 快捷按钮容器 (WrapBox 自动换行)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SAssignNew(QuickInputWrapBox, SWrapBox)
+						.UseAllottedSize(true)
+					]
+
+					// 添加按钮 (始终显示在末尾)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(SButton)
+							.Text(LOCTEXT("AddQuickInputBtn", "+ Add"))
+							.ToolTipText(LOCTEXT("AddQuickInputTip", "Add a new quick input"))
+							.OnClicked(this, &SUEAgentDashboard::OnAddQuickInputClicked)
+							.ContentPadding(FMargin(6.0f, 2.0f))
+						]
+					]
+				]
+			]
+		]
+
 		// ========== 输入区域 ==========
 		+ SVerticalBox::Slot()
 		.AutoHeight()
@@ -272,7 +320,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				.MenuContent(SlashMenuContent)
 			]
 
-			// 底部工具栏: /new + 弹性间距 + Enter to Send
+			// 底部工具栏: /new + Create Skill + 弹性间距 + Enter to Send
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			.Padding(0.0f, 2.0f, 0.0f, 0.0f)
@@ -288,6 +336,19 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					.Text(LOCTEXT("NewChatBtn", "+ New Chat"))
 					.ToolTipText(LOCTEXT("NewChatTip", "Start a new conversation (/new)"))
 					.OnClicked(this, &SUEAgentDashboard::OnNewChatClicked)
+					.ContentPadding(FMargin(4.0f, 1.0f))
+				]
+
+				// D1: Create Skill 按钮
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("CreateSkillBtn", "\xF0\x9F\x94\xA7 Create Skill"))
+					.ToolTipText(LOCTEXT("CreateSkillTip", "Create a new ArtClaw Skill via natural language description"))
+					.OnClicked(this, &SUEAgentDashboard::OnCreateSkillClicked)
 					.ContentPadding(FMargin(4.0f, 1.0f))
 				]
 
@@ -326,6 +387,10 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			]
 		]
 	];
+
+	// 加载快捷输入配置并构建 UI
+	LoadQuickInputs();
+	RebuildQuickInputPanel();
 
 	// 欢迎消息
 	AddMessage(TEXT("assistant"),
@@ -528,6 +593,26 @@ FReply SUEAgentDashboard::OnSendClicked()
 			Args = TEXT("");
 		}
 		HandleSlashCommand(Command.ToLower(), Args.TrimStartAndEnd());
+		return FReply::Handled();
+	}
+
+	// D1/D2: 检查是否为 ArtClaw Skill 创建触发
+	if (IsArtclawSkillTrigger(InputText))
+	{
+		FString SkillDesc = ExtractSkillDescription(InputText);
+		AddMessage(TEXT("user"), InputText);
+		InputTextBox->SetText(FText::GetEmpty());
+
+		if (SkillDesc.IsEmpty())
+		{
+			// 没有具体描述 → 打开对话框让用户输入
+			OpenSkillCreationDialog();
+		}
+		else
+		{
+			// 有描述 → 直接触发生成流程
+			StartSkillGeneration(SkillDesc, TEXT(""), TEXT("unreal_engine"));
+		}
 		return FReply::Handled();
 	}
 
@@ -1391,6 +1476,476 @@ void SUEAgentDashboard::HandlePythonResponse(const FString& Response)
 
 
 // ==================================================================
+// 快捷输入 (Quick Inputs)
+// ==================================================================
+
+FString SUEAgentDashboard::GetQuickInputConfigPath() const
+{
+	// 优先使用项目 Saved 目录（随项目走）
+	FString ConfigDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*ConfigDir, true);
+	return ConfigDir / TEXT("quick_inputs.json");
+}
+
+void SUEAgentDashboard::LoadQuickInputs()
+{
+	QuickInputs.Empty();
+
+	FString ConfigPath = GetQuickInputConfigPath();
+	if (!FPaths::FileExists(ConfigPath))
+	{
+		return;
+	}
+
+	FString FileContent;
+	if (!FFileHelper::LoadFileToString(FileContent, *ConfigPath))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[UEAgent] Failed to load quick_inputs.json"));
+		return;
+	}
+
+	TSharedPtr<FJsonObject> RootObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FileContent);
+	if (!FJsonSerializer::Deserialize(Reader, RootObj) || !RootObj.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[UEAgent] Failed to parse quick_inputs.json"));
+		return;
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* ItemsArray = nullptr;
+	if (!RootObj->TryGetArrayField(TEXT("quick_inputs"), ItemsArray))
+	{
+		return;
+	}
+
+	for (const auto& ItemVal : *ItemsArray)
+	{
+		const TSharedPtr<FJsonObject>* ItemObj = nullptr;
+		if (!ItemVal->TryGetObject(ItemObj) || !(*ItemObj).IsValid())
+		{
+			continue;
+		}
+
+		FQuickInput QI;
+		QI.Id = (*ItemObj)->GetStringField(TEXT("id"));
+		QI.Name = (*ItemObj)->GetStringField(TEXT("name"));
+		QI.Content = (*ItemObj)->GetStringField(TEXT("content"));
+
+		if (!QI.Id.IsEmpty() && !QI.Name.IsEmpty())
+		{
+			QuickInputs.Add(MoveTemp(QI));
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[UEAgent] Loaded %d quick inputs"), QuickInputs.Num());
+}
+
+void SUEAgentDashboard::SaveQuickInputs()
+{
+	TSharedRef<FJsonObject> RootObj = MakeShared<FJsonObject>();
+	TArray<TSharedPtr<FJsonValue>> ItemsArray;
+
+	for (const FQuickInput& QI : QuickInputs)
+	{
+		TSharedRef<FJsonObject> ItemObj = MakeShared<FJsonObject>();
+		ItemObj->SetStringField(TEXT("id"), QI.Id);
+		ItemObj->SetStringField(TEXT("name"), QI.Name);
+		ItemObj->SetStringField(TEXT("content"), QI.Content);
+		ItemsArray.Add(MakeShared<FJsonValueObject>(ItemObj));
+	}
+
+	RootObj->SetArrayField(TEXT("quick_inputs"), ItemsArray);
+
+	FString OutputStr;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputStr);
+	FJsonSerializer::Serialize(RootObj, Writer);
+
+	FString ConfigPath = GetQuickInputConfigPath();
+	if (FFileHelper::SaveStringToFile(OutputStr, *ConfigPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[UEAgent] Saved %d quick inputs to %s"), QuickInputs.Num(), *ConfigPath);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("[UEAgent] Failed to save quick_inputs.json"));
+	}
+}
+
+void SUEAgentDashboard::RebuildQuickInputPanel()
+{
+	if (!QuickInputWrapBox.IsValid())
+	{
+		return;
+	}
+
+	QuickInputWrapBox->ClearChildren();
+
+	if (QuickInputs.Num() == 0)
+	{
+		// 空状态提示
+		QuickInputWrapBox->AddSlot()
+		.Padding(2.0f)
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("NoQuickInputs", "No quick inputs yet. Click '+ Add' to create one."))
+			.Font(FCoreStyle::GetDefaultFontStyle("Italic", 9))
+			.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
+		];
+		return;
+	}
+
+	for (int32 i = 0; i < QuickInputs.Num(); i++)
+	{
+		const FQuickInput& QI = QuickInputs[i];
+		const int32 CapturedIndex = i;
+
+		QuickInputWrapBox->AddSlot()
+		.Padding(2.0f)
+		[
+			SNew(SHorizontalBox)
+
+			// 快捷按钮
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SButton)
+				.Text(FText::FromString(QI.Name))
+				.ToolTipText(FText::FromString(QI.Content))
+				.OnClicked_Lambda([this, CapturedIndex]() -> FReply
+				{
+					return OnQuickInputClicked(CapturedIndex);
+				})
+				.ContentPadding(FMargin(8.0f, 3.0f))
+			]
+
+			// 编辑按钮 (小号铅笔)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(1.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("EditQuickInputBtn", "e"))
+				.ToolTipText(LOCTEXT("EditQuickInputTip", "Edit this quick input"))
+				.OnClicked_Lambda([this, CapturedIndex]() -> FReply
+				{
+					return OnEditQuickInputClicked(CapturedIndex);
+				})
+				.ContentPadding(FMargin(3.0f, 1.0f))
+			]
+
+			// 删除按钮 (小号 x)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(1.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("DeleteQuickInputBtn", "x"))
+				.ToolTipText(LOCTEXT("DeleteQuickInputTip", "Delete this quick input"))
+				.OnClicked_Lambda([this, CapturedIndex]() -> FReply
+				{
+					return OnDeleteQuickInputClicked(CapturedIndex);
+				})
+				.ContentPadding(FMargin(3.0f, 1.0f))
+			]
+		];
+	}
+}
+
+FReply SUEAgentDashboard::OnQuickInputClicked(int32 Index)
+{
+	if (!QuickInputs.IsValidIndex(Index))
+	{
+		return FReply::Handled();
+	}
+
+	const FString& Content = QuickInputs[Index].Content;
+
+	if (InputTextBox.IsValid())
+	{
+		InputTextBox->SetText(FText::FromString(Content));
+
+		// 设置焦点到输入框
+		FSlateApplication::Get().SetKeyboardFocus(InputTextBox.ToSharedRef(), EFocusCause::SetDirectly);
+	}
+
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnAddQuickInputClicked()
+{
+	FQuickInput NewQI;
+	NewQI.Id = FGuid::NewGuid().ToString();
+	NewQI.Name = FString::Printf(TEXT("Quick %d"), QuickInputs.Num() + 1);
+	NewQI.Content = TEXT("");
+
+	QuickInputs.Add(MoveTemp(NewQI));
+	SaveQuickInputs();
+	RebuildQuickInputPanel();
+
+	// 弹出内联编辑对话框
+	// 用简单的 Message Dialog 让用户输入名称和内容
+	// 找到刚添加的项目索引
+	int32 NewIndex = QuickInputs.Num() - 1;
+
+	// 使用 SWindow 弹出编辑窗口
+	TSharedRef<SWindow> EditWindow =
+		SNew(SWindow)
+		.Title(LOCTEXT("EditQuickInputTitle", "Edit Quick Input"))
+		.ClientSize(FVector2D(400, 180))
+		.SupportsMinimize(false)
+		.SupportsMaximize(false)
+		.SizingRule(ESizingRule::FixedSize);
+
+	TSharedPtr<SEditableTextBox> NameInput;
+	TSharedPtr<SEditableTextBox> ContentInput;
+
+	EditWindow->SetContent(
+		SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f)
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("QINameLabel", "Name (displayed on button):"))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 2.0f)
+		[
+			SAssignNew(NameInput, SEditableTextBox)
+			.Text(FText::FromString(QuickInputs[NewIndex].Name))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 8.0f, 8.0f, 0.0f)
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("QIContentLabel", "Content (filled into chat):"))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 2.0f)
+		[
+			SAssignNew(ContentInput, SEditableTextBox)
+			.Text(FText::FromString(QuickInputs[NewIndex].Content))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 12.0f)
+		.HAlign(HAlign_Right)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("QISaveBtn", "Save"))
+				.ContentPadding(FMargin(12.0f, 4.0f))
+				.OnClicked_Lambda([this, NewIndex, NameInput, ContentInput, EditWindow]() -> FReply
+				{
+					if (QuickInputs.IsValidIndex(NewIndex))
+					{
+						FString NewName = NameInput.IsValid() ? NameInput->GetText().ToString().TrimStartAndEnd() : TEXT("");
+						FString NewContent = ContentInput.IsValid() ? ContentInput->GetText().ToString().TrimStartAndEnd() : TEXT("");
+
+						if (NewName.IsEmpty())
+						{
+							NewName = FString::Printf(TEXT("Quick %d"), NewIndex + 1);
+						}
+
+						QuickInputs[NewIndex].Name = NewName;
+						QuickInputs[NewIndex].Content = NewContent;
+						SaveQuickInputs();
+						RebuildQuickInputPanel();
+					}
+					EditWindow->RequestDestroyWindow();
+					return FReply::Handled();
+				})
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("QICancelBtn", "Cancel"))
+				.ContentPadding(FMargin(12.0f, 4.0f))
+				.OnClicked_Lambda([this, NewIndex, EditWindow]() -> FReply
+				{
+					// 取消时删除刚才添加的空项
+					if (QuickInputs.IsValidIndex(NewIndex) && QuickInputs[NewIndex].Content.IsEmpty())
+					{
+						QuickInputs.RemoveAt(NewIndex);
+						SaveQuickInputs();
+						RebuildQuickInputPanel();
+					}
+					EditWindow->RequestDestroyWindow();
+					return FReply::Handled();
+				})
+			]
+		]
+	);
+
+	FSlateApplication::Get().AddModalWindow(EditWindow, FSlateApplication::Get().GetActiveTopLevelWindow());
+
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnDeleteQuickInputClicked(int32 Index)
+{
+	if (!QuickInputs.IsValidIndex(Index))
+	{
+		return FReply::Handled();
+	}
+
+	FString ItemName = QuickInputs[Index].Name;
+
+	// 确认删除
+	EAppReturnType::Type Result = FMessageDialog::Open(
+		EAppMsgType::YesNo,
+		FText::Format(
+			LOCTEXT("ConfirmDeleteQI", "Delete quick input \"{0}\"?"),
+			FText::FromString(ItemName)));
+
+	if (Result == EAppReturnType::Yes)
+	{
+		QuickInputs.RemoveAt(Index);
+		SaveQuickInputs();
+		RebuildQuickInputPanel();
+	}
+
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnEditQuickInputClicked(int32 Index)
+{
+	if (!QuickInputs.IsValidIndex(Index))
+	{
+		return FReply::Handled();
+	}
+
+	TSharedRef<SWindow> EditWindow =
+		SNew(SWindow)
+		.Title(LOCTEXT("EditQuickInputTitle2", "Edit Quick Input"))
+		.ClientSize(FVector2D(400, 180))
+		.SupportsMinimize(false)
+		.SupportsMaximize(false)
+		.SizingRule(ESizingRule::FixedSize);
+
+	TSharedPtr<SEditableTextBox> NameInput;
+	TSharedPtr<SEditableTextBox> ContentInput;
+
+	EditWindow->SetContent(
+		SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f)
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("QINameLabel2", "Name (displayed on button):"))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 2.0f)
+		[
+			SAssignNew(NameInput, SEditableTextBox)
+			.Text(FText::FromString(QuickInputs[Index].Name))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 8.0f, 8.0f, 0.0f)
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("QIContentLabel2", "Content (filled into chat):"))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 2.0f)
+		[
+			SAssignNew(ContentInput, SEditableTextBox)
+			.Text(FText::FromString(QuickInputs[Index].Content))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 12.0f)
+		.HAlign(HAlign_Right)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("QISaveBtn2", "Save"))
+				.ContentPadding(FMargin(12.0f, 4.0f))
+				.OnClicked_Lambda([this, Index, NameInput, ContentInput, EditWindow]() -> FReply
+				{
+					if (QuickInputs.IsValidIndex(Index))
+					{
+						FString NewName = NameInput.IsValid() ? NameInput->GetText().ToString().TrimStartAndEnd() : TEXT("");
+						FString NewContent = ContentInput.IsValid() ? ContentInput->GetText().ToString().TrimStartAndEnd() : TEXT("");
+
+						if (!NewName.IsEmpty())
+						{
+							QuickInputs[Index].Name = NewName;
+						}
+						QuickInputs[Index].Content = NewContent;
+						SaveQuickInputs();
+						RebuildQuickInputPanel();
+					}
+					EditWindow->RequestDestroyWindow();
+					return FReply::Handled();
+				})
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("QICancelBtn2", "Cancel"))
+				.ContentPadding(FMargin(12.0f, 4.0f))
+				.OnClicked_Lambda([EditWindow]() -> FReply
+				{
+					EditWindow->RequestDestroyWindow();
+					return FReply::Handled();
+				})
+			]
+		]
+	);
+
+	FSlateApplication::Get().AddModalWindow(EditWindow, FSlateApplication::Get().GetActiveTopLevelWindow());
+
+	return FReply::Handled();
+}
+
+void SUEAgentDashboard::OnQuickInputNameCommitted(const FText& NewText, ETextCommit::Type CommitType, int32 Index)
+{
+	if (QuickInputs.IsValidIndex(Index))
+	{
+		QuickInputs[Index].Name = NewText.ToString().TrimStartAndEnd();
+		SaveQuickInputs();
+		RebuildQuickInputPanel();
+	}
+}
+
+void SUEAgentDashboard::OnQuickInputContentCommitted(const FText& NewText, ETextCommit::Type CommitType, int32 Index)
+{
+	if (QuickInputs.IsValidIndex(Index))
+	{
+		QuickInputs[Index].Content = NewText.ToString().TrimStartAndEnd();
+		SaveQuickInputs();
+	}
+}
+
+// ==================================================================
 // 消息发送者颜色
 // ==================================================================
 
@@ -1418,6 +1973,446 @@ FSlateColor SUEAgentDashboard::GetSenderColor(const FString& Sender) const
 	{
 		return FSlateColor(FLinearColor(0.7f, 0.7f, 0.7f));
 	}
+}
+
+// ==================================================================
+// 阶段 D: Skill 创建集成
+// ==================================================================
+
+FReply SUEAgentDashboard::OnCreateSkillClicked()
+{
+	OpenSkillCreationDialog();
+	return FReply::Handled();
+}
+
+void SUEAgentDashboard::OpenSkillCreationDialog()
+{
+	// D2: 模态输入对话框
+	TSharedRef<SWindow> DialogWindow = SNew(SWindow)
+		.Title(FText::FromString(TEXT("ArtClaw - Create New Skill")))
+		.ClientSize(FVector2D(520, 340))
+		.SupportsMinimize(false)
+		.SupportsMaximize(false);
+
+	// 对话框内容变量
+	TSharedPtr<SEditableTextBox> DescInput;
+	TSharedPtr<SEditableTextBox> CategoryInput;
+	TSharedPtr<SEditableTextBox> SoftwareInput;
+
+	// 捕获 this 和窗口引用
+	TWeakPtr<SWindow> WeakWindow = DialogWindow;
+	SUEAgentDashboard* Self = this;
+
+	DialogWindow->SetContent(
+		SNew(SVerticalBox)
+		// 标题提示
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 12.0f, 12.0f, 4.0f)
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(TEXT("Describe the skill you want to create:")))
+			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 11))
+		]
+		// 描述输入
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 4.0f)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 2.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(TEXT("Description (natural language):")))
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SAssignNew(DescInput, SEditableTextBox)
+				.HintText(FText::FromString(TEXT("e.g. Batch rename actors in the scene with a prefix")))
+			]
+		]
+		// 分类输入
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 4.0f)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 2.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(TEXT("Category (optional):")))
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SAssignNew(CategoryInput, SEditableTextBox)
+				.HintText(FText::FromString(TEXT("scene / asset / material / lighting / render / utils ...")))
+			]
+		]
+		// 软件输入
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 4.0f)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 2.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(TEXT("Software (optional, default: unreal_engine):")))
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SAssignNew(SoftwareInput, SEditableTextBox)
+				.HintText(FText::FromString(TEXT("unreal_engine / maya / 3ds_max / universal")))
+			]
+		]
+		// 弹性间距
+		+ SVerticalBox::Slot()
+		.FillHeight(1.0f)
+		[
+			SNew(SSpacer)
+		]
+		// 按钮行
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 8.0f, 12.0f, 12.0f)
+		.HAlign(HAlign_Right)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(FText::FromString(TEXT("Cancel")))
+				.OnClicked_Lambda([WeakWindow]() -> FReply {
+					if (TSharedPtr<SWindow> Win = WeakWindow.Pin())
+					{
+						Win->RequestDestroyWindow();
+					}
+					return FReply::Handled();
+				})
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SButton)
+				.Text(FText::FromString(TEXT("Create")))
+				.OnClicked_Lambda([Self, DescInput, CategoryInput, SoftwareInput, WeakWindow]() -> FReply {
+					FString Desc = DescInput->GetText().ToString().TrimStartAndEnd();
+					FString Cat = CategoryInput->GetText().ToString().TrimStartAndEnd();
+					FString Sw = SoftwareInput->GetText().ToString().TrimStartAndEnd();
+
+					if (Desc.IsEmpty())
+					{
+						// 不能为空
+						return FReply::Handled();
+					}
+
+					if (Sw.IsEmpty())
+					{
+						Sw = TEXT("unreal_engine");
+					}
+
+					if (TSharedPtr<SWindow> Win = WeakWindow.Pin())
+					{
+						Win->RequestDestroyWindow();
+					}
+
+					Self->StartSkillGeneration(Desc, Cat, Sw);
+					return FReply::Handled();
+				})
+			]
+		]
+	);
+
+	FSlateApplication::Get().AddModalWindow(DialogWindow, SharedThis(this));
+}
+
+void SUEAgentDashboard::StartSkillGeneration(const FString& Description, const FString& Category, const FString& Software)
+{
+	if (bIsGeneratingSkill)
+	{
+		AddMessage(TEXT("system"), TEXT("A skill is already being generated. Please wait..."));
+		return;
+	}
+
+	bIsGeneratingSkill = true;
+
+	// D3: 显示生成进度
+	AddMessage(TEXT("system"), FString::Printf(TEXT("Creating skill: \"%s\" ..."), *Description));
+
+	// 准备 Python 命令，调用 skill_mcp_tools 的 skill_generate
+	FString EscapedDesc = Description.Replace(TEXT("\""), TEXT("\\\"")).Replace(TEXT("'"), TEXT("\\'"));
+	FString EscapedCat = Category.Replace(TEXT("\""), TEXT("\\\""));
+	FString EscapedSw = Software.Replace(TEXT("\""), TEXT("\\\""));
+
+	FString PythonCode = FString::Printf(
+		TEXT("import json\n")
+		TEXT("from skill_mcp_tools import _handle_skill_generate\n")
+		TEXT("_args = {\"description\": \"%s\", \"category\": \"%s\", \"software\": \"%s\", \"target_layer\": \"user\"}\n")
+		TEXT("_result = _handle_skill_generate(None, _args)\n")
+		TEXT("import os\n")
+		TEXT("_path = os.path.join(str(__import__('unreal').Paths.project_saved_dir()), 'UEAgent', '_skill_gen_result.json')\n")
+		TEXT("os.makedirs(os.path.dirname(_path), exist_ok=True)\n")
+		TEXT("with open(_path, 'w', encoding='utf-8') as _f:\n")
+		TEXT("    _f.write(_result)\n")
+		TEXT("__import__('unreal').log('[ArtClaw] Skill generation result written')\n"),
+		*EscapedDesc, *EscapedCat, *EscapedSw
+	);
+
+	// 设置结果文件路径
+	FString SavedDir = FPaths::ProjectSavedDir();
+	SkillResultFile = FPaths::Combine(SavedDir, TEXT("UEAgent"), TEXT("_skill_gen_result.json"));
+
+	// 删除旧结果文件
+	if (FPaths::FileExists(SkillResultFile))
+	{
+		IFileManager::Get().Delete(*SkillResultFile);
+	}
+
+	// 执行 Python
+	IPythonScriptPlugin* PythonPlugin = IPythonScriptPlugin::Get();
+	if (PythonPlugin)
+	{
+		PythonPlugin->ExecPythonCommand(*PythonCode);
+	}
+	else
+	{
+		AddMessage(TEXT("system"), TEXT("Error: Python plugin not available"));
+		bIsGeneratingSkill = false;
+		return;
+	}
+
+	// 启动轮询等待结果
+	PollSkillGenerationProgress();
+}
+
+void SUEAgentDashboard::PollSkillGenerationProgress()
+{
+	// D3: 轮询结果文件
+	SkillPollHandle = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([this](float DeltaTime) -> bool
+		{
+			if (!bIsGeneratingSkill)
+			{
+				return false; // 停止轮询
+			}
+
+			if (FPaths::FileExists(SkillResultFile))
+			{
+				// 读取结果
+				FString ResultJson;
+				if (FFileHelper::LoadFileToString(ResultJson, *SkillResultFile))
+				{
+					bIsGeneratingSkill = false;
+
+					// 删除临时文件
+					IFileManager::Get().Delete(*SkillResultFile);
+
+					// 解析结果
+					TSharedPtr<FJsonObject> JsonObj;
+					TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResultJson);
+					if (FJsonSerializer::Deserialize(Reader, JsonObj) && JsonObj.IsValid())
+					{
+						bool bSuccess = JsonObj->GetBoolField(TEXT("success"));
+						if (bSuccess)
+						{
+							FString SkillName = JsonObj->GetStringField(TEXT("skill_name"));
+							FString Message = JsonObj->GetStringField(TEXT("message"));
+							AddMessage(TEXT("system"), FString::Printf(TEXT("✅ %s"), *Message));
+
+							// D4: 如果有生成的文件内容，可以展示预览
+							OpenSkillPreviewDialog(ResultJson);
+						}
+						else
+						{
+							FString Error = JsonObj->GetStringField(TEXT("error"));
+							AddMessage(TEXT("system"), FString::Printf(TEXT("❌ Skill creation failed: %s"), *Error));
+						}
+					}
+					else
+					{
+						AddMessage(TEXT("system"), TEXT("❌ Failed to parse skill generation result"));
+					}
+
+					return false; // 停止轮询
+				}
+			}
+
+			return true; // 继续轮询
+		}),
+		0.5f // 每 0.5 秒轮询一次
+	);
+}
+
+void SUEAgentDashboard::OpenSkillPreviewDialog(const FString& PreviewJson)
+{
+	// D4: 展示生成结果预览
+	TSharedPtr<FJsonObject> JsonObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(PreviewJson);
+	if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
+	{
+		return;
+	}
+
+	FString SkillName = JsonObj->GetStringField(TEXT("skill_name"));
+	FString Category = JsonObj->GetStringField(TEXT("inferred_category"));
+
+	// 获取生成的文件内容
+	const TSharedPtr<FJsonObject>* FilesObj = nullptr;
+	FString InitCode;
+	if (JsonObj->TryGetObjectField(TEXT("generated_files"), FilesObj))
+	{
+		InitCode = (*FilesObj)->GetStringField(TEXT("__init__.py"));
+	}
+
+	// 获取下一步提示
+	FString NextSteps;
+	const TArray<TSharedPtr<FJsonValue>>* StepsArr = nullptr;
+	if (JsonObj->TryGetArrayField(TEXT("next_steps"), StepsArr))
+	{
+		for (const auto& Step : *StepsArr)
+		{
+			NextSteps += TEXT("  • ") + Step->AsString() + TEXT("\n");
+		}
+	}
+
+	// 在聊天窗口显示预览
+	AddMessage(TEXT("system"), FString::Printf(
+		TEXT("📦 Skill \"%s\" scaffold generated:\n"
+			 "   Category: %s\n"
+			 "   Next steps:\n%s"),
+		*SkillName, *Category, *NextSteps
+	));
+
+	// 如果有代码，显示代码片段（截取前 20 行）
+	if (!InitCode.IsEmpty())
+	{
+		TArray<FString> Lines;
+		InitCode.ParseIntoArrayLines(Lines);
+		int32 ShowLines = FMath::Min(Lines.Num(), 20);
+		FString Preview;
+		for (int32 i = 0; i < ShowLines; i++)
+		{
+			Preview += Lines[i] + TEXT("\n");
+		}
+		if (Lines.Num() > 20)
+		{
+			Preview += FString::Printf(TEXT("... (%d more lines)"), Lines.Num() - 20);
+		}
+		AddMessage(TEXT("system"), FString::Printf(TEXT("Generated __init__.py:\n%s"), *Preview), true);
+	}
+}
+
+bool SUEAgentDashboard::IsArtclawSkillTrigger(const FString& InputText) const
+{
+	FString Lower = InputText.ToLower();
+
+	// 必须同时包含 "artclaw" 和明确的创建/生成意图词
+	// 仅提及 "artclaw" + "skill" 不触发（如 "列出 artclaw 的 skill"）
+	// 符合 skill-management-system.md §8.1 的触发方式区分
+	if (!Lower.Contains(TEXT("artclaw")))
+	{
+		return false;
+	}
+
+	// 必须包含创建/生成动作词
+	bool bHasCreateIntent =
+		Lower.Contains(TEXT("创建")) ||
+		Lower.Contains(TEXT("create")) ||
+		Lower.Contains(TEXT("生成")) ||
+		Lower.Contains(TEXT("generate")) ||
+		Lower.Contains(TEXT("新建")) ||
+		Lower.Contains(TEXT("开发"));
+
+	if (!bHasCreateIntent)
+	{
+		return false;
+	}
+
+	// 还需要包含 skill/技能 关键词，确认是创建 Skill（而非创建其他东西）
+	bool bHasSkillKeyword =
+		Lower.Contains(TEXT("skill")) ||
+		Lower.Contains(TEXT("技能"));
+
+	return bHasSkillKeyword;
+}
+
+FString SUEAgentDashboard::ExtractSkillDescription(const FString& InputText) const
+{
+	FString Text = InputText;
+
+	// 移除常见触发词前缀
+	TArray<FString> Prefixes = {
+		TEXT("用 artclaw 创建一个技能"),
+		TEXT("用artclaw创建一个技能"),
+		TEXT("用 artclaw 创建技能"),
+		TEXT("用artclaw创建技能"),
+		TEXT("artclaw 创建技能"),
+		TEXT("artclaw创建技能"),
+		TEXT("artclaw skill create"),
+		TEXT("artclaw create skill"),
+		TEXT("artclaw generate"),
+		TEXT("artclaw skill"),
+		TEXT("artclaw"),
+	};
+
+	FString Lower = Text.ToLower();
+	for (const FString& Prefix : Prefixes)
+	{
+		if (Lower.StartsWith(Prefix))
+		{
+			Text = Text.Mid(Prefix.Len()).TrimStartAndEnd();
+			// 移除开头的标点/冒号
+			while (Text.Len() > 0 &&
+				(Text[0] == TEXT(':') || Text[0] == TEXT(',') ||
+				 Text[0] == TEXT(' ') || Text[0] == 0xFF1A))  // 全角冒号
+			{
+				Text = Text.Mid(1);
+			}
+			return Text.TrimStartAndEnd();
+		}
+	}
+
+	return FString();
+}
+
+bool SUEAgentDashboard::ShowCppRequirementDialog(const FString& SkillName, const TArray<FString>& CppRequirements)
+{
+	// D4 子流程: C++ 需求确认弹窗
+	// 按 skill-management-system.md §2.5 的弹窗规范
+
+	FString RequirementList;
+	for (const FString& Req : CppRequirements)
+	{
+		RequirementList += TEXT("  • ") + Req + TEXT("\n");
+	}
+
+	FString Message = FString::Printf(
+		TEXT("ArtClaw Skill \"%s\" requires C++ support:\n\n%s\n"
+			 "Adding C++ interfaces requires recompilation.\n\n"
+			 "Choose:\n"
+			 "  [Yes] - Add C++ interfaces and rebuild\n"
+			 "  [No]  - Skip, run with Python-only features"),
+		*SkillName, *RequirementList
+	);
+
+	EAppReturnType::Type Result = FMessageDialog::Open(
+		EAppMsgType::YesNo,
+		FText::FromString(Message),
+		FText::FromString(TEXT("ArtClaw - C++ Interface Required"))
+	);
+
+	return Result == EAppReturnType::Yes;
 }
 
 #undef LOCTEXT_NAMESPACE

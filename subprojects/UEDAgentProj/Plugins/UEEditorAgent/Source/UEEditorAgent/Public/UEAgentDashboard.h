@@ -13,6 +13,9 @@ class SScrollBox;
 class SMultiLineEditableTextBox;
 class SMenuAnchor;
 class SCheckBox;
+class SExpandableArea;
+class SEditableTextBox;
+class SWrapBox;
 
 /**
  * SUEAgentDashboard
@@ -112,6 +115,46 @@ private:
 	/** 更新 "Thinking..." 消息为流式内容 */
 	void UpdateStreamingMessage(const FString& Sender, const FString& Content);
 
+	// --- 快捷输入 (Quick Inputs) ---
+
+	/** 快捷输入数据模型 */
+	struct FQuickInput
+	{
+		FString Id;       // UUID
+		FString Name;     // 显示名称
+		FString Content;  // 实际填充文本
+	};
+
+	/** 加载快捷输入配置 */
+	void LoadQuickInputs();
+
+	/** 保存快捷输入配置 */
+	void SaveQuickInputs();
+
+	/** 获取配置文件路径 */
+	FString GetQuickInputConfigPath() const;
+
+	/** 重建快捷输入 UI */
+	void RebuildQuickInputPanel();
+
+	/** 点击快捷输入项 → 填充到对话框 */
+	FReply OnQuickInputClicked(int32 Index);
+
+	/** 添加新快捷输入 */
+	FReply OnAddQuickInputClicked();
+
+	/** 删除快捷输入 */
+	FReply OnDeleteQuickInputClicked(int32 Index);
+
+	/** 编辑快捷输入 (弹出编辑窗口) */
+	FReply OnEditQuickInputClicked(int32 Index);
+
+	/** 编辑名称提交 */
+	void OnQuickInputNameCommitted(const FText& NewText, ETextCommit::Type CommitType, int32 Index);
+
+	/** 编辑内容提交 */
+	void OnQuickInputContentCommitted(const FText& NewText, ETextCommit::Type CommitType, int32 Index);
+
 private:
 	/** Subsystem */
 	TWeakObjectPtr<UUEAgentSubsystem> CachedSubsystem;
@@ -147,6 +190,56 @@ private:
 	int32 StreamLinesRead = 0;
 	/** 流式显示: 是否已显示过 thinking 消息 */
 	bool bHasStreamingMessage = false;
+
+	/** 快捷输入列表 */
+	TArray<FQuickInput> QuickInputs;
+
+	/** 快捷输入按钮容器 (WrapBox) */
+	TSharedPtr<SWrapBox> QuickInputWrapBox;
+
+	/** 快捷输入折叠区域 */
+	TSharedPtr<SExpandableArea> QuickInputExpandableArea;
+
+	/** 是否处于编辑模式 */
+	bool bQuickInputEditMode = false;
+
+	// --- Skill 创建集成 (阶段 D) ---
+
+	/** D1: "Create Skill" 按钮回调 */
+	FReply OnCreateSkillClicked();
+
+	/** D2: 打开自然语言 Skill 输入对话框 */
+	void OpenSkillCreationDialog();
+
+	/** D3: 启动 Skill 生成并显示进度 */
+	void StartSkillGeneration(const FString& Description, const FString& Category, const FString& Software);
+
+	/** D3: 轮询 Skill 生成进度 */
+	void PollSkillGenerationProgress();
+
+	/** D4: 打开预览与确认界面 */
+	void OpenSkillPreviewDialog(const FString& PreviewJson);
+
+	/** ArtClaw Skill 触发检测: 检查用户输入是否包含 artclaw 触发词 */
+	bool IsArtclawSkillTrigger(const FString& InputText) const;
+
+	/** 从触发消息中提取 Skill 描述部分 */
+	FString ExtractSkillDescription(const FString& InputText) const;
+
+	/** C++ 需求弹窗确认 (D4 子流程) */
+	bool ShowCppRequirementDialog(const FString& SkillName, const TArray<FString>& CppRequirements);
+
+	/** Skill 生成状态 */
+	bool bIsGeneratingSkill = false;
+
+	/** Skill 生成进度文件路径 */
+	FString SkillProgressFile;
+
+	/** Skill 生成结果文件路径 */
+	FString SkillResultFile;
+
+	/** Skill 生成轮询句柄 */
+	FTSTicker::FDelegateHandle SkillPollHandle;
 
 	static constexpr int32 MaxMessages = 500;
 };

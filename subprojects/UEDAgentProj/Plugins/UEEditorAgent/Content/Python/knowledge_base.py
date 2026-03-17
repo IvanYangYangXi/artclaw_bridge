@@ -342,31 +342,10 @@ def init_knowledge_base(mcp_server, base_dir: Optional[Path] = None) -> Knowledg
         handler=_handle_kb_search,
     )
 
-    mcp_server.register_tool(
-        name="knowledge_index",
-        description=(
-            "Index a directory of documentation files (Markdown, TXT) into the knowledge base. "
-            "After indexing, knowledge_search can find relevant information."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "directory": {"type": "string", "description": "Directory path to index"},
-                "patterns": {"type": "array", "items": {"type": "string"}, "description": "File patterns (default: *.md, *.txt)"},
-            },
-            "required": ["directory"],
-        },
-        handler=_handle_kb_index,
-    )
+    # knowledge_index / knowledge_stats 已移除为 MCP Tool（低频，可通过 run_ue_python 调用）
+    # 函数仍保留供内部使用
 
-    mcp_server.register_tool(
-        name="knowledge_stats",
-        description="Get knowledge base statistics (document count, sources, etc.)",
-        input_schema={"type": "object", "properties": {}},
-        handler=_handle_kb_stats,
-    )
-
-    UELogger.info("KnowledgeBase: registered 3 MCP tools")
+    UELogger.info("KnowledgeBase: registered 1 MCP tool (search only)")
     return _kb_instance
 
 

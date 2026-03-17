@@ -321,21 +321,7 @@ def register_resources(mcp_server) -> None:
 
 
 def register_tools(mcp_server) -> None:
-    """注册阶段 2 的 MCP Tools。"""
-
-    # --- 2.2: 获取选中 Actor ---
-    mcp_server.register_tool(
-        name="get_selected_actors",
-        description=(
-            "Get the list of currently selected actors in the level editor. "
-            "Returns pruned data: name, class, transform, tags, parent."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {},
-        },
-        handler=lambda args: json.dumps(_read_selection(), default=str),
-    )
+    """注册阶段 2 的 MCP Tools（精简版：仅保留不与 Skill 重复的）。"""
 
     # --- 2.2: 获取编辑器上下文 ---
     mcp_server.register_tool(
@@ -351,31 +337,7 @@ def register_tools(mcp_server) -> None:
         handler=lambda args: json.dumps(_read_editor_context(), default=str),
     )
 
-    # --- 2.4: 视口操作 ---
-    mcp_server.register_tool(
-        name="focus_on_actor",
-        description=(
-            "Focus the viewport camera on a specific actor by name. "
-            "Optionally highlight the actor for visual feedback."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "actor_name": {
-                    "type": "string",
-                    "description": "Name of the actor to focus on",
-                },
-                "highlight": {
-                    "type": "boolean",
-                    "description": "Whether to highlight the actor (default: true)",
-                    "default": True,
-                },
-            },
-            "required": ["actor_name"],
-        },
-        handler=_handle_focus_on_actor,
-    )
-
+    # --- 2.4: 高亮 Actor ---
     mcp_server.register_tool(
         name="highlight_actors",
         description=(
@@ -396,70 +358,14 @@ def register_tools(mcp_server) -> None:
         handler=_handle_highlight_actors,
     )
 
-    # --- 2.4: 视口相机 ---
-    mcp_server.register_tool(
-        name="get_viewport_camera",
-        description="Get the current viewport camera location and rotation.",
-        input_schema={
-            "type": "object",
-            "properties": {},
-        },
-        handler=lambda args: json.dumps(_read_viewport(), default=str),
-    )
+    # 已移除（与 Skill 重复或已内化）:
+    #   get_selected_actors → scene_ops.py
+    #   focus_on_actor → scene_ops.py
+    #   set_viewport_camera → level_ops.py
+    #   get_viewport_camera → level_ops.py (get_viewport_info)
+    #   get_dynamic_prompt → 内化到 system prompt
 
-    mcp_server.register_tool(
-        name="set_viewport_camera",
-        description=(
-            "Set the viewport camera to a specific location and rotation. "
-            "Useful for navigating to specific areas in the level."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "location": {
-                    "type": "object",
-                    "properties": {
-                        "x": {"type": "number"},
-                        "y": {"type": "number"},
-                        "z": {"type": "number"},
-                    },
-                    "description": "Camera location (x, y, z)",
-                },
-                "rotation": {
-                    "type": "object",
-                    "properties": {
-                        "pitch": {"type": "number"},
-                        "yaw": {"type": "number"},
-                        "roll": {"type": "number"},
-                    },
-                    "description": "Camera rotation (pitch, yaw, roll)",
-                },
-            },
-        },
-        handler=_handle_set_viewport_camera,
-    )
-
-    # --- 2.5: 编辑器模式智能过滤 / 动态 Prompt ---
-    mcp_server.register_tool(
-        name="get_dynamic_prompt",
-        description=(
-            "Get a dynamic system prompt based on the current editor mode and context. "
-            "Use this at the start of a task to get mode-specific guidance. "
-            "Returns preferred APIs, current selection summary, and contextual hints."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "task_intent": {
-                    "type": "string",
-                    "description": "Brief description of what the user wants to do (optional)",
-                },
-            },
-        },
-        handler=_handle_get_dynamic_prompt,
-    )
-
-    UELogger.info("Phase 2 tools registered: 7 tools")
+    UELogger.info("Phase 2 tools registered: 2 tools (deduplicated)")
 
 
 # ============================================================================

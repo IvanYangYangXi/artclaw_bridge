@@ -1,0 +1,30 @@
+{
+  "manifest_version": "1.0",
+  "name": "TODO_skill_name",
+  "display_name": "TODO: 技能显示名称",
+  "description": "TODO: 一句话描述这个 Skill 的作用",
+  "version": "1.0.0",
+  "author": "TODO: 作者名",
+  "license": "MIT",
+
+  "software": "unreal_engine",
+  "software_version": {
+    "min": "5.3",
+    "max": "5.5"
+  },
+
+  "category": "TODO: scene|asset|material|lighting|render|blueprint|animation|ui|utils|integration|workflow",
+  "risk_level": "low",
+
+  "dependencies": [],
+
+  "tags": ["TODO"],
+  "entry_point": "__init__.py",
+
+  "tools": [
+    {
+      "name": "TODO_tool_name",
+      "description": "TODO: 工具描述"
+    }
+  ]
+}

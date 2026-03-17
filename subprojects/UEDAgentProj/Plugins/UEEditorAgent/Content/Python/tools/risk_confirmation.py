@@ -169,29 +169,12 @@ def request_confirmation(risk_info: dict, code_preview: str = "") -> bool:
 # ============================================================================
 
 def register_tools(mcp_server) -> None:
-    """注册风险确认工具。"""
-
-    mcp_server.register_tool(
-        name="assess_risk",
-        description=(
-            "Assess the risk level of Python code before execution. "
-            "Returns risk level (low/medium/high/critical), reasons, and whether confirmation is required. "
-            "Call this before run_ue_python for potentially dangerous operations."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "description": "The Python code to assess",
-                },
-            },
-            "required": ["code"],
-        },
-        handler=_handle_assess_risk,
-    )
-
-    UELogger.info("Phase 2.3 tools registered: assess_risk")
+    """风险评估已内化到 run_ue_python 流程中，不再单独暴露为 MCP Tool。
+    
+    assess_operation_risk() 和 request_confirmation() 仍可被其他模块调用。
+    """
+    # assess_risk 已内化：AI 不需要单独调用，run_ue_python 内部自动评估
+    UELogger.info("Phase 2.3: risk assessment available (internalized, no MCP tool)")
 
 
 def _handle_assess_risk(arguments: dict) -> str:

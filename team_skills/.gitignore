@@ -1,0 +1,39 @@
+# team_skills/.gitignore
+# ========================
+# 团队共享 Skill 库 Git 规则
+#
+# 原则:
+#   - Skill 代码、manifest、文档 → 提交
+#   - 缓存、临时文件、个人配置 → 忽略
+#   - 测试输出 → 忽略
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+*~
+
+# OS 文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+
+# 测试输出
+*.test_output/
+.coverage
+
+# 打包产物 (用 artclaw skill package 生成的 zip)
+*.zip
+
+# 个人笔记 (不提交)
+NOTES.md
+TODO.md

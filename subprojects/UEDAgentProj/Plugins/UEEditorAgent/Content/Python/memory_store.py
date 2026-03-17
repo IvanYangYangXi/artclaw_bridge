@@ -221,73 +221,47 @@ def init_memory_store(mcp_server, base_dir: Optional[Path] = None) -> MemoryStor
     global _memory_store_instance
     _memory_store_instance = MemoryStore(base_dir)
 
-    # --- MCP Tools ---
+    # --- MCP Tool: 统一 memory 接口 ---
 
     mcp_server.register_tool(
-        name="memory_get",
+        name="memory",
         description=(
-            "Retrieve a value from the project memory store. "
-            "Layers: facts (project knowledge), preferences (user aesthetics), conventions (naming rules)."
+            "Project memory store. Use action='get' to retrieve, 'set' to store, "
+            "'search' to find by keyword, 'list' to enumerate keys. "
+            "Layers: facts (project knowledge), preferences (user aesthetics), "
+            "conventions (naming rules)."
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "layer": {"type": "string", "enum": ["facts", "preferences", "conventions"]},
-                "key": {"type": "string", "description": "Memory key to retrieve"},
+                "action": {
+                    "type": "string",
+                    "enum": ["get", "set", "search", "list"],
+                    "description": "Action to perform",
+                },
+                "layer": {
+                    "type": "string",
+                    "enum": ["facts", "preferences", "conventions"],
+                    "description": "Memory layer",
+                },
+                "key": {
+                    "type": "string",
+                    "description": "Memory key (for get/set)",
+                },
+                "value": {
+                    "description": "Value to store (for set action)",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Search keyword (for search action)",
+                },
             },
-            "required": ["layer", "key"],
+            "required": ["action"],
         },
-        handler=_handle_memory_get,
+        handler=_handle_memory,
     )
 
-    mcp_server.register_tool(
-        name="memory_set",
-        description=(
-            "Store a value in the project memory store. AI can remember project-specific facts, "
-            "user preferences, and naming conventions for future sessions."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "layer": {"type": "string", "enum": ["facts", "preferences", "conventions"]},
-                "key": {"type": "string", "description": "Memory key"},
-                "value": {"description": "Value to store (string, number, object, array)"},
-            },
-            "required": ["layer", "key", "value"],
-        },
-        handler=_handle_memory_set,
-    )
-
-    mcp_server.register_tool(
-        name="memory_search",
-        description=(
-            "Search the project memory store by keyword. "
-            "Finds matching keys and values across all layers."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Search keyword"},
-                "layer": {"type": "string", "description": "Optional: limit to specific layer"},
-            },
-            "required": ["query"],
-        },
-        handler=_handle_memory_search,
-    )
-
-    mcp_server.register_tool(
-        name="memory_list",
-        description="List all memory keys, optionally filtered by layer.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "layer": {"type": "string", "description": "Optional: specific layer"},
-            },
-        },
-        handler=_handle_memory_list,
-    )
-
-    UELogger.info("MemoryStore: registered 4 MCP tools")
+    UELogger.info("MemoryStore: registered 1 MCP tool (unified)")
     return _memory_store_instance
 
 
@@ -296,6 +270,21 @@ def get_memory_store() -> Optional[MemoryStore]:
 
 
 # --- Handlers ---
+
+def _handle_memory(arguments: dict) -> str:
+    """统一 memory 操作入口"""
+    action = arguments.get("action", "")
+    if action == "get":
+        return _handle_memory_get(arguments)
+    elif action == "set":
+        return _handle_memory_set(arguments)
+    elif action == "search":
+        return _handle_memory_search(arguments)
+    elif action == "list":
+        return _handle_memory_list(arguments)
+    else:
+        return json.dumps({"error": f"Unknown action: {action}. Use get/set/search/list."})
+
 
 def _handle_memory_get(arguments: dict) -> str:
     store = get_memory_store()

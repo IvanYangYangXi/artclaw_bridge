@@ -876,6 +876,7 @@ def _init_phase3_subsystems(server: MCPServer) -> None:
         UELogger.exception("Phase 3.2: Failed to init knowledge base")
 
     # §3.1 Skill Hub — 最后初始化，依赖 MCP Server 已就绪
+    # Phase B: 增强版 — 分层加载、manifest 解析、版本匹配、冲突检测
     try:
         from skill_hub import SkillHub
         hub = SkillHub(server)
@@ -891,6 +892,23 @@ def _init_phase3_subsystems(server: MCPServer) -> None:
         )
 
         UELogger.info(f"Phase 3.1: Skill Hub ready ({count} skills)")
+
+        # Phase B5: 注册 Skill 管理 MCP Tools
+        try:
+            from skill_mcp_tools import register_skill_tools
+            register_skill_tools(server, hub)
+            UELogger.info("Phase B5: Skill management MCP tools registered")
+        except Exception:
+            UELogger.exception("Phase B5: Failed to register skill management tools")
+
+        # Phase B6: 注册 Skill 管理 MCP Resources
+        try:
+            from skill_mcp_resources import register_skill_resources
+            register_skill_resources(server, hub)
+            UELogger.info("Phase B6: Skill management MCP resources registered")
+        except Exception:
+            UELogger.exception("Phase B6: Failed to register skill management resources")
+
     except Exception:
         UELogger.exception("Phase 3.1: Failed to init skill hub")
 

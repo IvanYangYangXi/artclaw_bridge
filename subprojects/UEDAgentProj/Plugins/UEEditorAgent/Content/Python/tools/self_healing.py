@@ -223,33 +223,12 @@ def build_retry_context(exec_result: dict, original_code: str, max_retries: int 
 # ============================================================================
 
 def register_tools(mcp_server) -> None:
-    """注册自修复相关工具。"""
-
-    mcp_server.register_tool(
-        name="analyze_error",
-        description=(
-            "Analyze a Python execution error from run_ue_python. "
-            "Returns error type, category, fix hints, and retry suggestions. "
-            "Use this when run_ue_python returns success=false to understand what went wrong."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "error_message": {
-                    "type": "string",
-                    "description": "The error/traceback string from run_ue_python result",
-                },
-                "original_code": {
-                    "type": "string",
-                    "description": "The original code that caused the error",
-                },
-            },
-            "required": ["error_message"],
-        },
-        handler=_handle_analyze_error,
-    )
-
-    UELogger.info("Phase 2.7 tools registered: analyze_error")
+    """错误分析已内化到 run_ue_python 流程中，不再单独暴露为 MCP Tool。
+    
+    analyze_error() 仍可被其他模块调用。
+    """
+    # analyze_error 已内化：run_ue_python 失败时自动附带错误分析
+    UELogger.info("Phase 2.7: error analysis available (internalized, no MCP tool)")
 
 
 def _handle_analyze_error(arguments: dict) -> str:
