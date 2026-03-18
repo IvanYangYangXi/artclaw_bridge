@@ -1,1 +1,0 @@
-请根据ArtClaw总项目的宪法文档（D:\MyProject\ArtClaw\docs\specs）及UE_Editor_Agent子项目的宪法文档（D:\MyProject\ArtClaw\docs\UE_Editor_Agent\specs），完成D:\MyProject\ArtClaw\docs\UE_Editor_Agent\features中0.3阶段“0.3：开发者菜单与入口注册”的里程碑目标。严格遵循宪法约束实现，如果详细文档与宪法有冲突，请优先使用宪法标准实现功能。
