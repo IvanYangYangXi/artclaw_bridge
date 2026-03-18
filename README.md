@@ -5,7 +5,7 @@
 ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max 等数字内容创作（DCC）软件提供统一的 AI 桥接层。通过 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) 协议，AI Agent 可以直接理解和操作编辑器环境。
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![UE](https://img.shields.io/badge/Unreal%20Engine-5.3%2B-black.svg)
+![UE](https://img.shields.io/badge/Unreal%20Engine-5.7-black.svg)
 ![Status](https://img.shields.io/badge/status-beta-orange.svg)
 
 ---
@@ -67,7 +67,7 @@ artclaw_bridge/
 
 ### 前置条件
 
-- **Unreal Engine** 5.3 或更高版本
+- **Unreal Engine** 5.7（其他版本未验证）
 - **OpenClaw** 已安装（`npm install -g openclaw`）
 - **Python 依赖**：`websockets`、`pydantic`（由插件自动安装）
 
