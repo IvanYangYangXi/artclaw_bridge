@@ -1,0 +1,50 @@
+{
+  "$comment": "UE 单实例配置 — 最小化配置，即开即用",
+  "$doc": "将以下内容合并到 ~/.openclaw/openclaw.json",
+
+  "plugins": {
+    "allow": ["mcp-bridge"],
+    "entries": {
+      "mcp-bridge": {
+        "enabled": true,
+        "config": {
+          "servers": {
+            "ue-editor": {
+              "type": "websocket",
+              "url": "ws://127.0.0.1:8080"
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "$agents_example": {
+    "agents": {
+      "list": [
+        {
+          "id": "ue-assistant",
+          "model": "claude-sonnet-4-20250514",
+          "systemPrompt": "You are an AI assistant embedded in Unreal Engine Editor via the ArtClaw UE Claw Bridge plugin. You can manipulate the editor through MCP tools. Always use the tools to verify state before making changes. Respond in Chinese.",
+          "tools": {
+            "allow": [
+              "mcp_ue-editor_run_ue_python",
+              "mcp_ue-editor_get_selected_actors",
+              "mcp_ue-editor_get_editor_context",
+              "mcp_ue-editor_focus_on_actor",
+              "mcp_ue-editor_highlight_actors",
+              "mcp_ue-editor_get_viewport_camera",
+              "mcp_ue-editor_set_viewport_camera",
+              "mcp_ue-editor_get_dynamic_prompt",
+              "mcp_ue-editor_knowledge_search",
+              "mcp_ue-editor_knowledge_index",
+              "mcp_ue-editor_knowledge_stats",
+              "mcp_ue-editor_memory",
+              "mcp_ue-editor_skill_manage"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
