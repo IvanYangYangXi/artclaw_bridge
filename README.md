@@ -1,6 +1,6 @@
 # ArtClaw Bridge
 
-**让 DCC 工具通过 MCP 协议接入 AI Agent 的桥接框架**
+**让 UE引擎、Maya、3ds Max 等 DCC 工具通过 MCP 协议接入 AI Agent 的桥接框架**
 
 ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max 等数字内容创作（DCC）软件提供统一的 AI 桥接层。通过 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) 协议，AI Agent 可以直接理解和操作编辑器环境。
 
