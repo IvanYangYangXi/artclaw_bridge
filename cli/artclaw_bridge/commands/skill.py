@@ -315,7 +315,7 @@ def _cmd_create(args: argparse.Namespace) -> None:
             data["name"] = name
             data["display_name"] = name.replace("_", " ").title()
             data["description"] = description
-            data["author"] = "artclaw_bridge"
+            data["author"] = "Ivan(杨己力)"
             data["software"] = software
             data["category"] = category
             # 清理 tags 中的 TODO 占位符

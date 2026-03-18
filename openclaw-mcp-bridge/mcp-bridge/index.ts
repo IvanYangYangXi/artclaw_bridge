@@ -49,8 +49,11 @@ class McpWebSocketClient {
     this.connected = false;
     this.reconnectTimer = null;
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
+    this.maxReconnectAttempts = Infinity;
     this.reconnectDelay = 3000;
+    this.maxReconnectDelay = 30000;
+    this.pingInterval = null;
+    this.pingIntervalMs = 15000; // ping every 15s to keep alive
   }
 
   async connect() {
@@ -76,6 +79,8 @@ class McpWebSocketClient {
             await this.initialize();
             // Discover tools
             await this.discoverTools();
+            // Start ping keepalive
+            this.startPing();
             resolve();
           } catch (err) {
             reject(err);
@@ -98,6 +103,7 @@ class McpWebSocketClient {
 
         this.ws.onclose = () => {
           this.connected = false;
+          this.stopPing();
           this.logger.warn(`[mcp-bridge] Disconnected from MCP server "${this.name}"`);
           this.scheduleReconnect();
         };
@@ -116,20 +122,44 @@ class McpWebSocketClient {
   }
 
   scheduleReconnect() {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      this.logger.error(`[mcp-bridge] Max reconnect attempts reached for "${this.name}"`);
-      return;
-    }
+    if (this.reconnectTimer) return; // already scheduled
     this.reconnectAttempts++;
-    const delay = this.reconnectDelay * this.reconnectAttempts;
-    this.logger.info(`[mcp-bridge] Reconnecting to "${this.name}" in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    const delay = Math.min(this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1), this.maxReconnectDelay);
+    this.logger.info(`[mcp-bridge] Reconnecting to "${this.name}" in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts})`);
     this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
       try {
         await this.connect();
+        this.logger.info(`[mcp-bridge] Reconnected to "${this.name}" successfully`);
       } catch (err) {
         this.logger.error(`[mcp-bridge] Reconnect failed for "${this.name}": ${err.message}`);
       }
     }, delay);
+  }
+
+  startPing() {
+    this.stopPing();
+    this.pingInterval = setInterval(() => {
+      if (this.connected && this.ws) {
+        try {
+          // Send MCP ping request to keep connection alive
+          this.ws.send(JSON.stringify({
+            jsonrpc: "2.0",
+            id: nextRequestId++,
+            method: "ping",
+          }));
+        } catch (err) {
+          this.logger.warn(`[mcp-bridge] Ping failed for "${this.name}": ${err.message}`);
+        }
+      }
+    }, this.pingIntervalMs);
+  }
+
+  stopPing() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
   }
 
   async sendRequest(method, params) {
@@ -212,6 +242,7 @@ class McpWebSocketClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    this.stopPing();
     if (this.ws) {
       this.ws.close();
       this.ws = null;

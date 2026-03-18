@@ -135,7 +135,7 @@ frontmatter 仅需 `name` + `description`。body 部分为 Markdown 格式的使
   "display_name": "列出场景 Actor",
   "description": "List all actors in the current level with optional type filtering",
   "version": "1.0.0",
-  "author": "ArtClaw",
+  "author": "Ivan(杨己力)",
   "license": "MIT",
   "software": "unreal_engine",
   "software_version": {
@@ -165,7 +165,7 @@ frontmatter 仅需 `name` + `description`。body 部分为 Markdown 格式的使
   "display_name": "批量材质编辑器",
   "description": "Batch edit material parameters across multiple material instances",
   "version": "2.1.0",
-  "author": "ArtClaw",
+  "author": "Ivan(杨己力)",
   "license": "MIT",
   "software": "unreal_engine",
   "software_version": {

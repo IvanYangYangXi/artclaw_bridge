@@ -1009,7 +1009,7 @@ class SkillHub:
             "display_name": "示例技能",
             "description": "Example skill demonstrating ArtClaw skill structure",
             "version": "1.0.0",
-            "author": "ArtClaw",
+            "author": "Ivan(杨己力)",
             "license": "MIT",
             "software": "unreal_engine",
             "category": "utils",

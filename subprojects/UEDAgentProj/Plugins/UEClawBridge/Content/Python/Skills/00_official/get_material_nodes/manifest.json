@@ -4,7 +4,7 @@
   "display_name": "Get Material Nodes",
   "description": "Get the blueprint node graph (expression nodes) of a UE Material. Traverses from material property inputs via BFS with safety limits. Returns node class, position, connections, and key properties.",
   "version": "1.0.0",
-  "author": "xiaoyou",
+  "author": "Ivan(杨己力)",
   "license": "MIT",
   "software": "unreal_engine",
   "category": "material",

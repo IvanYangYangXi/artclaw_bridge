@@ -4,7 +4,7 @@
   "display_name": "生成材质使用文档",
   "description": "Read a master material's blueprint, extract all parameters (scalar, vector, texture, static switch), and generate a comprehensive Markdown documentation file.",
   "version": "1.0.0",
-  "author": "ArtClaw",
+  "author": "Ivan(杨己力)",
   "license": "MIT",
 
   "software": "unreal_engine",

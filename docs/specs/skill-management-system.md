@@ -167,7 +167,7 @@ my_skill/                             # Skill 包目录（蛇形命名）
   "display_name": "我的技能",
   "description": "一句话描述这个 Skill 的作用",
   "version": "1.0.0",
-  "author": "作者名",
+  "author": "Ivan(杨己力)",
   "license": "MIT",
   
   "software": "unreal_engine",        // universal | unreal_engine | maya | 3ds_max

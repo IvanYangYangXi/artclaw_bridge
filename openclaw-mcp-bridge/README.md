@@ -382,10 +382,13 @@ Agent 在对话中可直接调用这些工具。
 ```
 openclaw-mcp-bridge/
 ├── README.md                          # 本文档
-├── mcp-bridge/
-│   ├── openclaw.plugin.json           # 插件清单 (manifest)
-│   └── index.ts                       # 插件主代码 (TypeScript)
-└── openclaw-config-snippet.json       # openclaw.json 配置片段示例 (含全部 17 个工具白名单)
+├── setup.bat                          # Windows 一键安装脚本
+├── health_check.py                    # 健康检查工具
+├── openclaw_bridge.py                 # UE ↔ OpenClaw 双向通信桥
+├── openclaw-config-snippet.json       # openclaw.json 配置片段示例
+└── mcp-bridge/
+    ├── openclaw.plugin.json           # 插件清单 (manifest)
+    └── index.ts                       # 插件主代码 (TypeScript)
 ```
 
 部署目标路径：
