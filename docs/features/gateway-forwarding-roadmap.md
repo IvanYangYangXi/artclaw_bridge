@@ -57,10 +57,10 @@
 
 ---
 
-### 阶段 G2：重构与解耦 (Refactoring)
+### 阶段 G2：重构与解耦 (Refactoring) ✅
 
 > **目标**：拆分大文件，抽象平台无关层，为 DCCClawBridge 复用做准备
-> **进度**：G2.1 ✅ | G2.2 待做 | G2.3 待做
+> **实际工时**：~3 小时 | **完成日期**：2026-03-18
 
 - [x] **G2.1 openclaw_bridge.py 拆分** ✅
   - 新增 `bridge_core.py` (20KB) — 平台无关 WebSocket 核心
@@ -69,7 +69,16 @@
   - `openclaw_bridge.py` 从 46KB 瘦身至 13KB（UE 适配层）
   - 向后兼容：C++ 侧零改动
 
-- [ ] **G2.2 C++ 平台通信抽象层**
+- [x] **G2.2 C++ 平台通信抽象层** ✅
+  - 新增 `IAgentPlatformBridge` 接口（8 个方法）
+  - 新增 `FOpenClawPlatformBridge` 实现
+  - Dashboard 中不再出现 `openclaw_bridge` 字符串
+  - 换平台只需实现新的 `IAgentPlatformBridge` 子类
+
+- [x] **G2.3 mcp-bridge 插件增强** ✅
+  - 健康指标追踪：reconnects / toolCallCount / toolErrorCount
+  - 断连日志包含重连计数
+  - dispose 时输出汇总统计
   - **现状**：Dashboard 直接拼 Python 字符串调用 bridge 函数
   - **方案**：新增 `IAgentPlatformBridge` C++ 接口
     ```cpp
