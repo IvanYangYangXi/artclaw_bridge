@@ -57,6 +57,15 @@ class McpWebSocketClient {
     this.pingInterval = null;
     this.pingIntervalMs = 15000; // ping every 15s to keep alive
     this._disposed = false;
+
+    // Health stats
+    this.stats = {
+      totalReconnects: 0,
+      lastConnectedAt: null,
+      lastDisconnectedAt: null,
+      toolCallCount: 0,
+      toolErrorCount: 0,
+    };
   }
 
   async connect() {
@@ -76,6 +85,7 @@ class McpWebSocketClient {
           clearTimeout(timeout);
           this.connected = true;
           this.reconnectAttempts = 0;
+          this.stats.lastConnectedAt = new Date().toISOString();
           this.logger.info(`[mcp-bridge] Connected to MCP server "${this.name}" at ${this.url}`);
 
           try {
@@ -113,7 +123,9 @@ class McpWebSocketClient {
           this.connected = false;
           this.stopPing();
           if (wasConnected) {
-            this.logger.warn(`[mcp-bridge] Disconnected from MCP server "${this.name}"`);
+            this.stats.lastDisconnectedAt = new Date().toISOString();
+            this.stats.totalReconnects++;
+            this.logger.warn(`[mcp-bridge] Disconnected from MCP server "${this.name}" (reconnects: ${this.stats.totalReconnects})`);
           }
           this.scheduleReconnect();
         };
@@ -306,12 +318,14 @@ export default function (api) {
         parameters,
         async execute(_id, params) {
           if (!client.connected) {
+            client.stats.toolErrorCount++;
             return {
               content: [{ type: "text", text: `MCP server "${serverName}" is not connected. The DCC application may not be running.` }],
               isError: true,
             };
           }
           try {
+            client.stats.toolCallCount++;
             const result = await client.callTool(tool.name, params);
             if (result && result.content) {
               const textParts = result.content
@@ -325,6 +339,7 @@ export default function (api) {
               content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
             };
           } catch (err) {
+            client.stats.toolErrorCount++;
             return {
               content: [{ type: "text", text: `Error calling MCP tool "${tool.name}" on server "${serverName}": ${err.message}` }],
               isError: true,
@@ -390,7 +405,11 @@ export default function (api) {
   return {
     async dispose() {
       for (const [name, client] of clients) {
-        logger.info(`[mcp-bridge] Disconnecting from "${name}"`);
+        const s = client.stats;
+        logger.info(
+          `[mcp-bridge] Disconnecting from "${name}" ` +
+          `(calls: ${s.toolCallCount}, errors: ${s.toolErrorCount}, reconnects: ${s.totalReconnects})`
+        );
         client.disconnect();
       }
       clients.clear();
