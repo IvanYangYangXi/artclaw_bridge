@@ -1,1 +1,1 @@
-# DCCClawBridge - Core
+# DCCClawBridge core package

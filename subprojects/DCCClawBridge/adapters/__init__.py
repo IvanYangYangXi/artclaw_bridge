@@ -1,1 +1,4 @@
-# DCCClawBridge - DCC Adapters
+# DCCClawBridge adapters package
+from .base_adapter import BaseDCCAdapter
+
+__all__ = ["BaseDCCAdapter"]
