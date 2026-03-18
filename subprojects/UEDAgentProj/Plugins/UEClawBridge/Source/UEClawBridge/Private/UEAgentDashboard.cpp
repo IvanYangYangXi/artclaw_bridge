@@ -443,10 +443,67 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			3.0f // 延迟 3 秒
 		);
 	}
+
+	// Bridge 连接状态持续轮询 — 读取 Python 侧写入的 _bridge_status.json
+	// 实现断连/重连时 UI 自动更新，无需用户手动 /status
+	{
+		auto Self = SharedThis(this);
+		BridgeStatusPollHandle = FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateLambda([Self](float) -> bool
+			{
+				FString StatusFile = FPaths::ProjectSavedDir() / TEXT("UEAgent") / TEXT("_bridge_status.json");
+				if (!FPaths::FileExists(StatusFile))
+				{
+					return true; // 继续轮询
+				}
+
+				TArray<uint8> RawBytes;
+				if (!FFileHelper::LoadFileToArray(RawBytes, *StatusFile))
+				{
+					return true;
+				}
+				FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
+				FString JsonStr(Converter.Length(), Converter.Get());
+
+				TSharedPtr<FJsonObject> JsonObj;
+				TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
+				if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
+				{
+					return true;
+				}
+
+				double Timestamp = JsonObj->GetNumberField(TEXT("timestamp"));
+				// 只处理比上次更新的状态
+				if (Timestamp <= Self->LastBridgeStatusTimestamp)
+				{
+					return true;
+				}
+				Self->LastBridgeStatusTimestamp = Timestamp;
+
+				bool bConnected = JsonObj->GetBoolField(TEXT("connected"));
+
+				// 更新 Subsystem 状态（触发图标颜色变化等）
+				if (Self->CachedSubsystem.IsValid())
+				{
+					Self->CachedSubsystem->SetConnectionStatus(bConnected);
+				}
+
+				return true; // 持续轮询
+			}),
+			2.0f // 每 2 秒检查一次
+		);
+	}
 }
 
 SUEAgentDashboard::~SUEAgentDashboard()
 {
+	// 停止 bridge 状态轮询
+	if (BridgeStatusPollHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(BridgeStatusPollHandle);
+		BridgeStatusPollHandle.Reset();
+	}
+
 	if (CachedSubsystem.IsValid())
 	{
 		CachedSubsystem->OnConnectionStatusChangedNative.RemoveAll(this);

@@ -189,6 +189,10 @@ private:
 	FTSTicker::FDelegateHandle PollTimerHandle;
 	TArray<FString> PendingPythonResult;
 
+	/** Bridge 连接状态持续轮询 */
+	FTSTicker::FDelegateHandle BridgeStatusPollHandle;
+	double LastBridgeStatusTimestamp = 0.0;
+
 	/** 流式显示: 已读取的流式文件行数 */
 	int32 StreamLinesRead = 0;
 	/** 流式显示: 是否已显示过 thinking 消息 */

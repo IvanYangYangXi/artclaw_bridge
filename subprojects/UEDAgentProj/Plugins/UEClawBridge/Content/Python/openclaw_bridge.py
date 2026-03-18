@@ -56,6 +56,35 @@ _bridge: Optional["OpenClawBridge"] = None
 _send_chat_async_to_file_current_id: Optional[str] = None
 
 
+def _get_bridge_status_path() -> str:
+    """获取 bridge 状态文件路径 (UE Saved/UEAgent/ 目录下)"""
+    try:
+        import unreal
+        saved_dir = unreal.Paths.project_saved_dir()
+        status_dir = os.path.join(saved_dir, "UEAgent")
+        os.makedirs(status_dir, exist_ok=True)
+        return os.path.join(status_dir, "_bridge_status.json")
+    except (ImportError, Exception):
+        return ""
+
+
+def _write_bridge_status(connected: bool, detail: str = ""):
+    """写入 bridge 连接状态文件，供 C++ FTSTicker 轮询读取"""
+    path = _get_bridge_status_path()
+    if not path:
+        return
+    try:
+        status = {
+            "connected": connected,
+            "timestamp": time.time(),
+            "detail": detail,
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(status, f)
+    except Exception:
+        pass
+
+
 def _load_config() -> dict:
     """尝试从 openclaw.json 读取 gateway 配置"""
     config_path = os.path.expanduser("~/.openclaw/openclaw.json")
@@ -130,6 +159,7 @@ class OpenClawBridge:
         """停止连接"""
         self._stop_event.set()
         self._connected = False
+        _write_bridge_status(False, "shutdown")
 
         # 关闭 WebSocket 连接（触发 _message_loop 退出）
         if self._ws:
@@ -171,7 +201,7 @@ class OpenClawBridge:
             # 尝试重连
             self.start()
             if not self._connected:
-                return "[Error] Not connected to OpenClaw Gateway. Check if openclaw is running."
+                return "[错误] 未连接到 OpenClaw Gateway，请确认 OpenClaw 正在运行。"
 
         future = asyncio.run_coroutine_threadsafe(
             self._async_chat_send(message), self._loop
@@ -181,9 +211,9 @@ class OpenClawBridge:
             result = future.result(timeout=timeout)
             return result
         except asyncio.TimeoutError:
-            return "[Error] AI response timed out."
+            return "[错误] AI 响应超时。"
         except Exception as e:
-            return f"[Error] {str(e)}"
+            return f"[错误] {str(e)}"
 
     def send_message_async(self, message: str, callback: Callable[[str], None]):
         """
@@ -258,6 +288,7 @@ class OpenClawBridge:
                     # 握手
                     if await self._handshake(ws):
                         self._connected = True
+                        _write_bridge_status(True, "connected")
                         backoff = 1.0  # 只在握手成功后才重置退避
                         UELogger.info("OpenClaw Bridge: handshake OK")
                         await self._message_loop(ws)
@@ -270,6 +301,8 @@ class OpenClawBridge:
             was_connected = self._connected
             self._connected = False
             self._ws = None
+            if was_connected:
+                _write_bridge_status(False, "disconnected")
 
             # 清理 pending futures
             for fid, fut in list(self._pending.items()):
@@ -284,8 +317,8 @@ class OpenClawBridge:
                 try:
                     self.on_ai_message(
                         "error",
-                        "[Connection lost] OpenClaw Gateway disconnected (may be restarting). "
-                        "Click 'Connect' or /connect to reconnect."
+                        "[连接中断] OpenClaw Gateway 已断开（可能正在重启）。"
+                        "请点击 Connect 按钮或输入 /connect 重新连接。"
                     )
                 except Exception:
                     pass
@@ -485,13 +518,13 @@ class OpenClawBridge:
         # 处理终止状态
         if state in ("final", "aborted", "error"):
             if state == "aborted":
-                text = text or "[Response aborted]"
+                text = text or "[响应已中止]"
             elif state == "error":
                 error_msg = payload.get("error", {})
                 if isinstance(error_msg, dict):
-                    text = text or f"[Error] {error_msg.get('message', 'Unknown error')}"
+                    text = text or f"[错误] {error_msg.get('message', '未知错误')}"
                 else:
-                    text = text or f"[Error] {error_msg}"
+                    text = text or f"[错误] {error_msg}"
 
             for fid, fut in list(self._pending.items()):
                 if hasattr(fut, '_chat_session_key') and not fut.done():
@@ -626,7 +659,7 @@ class OpenClawBridge:
         except Exception as e:
             error_str = str(e)
             UELogger.mcp_error(f"OpenClaw chat.send error: {error_str}")
-            return f"[Error] {error_str}"
+            return f"[错误] {error_str}"
 
     async def _wait_for_final(self, timeout: float = 1800.0) -> str:
         """等待 chat final 事件，支持外部取消"""
@@ -769,7 +802,7 @@ def send_chat(message: str) -> str:
     if not _bridge:
         init_bridge()
     if not _bridge:
-        return "[Error] Bridge not initialized"
+        return "[错误] Bridge 未初始化"
 
     return _bridge.send_message(message)
 
@@ -863,7 +896,7 @@ def send_chat_async_to_file(message: str, output_file: str):
             UELogger.mcp_error(f"Failed to write response file: {e}")
             try:
                 with open(output_file, "w", encoding="utf-8") as f:
-                    f.write(f"[Error] Failed to write response: {e}")
+                    f.write(f"[错误] 写入响应文件失败: {e}")
             except Exception:
                 pass
 
@@ -881,7 +914,7 @@ def send_chat_async_to_file(message: str, output_file: str):
         # 直接写错误
         try:
             with open(output_file, "w", encoding="utf-8") as f:
-                f.write("[Error] OpenClaw Bridge not initialized. Is OpenClaw running?")
+                f.write("[错误] OpenClaw Bridge 未初始化，请确认 OpenClaw 正在运行。")
         except Exception:
             pass
 

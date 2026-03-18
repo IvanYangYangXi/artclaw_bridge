@@ -2,7 +2,8 @@
  * MCP Bridge Plugin for OpenClaw
  *
  * Connects to external MCP servers via WebSocket and registers their tools
- * as OpenClaw agent tools.
+ * as OpenClaw agent tools. Supports late discovery: if a DCC (e.g. UE) starts
+ * after the Gateway, tools are discovered and registered on reconnect.
  *
  * Config example (in openclaw.json → plugins.entries.mcp-bridge.config):
  * {
@@ -39,10 +40,11 @@ function parseJsonRpcResponse(data) {
 // --- WebSocket MCP Client ---
 
 class McpWebSocketClient {
-  constructor(name, url, logger) {
+  constructor(name, url, logger, onToolsDiscovered) {
     this.name = name;
     this.url = url;
     this.logger = logger;
+    this.onToolsDiscovered = onToolsDiscovered; // callback(tools[]) — called on every (re)connect
     this.ws = null;
     this.tools = [];
     this.pendingRequests = new Map();
@@ -54,12 +56,14 @@ class McpWebSocketClient {
     this.maxReconnectDelay = 30000;
     this.pingInterval = null;
     this.pingIntervalMs = 15000; // ping every 15s to keep alive
+    this._disposed = false;
   }
 
   async connect() {
+    if (this._disposed) return;
+
     return new Promise((resolve, reject) => {
       try {
-        // Use dynamic import for WebSocket (Node.js built-in or ws package)
         const WebSocket = globalThis.WebSocket || require("ws");
         this.ws = new WebSocket(this.url);
 
@@ -75,12 +79,15 @@ class McpWebSocketClient {
           this.logger.info(`[mcp-bridge] Connected to MCP server "${this.name}" at ${this.url}`);
 
           try {
-            // MCP initialize handshake
             await this.initialize();
-            // Discover tools
             await this.discoverTools();
-            // Start ping keepalive
             this.startPing();
+
+            // Notify plugin to register/re-register tools
+            if (this.onToolsDiscovered && this.tools.length > 0) {
+              this.onToolsDiscovered(this.tools);
+            }
+
             resolve();
           } catch (err) {
             reject(err);
@@ -102,17 +109,21 @@ class McpWebSocketClient {
         };
 
         this.ws.onclose = () => {
+          const wasConnected = this.connected;
           this.connected = false;
           this.stopPing();
-          this.logger.warn(`[mcp-bridge] Disconnected from MCP server "${this.name}"`);
+          if (wasConnected) {
+            this.logger.warn(`[mcp-bridge] Disconnected from MCP server "${this.name}"`);
+          }
           this.scheduleReconnect();
         };
 
         this.ws.onerror = (err) => {
           clearTimeout(timeout);
-          this.logger.error(`[mcp-bridge] WebSocket error for "${this.name}": ${err.message || err}`);
           if (!this.connected) {
             reject(new Error(`Failed to connect to ${this.url}: ${err.message || err}`));
+          } else {
+            this.logger.error(`[mcp-bridge] WebSocket error for "${this.name}": ${err.message || err}`);
           }
         };
       } catch (err) {
@@ -122,17 +133,19 @@ class McpWebSocketClient {
   }
 
   scheduleReconnect() {
-    if (this.reconnectTimer) return; // already scheduled
+    if (this._disposed || this.reconnectTimer) return;
     this.reconnectAttempts++;
     const delay = Math.min(this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1), this.maxReconnectDelay);
     this.logger.info(`[mcp-bridge] Reconnecting to "${this.name}" in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts})`);
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
+      if (this._disposed) return;
       try {
         await this.connect();
         this.logger.info(`[mcp-bridge] Reconnected to "${this.name}" successfully`);
       } catch (err) {
         this.logger.error(`[mcp-bridge] Reconnect failed for "${this.name}": ${err.message}`);
+        // scheduleReconnect is called again from onclose
       }
     }, delay);
   }
@@ -142,7 +155,6 @@ class McpWebSocketClient {
     this.pingInterval = setInterval(() => {
       if (this.connected && this.ws) {
         try {
-          // Send MCP ping request to keep connection alive
           this.ws.send(JSON.stringify({
             jsonrpc: "2.0",
             id: nextRequestId++,
@@ -197,7 +209,7 @@ class McpWebSocketClient {
       capabilities: {},
       clientInfo: {
         name: "openclaw-mcp-bridge",
-        version: "1.0.0",
+        version: "1.1.0",
       },
     });
 
@@ -207,7 +219,6 @@ class McpWebSocketClient {
       `[mcp-bridge] Initialized "${this.name}": ${this.serverInfo.name || "unknown"} v${this.serverInfo.version || "?"}`
     );
 
-    // Send initialized notification
     if (this.ws && this.connected) {
       this.ws.send(
         JSON.stringify({
@@ -238,6 +249,7 @@ class McpWebSocketClient {
   }
 
   disconnect() {
+    this._disposed = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -263,10 +275,74 @@ export default function (api) {
   const pluginConfig = api.config?.plugins?.entries?.["mcp-bridge"]?.config || {};
   const servers = pluginConfig.servers || {};
 
-  // Track registered tool names for cleanup
-  const registeredTools = [];
+  // Track registered tool names (Set for dedup)
+  const registeredToolNames = new Set();
 
-  // Connect to each configured server and register tools
+  /**
+   * Register (or re-register) tools from a specific MCP server.
+   * Called on initial connect and every reconnect, so late-starting
+   * DCC apps get their tools picked up without restarting the Gateway.
+   */
+  function registerToolsForServer(serverName, client, tools) {
+    let newCount = 0;
+    for (const tool of tools) {
+      const openclawToolName = `mcp_${serverName}_${tool.name}`;
+
+      if (registeredToolNames.has(openclawToolName)) {
+        // Tool already registered from a previous connect — skip.
+        // The execute handler already references the client instance,
+        // which reconnects transparently.
+        continue;
+      }
+
+      const parameters = tool.inputSchema || {
+        type: "object",
+        properties: {},
+      };
+
+      api.registerTool({
+        name: openclawToolName,
+        description: `[MCP:${serverName}] ${tool.description || tool.name}`,
+        parameters,
+        async execute(_id, params) {
+          if (!client.connected) {
+            return {
+              content: [{ type: "text", text: `MCP server "${serverName}" is not connected. The DCC application may not be running.` }],
+              isError: true,
+            };
+          }
+          try {
+            const result = await client.callTool(tool.name, params);
+            if (result && result.content) {
+              const textParts = result.content
+                .filter((c) => c.type === "text")
+                .map((c) => c.text);
+              return {
+                content: [{ type: "text", text: textParts.join("\n") || JSON.stringify(result) }],
+              };
+            }
+            return {
+              content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            };
+          } catch (err) {
+            return {
+              content: [{ type: "text", text: `Error calling MCP tool "${tool.name}" on server "${serverName}": ${err.message}` }],
+              isError: true,
+            };
+          }
+        },
+      });
+
+      registeredToolNames.add(openclawToolName);
+      newCount++;
+    }
+
+    if (newCount > 0) {
+      logger.info(`[mcp-bridge] Registered ${newCount} new tool(s) from "${serverName}" (total: ${registeredToolNames.size})`);
+    }
+  }
+
+  // Connect to each configured server
   const initPromise = (async () => {
     for (const [serverName, serverDef] of Object.entries(servers)) {
       if (serverDef.enabled === false) {
@@ -275,7 +351,7 @@ export default function (api) {
       }
 
       if (serverDef.type !== "websocket") {
-        logger.warn(`[mcp-bridge] Server "${serverName}" has unsupported type "${serverDef.type}" (only websocket is supported currently)`);
+        logger.warn(`[mcp-bridge] Server "${serverName}" has unsupported type "${serverDef.type}" (only websocket supported)`);
         continue;
       }
 
@@ -284,83 +360,33 @@ export default function (api) {
         continue;
       }
 
-      const client = new McpWebSocketClient(serverName, serverDef.url, logger);
+      const client = new McpWebSocketClient(
+        serverName,
+        serverDef.url,
+        logger,
+        // onToolsDiscovered callback — fires on every (re)connect
+        (tools) => registerToolsForServer(serverName, client, tools),
+      );
       clients.set(serverName, client);
 
       try {
         await client.connect();
-
-        // Register each discovered tool as an OpenClaw agent tool
-        for (const tool of client.tools) {
-          const openclawToolName = `mcp_${serverName}_${tool.name}`;
-
-          // Convert MCP tool inputSchema to OpenClaw tool parameters
-          const parameters = tool.inputSchema || {
-            type: "object",
-            properties: {},
-          };
-
-          api.registerTool({
-            name: openclawToolName,
-            description: `[MCP:${serverName}] ${tool.description || tool.name}`,
-            parameters,
-            async execute(_id, params) {
-              try {
-                const result = await client.callTool(tool.name, params);
-
-                // Format MCP response content
-                if (result && result.content) {
-                  const textParts = result.content
-                    .filter((c) => c.type === "text")
-                    .map((c) => c.text);
-                  return {
-                    content: [
-                      {
-                        type: "text",
-                        text: textParts.join("\n") || JSON.stringify(result),
-                      },
-                    ],
-                  };
-                }
-
-                return {
-                  content: [
-                    {
-                      type: "text",
-                      text: JSON.stringify(result, null, 2),
-                    },
-                  ],
-                };
-              } catch (err) {
-                return {
-                  content: [
-                    {
-                      type: "text",
-                      text: `Error calling MCP tool "${tool.name}" on server "${serverName}": ${err.message}`,
-                    },
-                  ],
-                  isError: true,
-                };
-              }
-            },
-          });
-
-          registeredTools.push(openclawToolName);
-          logger.info(`[mcp-bridge] Registered tool: ${openclawToolName}`);
-        }
+        // Tools are registered via the onToolsDiscovered callback
       } catch (err) {
-        logger.error(`[mcp-bridge] Failed to connect to server "${serverName}": ${err.message}`);
+        logger.warn(`[mcp-bridge] Initial connection to "${serverName}" failed: ${err.message}. Will retry in background.`);
+        // scheduleReconnect is already triggered by onclose — tools will be
+        // registered when the DCC app eventually starts and the connection succeeds.
       }
     }
 
-    if (registeredTools.length > 0) {
-      logger.info(`[mcp-bridge] Total tools registered: ${registeredTools.length}`);
+    if (registeredToolNames.size > 0) {
+      logger.info(`[mcp-bridge] Total tools registered: ${registeredToolNames.size}`);
     } else {
-      logger.warn(`[mcp-bridge] No tools registered. Check server config and connectivity.`);
+      logger.warn(`[mcp-bridge] No tools registered yet. Tools will be registered when MCP servers come online.`);
     }
   })();
 
-  // Return cleanup hook
+  // Cleanup hook
   return {
     async dispose() {
       for (const [name, client] of clients) {

@@ -2,7 +2,7 @@
   "id": "mcp-bridge",
   "name": "MCP Bridge",
   "description": "Bridge external MCP servers (WebSocket/stdio) into OpenClaw agent tools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
