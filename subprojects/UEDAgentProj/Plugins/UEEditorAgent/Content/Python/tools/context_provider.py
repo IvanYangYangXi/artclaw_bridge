@@ -272,9 +272,28 @@ def _read_editor_context() -> dict:
     except Exception:
         actor_count = 0
 
+    # 获取用户最后操作的面板 (viewport / content_browser)
+    active_panel = "viewport"  # 默认
+    try:
+        subsystem = unreal.get_editor_subsystem(unreal.UEAgentSubsystem)
+        if subsystem:
+            active_panel = str(subsystem.get_active_panel_string())
+    except Exception:
+        pass
+
+    # Content Browser 选区计数 (辅助 AI 判断)
+    cb_sel_count = 0
+    try:
+        cb_selected = unreal.EditorUtilityLibrary.get_selected_asset_data()
+        cb_sel_count = len(cb_selected)
+    except Exception:
+        pass
+
     return {
         "mode": mode_ctx,
         "selection_count": sel_count,
+        "content_browser_selection_count": cb_sel_count,
+        "active_panel": active_panel,
         "total_actors": actor_count,
         "level_name": str(unreal.EditorLevelLibrary.get_editor_world().get_name()) if sel_count >= 0 else "Unknown",
     }
@@ -327,8 +346,11 @@ def register_tools(mcp_server) -> None:
     mcp_server.register_tool(
         name="get_editor_context",
         description=(
-            "Get current editor context: mode, selection count, total actors, level name. "
-            "Use this to understand what the user is currently working on."
+            "Get current editor context: mode, selection count, total actors, level name, "
+            "and active_panel (viewport or content_browser). "
+            "active_panel indicates which panel the user was last interacting with — "
+            "use this to determine whether 'selected objects' means viewport actors "
+            "or content browser assets. Also returns content_browser_selection_count."
         ),
         input_schema={
             "type": "object",

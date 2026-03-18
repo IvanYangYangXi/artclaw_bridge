@@ -80,9 +80,10 @@ def _parse_rotator(d: dict) -> unreal.Rotator:
 
 @ue_tool(
     name="get_selected_actors",
-    description="Get the list of currently selected actors in the level editor. "
+    description="Get the list of currently selected actors in the level editor VIEWPORT. "
                 "Returns each actor's name, class, location, rotation, scale, and tags. "
-                "Use this to understand what the user is working with.",
+                "NOTE: This only returns viewport selection. If the user's active_panel "
+                "is 'content_browser' (check via get_editor_context), use get_selected_assets instead.",
     category="scene",
     risk_level="low",
 )

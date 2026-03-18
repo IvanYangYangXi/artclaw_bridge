@@ -2,6 +2,8 @@
 
 #include "UEAgentSubsystem.h"
 #include "Interfaces/IPluginManager.h"
+#include "Selection.h"
+#include "ContentBrowserModule.h"
 
 // ------------------------------------------------------------------
 // 日志分类定义 (阶段 0.4)
@@ -18,11 +20,16 @@ void UUEAgentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
     bIsConnected = false; // 初始化为断开状态
+
+    SetupSelectionTracking();
+
     UE_LOG(LogUEAgent, Log, TEXT("Subsystem Initialized (v%s)"), *GetPluginVersion());
 }
 
 void UUEAgentSubsystem::Deinitialize()
 {
+    CleanupSelectionTracking();
+
     UE_LOG(LogUEAgent, Log, TEXT("Subsystem Deinitializing."));
     Super::Deinitialize();
 }
@@ -69,4 +76,64 @@ FString UUEAgentSubsystem::GetServerAddress() const
         return FString::Printf(TEXT("ws://localhost:%d"), ServerPort);
     }
     return TEXT("");
+}
+
+// ------------------------------------------------------------------
+// 活跃面板追踪 (选区感知)
+// ------------------------------------------------------------------
+
+FString UUEAgentSubsystem::GetActivePanelString() const
+{
+    switch (ActivePanel)
+    {
+    case EUEAgentActivePanel::Viewport:       return TEXT("viewport");
+    case EUEAgentActivePanel::ContentBrowser: return TEXT("content_browser");
+    default:                                  return TEXT("unknown");
+    }
+}
+
+void UUEAgentSubsystem::SetupSelectionTracking()
+{
+    // 1. 监听 Viewport 选区变化 (USelection::SelectionChangedEvent)
+    ViewportSelectionHandle = USelection::SelectionChangedEvent.AddUObject(
+        this, &UUEAgentSubsystem::OnViewportSelectionChanged);
+
+    // 2. 监听 Content Browser 资产选区变化
+    FContentBrowserModule& CBModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
+    ContentBrowserSelectionHandle = CBModule.GetOnAssetSelectionChanged().AddUObject(
+        this, &UUEAgentSubsystem::OnContentBrowserSelectionChanged);
+
+    UE_LOG(LogUEAgent, Log, TEXT("Selection tracking initialized (Viewport + ContentBrowser)"));
+}
+
+void UUEAgentSubsystem::CleanupSelectionTracking()
+{
+    if (ViewportSelectionHandle.IsValid())
+    {
+        USelection::SelectionChangedEvent.Remove(ViewportSelectionHandle);
+        ViewportSelectionHandle.Reset();
+    }
+
+    if (ContentBrowserSelectionHandle.IsValid())
+    {
+        if (FModuleManager::Get().IsModuleLoaded(TEXT("ContentBrowser")))
+        {
+            FContentBrowserModule& CBModule = FModuleManager::GetModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
+            CBModule.GetOnAssetSelectionChanged().Remove(ContentBrowserSelectionHandle);
+        }
+        ContentBrowserSelectionHandle.Reset();
+    }
+}
+
+void UUEAgentSubsystem::OnViewportSelectionChanged(UObject* NewSelection)
+{
+    ActivePanel = EUEAgentActivePanel::Viewport;
+}
+
+void UUEAgentSubsystem::OnContentBrowserSelectionChanged(const TArray<FAssetData>& NewSelectedAssets, bool bIsPrimaryBrowser)
+{
+    if (NewSelectedAssets.Num() > 0)
+    {
+        ActivePanel = EUEAgentActivePanel::ContentBrowser;
+    }
 }

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "EditorSubsystem.h"
+#include "AssetRegistry/AssetData.h"
 #include "UEAgentSubsystem.generated.h"
 
 // ------------------------------------------------------------------
@@ -28,6 +29,19 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAgentConnectionStatusChanged, boo
 
 // 原生多播委托：C++ Slate UI 绑定（性能更优，无需 UObject 上下文）
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAgentConnectionStatusChangedNative, bool /*bNewStatus*/);
+
+/**
+ * 编辑器活跃面板枚举
+ * 追踪用户最后操作的是 Viewport 还是 Content Browser，
+ * 供 AI 判断"选中的对象"指的是哪边。
+ */
+UENUM(BlueprintType)
+enum class EUEAgentActivePanel : uint8
+{
+	Unknown        UMETA(DisplayName = "Unknown"),
+	Viewport       UMETA(DisplayName = "Viewport"),
+	ContentBrowser UMETA(DisplayName = "ContentBrowser"),
+};
 
 /**
  * UUEAgentSubsystem
@@ -95,4 +109,34 @@ public:
 
     /** 状态变更委托（C++ Native）：Slate UI 绑定用 */
     FOnAgentConnectionStatusChangedNative OnConnectionStatusChangedNative;
+
+    // --- 活跃面板追踪 (选区感知) ---
+
+    /** 获取用户最后操作的编辑面板 (Viewport / ContentBrowser) */
+    UFUNCTION(BlueprintPure, Category = "UEAgent")
+    EUEAgentActivePanel GetActivePanel() const { return ActivePanel; }
+
+    /** 获取活跃面板的字符串表示 (供 Python 读取) */
+    UFUNCTION(BlueprintPure, Category = "UEAgent")
+    FString GetActivePanelString() const;
+
+private:
+    /** 启动选区变化监听 */
+    void SetupSelectionTracking();
+
+    /** 清理选区变化监听 */
+    void CleanupSelectionTracking();
+
+    /** Viewport 选区变化回调 */
+    void OnViewportSelectionChanged(UObject* NewSelection);
+
+    /** Content Browser 资产选区变化回调 */
+    void OnContentBrowserSelectionChanged(const TArray<FAssetData>& NewSelectedAssets, bool bIsPrimaryBrowser);
+
+    /** 当前活跃面板 */
+    EUEAgentActivePanel ActivePanel = EUEAgentActivePanel::Viewport;
+
+    /** 委托句柄 */
+    FDelegateHandle ViewportSelectionHandle;
+    FDelegateHandle ContentBrowserSelectionHandle;
 };

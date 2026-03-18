@@ -107,6 +107,9 @@ private:
 	void RunDiagnoseConnection();
 	void HandleSlashCommand(const FString& Command, const FString& Args);
 
+	/** 连接成功后向 AI 发送环境上下文信息 */
+	void SendEnvironmentContext();
+
 	// --- OpenClaw Gateway 通信 (阶段 3) — via Python Bridge ---
 	void SendToOpenClaw(const FString& UserMessage);
 	void HandlePythonResponse(const FString& Response);

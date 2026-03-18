@@ -1146,3 +1146,83 @@ def shutdown():
     if _bridge:
         _bridge.stop()
         _bridge = None
+
+
+# ---------------------------------------------------------------------------
+# 环境上下文收集 (连接成功后发送给 AI)
+# ---------------------------------------------------------------------------
+
+def _collect_and_save_context(output_file: str):
+    """
+    收集当前 UE 编辑器的静态环境信息，写入文件。
+    C++ 连接成功后调用，文件内容会作为消息发送给 AI。
+
+    只包含会话期间不会变化的信息（引擎版本、插件版本、Skill 概况等）。
+    动态信息（关卡、选区）AI 需要时自己通过工具查询。
+    """
+    try:
+        lines = []
+        lines.append("[System] ArtClaw Environment Context")
+        lines.append("You are now connected to the ArtClaw UE Editor Agent plugin.")
+        lines.append("The user is chatting with you from the ArtClaw Chat Panel inside Unreal Engine Editor.")
+        lines.append("")
+
+        # 引擎版本
+        try:
+            engine_ver = str(unreal.SystemLibrary.get_engine_version())
+            lines.append(f"- Engine: Unreal Engine {engine_ver}")
+        except Exception:
+            lines.append("- Engine: Unreal Engine 5.x")
+
+        # 插件版本
+        try:
+            subsystem = unreal.get_editor_subsystem(unreal.UEAgentSubsystem)
+            if subsystem:
+                plugin_ver = str(subsystem.get_plugin_version())
+                lines.append(f"- Plugin: ArtClaw UE Editor Agent v{plugin_ver}")
+        except Exception:
+            lines.append("- Plugin: ArtClaw UE Editor Agent")
+
+        # MCP Server 信息
+        try:
+            from mcp_server import get_mcp_server
+            server = get_mcp_server()
+            if server and server.is_running:
+                lines.append(f"- MCP Server: {server.server_address} (running)")
+                lines.append(f"- Registered Tools: {len(server._tools)}")
+            else:
+                lines.append("- MCP Server: not running")
+        except Exception:
+            pass
+
+        # Skill 概况
+        try:
+            from skill_hub import SkillHub
+            # SkillHub 实例在 mcp_server 的 _init_phase3_subsystems 中创建，
+            # 但没有全局引用。通过 MCP server tools 数来推断。
+            pass
+        except Exception:
+            pass
+
+        # 项目路径
+        try:
+            project_dir = str(unreal.Paths.project_dir())
+            lines.append(f"- Project Directory: {project_dir}")
+        except Exception:
+            pass
+
+        lines.append("")
+        lines.append("You can use MCP tools to query the current level, selected actors, assets, etc.")
+        lines.append("When the user mentions 'selected objects', check get_editor_context first to see which panel (viewport or content_browser) the user was last interacting with, then call the appropriate selection tool.")
+
+        context_text = "\n".join(lines)
+
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(context_text)
+
+    except Exception as e:
+        try:
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(f"[System] ArtClaw UE Editor Agent connected. (context collection error: {e})")
+        except Exception:
+            pass

@@ -37,7 +37,8 @@ def _prune_asset_data(asset_data) -> dict:
     name="get_selected_assets",
     description="Get the list of currently selected assets in the Content Browser. "
                 "Returns each asset's name, class, path, and package info. "
-                "Use this to understand what assets the user has selected for editing.",
+                "NOTE: This only returns Content Browser selection. If the user's active_panel "
+                "is 'viewport' (check via get_editor_context), use get_selected_actors instead.",
     category="asset",
     risk_level="low",
 )

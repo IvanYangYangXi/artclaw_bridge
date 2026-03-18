@@ -48,6 +48,7 @@ public class UEEditorAgent : ModuleRules
 				"PythonScriptPlugin", // 阶段 3: UE Chat → Python Bridge → OpenClaw Gateway
 				"Json",               // 流式 JSON 解析
 				"JsonUtilities",
+				"ContentBrowser",     // 活跃面板追踪: Content Browser 选区变化监听
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

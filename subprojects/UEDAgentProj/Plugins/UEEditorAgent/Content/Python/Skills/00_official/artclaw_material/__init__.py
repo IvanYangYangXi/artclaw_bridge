@@ -837,12 +837,46 @@ def list_material_expressions(arguments: dict) -> str:
     try:
         mel = unreal.MaterialEditingLibrary
         total = mel.get_num_material_expressions(mat)
+
+        # BFS 遍历所有连接的节点
+        visited = set()
+        queue = []
         nodes = []
-        for i in range(min(total, max_count)):
+
+        # 从所有材质属性入口收集根节点
+        _ALL_PROPS = [
+            unreal.MaterialProperty.MP_BASE_COLOR,
+            unreal.MaterialProperty.MP_METALLIC,
+            unreal.MaterialProperty.MP_SPECULAR,
+            unreal.MaterialProperty.MP_ROUGHNESS,
+            unreal.MaterialProperty.MP_NORMAL,
+            unreal.MaterialProperty.MP_EMISSIVE_COLOR,
+            unreal.MaterialProperty.MP_OPACITY,
+            unreal.MaterialProperty.MP_OPACITY_MASK,
+            unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET,
+            unreal.MaterialProperty.MP_AMBIENT_OCCLUSION,
+            unreal.MaterialProperty.MP_REFRACTION,
+        ]
+        for prop in _ALL_PROPS:
             try:
-                expr = mel.get_material_expression(mat, i)
-                if expr:
-                    nodes.append(_expression_info(expr))
+                node = mel.get_material_property_input_node(mat, prop)
+                if node is not None:
+                    queue.append(node)
+            except Exception:
+                continue
+
+        while queue and len(nodes) < max_count:
+            current = queue.pop(0)
+            name = str(current.get_name())
+            if name in visited:
+                continue
+            visited.add(name)
+            nodes.append(_expression_info(current))
+            try:
+                inputs = mel.get_inputs_for_material_expression(mat, current)
+                for inp in inputs:
+                    if inp is not None and str(inp.get_name()) not in visited:
+                        queue.append(inp)
             except Exception:
                 continue
 

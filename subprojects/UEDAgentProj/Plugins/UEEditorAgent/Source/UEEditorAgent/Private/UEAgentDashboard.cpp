@@ -643,36 +643,8 @@ FReply SUEAgentDashboard::OnNewChatClicked()
 		TEXT("    if _bridge: _bridge._session_key = ''\n")
 		TEXT("except: pass"));
 
-	// 3) 发送 /new 给 AI（重置远端会话），静默处理不显示 Thinking
-	{
-		FString EscapedMsg = TEXT("/new");
-		FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
-		IFileManager::Get().MakeDirectory(*TempDir, true);
-		FString ResponseFile = TempDir / TEXT("_openclaw_newchat_response.txt");
-		IFileManager::Get().Delete(*ResponseFile, false, false, true);
-
-		FString PythonCmd = FString::Printf(
-			TEXT("from openclaw_bridge import send_chat_async_to_file; send_chat_async_to_file('%s', r'%s')"),
-			*EscapedMsg, *ResponseFile);
-		IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
-
-		// 静默丢弃 /new 的响应（只是为了触发 AI 侧重置）
-		auto Self = SharedThis(this);
-		FString CapturedFile = ResponseFile;
-		FTSTicker::GetCoreTicker().AddTicker(
-			FTickerDelegate::CreateLambda([Self, CapturedFile](float) -> bool
-			{
-				if (!FPaths::FileExists(CapturedFile))
-				{
-					return true;
-				}
-				// 读取并丢弃响应文件
-				IFileManager::Get().Delete(*CapturedFile, false, false, true);
-				return false;
-			}),
-			0.5f
-		);
-	}
+	// 3) 发送 /new 给 AI（重置远端会话），非静默——显示 AI 的回复
+	SendToOpenClaw(TEXT("/new"));
 
 	return FReply::Handled();
 }
@@ -1196,6 +1168,9 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 			if (Status == TEXT("ok"))
 			{
 				Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ConnectOK")));
+
+				// 连接成功后，发送环境信息给 AI（非静默，显示回复）
+				Self->SendEnvironmentContext();
 			}
 			else
 			{
@@ -1265,6 +1240,56 @@ void SUEAgentDashboard::RunDiagnoseConnection()
 				Content = FString(DiagConverter.Length(), DiagConverter.Get());
 				IFileManager::Get().Delete(*CapturedFile, false, false, true);
 				Self->AddMessage(TEXT("system"), Content);
+			}
+			return false;
+		}),
+		0.5f
+	);
+}
+
+// ==================================================================
+// 连接成功后发送环境上下文
+// ==================================================================
+
+void SUEAgentDashboard::SendEnvironmentContext()
+{
+	// 收集静态环境信息并通过 Python 发送给 AI
+	// 这些信息在会话期间不会变化，帮助 AI 了解当前工作环境
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString ContextFile = TempDir / TEXT("_env_context.txt");
+	IFileManager::Get().Delete(*ContextFile, false, false, true);
+
+	FString PythonCmd = FString::Printf(
+		TEXT("from openclaw_bridge import _collect_and_save_context\n")
+		TEXT("_collect_and_save_context(r'%s')\n"),
+		*ContextFile);
+	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+
+	// 轮询等待 context 文件生成，然后作为消息发送给 AI
+	auto Self = SharedThis(this);
+	FString CapturedFile = ContextFile;
+	FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([Self, CapturedFile](float) -> bool
+		{
+			if (!FPaths::FileExists(CapturedFile))
+			{
+				return true; // 继续等待
+			}
+
+			FString ContextMsg;
+			TArray<uint8> RawBytes;
+			if (FFileHelper::LoadFileToArray(RawBytes, *CapturedFile))
+			{
+				FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
+				ContextMsg = FString(Converter.Length(), Converter.Get());
+			}
+			IFileManager::Get().Delete(*CapturedFile, false, false, true);
+
+			if (!ContextMsg.IsEmpty())
+			{
+				// 作为系统消息发送给 AI (非静默，AI 的回复会显示在面板)
+				Self->SendToOpenClaw(ContextMsg);
 			}
 			return false;
 		}),
