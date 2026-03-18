@@ -6,24 +6,39 @@ Maya / 3ds Max 共享的 AI Agent 桥接插件，通过统一的 Qt 界面和薄
 
 ```
 DCCClawBridge/
-├── artclaw_ui/              # 通用 Qt 界面（Chat Panel + 状态栏）
-│   └── chat_panel.py        # 主聊天面板
+├── artclaw_ui/              # 通用 Qt 界面（Chat Panel + 主题）
+│   ├── chat_panel.py        # 主聊天面板 (流式显示 + /命令 + 快捷输入)
+│   └── theme.py             # DCC 配色方案
 ├── adapters/                # DCC 薄适配层
 │   ├── base_adapter.py      # 抽象接口
-│   └── maya_adapter.py      # Maya 实现
+│   ├── maya_adapter.py      # Maya 实现
+│   └── max_adapter.py       # 3ds Max 实现
 ├── core/                    # 共享核心
 │   ├── bridge_dcc.py        # OpenClaw 通信（Qt signal/slot）
+│   ├── mcp_server.py        # MCP WebSocket 服务器
+│   ├── skill_runtime.py     # Skill 加载/管理
+│   ├── knowledge_base.py    # 知识库
+│   ├── memory_store.py      # 分层记忆
+│   ├── health_check.py      # 环境健康检查
 │   ├── config.py            # 配置管理
-│   └── dependency_manager.py # 依赖检测与自动安装
-├── maya_setup/              # Maya 部署文件
-│   └── userSetup.py         # Maya 自动加载入口
-├── skills/                  # DCC 特有 Skill（待开发）
-└── tests/                   # 测试
+│   └── dependency_manager.py # 依赖自动安装
+├── maya_setup/              # Maya 部署
+│   └── userSetup.py
+├── max_setup/               # Max 部署
+│   └── startup.py
+├── skills/                  # DCC 特有 Skill
+│   ├── maya/
+│   ├── max/
+│   └── common/
+└── tests/
 ```
 
-## 首发平台
+## 支持平台
 
-**Maya 2023** (Python 3.9.7 / PySide2 / Qt 5.15)
+| DCC | 最低版本 | Python | 端口 | Adapter |
+|-----|---------|--------|------|---------|
+| Maya | 2022 | 3.9+ | 8081 | maya_adapter.py |
+| 3ds Max | 2024 | 3.9+ | 8082 | max_adapter.py |
 
 ## 快速开始 (Maya)
 
