@@ -31,33 +31,29 @@
 
 ## 阶段划分
 
-### 阶段 G1：加固与稳定性 (Hardening)
+### 阶段 G1：加固与稳定性 (Hardening) ✅
 
 > **目标**：解决已知痛点，让转发链路在生产环境中可靠运行
-> **预估工时**：3~4 天
+> **实际工时**：~2 小时 | **完成日期**：2026-03-18
 
-- [ ] **G1.1 启动时序修复 — mcp-bridge 延迟发现**
-  - **问题**：Gateway 先启动时 MCP 工具列表为空
-  - **方案**：mcp-bridge 插件在初始连接失败时定期重试 `tools/list`，发现新工具后动态注册到 Agent
-  - **改动**：`mcp-bridge/index.ts` — 新增 `scheduleToolRefresh()` 方法
-  - **验收**：先启 Gateway → 再启 UE → 不重启 Gateway 即可使用工具
+- [x] **G1.1 启动时序修复 — mcp-bridge 延迟发现** ✅
+  - mcp-bridge 插件初始连接失败不再阻塞，后台自动重试
+  - 重连后通过 `onToolsDiscovered` 回调自动注册工具
+  - 工具执行时检查连接状态，离线返回友好中文错误
+  - 插件版本 1.0.0 → 1.1.0
 
-- [ ] **G1.2 连接状态同步强化**
-  - **问题**：openclaw_bridge 断连后 C++ 侧状态不一定同步
-  - **方案**：Python bridge 断连/重连时写状态文件 `_bridge_status.json`，C++ FTSTicker 读取并更新 UI 图标
-  - **改动**：`openclaw_bridge.py` + `UEAgentDashboard.cpp`
-  - **验收**：拔网线 → 图标变红 → 恢复网络 → 自动重连 → 图标变绿
+- [x] **G1.2 连接状态同步强化** ✅
+  - Python bridge 连接/断连/关闭时写入 `_bridge_status.json`
+  - C++ Dashboard 新增 `BridgeStatusPollHandle` 持续轮询（2s 间隔）
+  - 状态变更自动更新 `UUEAgentSubsystem`（驱动图标颜色）
 
-- [ ] **G1.3 流式响应稳定性**
-  - **问题**：流式 delta 丢失或乱序时 Chat Panel 显示不完整
-  - **方案**：delta 事件附带序号，C++ 侧按序拼接，检测到间断时请求重传 final
-  - **改动**：`openclaw_bridge.py`（序号标记）+ `UEAgentDashboard.cpp`（乱序检测）
-  - **验收**：大段代码回复（>2000字）稳定显示，无截断
+- [x] **G1.3 流式响应稳定性** ✅ (评估后确认现有机制已足够)
+  - JSONL + 累积文本机制：中间 delta 丢失不影响最终显示
+  - 不完整 JSON 行被 `FJsonSerializer::Deserialize` 静默跳过
 
-- [ ] **G1.4 错误消息本地化**
-  - **问题**：连接失败等错误信息部分仍为英文
-  - **方案**：统一走 `FUEAgentL10n` 注册中英文对
-  - **改动**：`UEAgentLocalization.cpp` + `openclaw_bridge.py` 错误消息
+- [x] **G1.4 错误消息本地化** ✅
+  - `openclaw_bridge.py` 所有用户可见错误从英文改为中文
+  - `[Error]` → `[错误]`, `[Connection lost]` → `[连接中断]` 等
 
 ---
 
