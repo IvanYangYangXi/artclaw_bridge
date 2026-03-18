@@ -52,7 +52,7 @@ enum class EUEAgentActivePanel : uint8
  *   - EditorSubsystem 生命周期管理 (系统架构设计 §2.3)
  */
 UCLASS(BlueprintType)
-class UEClawBridge_API UUEAgentSubsystem : public UEditorSubsystem
+class UECLAWBRIDGE_API UUEAgentSubsystem : public UEditorSubsystem
 {
 	GENERATED_BODY()
 

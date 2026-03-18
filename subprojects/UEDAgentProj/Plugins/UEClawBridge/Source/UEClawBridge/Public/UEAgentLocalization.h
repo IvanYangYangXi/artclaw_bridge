@@ -20,7 +20,7 @@ enum class EUEAgentLanguage : uint8
 	English,
 };
 
-class UEClawBridge_API FUEAgentL10n
+class UECLAWBRIDGE_API FUEAgentL10n
 {
 public:
 	/** 获取当前语言下的本地化文本 */
