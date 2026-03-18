@@ -49,13 +49,31 @@ class MayaAdapter(BaseDCCAdapter):
     # ── 生命周期 ──
 
     def on_startup(self) -> None:
-        """Maya 启动时调用 — 注册菜单"""
+        """Maya 启动时调用 — 注册菜单 + 启动 MCP Server"""
         logger.info("ArtClaw: Maya adapter startup")
         self.register_menu(self._menu_name, self._open_chat_panel)
+
+        # 启动 MCP Server（独立线程，不阻塞 Maya）
+        try:
+            from core.mcp_server import start_mcp_server
+            if start_mcp_server(adapter=self):
+                logger.info("ArtClaw: MCP Server started")
+            else:
+                logger.warning("ArtClaw: MCP Server failed to start (will retry on connect)")
+        except Exception as e:
+            logger.error(f"ArtClaw: MCP Server startup error: {e}")
 
     def on_shutdown(self) -> None:
         """Maya 关闭时调用 — 清理"""
         logger.info("ArtClaw: Maya adapter shutdown")
+
+        # 停止 MCP Server
+        try:
+            from core.mcp_server import stop_mcp_server
+            stop_mcp_server()
+        except Exception:
+            pass
+
         # 断开 Bridge 连接
         try:
             from core.bridge_dcc import DCCBridgeManager
