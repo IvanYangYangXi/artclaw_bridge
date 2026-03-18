@@ -459,6 +459,9 @@ def start_mcp_server(adapter=None, port: int = DEFAULT_PORT) -> bool:
     # 注册内置工具
     _register_builtin_tools(_mcp_server, adapter)
 
+    # 启动 Skill 运行时
+    _init_skill_runtime(_mcp_server, adapter)
+
     return _mcp_server.start()
 
 
@@ -568,6 +571,44 @@ def _register_builtin_tools(server: MCPServer, adapter=None) -> None:
     )
 
     logger.info(f"Registered {len(server._tools)} builtin tools")
+
+
+def _init_skill_runtime(server: MCPServer, adapter=None) -> None:
+    """初始化 Skill 运行时 + 知识库 + 记忆存储"""
+
+    # 知识库
+    try:
+        from core.knowledge_base import init_knowledge_base
+        data_dir = ""
+        if adapter:
+            from core.config import get_data_dir
+            data_dir = get_data_dir(adapter.get_software_name(), adapter.get_software_version())
+        kb = init_knowledge_base(server, data_dir=data_dir)
+    except Exception as e:
+        logger.warning(f"Knowledge base init failed: {e}")
+
+    # 记忆存储
+    try:
+        from core.memory_store import init_memory_store
+        data_dir = ""
+        if adapter:
+            from core.config import get_data_dir
+            data_dir = os.path.join(
+                get_data_dir(adapter.get_software_name(), adapter.get_software_version()),
+                "memory"
+            )
+        init_memory_store(server, data_dir=data_dir)
+    except Exception as e:
+        logger.warning(f"Memory store init failed: {e}")
+
+    # Skill 运行时
+    try:
+        from core.skill_runtime import SkillRuntime
+        runtime = SkillRuntime(mcp_server=server, adapter=adapter)
+        count = runtime.scan_and_register()
+        logger.info(f"Skill runtime: {count} skills loaded")
+    except Exception as e:
+        logger.warning(f"Skill runtime init failed: {e}")
 
 
 def stop_mcp_server() -> None:
