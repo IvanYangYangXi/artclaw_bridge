@@ -111,9 +111,9 @@ subprojects/UEDAgentProj/Saved/
 !subprojects/UEDAgentProj/Config/
 
 # UE 插件源码与资源
-!subprojects/UEDAgentProj/Plugins/UEEditorAgent/Source/**
-!subprojects/UEDAgentProj/Plugins/UEEditorAgent/Resources/**
-!subprojects/UEDAgentProj/Plugins/UEEditorAgent/UEEditorAgent.uplugin
+!subprojects/UEDAgentProj/Plugins/UEClawBridge/Source/**
+!subprojects/UEDAgentProj/Plugins/UEClawBridge/Resources/**
+!subprojects/UEDAgentProj/Plugins/UEClawBridge/UEClawBridge.uplugin
 
 # 游戏模块源码
 !subprojects/UEDAgentProj/Source/**

@@ -26,9 +26,9 @@ echo.
 
 :: ----- 步骤 0: 定位自身 -----
 set "SCRIPT_DIR=%~dp0"
-set "PLUGIN_SRC=%SCRIPT_DIR%Plugins\UEEditorAgent"
+set "PLUGIN_SRC=%SCRIPT_DIR%Plugins\UEClawBridge"
 
-if not exist "%PLUGIN_SRC%\UEEditorAgent.uplugin" (
+if not exist "%PLUGIN_SRC%\UEClawBridge.uplugin" (
     echo [ERROR] Cannot find plugin source at: %PLUGIN_SRC%
     echo         Please run this script from the project root directory.
     pause
@@ -65,7 +65,7 @@ if "%FOUND_UPROJECT%"=="" (
 echo [OK] UE Project: %FOUND_UPROJECT%
 
 :: ----- 步骤 2: 复制插件 -----
-set "PLUGIN_DST=%UE_PROJECT_DIR%\Plugins\UEEditorAgent"
+set "PLUGIN_DST=%UE_PROJECT_DIR%\Plugins\UEClawBridge"
 
 echo.
 echo [2/5] Installing plugin...
