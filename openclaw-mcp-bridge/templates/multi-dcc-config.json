@@ -1,0 +1,35 @@
+{
+  "$comment": "多 DCC 实例配置示例 — UE + Maya 同时连接 OpenClaw Gateway",
+  "$doc": "将 plugins 部分合并到 ~/.openclaw/openclaw.json",
+
+  "plugins": {
+    "allow": ["mcp-bridge"],
+    "entries": {
+      "mcp-bridge": {
+        "enabled": true,
+        "config": {
+          "servers": {
+            "ue-editor": {
+              "type": "websocket",
+              "url": "ws://127.0.0.1:8080",
+              "$comment": "UE Editor MCP Server (自动端口探测 8080+)"
+            },
+            "maya-primary": {
+              "type": "websocket",
+              "url": "ws://127.0.0.1:8081",
+              "$comment": "Maya MCP Server (端口 8081, 避免与 UE 冲突)"
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "$tool_namespace_note": [
+    "工具命名空间自动隔离:",
+    "  UE 工具:   mcp_ue-editor_run_ue_python, mcp_ue-editor_get_scene_info",
+    "  Maya 工具: mcp_maya-primary_export_fbx, mcp_maya-primary_get_selection",
+    "",
+    "Agent tools.allow 白名单需要包含对应前缀的工具名"
+  ]
+}
