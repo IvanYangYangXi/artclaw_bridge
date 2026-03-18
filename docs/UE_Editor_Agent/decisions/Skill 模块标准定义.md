@@ -17,7 +17,7 @@ Skill_SceneGenerator/
 ├── binaries/                # (可选) 编译好的 C++ 扩展 (DLL/Lib)
 ├── ui/                      # (可选) 关联的 UE 资源
 │   └── WBP_ConfirmPanel.uasset # 原生 UMG 界面资产
-└── README.md                # 技能使用说明及 Prompt 示例
+└── SKILL.md                 # AI 文档 + OpenClaw/ClawHub 分发
 ```
 
 ## 3. 核心配置文件 (`manifest.json`)

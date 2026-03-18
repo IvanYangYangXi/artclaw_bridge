@@ -10,26 +10,29 @@
 
 ```
 my_skill/
-├── manifest.json       # ✅ 必需 - 元数据
+├── SKILL.md            # ✅ 推荐 - AI 文档 + OpenClaw/ClawHub 分发
+├── manifest.json       # ✅ 推荐 - MCP 注册元数据
 ├── __init__.py         # ✅ 必需 - 入口代码
-├── README.md           # ✅ 推荐 - 使用说明
-└── tests/              # ✅ 推荐 - 测试用例
-    └── test_my_skill.py
+└── references/         # 可选 - 参考文档
 ```
+
+> `SKILL.md` 和 `manifest.json` 至少有一个。推荐两个都有。
+> 详见 [MANIFEST_SPEC.md](MANIFEST_SPEC.md) 双文件策略。
 
 ### 2. 自查清单
 
 提交前请确认：
 
-- [ ] `manifest.json` 符合 [MANIFEST_SPEC.md](MANIFEST_SPEC.md) 规范
-- [ ] `name` 使用 snake_case，动词开头，不超过 64 字符
+- [ ] `manifest.json` 符合 [MANIFEST_SPEC.md](MANIFEST_SPEC.md) 规范（如有）
+- [ ] `SKILL.md` frontmatter 包含 `name` + `description`（如有）
+- [ ] `name` 使用 snake_case（manifest）或 kebab-case（SKILL.md），不超过 64 字符
 - [ ] `category` 使用标准分类枚举（参见 `skills/categories.py`）
 - [ ] `risk_level` 正确评估
 - [ ] `software_version` 填写了测试过的版本范围
 - [ ] 所有 `@ue_tool` 都有清晰的 `description`
 - [ ] 错误处理完善，返回标准 JSON 格式
 - [ ] 在 UE 外部 `import` 不会报错（`try: import unreal`）
-- [ ] README.md 包含输入参数和返回值说明
+- [ ] SKILL.md 包含工具说明、参数和使用流程
 - [ ] 无硬编码路径，使用参数传入
 
 ### 3. 测试
@@ -60,7 +63,7 @@ skill/<category>/<skill-name>
 - **名称**: `my_skill`
 - **分类**: material
 - **风险级别**: low
-- **适用软件**: unreal_engine 5.6-5.7
+- **适用软件**: unreal_engine 5.4+
 
 ## 功能描述
 
@@ -81,7 +84,7 @@ skill/<category>/<skill-name>
 
 ### 必须通过
 
-1. **manifest.json 规范**: 所有必需字段正确填写
+1. **元数据完整**: manifest.json 或 SKILL.md 正确填写
 2. **错误处理**: 所有异常都被捕获，返回标准错误格式
 3. **安全性**: `risk_level` 与实际操作匹配
 4. **兼容性**: `try: import unreal` 模式，UE 外不报错
@@ -89,8 +92,8 @@ skill/<category>/<skill-name>
 
 ### 推荐通过
 
-1. **文档**: README 包含完整的参数和返回值说明
-2. **测试**: 包含测试用例
+1. **文档**: SKILL.md 包含完整的工具说明和使用流程
+2. **双文件**: 同时有 SKILL.md + manifest.json
 3. **日志**: 关键操作有日志输出
 4. **撤销**: 修改操作使用 `ScopedEditorTransaction`
 
@@ -104,13 +107,16 @@ skill/<category>/<skill-name>
 
 ## 目录放置规则
 
-| 条件 | 目标目录 |
-|------|----------|
-| 跨平台通用 | `skills/universal/` |
-| UE 核心功能 | `skills/unreal_engine/core/<category>/` |
-| UE 扩展功能 | `skills/unreal_engine/extended/<category>/` |
-| Maya 专用 | `skills/maya/` |
-| 3ds Max 专用 | `skills/3ds_max/` |
+Skill 统一放在 UE 插件运行时目录中：
+
+| 层级 | 目录 | 说明 |
+|------|------|------|
+| 官方 | `Skills/00_official/<skill_name>/` | ArtClaw 官方维护 |
+| 团队 | `Skills/01_team/<skill_name>/` | 团队共享定制 |
+| 用户 | `Skills/02_user/<skill_name>/` | 个人私有 |
+| 临时 | `Skills/99_custom/<skill_name>/` | 临时实验 |
+
+> 提交到官方库的 PR 应放在 `00_official/` 层级。
 
 ## 版本规范
 
