@@ -60,22 +60,14 @@
 ### 阶段 G2：重构与解耦 (Refactoring)
 
 > **目标**：拆分大文件，抽象平台无关层，为 DCCClawBridge 复用做准备
-> **预估工时**：4~5 天
+> **进度**：G2.1 ✅ | G2.2 待做 | G2.3 待做
 
-- [ ] **G2.1 openclaw_bridge.py 拆分**
-  - **现状**：46KB 单文件，混杂多个职责
-  - **目标结构**：
-    ```
-    openclaw-mcp-bridge/
-    ├── bridge_core.py          # 核心 WebSocket RPC 通信（平台无关）
-    ├── bridge_ue.py            # UE 特有适配（文件回传、unreal 日志）
-    ├── bridge_config.py        # 配置加载（openclaw.json 解析）
-    ├── bridge_diagnostics.py   # diagnose_connection + health 相关
-    ├── context_collector.py    # _collect_and_save_context（UE 特有）
-    └── __init__.py             # 向后兼容，re-export 所有公开函数
-    ```
-  - **原则**：`bridge_core.py` 完全不依赖 `unreal` 模块，Maya/Max 直接复用
-  - **验收**：拆分后 UE 功能不变，`from openclaw_bridge import connect, send_message` 向后兼容
+- [x] **G2.1 openclaw_bridge.py 拆分** ✅
+  - 新增 `bridge_core.py` (20KB) — 平台无关 WebSocket 核心
+  - 新增 `bridge_config.py` (1KB) — 配置加载
+  - 新增 `bridge_diagnostics.py` (8KB) — 连接诊断
+  - `openclaw_bridge.py` 从 46KB 瘦身至 13KB（UE 适配层）
+  - 向后兼容：C++ 侧零改动
 
 - [ ] **G2.2 C++ 平台通信抽象层**
   - **现状**：Dashboard 直接拼 Python 字符串调用 bridge 函数
