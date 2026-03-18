@@ -4,7 +4,7 @@
 
 ### 0.1 项目结构
 **ArtClaw** 总项目包含多个DCC软件插件：
-- UE_Editor_Agent (UE)
+- UEClawBridge (UE)
 - Maya_Editor_Agent (未来)
 - Blender_Editor_Agent (未来)
 
@@ -31,7 +31,7 @@ docs/
 │   ├── 项目结构说明.md
 │   └── 跨项目共享机制.md
 │
-├── UE_Editor_Agent/                # 子项目文档
+├── UEClawBridge/                # 子项目文档
 │   ├── specs/                      # 子项目专属规范
 │   ├── features/                   # 实现文档（按阶段组织）
 │   └── decisions/                  # 决策记录（ADR格式）
@@ -53,7 +53,7 @@ docs/
 ## 2. 编号与命名
 
 ### 2.1 子项目标识
-- **UE_Editor_Agent**: UE
+- **UEClawBridge**: UE
 - **Maya_Editor_Agent**: MYA
 - **Blender_Editor_Agent**: BLD
 
@@ -98,7 +98,7 @@ docs/
 2. 可验证的具体目标2
 3. 可验证的具体目标3
 
-**适用范围**：☑ UE_Editor_Agent  ☐ Maya_Editor_Agent  ☐ 其他
+**适用范围**：☑ UEClawBridge  ☐ Maya_Editor_Agent  ☐ 其他
 
 ---
 
@@ -137,7 +137,7 @@ docs/
 | 问题描述 | 原因分析 | 解决步骤 |
 
 ## 7. 跨项目差异（如适用）
-### UE_Editor_Agent 实现
+### UEClawBridge 实现
 - 特有实现细节1
 
 ### Maya_Editor_Agent 实现
@@ -157,7 +157,7 @@ docs/
 # 规范名称
 
 **版本**：1.0
-**适用范围**：☑ 通用  ☐ UE_Editor_Agent  ☐ Maya_Editor_Agent  ☐ 其他
+**适用范围**：☑ 通用  ☐ UEClawBridge  ☐ Maya_Editor_Agent  ☐ 其他
 
 ## 1. 目的
 说明本规范的目标
@@ -205,7 +205,7 @@ docs/
 ### 5.1 C++命名
 | 类型 | 前缀 | 示例 | 说明 |
 | :--- | :--- | :--- | :--- |
-| Module类 | `F` | `FUEEditorAgentModule` | 继承自IModuleInterface |
+| Module类 | `F` | `FUEClawBridgeModule` | 继承自IModuleInterface |
 | Subsystem类 | `U` | `UUEAgentSubsystem` | 继承自UEditorSubsystem |
 | Slate Widget | `S` | `SUEAgentDashboardWidget` | Slate UI类 |
 | 结构体 | `F` | `FAgentConfig` | 纯数据容器 |
@@ -229,7 +229,7 @@ docs/
 | 委托 | Delegate | - | OnStatusChanged委托 |
 | 子系统 | Subsystem | - | UUEAgentSubsystem |
 | 可停靠窗口 | Dockable Tab | Tab | Dashboard Tab |
-| 插件 | Plugin | - | UEEditorAgent插件 |
+| 插件 | Plugin | - | UEClawBridge插件 |
 
 ### 6.2 MCP术语
 | 中文 | 英文 | 说明 |

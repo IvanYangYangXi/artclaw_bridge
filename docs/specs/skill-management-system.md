@@ -113,7 +113,7 @@ artclaw/                              # 项目根目录
 ### 3.2 运行时加载目录（UE 插件内）
 
 ```
-UEEditorAgent/
+UEClawBridge/
 └── Content/
     └── Python/
         ├── skill_hub.py              # Skill 管理中心
@@ -362,7 +362,7 @@ CLI 解析意图，提取关键信息
 ### 8.1 对话式 Skill 创建（核心交互 — v2）
 
 > **v2 更新 (2026-03-17)**: 移除 C++ 模态对话框，改为 AI 对话式创建。
-> 详见 `docs/UE_Editor_Agent/features/阶段 3 智能增强/3.7 Skill创建交互优化方案.md`
+> 详见 `docs/UEClawBridge/features/阶段 3 智能增强/3.7 Skill创建交互优化方案.md`
 
 **设计原则**: 创建 Skill 应该是一次自然对话，而不是填表单。用户只需说一句话，AI 自动推断所有能推断的字段，需要确认的通过聊天追问。
 
@@ -622,7 +622,7 @@ my_skill/
 - [OpenClaw Skill Creator 规范](~/AppData/Roaming/npm/node_modules/openclaw/skills/skill-creator/SKILL.md)
 - [ArtClaw 系统架构设计](./系统架构设计.md)
 - [ArtClaw OpenClaw 宪法](./openClaw宪法.md)
-- [UE Editor Agent 开发路线图](../UE_Editor_Agent/specs/开发路线图.md)
+- [UE Editor Agent 开发路线图](../UEClawBridge/specs/开发路线图.md)
 
 ---
 

@@ -1,7 +1,7 @@
 # OpenClaw Phase 2 Features Backlog
 
 > **对应主文档**：`docs/specs/openClaw集成方案.md`  
-> **对应路线图**：`docs/UE_Editor_Agent/specs/开发路线图.md` 阶段 2：感知增强与原生交互
+> **对应路线图**：`docs/UEClawBridge/specs/开发路线图.md` 阶段 2：感知增强与原生交互
 
 ---
 

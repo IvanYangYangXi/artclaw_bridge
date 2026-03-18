@@ -1,7 +1,7 @@
 # OpenClaw Phase 0 Features Backlog
 
 > **对应主文档**：`docs/specs/openClaw集成方案.md`  
-> **对应路线图**：`docs/UE_Editor_Agent/specs/开发路线图.md` 阶段 0：环境预设与工程初始化
+> **对应路线图**：`docs/UEClawBridge/specs/开发路线图.md` 阶段 0：环境预设与工程初始化
 
 ---
 

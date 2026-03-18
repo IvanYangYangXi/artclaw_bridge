@@ -50,7 +50,7 @@ def main():
         if subcommand == "test":
             # 转发到 skill_test.py
             test_script = Path(__file__).parent / "subprojects" / "UEDAgentProj" / \
-                          "Plugins" / "UEEditorAgent" / "Content" / "Python" / \
+                          "Plugins" / "UEClawBridge" / "Content" / "Python" / \
                           "tests" / "skill_test.py"
             
             if not test_script.exists():
@@ -75,7 +75,7 @@ def main():
         elif subcommand == "list":
             # 等同于 skill test --list
             test_script = Path(__file__).parent / "subprojects" / "UEDAgentProj" / \
-                          "Plugins" / "UEEditorAgent" / "Content" / "Python" / \
+                          "Plugins" / "UEClawBridge" / "Content" / "Python" / \
                           "tests" / "skill_test.py"
             
             if not test_script.exists():

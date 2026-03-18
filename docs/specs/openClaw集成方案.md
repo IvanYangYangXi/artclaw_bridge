@@ -16,7 +16,7 @@
 - 验收标准
 - 执行优先级
 
-本文档要求与 `docs/UE_Editor_Agent/specs/开发路线图.md` 保持阶段一致、目标呼应、可直接拆分任务。
+本文档要求与 `docs/UEClawBridge/specs/开发路线图.md` 保持阶段一致、目标呼应、可直接拆分任务。
 
 ---
 
@@ -85,7 +85,7 @@ Platform Manager（ArtClaw）
        │
 openclaw-mcp-bridge（per DCC instance）
        │
-UEEditorAgent Plugin
+UEClawBridge Plugin
        │ 命令队列 → 主线程调度 → 风险确认 → 审计日志
        │
 UE Editor API（C++ + Python）
