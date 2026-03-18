@@ -54,7 +54,7 @@ docs/
 
 ### 2.1 子项目标识
 - **UEClawBridge**: UE
-- **Maya_Editor_Agent**: MYA
+- **DCCClawBridge**: DCC（Maya/Max 共享）
 - **Blender_Editor_Agent**: BLD
 
 ### 2.2 文档编号规则
