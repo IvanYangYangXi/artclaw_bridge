@@ -1,9 +1,43 @@
 # manifest.json 规范
 
-**版本**: 1.0  
+**版本**: 1.1  
 **状态**: 正式
 
-每个 ArtClaw Skill 必须包含一个 `manifest.json` 文件，描述 Skill 的元数据、适用环境和暴露的工具。
+每个 ArtClaw Skill **推荐同时包含** `SKILL.md` 和 `manifest.json` 两个文件：
+
+| 文件 | 用途 | 必需 |
+|------|------|------|
+| `manifest.json` | MCP 工具注册、版本匹配、冲突检测 | 推荐（可由 SKILL.md 自动推断） |
+| `SKILL.md` | AI 可读文档 + OpenClaw/ClawHub 分发 | 推荐（向后兼容可省略） |
+
+### 双文件策略
+
+```
+my_skill/
+├── SKILL.md           ← AI 文档 + ClawHub 分发（OpenClaw 格式）
+├── manifest.json      ← MCP 注册元数据（ArtClaw 格式）
+├── __init__.py        ← Python 入口
+└── references/        ← 可选，参考文档
+```
+
+**加载优先级**: `manifest.json` > `SKILL.md` fallback
+
+- 如果 `manifest.json` 存在 → Skill Hub 直接使用它注册 MCP 工具
+- 如果只有 `SKILL.md` → Skill Hub 从 frontmatter 提取元数据 + AST 扫描 `@ue_tool` 装饰器自动构建 manifest
+- 如果两个都存在 → `manifest.json` 用于 MCP 注册，`SKILL.md` 用于 AI 理解和分发
+
+### SKILL.md 格式（OpenClaw 兼容）
+
+```yaml
+---
+name: my-skill                    # kebab-case (OpenClaw 惯例)
+description: >
+  One-line description of what this skill does and when to use it.
+  Include triggers and contexts for AI to understand.
+---
+```
+
+frontmatter 仅需 `name` + `description`。body 部分为 Markdown 格式的使用文档。
 
 ## 完整字段定义
 

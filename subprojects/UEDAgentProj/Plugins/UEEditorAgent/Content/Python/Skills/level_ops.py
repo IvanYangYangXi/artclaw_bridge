@@ -29,14 +29,14 @@ except ImportError:
 def get_current_level(arguments: dict) -> str:
     """获取当前打开的关卡信息"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     try:
         world = unreal.EditorLevelLibrary.get_editor_world()
         if world is None:
             return json.dumps({
                 "success": False,
-                "error": "No world currently open"
+                "error": "当前没有打开的关卡"
             })
 
         level_name = str(world.get_name())
@@ -76,7 +76,7 @@ def get_current_level(arguments: dict) -> str:
 def get_level_actors(arguments: dict) -> str:
     """获取关卡中按类别分组的 Actor 统计"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     top_n = arguments.get("top_n", 20)
 
@@ -117,14 +117,14 @@ def get_level_actors(arguments: dict) -> str:
 def save_current_level(arguments: dict) -> str:
     """保存当前关卡"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     try:
         world = unreal.EditorLevelLibrary.get_editor_world()
         if world is None:
             return json.dumps({
                 "success": False,
-                "error": "No world currently open"
+                "error": "当前没有打开的关卡"
             })
 
         level_name = str(world.get_name())
@@ -135,7 +135,7 @@ def save_current_level(arguments: dict) -> str:
         return json.dumps({
             "success": success,
             "level": level_name,
-            "message": f"Level '{level_name}' saved successfully" if success else f"Failed to save level '{level_name}'",
+            "message": f"关卡 '{level_name}' 保存成功" if success else f"关卡 '{level_name}' 保存失败",
         }, default=str)
 
     except Exception as e:
@@ -153,7 +153,7 @@ def save_current_level(arguments: dict) -> str:
 def save_all_dirty_packages(arguments: dict) -> str:
     """保存所有未保存的修改"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     try:
         success = unreal.EditorLoadingAndSavingUtils.save_dirty_packages(
@@ -163,7 +163,7 @@ def save_all_dirty_packages(arguments: dict) -> str:
 
         return json.dumps({
             "success": success,
-            "message": "All dirty packages saved" if success else "Some packages failed to save",
+            "message": "所有未保存的修改已保存" if success else "部分资产保存失败",
         }, default=str)
 
     except Exception as e:
@@ -181,18 +181,18 @@ def save_all_dirty_packages(arguments: dict) -> str:
 def open_level(arguments: dict) -> str:
     """打开指定关卡"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     level_path = arguments.get("level_path", "")
     if not level_path:
-        return json.dumps({"success": False, "error": "level_path is required"})
+        return json.dumps({"success": False, "error": "需要提供 level_path 参数"})
 
     try:
         # 检查关卡是否存在
         if not unreal.EditorAssetLibrary.does_asset_exist(level_path):
             return json.dumps({
                 "success": False,
-                "error": f"Level not found: {level_path}"
+                "error": f"未找到关卡: {level_path}"
             })
 
         success = unreal.EditorLevelLibrary.load_level(level_path)
@@ -200,7 +200,7 @@ def open_level(arguments: dict) -> str:
         return json.dumps({
             "success": True,
             "level_path": level_path,
-            "message": f"Level opened: {level_path}",
+            "message": f"已打开关卡: {level_path}",
         }, default=str)
 
     except Exception as e:
@@ -221,7 +221,7 @@ def open_level(arguments: dict) -> str:
 def get_viewport_info(arguments: dict) -> str:
     """获取当前视口相机信息"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     try:
         # 使用 EditorLevelLibrary 获取视口信息
@@ -247,7 +247,7 @@ def get_viewport_info(arguments: dict) -> str:
         else:
             return json.dumps({
                 "success": False,
-                "error": "Could not retrieve viewport camera info"
+                "error": "无法获取视口相机信息"
             })
 
     except Exception as e:
@@ -264,7 +264,7 @@ def get_viewport_info(arguments: dict) -> str:
 def set_viewport_camera(arguments: dict) -> str:
     """设置视口相机的位置和朝向"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     location = arguments.get("location", None)
     rotation = arguments.get("rotation", None)
@@ -272,7 +272,7 @@ def set_viewport_camera(arguments: dict) -> str:
     if location is None and rotation is None:
         return json.dumps({
             "success": False,
-            "error": "At least one of location or rotation is required"
+            "error": "至少需要提供 location 或 rotation 之一"
         })
 
     try:
@@ -281,7 +281,7 @@ def set_viewport_camera(arguments: dict) -> str:
         if current is None:
             return json.dumps({
                 "success": False,
-                "error": "Could not access viewport camera"
+                "error": "无法访问视口相机"
             })
 
         curr_loc, curr_rot = current

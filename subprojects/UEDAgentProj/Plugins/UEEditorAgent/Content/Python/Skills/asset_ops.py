@@ -34,6 +34,55 @@ def _prune_asset_data(asset_data) -> dict:
 # ============================================================================
 
 @ue_tool(
+    name="get_selected_assets",
+    description="Get the list of currently selected assets in the Content Browser. "
+                "Returns each asset's name, class, path, and package info. "
+                "Use this to understand what assets the user has selected for editing.",
+    category="asset",
+    risk_level="low",
+)
+def get_selected_assets(arguments: dict) -> str:
+    """获取资源管理器（Content Browser）中当前选中的资产列表"""
+    if unreal is None:
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
+
+    limit = arguments.get("limit", 100)
+
+    try:
+        # get_selected_asset_data 返回 AssetData（更丰富），优先使用
+        selected_data = unreal.EditorUtilityLibrary.get_selected_asset_data()
+        total = len(selected_data)
+
+        assets = []
+        for ad in selected_data[:limit]:
+            assets.append(_prune_asset_data(ad))
+
+        # 同时获取选中的文件夹路径（如果有）
+        selected_folders = []
+        try:
+            folders = unreal.EditorUtilityLibrary.get_selected_folder_paths()
+            selected_folders = [str(f) for f in folders]
+        except Exception:
+            pass
+
+        result = {
+            "success": True,
+            "count": len(assets),
+            "assets": assets,
+        }
+        if selected_folders:
+            result["selected_folders"] = selected_folders
+        if total > limit:
+            result["truncated"] = True
+            result["total"] = total
+
+        return json.dumps(result, default=str)
+
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)})
+
+
+@ue_tool(
     name="load_asset",
     description="Load an asset by its content browser path and return its basic info. "
                 "Path format: '/Game/MyFolder/MyAsset' or '/Engine/BasicShapes/Cube'. "
@@ -44,18 +93,18 @@ def _prune_asset_data(asset_data) -> dict:
 def load_asset(arguments: dict) -> str:
     """按路径加载资产并返回基本信息"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     asset_path = arguments.get("asset_path", "")
     if not asset_path:
-        return json.dumps({"success": False, "error": "asset_path is required"})
+        return json.dumps({"success": False, "error": "需要提供 asset_path 参数"})
 
     try:
         asset = unreal.EditorAssetLibrary.load_asset(asset_path)
         if asset is None:
             return json.dumps({
                 "success": False,
-                "error": f"Asset not found or failed to load: {asset_path}"
+                "error": f"未找到资产或加载失败: {asset_path}"
             })
 
         return json.dumps({
@@ -83,11 +132,11 @@ def load_asset(arguments: dict) -> str:
 def get_asset_path(arguments: dict) -> str:
     """按名称搜索资产路径"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     query = arguments.get("query", "")
     if not query:
-        return json.dumps({"success": False, "error": "query is required"})
+        return json.dumps({"success": False, "error": "需要提供 query 参数"})
 
     search_dir = arguments.get("search_dir", "/Game/")
     class_filter = arguments.get("class_filter", "")
@@ -150,7 +199,7 @@ def get_asset_path(arguments: dict) -> str:
 def list_assets_in_directory(arguments: dict) -> str:
     """列出目录下的所有资产"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     directory = arguments.get("directory", "/Game/")
     recursive = arguments.get("recursive", False)
@@ -205,21 +254,21 @@ def list_assets_in_directory(arguments: dict) -> str:
 def rename_asset(arguments: dict) -> str:
     """重命名资产"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     asset_path = arguments.get("asset_path", "")
     new_name = arguments.get("new_name", "")
     if not asset_path:
-        return json.dumps({"success": False, "error": "asset_path is required"})
+        return json.dumps({"success": False, "error": "需要提供 asset_path 参数"})
     if not new_name:
-        return json.dumps({"success": False, "error": "new_name is required"})
+        return json.dumps({"success": False, "error": "需要提供 new_name 参数"})
 
     try:
         # 确认资产存在
         if not unreal.EditorAssetLibrary.does_asset_exist(asset_path):
             return json.dumps({
                 "success": False,
-                "error": f"Asset not found: {asset_path}"
+                "error": f"未找到资产: {asset_path}"
             })
 
         # 计算新路径
@@ -238,7 +287,7 @@ def rename_asset(arguments: dict) -> str:
         else:
             return json.dumps({
                 "success": False,
-                "error": f"Rename failed. Target may already exist: {new_path}"
+                "error": f"重命名失败，目标可能已存在: {new_path}"
             })
 
     except Exception as e:
@@ -255,11 +304,11 @@ def rename_asset(arguments: dict) -> str:
 def does_asset_exist(arguments: dict) -> str:
     """检查资产是否存在"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     asset_path = arguments.get("asset_path", "")
     if not asset_path:
-        return json.dumps({"success": False, "error": "asset_path is required"})
+        return json.dumps({"success": False, "error": "需要提供 asset_path 参数"})
 
     try:
         exists = unreal.EditorAssetLibrary.does_asset_exist(asset_path)

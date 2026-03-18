@@ -165,7 +165,7 @@ def register_skill_tools(mcp_server, skill_hub) -> None:
         description=(
             "Generate a new skill from a natural language description. "
             "Analyzes the intent, determines category/software, generates "
-            "manifest.json + __init__.py + README.md. "
+            "manifest.json + __init__.py + SKILL.md. "
             "Returns generated file contents for review before activation.\n\n"
             "WORKFLOW (AI-driven conversational skill creation):\n"
             "1. User describes what they want → AI calls this tool with description\n"
@@ -349,7 +349,12 @@ def _handle_skill_create(hub, arguments: dict) -> str:
     try:
         skill_dir.mkdir(parents=True, exist_ok=True)
 
-        # 生成 manifest.json
+        # 生成 SKILL.md (OpenClaw 兼容格式)
+        skill_md = _generate_skill_md(name, display_name, description, category, risk_level)
+        skill_md_path = skill_dir / "SKILL.md"
+        skill_md_path.write_text(skill_md, encoding="utf-8")
+
+        # 生成 manifest.json (ArtClaw MCP 注册用)
         manifest = {
             "manifest_version": "1.0",
             "name": name,
@@ -382,11 +387,6 @@ def _handle_skill_create(hub, arguments: dict) -> str:
         init_path = skill_dir / "__init__.py"
         init_path.write_text(init_code, encoding="utf-8")
 
-        # 生成 README.md
-        readme = f"# {display_name}\n\n{description}\n\n## Usage\n\nThis skill is auto-loaded by ArtClaw Skill Hub.\n"
-        readme_path = skill_dir / "README.md"
-        readme_path.write_text(readme, encoding="utf-8")
-
         # 触发重新扫描
         hub.scan_and_register()
 
@@ -395,12 +395,41 @@ def _handle_skill_create(hub, arguments: dict) -> str:
             "skill_name": name,
             "skill_dir": str(skill_dir),
             "layer": target_layer,
-            "files_created": ["manifest.json", "__init__.py", "README.md"],
+            "files_created": ["SKILL.md", "manifest.json", "__init__.py"],
             "message": f"Skill '{name}' created in {target_layer} layer. Edit {init_path} to implement your logic."
         })
 
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)})
+
+
+def _generate_skill_md(name: str, display_name: str, description: str,
+                       category: str, risk_level: str) -> str:
+    """生成 SKILL.md (OpenClaw 兼容格式)"""
+    # name 转 kebab-case 用于 SKILL.md (OpenClaw 惯例)
+    kebab_name = name.replace("_", "-")
+    return (
+        f"---\n"
+        f"name: {kebab_name}\n"
+        f"description: >\n"
+        f"  {description}\n"
+        f"---\n"
+        f"\n"
+        f"# {display_name}\n"
+        f"\n"
+        f"{description}\n"
+        f"\n"
+        f"## Tool\n"
+        f"\n"
+        f"`{name}(arguments)`\n"
+        f"\n"
+        f"## Notes\n"
+        f"\n"
+        f"- Category: {category}\n"
+        f"- Risk level: {risk_level}\n"
+        f"- Auto-loaded by ArtClaw Skill Hub\n"
+        f"- Edit `__init__.py` to implement logic\n"
+    )
 
 
 def _generate_init_code(name: str, description: str, category: str,
@@ -805,19 +834,11 @@ def _handle_skill_generate(hub, arguments: dict) -> str:
             min_ver = f"{parts[0]}.{parts[1]}"
             manifest_data["software_version"] = {"min": min_ver}
 
+    # 生成 SKILL.md (OpenClaw 兼容格式)
+    skill_md = _generate_skill_md(name, display_name, description, category, risk_level)
+
     # 生成 __init__.py scaffold
     init_code = _generate_init_code(name, description, category, risk_level, "advanced")
-
-    # 生成 README
-    readme = (
-        f"# {display_name}\n\n"
-        f"**AI Generated Skill**\n\n"
-        f"## Description\n\n{description}\n\n"
-        f"## Usage\n\nThis skill is auto-loaded by ArtClaw Skill Hub.\n\n"
-        f"## Notes\n\n"
-        f"- Generated from natural language description\n"
-        f"- Review and modify `__init__.py` to implement actual logic\n"
-    )
 
     return json.dumps({
         "success": True,
@@ -829,9 +850,9 @@ def _handle_skill_generate(hub, arguments: dict) -> str:
         "target_layer": target_layer,
         "needs_confirmation": True,
         "generated_files": {
+            "SKILL.md": skill_md,
             "manifest.json": manifest_data,
             "__init__.py": init_code,
-            "README.md": readme,
         },
         "next_steps": [
             f"Review the generated code above",

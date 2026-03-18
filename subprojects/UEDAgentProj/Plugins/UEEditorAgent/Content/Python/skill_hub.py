@@ -50,7 +50,120 @@ from skill_conflict import (
 )
 
 # ============================================================================
-# 1. @ue_agent.tool 装饰器
+# 1.5 SKILL.md Frontmatter 解析 + AST Tool 扫描
+# ============================================================================
+
+def _parse_yaml_frontmatter(content: str) -> Optional[dict]:
+    """从 SKILL.md 内容中解析 YAML frontmatter。
+
+    支持标准 '---' 分隔的 frontmatter 块。
+    仅做简单 key: value 解析，不依赖 PyYAML（UE Python 环境不一定有）。
+    支持多行值（用 > 或 | 标记）。
+    """
+    lines = content.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return None
+
+    # 找到结束的 ---
+    end_idx = -1
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end_idx = i
+            break
+    if end_idx < 0:
+        return None
+
+    fm_lines = lines[1:end_idx]
+
+    result: dict = {}
+    current_key = None
+    current_value_lines: list = []
+    is_multiline = False
+
+    for line in fm_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        # 检查是否是新的 key: value 行
+        if ":" in line and not line[0].isspace():
+            # 保存之前的多行值
+            if current_key and is_multiline:
+                result[current_key] = " ".join(current_value_lines).strip()
+
+            colon_idx = line.index(":")
+            current_key = line[:colon_idx].strip()
+            raw_value = line[colon_idx + 1:].strip()
+
+            if raw_value in (">", "|", ">-", "|-"):
+                # 多行值标记
+                is_multiline = True
+                current_value_lines = []
+            elif raw_value.startswith('"') and raw_value.endswith('"'):
+                result[current_key] = raw_value[1:-1]
+                is_multiline = False
+            elif raw_value.startswith("'") and raw_value.endswith("'"):
+                result[current_key] = raw_value[1:-1]
+                is_multiline = False
+            elif raw_value:
+                result[current_key] = raw_value
+                is_multiline = False
+            else:
+                # 空值，可能是 dict 或后续缩进的多行
+                is_multiline = True
+                current_value_lines = []
+        elif current_key and is_multiline:
+            current_value_lines.append(stripped)
+
+    # 处理最后一个多行值
+    if current_key and is_multiline and current_value_lines:
+        result[current_key] = " ".join(current_value_lines).strip()
+
+    return result
+
+
+def _scan_ue_tools_ast(init_py: Path) -> List[dict]:
+    """通过 AST 静态分析 __init__.py 发现 @ue_tool 装饰器声明的工具。
+
+    不执行代码，仅解析语法树提取 name 和 description。
+    """
+    try:
+        source = init_py.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(init_py))
+    except Exception:
+        return []
+
+    tools = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for deco in node.decorator_list:
+            # 匹配 @ue_tool(...) 或 @tool(...)
+            if isinstance(deco, ast.Call):
+                func_name = ""
+                if isinstance(deco.func, ast.Name):
+                    func_name = deco.func.id
+                elif isinstance(deco.func, ast.Attribute):
+                    func_name = deco.func.attr
+                if func_name not in ("ue_tool", "tool"):
+                    continue
+
+                # 提取 keyword arguments
+                tool_name = node.name
+                tool_desc = ""
+                for kw in deco.keywords:
+                    if kw.arg == "name" and isinstance(kw.value, ast.Constant):
+                        tool_name = kw.value.value
+                    elif kw.arg == "description" and isinstance(kw.value, ast.Constant):
+                        tool_desc = kw.value.value
+
+                tools.append({"name": tool_name, "description": tool_desc})
+    return tools
+
+
+# ============================================================================
+# ============================================================================
+# 2. @ue_agent.tool 装饰器
 # ============================================================================
 
 # 全局注册表：所有通过装饰器声明的 Skill
@@ -360,7 +473,7 @@ class SkillHub:
         """
         扫描一个层级目录，查找所有 Skill 包。
 
-        Skill 包的识别条件: 子目录中包含 manifest.json
+        Skill 包的识别条件: 子目录中包含 manifest.json 或 SKILL.md
         """
         if not layer_path.is_dir():
             return
@@ -371,39 +484,120 @@ class SkillHub:
             if entry.name.startswith("_") or entry.name.startswith("."):
                 continue
 
-            manifest_file = entry / "manifest.json"
-            if not manifest_file.exists():
+            has_manifest = (entry / "manifest.json").exists()
+            has_skill_md = (entry / "SKILL.md").exists()
+
+            if not has_manifest and not has_skill_md:
                 # 检查子目录是否是 category 分组 (如 material/, scene/)
                 for sub_entry in sorted(entry.iterdir()):
-                    if sub_entry.is_dir() and (sub_entry / "manifest.json").exists():
+                    if sub_entry.is_dir() and (
+                        (sub_entry / "manifest.json").exists()
+                        or (sub_entry / "SKILL.md").exists()
+                    ):
                         self._parse_and_collect(sub_entry, layer_id)
                 continue
 
             self._parse_and_collect(entry, layer_id)
 
     def _parse_and_collect(self, skill_dir: Path, layer_id: str) -> None:
-        """解析一个 Skill 目录的 manifest 并收集"""
-        manifest_path = str(skill_dir / "manifest.json")
-        manifest, errors = parse_manifest(manifest_path)
+        """解析一个 Skill 目录的 manifest 并收集。
 
-        has_errors = any(e.severity == "error" for e in errors)
-        if has_errors:
+        优先读取 manifest.json；如果不存在但有 SKILL.md，
+        则从 SKILL.md frontmatter + @ue_tool 装饰器自动构建 manifest（兼容 OpenClaw 格式）。
+        """
+        manifest_path = skill_dir / "manifest.json"
+        skill_md_path = skill_dir / "SKILL.md"
+
+        if manifest_path.exists():
+            manifest, errors = parse_manifest(str(manifest_path))
+
+            has_errors = any(e.severity == "error" for e in errors)
+            if has_errors:
+                for e in errors:
+                    if e.severity == "error":
+                        UELogger.mcp_error(f"SkillHub: {skill_dir.name}: {e}")
+                return
+
+            if manifest is None:
+                return
+
+            # 记录警告
             for e in errors:
-                if e.severity == "error":
-                    UELogger.mcp_error(f"SkillHub: {skill_dir.name}: {e}")
-            return
+                if e.severity == "warning":
+                    UELogger.info(f"SkillHub: {manifest.name}: {e}")
 
-        if manifest is None:
+        elif skill_md_path.exists():
+            # Fallback: 从 SKILL.md frontmatter 构建 manifest
+            manifest = self._manifest_from_skill_md(skill_dir, skill_md_path)
+            if manifest is None:
+                return
+            UELogger.info(
+                f"SkillHub: {skill_dir.name}: loaded from SKILL.md (no manifest.json)"
+            )
+        else:
             return
-
-        # 记录警告
-        for e in errors:
-            if e.severity == "warning":
-                UELogger.info(f"SkillHub: {manifest.name}: {e}")
 
         manifest.source_layer = layer_id
         manifest.source_dir = str(skill_dir)
         self._all_manifests.append(manifest)
+
+    def _manifest_from_skill_md(self, skill_dir: Path, skill_md_path: Path) -> Optional[SkillManifest]:
+        """从 SKILL.md YAML frontmatter 构建 SkillManifest。
+
+        读取 frontmatter 中的 name/description，然后预加载 __init__.py
+        扫描 @ue_tool 装饰器以发现 tools 列表。
+        """
+        try:
+            content = skill_md_path.read_text(encoding="utf-8")
+        except Exception as e:
+            UELogger.mcp_error(f"SkillHub: cannot read {skill_md_path}: {e}")
+            return None
+
+        # 解析 YAML frontmatter
+        fm = _parse_yaml_frontmatter(content)
+        if not fm or not fm.get("name"):
+            UELogger.info(
+                f"SkillHub: {skill_dir.name}: SKILL.md missing name in frontmatter"
+            )
+            return None
+
+        fm_name = fm["name"].replace("-", "_")  # OpenClaw 用 kebab-case，我们用 snake_case
+        fm_desc = fm.get("description", "")
+
+        # 扫描 __init__.py 中的 @ue_tool 装饰器（AST 静态分析，不执行）
+        init_py = skill_dir / "__init__.py"
+        tools_from_ast = []
+        if init_py.exists():
+            tools_from_ast = _scan_ue_tools_ast(init_py)
+
+        if not tools_from_ast:
+            # 没有发现工具，用 skill name 作为默认 tool
+            tools_from_ast = [{"name": fm_name, "description": fm_desc}]
+
+        # 从 frontmatter metadata 提取额外字段（如果有）
+        metadata = fm.get("metadata", {})
+        oc_meta = metadata.get("openclaw", {}) if isinstance(metadata, dict) else {}
+
+        # 构建 SkillManifest
+        from skill_manifest import SkillManifest, ToolEntry, SoftwareVersion
+        manifest = SkillManifest(
+            manifest_version="1.0",
+            name=fm_name,
+            display_name=fm.get("display_name", fm_name.replace("_", " ").title()),
+            description=fm_desc,
+            version=fm.get("version", "1.0.0"),
+            author=fm.get("author", "Unknown"),
+            license=fm.get("license", "MIT"),
+            software=fm.get("software", "unreal_engine"),
+            category=fm.get("category", "utils"),
+            risk_level=fm.get("risk_level", "low"),
+            dependencies=[],
+            tags=fm.get("tags", []),
+            entry_point="__init__.py",
+            tools=[ToolEntry(name=t["name"], description=t["description"]) for t in tools_from_ast],
+            software_version=SoftwareVersion(),
+        )
+        return manifest
 
     def _scan_legacy_files(self) -> None:
         """

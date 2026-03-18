@@ -208,5 +208,11 @@ private:
 	/** "Create Skill" 按钮回调: 在输入框填充引导文本 */
 	FReply OnCreateSkillClicked();
 
+	/** 语言切换按钮回调 */
+	FReply OnToggleLanguageClicked();
+
+	/** 语言切换后重建整个 UI（刷新所有文本） */
+	void RebuildAfterLanguageChange();
+
 	static constexpr int32 MaxMessages = 500;
 };

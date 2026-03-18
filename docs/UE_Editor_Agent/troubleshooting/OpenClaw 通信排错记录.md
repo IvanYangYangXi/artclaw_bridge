@@ -17,6 +17,8 @@
 | 6 | [MCP Server 端口占用 (热重载)](#issue-6-mcp-server-端口占用-热重载) | 🟡 中等 | ✅ 已修复 | 2026-03-16 |
 | 7 | [connect() 参数签名不匹配](#issue-7-connect-参数签名不匹配) | 🔴 致命 | ✅ 已修复 | 2026-03-16 |
 | 8 | [SimpleButton 样式不存在](#issue-8-simplebutton-样式不存在) | 🔴 致命 | ✅ 已修复 | 2026-03-16 |
+| 9 | [Gateway 重启后 Chat Panel 卡死](#issue-9-gateway-重启后-chat-panel-卡死) | 🔴 致命 | ✅ 已修复 | 2026-03-17 |
+| 10 | [Create Skill 按钮乱码](#issue-10-create-skill-按钮乱码) | 🟡 中等 | ✅ 已修复 | 2026-03-17 |
 
 ---
 
@@ -288,3 +290,66 @@ if state == "delta":
 6. **查看完整日志**
    - UE Output Log 搜索 `LogUEAgent_MCP`
    - 特别关注 `connect error` 和 `handshake failed`
+
+---
+
+## Issue 9: Gateway 重启后 Chat Panel 卡死
+
+### 现象
+用户在 UE Chat Panel 中让 AI Agent 重启 OpenClaw Gateway，面板永久显示 "Waiting for AI response..."，无法继续输入。需要关闭并重开 UE 编辑器才能恢复。
+
+### 根因
+**Python 端**：`_connect_loop()` 断连清理时只清理了 `_pending` futures，但没有通知正在 `_wait_for_final()` 中等待的 `asyncio.Event`。`_wait_for_final` 通过临时替换 `on_ai_message` 回调来监听 `final` 事件，但断连路径不触发该回调，导致 `final_event.wait()` 挂起直到 300 秒超时。
+
+**C++ 端**：`bIsWaitingForResponse = true` 后没有任何手动取消手段。用户发送的所有消息都被拦截，只显示 "Waiting for AI response..."。
+
+### 修复
+
+**Python (`openclaw_bridge.py`)**：
+`_connect_loop` 断连后主动通知等待方：
+```python
+# 断连时通知 on_ai_message 回调
+if was_connected and self.on_ai_message:
+    self.on_ai_message(
+        "error",
+        "[Connection lost] OpenClaw Gateway disconnected (may be restarting). "
+        "Click 'Connect' or /connect to reconnect."
+    )
+```
+这会触发 `_wait_for_final` 中 `_capture` 回调 → 设置 `final_event` → 立即解除阻塞。
+
+**C++ (`UEAgentDashboard.cpp`)**：
+新增 `/cancel` 本地命令，可随时手动解除等待状态：
+- 清理 `bIsWaitingForResponse`
+- 移除 "Thinking..." / 流式消息
+- 提示用户可继续输入
+
+### 教训
+- WebSocket 断连是异步事件，所有等待链路都必须有断连感知机制
+- 长时间等待的 UI 状态必须提供手动取消出口
+- 不能假设请求一定会有响应（网络随时可能中断）
+
+---
+
+## Issue 10: Create Skill 按钮乱码
+
+### 现象
+Dashboard 底部的 "Create Skill" 按钮显示为乱码字符。
+
+### 根因
+源码中使用 UTF-8 字节序列嵌入 emoji：
+```cpp
+.Text(LOCTEXT("CreateSkillBtn", "\xF0\x9F\x94\xA7 Create Skill"))
+```
+`\xF0\x9F\x94\xA7` 是 🔧 的 UTF-8 编码（4 字节），但 Windows 上 `TEXT()` / `LOCTEXT()` 宏编译为 `wchar_t`（UTF-16）。编译器将每个 `\xNN` 字节直接扩展为独立的 `wchar_t`，产生 4 个无效的 UTF-16 码元，显示为乱码。
+
+### 修复
+移除 emoji 前缀，使用纯文本：
+```cpp
+.Text(LOCTEXT("CreateSkillBtn", "Create Skill"))
+```
+
+### 教训
+- UE C++ 中 `TEXT()` / `LOCTEXT()` 不能嵌入 UTF-8 字节转义序列
+- 如需 emoji，要用 Unicode 转义 `\u` 或 UTF-16 代理对
+- 最简单的方案：按钮文字用纯文本，emoji 留给运行时的 Python/JS 层

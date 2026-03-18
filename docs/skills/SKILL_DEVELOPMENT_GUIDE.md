@@ -1,8 +1,8 @@
 # ArtClaw Skill 开发规范
 
-> **版本**: v0.1 (草稿)  
-> **日期**: 2026-03-17  
-> **状态**: 草稿 — 基于首个 Skill (`get_selected_actors`) 的实践经验  
+> **版本**: v0.2  
+> **日期**: 2026-03-18  
+> **状态**: 正式  
 > **适用范围**: 所有 ArtClaw Skill 开发者
 
 ---
@@ -17,10 +17,31 @@ Skill 是 ArtClaw 中可被 AI Agent 调用的最小功能单元。每个 Skill 
 
 ## 2. 文件结构
 
-### 2.1 Skill 文件位置
+### 2.1 Skill 包目录（推荐）
+
+每个 Skill 是一个独立目录，包含以下文件：
 
 ```
-UEEditorAgent/Content/Python/Skills/
+Skills/00_official/my_skill/
+├── SKILL.md           # AI 文档 + OpenClaw/ClawHub 分发
+├── manifest.json      # MCP 注册元数据
+├── __init__.py        # Python 入口（@ue_tool 装饰器）
+├── references/        # 可选，参考文档
+└── scripts/           # 可选，辅助脚本
+```
+
+**SKILL.md** — OpenClaw 兼容格式，YAML frontmatter (`name` + `description`) + Markdown body。
+用于 AI 理解技能用途、ClawHub 分发、以及作为 manifest.json 的 fallback。
+
+**manifest.json** — ArtClaw 运行时元数据，Skill Hub 用它注册 MCP 工具、版本匹配、冲突检测。
+
+> **最小要求**: `manifest.json` 或 `SKILL.md` 至少有一个。推荐两个都有。
+> 详见 [MANIFEST_SPEC.md](MANIFEST_SPEC.md)。
+
+### 2.2 旧版单文件 Skill（向后兼容）
+
+```
+Skills/
 ├── scene_ops.py        # 场景操作 Skill
 ├── asset_ops.py        # 资产操作 Skill
 ├── material_ops.py     # 材质操作 Skill

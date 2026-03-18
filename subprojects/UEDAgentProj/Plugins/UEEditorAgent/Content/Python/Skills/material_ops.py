@@ -61,23 +61,23 @@ def _prune_material_info(material) -> dict:
 def get_actor_materials(arguments: dict) -> str:
     """获取 Actor 上的所有材质"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     actor_name = arguments.get("actor_name", "")
     if not actor_name:
-        return json.dumps({"success": False, "error": "actor_name is required"})
+        return json.dumps({"success": False, "error": "需要提供 actor_name 参数"})
 
     try:
         actor = _find_actor_by_name(actor_name)
         if actor is None:
-            return json.dumps({"success": False, "error": f"Actor not found: {actor_name}"})
+            return json.dumps({"success": False, "error": f"未找到 Actor: {actor_name}"})
 
         # 尝试获取所有 PrimitiveComponent
         mesh_components = actor.get_components_by_class(unreal.PrimitiveComponent)
         if not mesh_components:
             return json.dumps({
                 "success": False,
-                "error": f"Actor '{actor_name}' has no mesh components"
+                "error": f"Actor '{actor_name}' 没有网格组件"
             })
 
         all_materials = []
@@ -117,18 +117,18 @@ def get_actor_materials(arguments: dict) -> str:
 def get_material_parameters(arguments: dict) -> str:
     """获取材质的可编辑参数"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     material_path = arguments.get("material_path", "")
     if not material_path:
-        return json.dumps({"success": False, "error": "material_path is required"})
+        return json.dumps({"success": False, "error": "需要提供 material_path 参数"})
 
     try:
         mat = unreal.EditorAssetLibrary.load_asset(material_path)
         if mat is None:
             return json.dumps({
                 "success": False,
-                "error": f"Material not found: {material_path}"
+                "error": f"未找到材质: {material_path}"
             })
 
         result = {
@@ -199,27 +199,27 @@ def get_material_parameters(arguments: dict) -> str:
 def set_actor_material(arguments: dict) -> str:
     """设置 Actor 的材质"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     actor_name = arguments.get("actor_name", "")
     material_path = arguments.get("material_path", "")
     slot_index = arguments.get("slot_index", 0)
 
     if not actor_name:
-        return json.dumps({"success": False, "error": "actor_name is required"})
+        return json.dumps({"success": False, "error": "需要提供 actor_name 参数"})
     if not material_path:
-        return json.dumps({"success": False, "error": "material_path is required"})
+        return json.dumps({"success": False, "error": "需要提供 material_path 参数"})
 
     try:
         actor = _find_actor_by_name(actor_name)
         if actor is None:
-            return json.dumps({"success": False, "error": f"Actor not found: {actor_name}"})
+            return json.dumps({"success": False, "error": f"未找到 Actor: {actor_name}"})
 
         material = unreal.EditorAssetLibrary.load_asset(material_path)
         if material is None:
             return json.dumps({
                 "success": False,
-                "error": f"Material not found: {material_path}"
+                "error": f"未找到材质: {material_path}"
             })
 
         mesh_comp = _get_static_mesh_component(actor)
@@ -231,14 +231,14 @@ def set_actor_material(arguments: dict) -> str:
         if mesh_comp is None:
             return json.dumps({
                 "success": False,
-                "error": f"Actor '{actor_name}' has no mesh component"
+                "error": f"Actor '{actor_name}' 没有网格组件"
             })
 
         num_slots = mesh_comp.get_num_materials()
         if slot_index >= num_slots:
             return json.dumps({
                 "success": False,
-                "error": f"Slot index {slot_index} out of range (actor has {num_slots} material slots)"
+                "error": f"插槽索引 {slot_index} 超出范围（该 Actor 有 {num_slots} 个材质插槽）"
             })
 
         old_mat = mesh_comp.get_material(slot_index)
@@ -270,7 +270,7 @@ def set_actor_material(arguments: dict) -> str:
 def create_material_instance(arguments: dict) -> str:
     """创建材质实例"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     parent_path = arguments.get("parent_path", "")
     instance_name = arguments.get("instance_name", "")
@@ -279,9 +279,9 @@ def create_material_instance(arguments: dict) -> str:
     vector_overrides = arguments.get("vector_overrides", {})
 
     if not parent_path:
-        return json.dumps({"success": False, "error": "parent_path is required"})
+        return json.dumps({"success": False, "error": "需要提供 parent_path 参数"})
     if not instance_name:
-        return json.dumps({"success": False, "error": "instance_name is required"})
+        return json.dumps({"success": False, "error": "需要提供 instance_name 参数"})
 
     try:
         # 加载父材质
@@ -289,7 +289,7 @@ def create_material_instance(arguments: dict) -> str:
         if parent is None:
             return json.dumps({
                 "success": False,
-                "error": f"Parent material not found: {parent_path}"
+                "error": f"未找到父材质: {parent_path}"
             })
 
         # 创建材质实例
@@ -305,7 +305,7 @@ def create_material_instance(arguments: dict) -> str:
         if instance is None:
             return json.dumps({
                 "success": False,
-                "error": "Failed to create material instance"
+                "error": "创建材质实例失败"
             })
 
         # 设置父材质

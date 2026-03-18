@@ -2,6 +2,7 @@
 
 #include "UEAgentDashboard.h"
 #include "UEAgentSubsystem.h"
+#include "UEAgentLocalization.h"
 #include "Editor.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -66,7 +67,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			+ SHorizontalBox::Slot().AutoWidth()
 			[
 				SNew(STextBlock)
-				.Text(LOCTEXT("VersionLabel", "Version: "))
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("VersionLabel")); })
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 			]
 			+ SHorizontalBox::Slot().AutoWidth()
@@ -86,7 +87,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			+ SHorizontalBox::Slot().AutoWidth()
 			[
 				SNew(STextBlock)
-				.Text(LOCTEXT("ServerLabel", "Server: "))
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ServerLabel")); })
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 			]
 			+ SHorizontalBox::Slot().AutoWidth()
@@ -119,8 +120,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			.Padding(0.0f, 0.0f, 3.0f, 0.0f)
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("ConnectBtn", "Connect"))
-				.ToolTipText(LOCTEXT("ConnectTip", "Connect to OpenClaw Gateway"))
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ConnectBtn")); })
+				.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("ConnectTip")); })
 				.OnClicked(this, &SUEAgentDashboard::OnConnectClicked)
 				.ContentPadding(FMargin(6.0f, 2.0f))
 			]
@@ -129,8 +130,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			.Padding(0.0f, 0.0f, 3.0f, 0.0f)
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("DisconnectBtn", "Disconnect"))
-				.ToolTipText(LOCTEXT("DisconnectTip", "Disconnect from OpenClaw Gateway"))
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("DisconnectBtn")); })
+				.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("DisconnectTip")); })
 				.OnClicked(this, &SUEAgentDashboard::OnDisconnectClicked)
 				.ContentPadding(FMargin(6.0f, 2.0f))
 			]
@@ -139,8 +140,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			.Padding(0.0f, 0.0f, 3.0f, 0.0f)
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("DiagnoseBtn", "Diagnose"))
-				.ToolTipText(LOCTEXT("DiagnoseTip", "Run 6-step connection diagnostics"))
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("DiagnoseBtn")); })
+				.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("DiagnoseTip")); })
 				.OnClicked(this, &SUEAgentDashboard::OnDiagnoseClicked)
 				.ContentPadding(FMargin(6.0f, 2.0f))
 			]
@@ -148,8 +149,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			.AutoWidth()
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("ViewLogsBtn", "Logs"))
-				.ToolTipText(LOCTEXT("ViewLogsTip", "Open Output Log"))
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ViewLogsBtn")); })
+				.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("ViewLogsTip")); })
 				.OnClicked(this, &SUEAgentDashboard::OnViewLogsClicked)
 				.ContentPadding(FMargin(6.0f, 2.0f))
 			]
@@ -184,7 +185,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		[
 			SNew(SExpandableArea)
 			.InitiallyCollapsed(true)
-			.AreaTitle(LOCTEXT("StatusAreaTitle", "Agent Status"))
+			.AreaTitle(FUEAgentL10n::Get(TEXT("StatusAreaTitle")))
 			.HeaderContent()
 			[
 				// 单行摘要: 状态指示 + 连接信息
@@ -231,7 +232,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		[
 			SAssignNew(QuickInputExpandableArea, SExpandableArea)
 			.InitiallyCollapsed(true)
-			.AreaTitle(LOCTEXT("QuickInputTitle", "Quick Inputs"))
+			.AreaTitle(FUEAgentL10n::Get(TEXT("QuickInputTitle")))
 			.BodyContent()
 			[
 				SNew(SBox)
@@ -257,8 +258,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 						.AutoWidth()
 						[
 							SNew(SButton)
-							.Text(LOCTEXT("AddQuickInputBtn", "+ Add"))
-							.ToolTipText(LOCTEXT("AddQuickInputTip", "Add a new quick input"))
+							.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("AddQuickInputBtn")); })
+							.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("AddQuickInputTip")); })
 							.OnClicked(this, &SUEAgentDashboard::OnAddQuickInputClicked)
 							.ContentPadding(FMargin(6.0f, 2.0f))
 						]
@@ -295,7 +296,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 						.MaxDesiredHeight(120.0f)
 						[
 						SAssignNew(InputTextBox, SMultiLineEditableTextBox)
-						.HintText(LOCTEXT("InputHintDefault", "Ask AI anything... (Enter to send, / for commands)"))
+						.HintText_Lambda([this]() { return GetSendHintText(); })
 						.AutoWrapText(true)
 						.OnTextChanged(this, &SUEAgentDashboard::OnInputTextChanged)
 						.OnTextCommitted(this, &SUEAgentDashboard::OnInputTextCommitted)
@@ -311,8 +312,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					.Padding(0.0f, 0.0f, 0.0f, 1.0f)
 					[
 						SNew(SButton)
-						.Text(LOCTEXT("SendBtn", "Send"))
-						.ToolTipText(LOCTEXT("SendTip", "Send message"))
+						.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("SendBtn")); })
+						.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("SendTip")); })
 						.OnClicked(this, &SUEAgentDashboard::OnSendClicked)
 						.ContentPadding(FMargin(6.0f, 4.0f))
 					]
@@ -333,8 +334,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				.VAlign(VAlign_Center)
 				[
 					SNew(SButton)
-					.Text(LOCTEXT("NewChatBtn", "+ New Chat"))
-					.ToolTipText(LOCTEXT("NewChatTip", "Start a new conversation (/new)"))
+					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("NewChatBtn")); })
+					.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("NewChatTip")); })
 					.OnClicked(this, &SUEAgentDashboard::OnNewChatClicked)
 					.ContentPadding(FMargin(4.0f, 1.0f))
 				]
@@ -346,9 +347,28 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SNew(SButton)
-					.Text(LOCTEXT("CreateSkillBtn", "Create Skill"))
-					.ToolTipText(LOCTEXT("CreateSkillTip", "Create a new ArtClaw Skill via natural language description"))
+					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("CreateSkillBtn")); })
+					.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("CreateSkillTip")); })
 					.OnClicked(this, &SUEAgentDashboard::OnCreateSkillClicked)
+					.ContentPadding(FMargin(4.0f, 1.0f))
+				]
+
+				// 语言切换按钮 (中/En)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text_Lambda([]() {
+						return FUEAgentL10n::GetLanguage() == EUEAgentLanguage::Chinese
+							? FText::FromString(TEXT("En"))
+							: FText::FromString(TEXT("中"));
+					})
+					.ToolTipText_Lambda([]() {
+						return FUEAgentL10n::Get(TEXT("LangToggleTip"));
+					})
+					.OnClicked(this, &SUEAgentDashboard::OnToggleLanguageClicked)
 					.ContentPadding(FMargin(4.0f, 1.0f))
 				]
 
@@ -379,7 +399,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					.VAlign(VAlign_Center)
 					[
 						SNew(STextBlock)
-						.Text(LOCTEXT("EnterToSendLabel", "Enter to Send"))
+						.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("EnterToSendLabel")); })
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 7))
 						.ColorAndOpacity(FSlateColor(FLinearColor(0.45f, 0.45f, 0.45f)))
 					]
@@ -393,9 +413,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	RebuildQuickInputPanel();
 
 	// 欢迎消息
-	AddMessage(TEXT("assistant"),
-		TEXT("Hello! I'm the UE Claw Bridge AI Assistant.\n\n")
-		TEXT("Type / to see available commands, or ask me anything."));
+	AddMessage(TEXT("assistant"), FUEAgentL10n::GetStr(TEXT("WelcomeMsg")));
 
 	// 打开面板时自动连接 OpenClaw Bridge
 	ConnectOpenClawBridge();
@@ -444,8 +462,8 @@ void SUEAgentDashboard::HandleConnectionStatusChanged(bool bNewStatus)
 	bCachedIsConnected = bNewStatus;
 
 	FString StatusMsg = bNewStatus
-		? TEXT("MCP client connected.")
-		: TEXT("MCP client disconnected.");
+		? FUEAgentL10n::GetStr(TEXT("McpConnected"))
+		: FUEAgentL10n::GetStr(TEXT("McpDisconnected"));
 	AddMessage(TEXT("system"), StatusMsg);
 }
 
@@ -457,9 +475,9 @@ FText SUEAgentDashboard::GetConnectionStatusText() const
 {
 	if (bCachedIsConnected)
 	{
-		return LOCTEXT("Connected", "Connected");
+		return FUEAgentL10n::Get(TEXT("Connected"));
 	}
-	return LOCTEXT("Disconnected", "Disconnected");
+	return FUEAgentL10n::Get(TEXT("Disconnected"));
 }
 
 FSlateColor SUEAgentDashboard::GetConnectionStatusColor() const
@@ -475,7 +493,7 @@ FText SUEAgentDashboard::GetVersionText() const
 	{
 		return FText::FromString(CachedSubsystem->GetPluginVersion());
 	}
-	return LOCTEXT("VersionUnknown", "Unknown");
+	return FUEAgentL10n::Get(TEXT("VersionUnknown"));
 }
 
 FText SUEAgentDashboard::GetServerAddressText() const
@@ -488,7 +506,7 @@ FText SUEAgentDashboard::GetServerAddressText() const
 			return FText::FromString(Address);
 		}
 	}
-	return LOCTEXT("ServerNotStarted", "Not started");
+	return FUEAgentL10n::Get(TEXT("ServerNotStarted"));
 }
 
 FText SUEAgentDashboard::GetStatsText() const
@@ -598,7 +616,7 @@ FReply SUEAgentDashboard::OnSendClicked()
 	// 防止重复发送 — 但提供取消手段
 	if (bIsWaitingForResponse)
 	{
-		AddMessage(TEXT("system"), TEXT("Still waiting for AI response... (type /cancel to abort)"));
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("StillWaiting")));
 		return FReply::Handled();
 	}
 
@@ -616,7 +634,7 @@ FReply SUEAgentDashboard::OnNewChatClicked()
 	// 1) 本地清屏
 	Messages.Empty();
 	RebuildMessageList();
-	AddMessage(TEXT("system"), TEXT("New conversation started."));
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("NewChatStarted")));
 
 	// 2) 重置 Python Bridge 的 session key
 	IPythonScriptPlugin::Get()->ExecPythonCommand(
@@ -732,9 +750,9 @@ FText SUEAgentDashboard::GetSendHintText() const
 {
 	if (bEnterToSend)
 	{
-		return LOCTEXT("InputHintEnter", "Ask AI anything... (Enter to send, Shift+Enter for newline, / for commands)");
+		return FUEAgentL10n::Get(TEXT("InputHintEnter"));
 	}
-	return LOCTEXT("InputHintCtrlEnter", "Ask AI anything... (Ctrl+Enter to send, Enter for newline, / for commands)");
+	return FUEAgentL10n::Get(TEXT("InputHintCtrlEnter"));
 }
 
 // ==================================================================
@@ -888,7 +906,7 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 		// 纯本地清屏，不发 /new 给 AI
 		Messages.Empty();
 		RebuildMessageList();
-		AddMessage(TEXT("system"), TEXT("Chat cleared."));
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ChatCleared")));
 	}
 	else if (Command == TEXT("/cancel"))
 	{
@@ -898,11 +916,23 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 			bIsWaitingForResponse = false;
 			bHasStreamingMessage = false;
 			StreamLinesRead = 0;
+
+			// 停止 poll timer（防止旧的定时器继续轮询文件）
+			if (PollTimerHandle.IsValid())
+			{
+				FTSTicker::GetCoreTicker().RemoveTicker(PollTimerHandle);
+				PollTimerHandle.Reset();
+			}
+
+			// 通知 Python 端取消当前请求（释放 _wait_for_final 阻塞）
+			IPythonScriptPlugin::Get()->ExecPythonCommand(
+				TEXT("from openclaw_bridge import cancel_current_request; cancel_current_request()"));
+
 			// 移除 "Thinking..." 或流式消息
 			while (Messages.Num() > 0)
 			{
 				const FString& LastSender = Messages.Last().Sender;
-				if (Messages.Last().Content == TEXT("Thinking...")
+				if (Messages.Last().Content == FUEAgentL10n::GetStr(TEXT("Thinking"))
 					|| LastSender == TEXT("thinking")
 					|| LastSender == TEXT("streaming"))
 				{
@@ -914,11 +944,11 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 				}
 			}
 			RebuildMessageList();
-			AddMessage(TEXT("system"), TEXT("Request cancelled. You can continue chatting."));
+			AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("RequestCancelled")));
 		}
 		else
 		{
-			AddMessage(TEXT("system"), TEXT("Nothing to cancel."));
+			AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("NothingToCancel")));
 		}
 	}
 	else if (Command == TEXT("/connect"))
@@ -935,12 +965,18 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 	}
 	else if (Command == TEXT("/status"))
 	{
-		FString StatusText = FString::Printf(
-			TEXT("MCP Client: %s\nMCP Server: %s\nMessages: %d\nSend Mode: %s"),
-			bCachedIsConnected ? TEXT("Connected") : TEXT("Disconnected"),
-			CachedSubsystem.IsValid() ? *CachedSubsystem->GetServerAddress() : TEXT("N/A"),
-			Messages.Num(),
-			bEnterToSend ? TEXT("Enter to Send") : TEXT("Ctrl+Enter to Send"));
+		FString ClientStatus = bCachedIsConnected ? FUEAgentL10n::GetStr(TEXT("Connected")) : FUEAgentL10n::GetStr(TEXT("Disconnected"));
+		FString ServerAddr = CachedSubsystem.IsValid() ? CachedSubsystem->GetServerAddress() : TEXT("N/A");
+		FString SendMode = bEnterToSend ? FUEAgentL10n::GetStr(TEXT("EnterToSend")) : FUEAgentL10n::GetStr(TEXT("CtrlEnterToSend"));
+
+		TArray<FStringFormatArg> FormatArgs;
+		FormatArgs.Add(FStringFormatArg(ClientStatus));
+		FormatArgs.Add(FStringFormatArg(ServerAddr));
+		FormatArgs.Add(FStringFormatArg(Messages.Num()));
+		FormatArgs.Add(FStringFormatArg(SendMode));
+
+		// StatusFormat 用 {0} {1} {2} {3} 占位符
+		FString StatusText = FString::Format(*FUEAgentL10n::GetStr(TEXT("StatusFormat")), FormatArgs);
 		AddMessage(TEXT("system"), StatusText);
 
 		// 检查 MCP Server + OpenClaw Bridge 状态
@@ -1036,15 +1072,15 @@ void SUEAgentDashboard::RebuildMessageList()
 		FString SenderLabel;
 		if (Msg.Sender == TEXT("user"))
 		{
-			SenderLabel = TEXT("You");
+			SenderLabel = FUEAgentL10n::GetStr(TEXT("SenderYou"));
 		}
 		else if (Msg.Sender == TEXT("assistant"))
 		{
-			SenderLabel = TEXT("AI Agent");
+			SenderLabel = FUEAgentL10n::GetStr(TEXT("SenderAI"));
 		}
 		else
 		{
-			SenderLabel = TEXT("System");
+			SenderLabel = FUEAgentL10n::GetStr(TEXT("SenderSystem"));
 		}
 
 		MessageScrollBox->AddSlot()
@@ -1103,7 +1139,7 @@ void SUEAgentDashboard::RebuildMessageList()
 
 void SUEAgentDashboard::ConnectOpenClawBridge()
 {
-	AddMessage(TEXT("system"), TEXT("Connecting..."));
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("Connecting")));
 
 	// 检测 UE MCP Server 是否就绪（只检查，不重复启动；
 	// init_unreal.py 已通过 Slate tick 延迟启动 MCP，这里只需等待）
@@ -1159,13 +1195,11 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 
 			if (Status == TEXT("ok"))
 			{
-				Self->AddMessage(TEXT("system"), TEXT("OpenClaw Bridge: Connected."));
+				Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ConnectOK")));
 			}
 			else
 			{
-				Self->AddMessage(TEXT("system"),
-					TEXT("OpenClaw Bridge: Connection failed.\n"
-						 "Check: 1) OpenClaw is running  2) Gateway port 18789  3) /diagnose"));
+				Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ConnectFail")));
 			}
 			return false;
 		}),
@@ -1181,12 +1215,12 @@ void SUEAgentDashboard::DisconnectOpenClawBridge()
 		"print('[LogUEAgent] OpenClaw Bridge disconnected')\n"
 	);
 	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
-	AddMessage(TEXT("system"), TEXT("OpenClaw Bridge disconnected."));
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("BridgeDisconnected")));
 }
 
 void SUEAgentDashboard::RunDiagnoseConnection()
 {
-	AddMessage(TEXT("system"), TEXT("Running environment health check..."));
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("RunningHealthCheck")));
 
 	// 诊断结果写入临时文件，然后轮询读取
 	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
@@ -1244,10 +1278,21 @@ void SUEAgentDashboard::RunDiagnoseConnection()
 
 void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 {
+	// 如果上一个请求还在进行，先取消它（停止旧的轮询定时器）
+	if (bIsWaitingForResponse)
+	{
+		// 停止旧的 poll timer
+		if (PollTimerHandle.IsValid())
+		{
+			FTSTicker::GetCoreTicker().RemoveTicker(PollTimerHandle);
+			PollTimerHandle.Reset();
+		}
+	}
+
 	bIsWaitingForResponse = true;
 	StreamLinesRead = 0;
 	bHasStreamingMessage = false;
-	AddMessage(TEXT("system"), TEXT("Thinking..."));
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("Thinking")));
 
 	// 转义消息中的引号和特殊字符，安全嵌入 Python 字符串
 	FString EscapedMsg = UserMessage;
@@ -1369,7 +1414,7 @@ void SUEAgentDashboard::UpdateStreamingMessage(const FString& Sender, const FStr
 	if (!bHasStreamingMessage)
 	{
 		// 替换 "Thinking..." 消息
-		if (Messages.Num() > 0 && Messages.Last().Content == TEXT("Thinking..."))
+		if (Messages.Num() > 0 && Messages.Last().Content == FUEAgentL10n::GetStr(TEXT("Thinking")))
 		{
 			Messages.RemoveAt(Messages.Num() - 1);
 		}
@@ -1412,7 +1457,7 @@ void SUEAgentDashboard::HandlePythonResponse(const FString& Response)
 	bIsWaitingForResponse = false;
 
 	// 移除 "Thinking..." 消息（如果流式显示还没替换掉的话）
-	if (!bHasStreamingMessage && Messages.Num() > 0 && Messages.Last().Content == TEXT("Thinking..."))
+	if (!bHasStreamingMessage && Messages.Num() > 0 && Messages.Last().Content == FUEAgentL10n::GetStr(TEXT("Thinking")))
 	{
 		Messages.RemoveAt(Messages.Num() - 1);
 		RebuildMessageList();
@@ -1443,7 +1488,7 @@ void SUEAgentDashboard::HandlePythonResponse(const FString& Response)
 
 	if (Response.IsEmpty())
 	{
-		AddMessage(TEXT("system"), TEXT("Empty response from AI."));
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("EmptyResponse")));
 		return;
 	}
 
@@ -1571,7 +1616,7 @@ void SUEAgentDashboard::RebuildQuickInputPanel()
 		.Padding(2.0f)
 		[
 			SNew(STextBlock)
-			.Text(LOCTEXT("NoQuickInputs", "No quick inputs yet. Click '+ Add' to create one."))
+			.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("NoQuickInputs")); })
 			.Font(FCoreStyle::GetDefaultFontStyle("Italic", 9))
 			.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
 		];
@@ -1609,8 +1654,8 @@ void SUEAgentDashboard::RebuildQuickInputPanel()
 			.Padding(1.0f, 0.0f, 0.0f, 0.0f)
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("EditQuickInputBtn", "e"))
-				.ToolTipText(LOCTEXT("EditQuickInputTip", "Edit this quick input"))
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("EditQuickInputBtn")); })
+				.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("EditQuickInputTip")); })
 				.OnClicked_Lambda([this, CapturedIndex]() -> FReply
 				{
 					return OnEditQuickInputClicked(CapturedIndex);
@@ -1625,8 +1670,8 @@ void SUEAgentDashboard::RebuildQuickInputPanel()
 			.Padding(1.0f, 0.0f, 0.0f, 0.0f)
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("DeleteQuickInputBtn", "x"))
-				.ToolTipText(LOCTEXT("DeleteQuickInputTip", "Delete this quick input"))
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("DeleteQuickInputBtn")); })
+				.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("DeleteQuickInputTip")); })
 				.OnClicked_Lambda([this, CapturedIndex]() -> FReply
 				{
 					return OnDeleteQuickInputClicked(CapturedIndex);
@@ -1676,7 +1721,7 @@ FReply SUEAgentDashboard::OnAddQuickInputClicked()
 	// 使用 SWindow 弹出编辑窗口
 	TSharedRef<SWindow> EditWindow =
 		SNew(SWindow)
-		.Title(LOCTEXT("EditQuickInputTitle", "Edit Quick Input"))
+		.Title(FUEAgentL10n::Get(TEXT("EditQuickInputTitle")))
 		.ClientSize(FVector2D(400, 180))
 		.SupportsMinimize(false)
 		.SupportsMaximize(false)
@@ -1692,7 +1737,7 @@ FReply SUEAgentDashboard::OnAddQuickInputClicked()
 		.Padding(8.0f)
 		[
 			SNew(STextBlock)
-			.Text(LOCTEXT("QINameLabel", "Name (displayed on button):"))
+			.Text(FUEAgentL10n::Get(TEXT("QINameLabel")))
 			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
 		]
 		+ SVerticalBox::Slot()
@@ -1708,7 +1753,7 @@ FReply SUEAgentDashboard::OnAddQuickInputClicked()
 		.Padding(8.0f, 8.0f, 8.0f, 0.0f)
 		[
 			SNew(STextBlock)
-			.Text(LOCTEXT("QIContentLabel", "Content (filled into chat):"))
+			.Text(FUEAgentL10n::Get(TEXT("QIContentLabel")))
 			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
 		]
 		+ SVerticalBox::Slot()
@@ -1730,7 +1775,7 @@ FReply SUEAgentDashboard::OnAddQuickInputClicked()
 			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("QISaveBtn", "Save"))
+				.Text(FUEAgentL10n::Get(TEXT("QISaveBtn")))
 				.ContentPadding(FMargin(12.0f, 4.0f))
 				.OnClicked_Lambda([this, NewIndex, NameInput, ContentInput, EditWindow]() -> FReply
 				{
@@ -1757,7 +1802,7 @@ FReply SUEAgentDashboard::OnAddQuickInputClicked()
 			.AutoWidth()
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("QICancelBtn", "Cancel"))
+				.Text(FUEAgentL10n::Get(TEXT("QICancelBtn")))
 				.ContentPadding(FMargin(12.0f, 4.0f))
 				.OnClicked_Lambda([this, NewIndex, EditWindow]() -> FReply
 				{
@@ -1793,7 +1838,7 @@ FReply SUEAgentDashboard::OnDeleteQuickInputClicked(int32 Index)
 	EAppReturnType::Type Result = FMessageDialog::Open(
 		EAppMsgType::YesNo,
 		FText::Format(
-			LOCTEXT("ConfirmDeleteQI", "Delete quick input \"{0}\"?"),
+			FUEAgentL10n::Get(TEXT("ConfirmDeleteQI")),
 			FText::FromString(ItemName)));
 
 	if (Result == EAppReturnType::Yes)
@@ -1815,7 +1860,7 @@ FReply SUEAgentDashboard::OnEditQuickInputClicked(int32 Index)
 
 	TSharedRef<SWindow> EditWindow =
 		SNew(SWindow)
-		.Title(LOCTEXT("EditQuickInputTitle2", "Edit Quick Input"))
+		.Title(FUEAgentL10n::Get(TEXT("EditQuickInputTitle")))
 		.ClientSize(FVector2D(400, 180))
 		.SupportsMinimize(false)
 		.SupportsMaximize(false)
@@ -1831,7 +1876,7 @@ FReply SUEAgentDashboard::OnEditQuickInputClicked(int32 Index)
 		.Padding(8.0f)
 		[
 			SNew(STextBlock)
-			.Text(LOCTEXT("QINameLabel2", "Name (displayed on button):"))
+			.Text(FUEAgentL10n::Get(TEXT("QINameLabel")))
 			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
 		]
 		+ SVerticalBox::Slot()
@@ -1847,7 +1892,7 @@ FReply SUEAgentDashboard::OnEditQuickInputClicked(int32 Index)
 		.Padding(8.0f, 8.0f, 8.0f, 0.0f)
 		[
 			SNew(STextBlock)
-			.Text(LOCTEXT("QIContentLabel2", "Content (filled into chat):"))
+			.Text(FUEAgentL10n::Get(TEXT("QIContentLabel")))
 			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
 		]
 		+ SVerticalBox::Slot()
@@ -1869,7 +1914,7 @@ FReply SUEAgentDashboard::OnEditQuickInputClicked(int32 Index)
 			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("QISaveBtn2", "Save"))
+				.Text(FUEAgentL10n::Get(TEXT("QISaveBtn")))
 				.ContentPadding(FMargin(12.0f, 4.0f))
 				.OnClicked_Lambda([this, Index, NameInput, ContentInput, EditWindow]() -> FReply
 				{
@@ -1894,7 +1939,7 @@ FReply SUEAgentDashboard::OnEditQuickInputClicked(int32 Index)
 			.AutoWidth()
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("QICancelBtn2", "Cancel"))
+				.Text(FUEAgentL10n::Get(TEXT("QICancelBtn")))
 				.ContentPadding(FMargin(12.0f, 4.0f))
 				.OnClicked_Lambda([EditWindow]() -> FReply
 				{
@@ -1968,15 +2013,40 @@ FReply SUEAgentDashboard::OnCreateSkillClicked()
 	// 检查 AI 连接状态
 	if (!bCachedIsConnected)
 	{
-		AddMessage(TEXT("system"), TEXT("Please connect to AI first (/connect)"));
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("PleaseConnectFirst")));
 		return FReply::Handled();
 	}
 
 	// 在输入框填入引导文本，让用户继续输入描述
 	InputTextBox->SetText(FText::FromString(
-		TEXT("Create an artclaw skill: ")));
+		FUEAgentL10n::GetStr(TEXT("CreateSkillPrompt"))));
 	FSlateApplication::Get().SetKeyboardFocus(InputTextBox.ToSharedRef());
 	return FReply::Handled();
+}
+
+// ==================================================================
+// 语言切换
+// ==================================================================
+
+FReply SUEAgentDashboard::OnToggleLanguageClicked()
+{
+	FUEAgentL10n::ToggleLanguage();
+	RebuildAfterLanguageChange();
+	return FReply::Handled();
+}
+
+void SUEAgentDashboard::RebuildAfterLanguageChange()
+{
+	// 重建消息列表（更新 sender 标签）
+	RebuildMessageList();
+
+	// 重建快捷输入面板
+	RebuildQuickInputPanel();
+
+	// 输入框 hint text 会自动通过 lambda/binding 刷新
+	// 按钮文本通过 Text_Lambda 自动刷新
+	// 对于非动态绑定的文本，Slate 不支持运行时更新静态 .Text()
+	// 这些需要在下次打开面板时生效，或通过 Invalidate 触发
 }
 
 #undef LOCTEXT_NAMESPACE

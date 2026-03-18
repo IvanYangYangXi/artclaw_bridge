@@ -345,6 +345,7 @@ def _cmd_create(args: argparse.Namespace) -> None:
         "TODO: 技能显示名称": name.replace("_", " ").title(),
         "TODO: 技能描述": description,
         "TODO: 一句话描述这个 Skill 的作用": description,
+        "TODO: 一句话描述这个 Skill 的作用，包含使用场景和触发条件": description,
         "TODO: 一句话描述": description,
         "TODO: 详细描述 Skill 的功能和用途。": description,
         "TODO: 作者名": "ArtClaw",
@@ -434,10 +435,15 @@ def _cmd_test(args: argparse.Namespace) -> None:
         skill_name = skill_dir.name
         errors: list[str] = []
 
-        # 检查 manifest.json
+        # 检查 manifest.json（或 SKILL.md 作为 fallback）
         manifest_path = skill_dir / "manifest.json"
+        skill_md_path = skill_dir / "SKILL.md"
         if not manifest_path.exists():
-            errors.append("缺少 manifest.json")
+            if skill_md_path.exists():
+                # SKILL.md 模式 — 只做基本检查
+                pass  # 允许仅有 SKILL.md 的 OpenClaw 兼容包
+            else:
+                errors.append("缺少 manifest.json 或 SKILL.md")
         else:
             result = validator.validate_file(manifest_path)
             if not result.success:
@@ -479,11 +485,20 @@ def _cmd_test(args: argparse.Namespace) -> None:
 
 
 def _find_skill_dirs(root: Path) -> list[Path]:
-    """递归查找包含 manifest.json 的 Skill 目录。"""
+    """递归查找包含 manifest.json 或 SKILL.md 的 Skill 目录。"""
     results: list[Path] = []
+    seen: set[str] = set()
     try:
         for manifest in root.rglob("manifest.json"):
-            results.append(manifest.parent)
+            d = str(manifest.parent)
+            if d not in seen:
+                results.append(manifest.parent)
+                seen.add(d)
+        for skill_md in root.rglob("SKILL.md"):
+            d = str(skill_md.parent)
+            if d not in seen:
+                results.append(skill_md.parent)
+                seen.add(d)
     except OSError:
         pass
     return results

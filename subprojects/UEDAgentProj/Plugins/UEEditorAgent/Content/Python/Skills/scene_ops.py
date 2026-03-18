@@ -89,7 +89,7 @@ def _parse_rotator(d: dict) -> unreal.Rotator:
 def get_selected_actors(arguments: dict) -> str:
     """获取当前编辑器中选中的 Actor 列表"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     include_transform = arguments.get("include_transform", True)
     limit = arguments.get("limit", 100)
@@ -125,7 +125,7 @@ def get_selected_actors(arguments: dict) -> str:
 def get_all_level_actors(arguments: dict) -> str:
     """获取当前关卡中所有 Actor，可按类名过滤"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     class_filter = arguments.get("class_filter", "")
     include_transform = arguments.get("include_transform", True)
@@ -171,16 +171,16 @@ def get_all_level_actors(arguments: dict) -> str:
 def get_actor_details(arguments: dict) -> str:
     """获取指定 Actor 的详细信息"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     actor_name = arguments.get("actor_name", "")
     if not actor_name:
-        return json.dumps({"success": False, "error": "actor_name is required"})
+        return json.dumps({"success": False, "error": "需要提供 actor_name 参数"})
 
     try:
         actor = _find_actor_by_name(actor_name)
         if actor is None:
-            return json.dumps({"success": False, "error": f"Actor not found: {actor_name}"})
+            return json.dumps({"success": False, "error": f"未找到 Actor: {actor_name}"})
 
         data = _prune_actor(actor, include_transform=True)
 
@@ -220,6 +220,295 @@ def get_actor_details(arguments: dict) -> str:
 
 
 # ============================================================================
+# Scene Skills - 视口感知
+# ============================================================================
+
+def _is_in_view_frustum(actor_loc, cam_loc, cam_forward, cam_right, cam_up,
+                        h_half_rad, v_half_rad, max_distance):
+    """判断一个点是否在视锥体内（简化版：基于角度 + 距离）"""
+    import math
+    dx = actor_loc.x - cam_loc.x
+    dy = actor_loc.y - cam_loc.y
+    dz = actor_loc.z - cam_loc.z
+    dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if dist < 1.0:
+        return True, dist
+    if dist > max_distance:
+        return False, dist
+    # 归一化方向
+    inv_dist = 1.0 / dist
+    dir_x, dir_y, dir_z = dx * inv_dist, dy * inv_dist, dz * inv_dist
+    # 与相机前方的夹角（水平 + 垂直分别判断）
+    dot_forward = dir_x * cam_forward[0] + dir_y * cam_forward[1] + dir_z * cam_forward[2]
+    if dot_forward <= 0:
+        return False, dist
+    dot_right = dir_x * cam_right[0] + dir_y * cam_right[1] + dir_z * cam_right[2]
+    dot_up = dir_x * cam_up[0] + dir_y * cam_up[1] + dir_z * cam_up[2]
+    # 水平角 = atan2(dot_right, dot_forward)
+    h_angle = abs(math.atan2(dot_right, dot_forward))
+    v_angle = abs(math.atan2(dot_up, dot_forward))
+    return (h_angle <= h_half_rad and v_angle <= v_half_rad), dist
+
+
+def _rotation_to_vectors(rot):
+    """将 Rotator 转为前/右/上方向向量（UE 坐标系）"""
+    import math
+    pitch_rad = math.radians(rot.pitch)
+    yaw_rad = math.radians(rot.yaw)
+    roll_rad = math.radians(rot.roll)
+    # UE: X=Forward, Y=Right, Z=Up
+    cp = math.cos(pitch_rad)
+    sp = math.sin(pitch_rad)
+    cy = math.cos(yaw_rad)
+    sy = math.sin(yaw_rad)
+    forward = (cp * cy, cp * sy, sp)
+    right = (sy, -cy, 0)  # 简化（忽略 roll）
+    up = (-sp * cy, -sp * sy, cp)
+    return forward, right, up
+
+
+@ue_tool(
+    name="get_actors_in_view",
+    description="Get actors visible in the current editor viewport using frustum culling. "
+                "Returns actors within the camera's field of view, sorted by distance. "
+                "Use 'fov' to override FOV (default 90), 'max_distance' to limit range, "
+                "'class_filter' to narrow by class. Great for understanding what the user sees.",
+    category="scene",
+    risk_level="low",
+)
+def get_actors_in_view(arguments: dict) -> str:
+    """获取当前视口可见的 Actor 列表（基于视锥体裁剪）"""
+    if unreal is None:
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
+
+    import math
+
+    fov = float(arguments.get("fov", 90.0))
+    max_distance = float(arguments.get("max_distance", 50000.0))
+    class_filter = arguments.get("class_filter", "")
+    limit = arguments.get("limit", 50)
+    include_transform = arguments.get("include_transform", True)
+
+    try:
+        # 获取视口相机信息
+        cam_info = unreal.EditorLevelLibrary.get_level_viewport_camera_info()
+        if cam_info is None:
+            return json.dumps({"success": False, "error": "无法获取视口相机信息"})
+
+        cam_loc, cam_rot = cam_info
+        forward, right, up = _rotation_to_vectors(cam_rot)
+
+        # 视锥体半角（水平用 FOV，垂直按 16:9 估算）
+        h_half_rad = math.radians(fov / 2.0)
+        v_half_rad = math.radians(fov / 2.0 * 9.0 / 16.0)
+
+        # 遍历所有 Actor
+        actors = unreal.EditorLevelLibrary.get_all_level_actors()
+        visible = []
+
+        for actor in actors:
+            # 跳过隐藏的 Actor
+            try:
+                if actor.is_hidden_ed():
+                    continue
+            except Exception:
+                pass
+
+            # 类过滤
+            cls_name = str(actor.get_class().get_name())
+            if class_filter and class_filter.lower() not in cls_name.lower():
+                continue
+
+            # 跳过 WorldSettings, GameMode 等非空间 Actor
+            if cls_name in ("WorldSettings", "GameModeBase", "GameStateBase",
+                            "PlayerStart", "DefaultPawn", "GameSession",
+                            "HUD", "PlayerState", "SpectatorPawn",
+                            "GameNetworkManager", "WorldPartitionMiniMap",
+                            "WorldDataLayers", "LevelScriptActor"):
+                continue
+
+            actor_loc = actor.get_actor_location()
+            in_view, dist = _is_in_view_frustum(
+                actor_loc, cam_loc, forward, right, up,
+                h_half_rad, v_half_rad, max_distance
+            )
+            if in_view:
+                entry = _prune_actor(actor, include_transform)
+                entry["distance"] = round(dist, 1)
+                visible.append(entry)
+
+        # 按距离排序
+        visible.sort(key=lambda x: x["distance"])
+        total_visible = len(visible)
+        visible = visible[:limit]
+
+        result = {
+            "success": True,
+            "count": len(visible),
+            "camera": {
+                "location": {"x": round(cam_loc.x, 2), "y": round(cam_loc.y, 2), "z": round(cam_loc.z, 2)},
+                "rotation": {"pitch": round(cam_rot.pitch, 2), "yaw": round(cam_rot.yaw, 2), "roll": round(cam_rot.roll, 2)},
+                "fov": fov,
+            },
+            "actors": visible,
+        }
+        if total_visible > limit:
+            result["truncated"] = True
+            result["total_visible"] = total_visible
+
+        return json.dumps(result, default=str)
+
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)})
+
+
+@ue_tool(
+    name="get_spatial_context",
+    description="Get spatial context around a specific actor or location. "
+                "Returns nearby actors with relative direction (N/S/E/W/Above/Below) "
+                "and distance. Helps AI understand scene layout for editing decisions. "
+                "Provide 'actor_name' or 'location' {x,y,z}. Use 'radius' to set search range.",
+    category="scene",
+    risk_level="low",
+)
+def get_spatial_context(arguments: dict) -> str:
+    """获取指定 Actor 或位置周围的空间上下文"""
+    if unreal is None:
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
+
+    import math
+
+    actor_name = arguments.get("actor_name", "")
+    location = arguments.get("location", None)
+    radius = float(arguments.get("radius", 5000.0))
+    limit = arguments.get("limit", 30)
+
+    try:
+        # 确定中心点
+        if actor_name:
+            center_actor = _find_actor_by_name(actor_name)
+            if center_actor is None:
+                return json.dumps({"success": False, "error": f"未找到 Actor: {actor_name}"})
+            center = center_actor.get_actor_location()
+            center_label = str(center_actor.get_actor_label())
+        elif location:
+            center = unreal.Vector(
+                float(location.get("x", 0)),
+                float(location.get("y", 0)),
+                float(location.get("z", 0)),
+            )
+            center_label = f"({center.x:.0f}, {center.y:.0f}, {center.z:.0f})"
+        else:
+            return json.dumps({"success": False, "error": "需要提供 actor_name 或 location"})
+
+        # 遍历所有 Actor 找附近的
+        actors = unreal.EditorLevelLibrary.get_all_level_actors()
+        nearby = []
+
+        for actor in actors:
+            cls_name = str(actor.get_class().get_name())
+            # 跳过非空间 Actor
+            if cls_name in ("WorldSettings", "GameModeBase", "GameStateBase",
+                            "GameSession", "HUD", "PlayerState",
+                            "GameNetworkManager", "WorldPartitionMiniMap",
+                            "WorldDataLayers", "LevelScriptActor"):
+                continue
+
+            # 跳过自身
+            if actor_name and (str(actor.get_name()) == actor_name or
+                               str(actor.get_actor_label()) == actor_name):
+                continue
+
+            loc = actor.get_actor_location()
+            dx = loc.x - center.x
+            dy = loc.y - center.y
+            dz = loc.z - center.z
+            dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+
+            if dist > radius:
+                continue
+
+            # 计算相对方位
+            direction = _calc_direction(dx, dy, dz)
+
+            entry = {
+                "name": str(actor.get_name()),
+                "label": str(actor.get_actor_label()),
+                "class": cls_name,
+                "distance": round(dist, 1),
+                "direction": direction,
+                "relative_offset": {
+                    "x": round(dx, 1),
+                    "y": round(dy, 1),
+                    "z": round(dz, 1),
+                },
+            }
+            nearby.append(entry)
+
+        # 按距离排序
+        nearby.sort(key=lambda x: x["distance"])
+        total_nearby = len(nearby)
+        nearby = nearby[:limit]
+
+        result = {
+            "success": True,
+            "center": center_label,
+            "center_location": {
+                "x": round(center.x, 2),
+                "y": round(center.y, 2),
+                "z": round(center.z, 2),
+            },
+            "radius": radius,
+            "count": len(nearby),
+            "nearby_actors": nearby,
+        }
+        if total_nearby > limit:
+            result["truncated"] = True
+            result["total_nearby"] = total_nearby
+
+        return json.dumps(result, default=str)
+
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)})
+
+
+def _calc_direction(dx, dy, dz) -> str:
+    """根据相对偏移计算方位描述（UE坐标: X=前/北, Y=右/东, Z=上）"""
+    import math
+    h_dist = math.sqrt(dx * dx + dy * dy)
+    parts = []
+
+    # 垂直方位
+    if abs(dz) > h_dist * 0.5:
+        if dz > 0:
+            parts.append("上方")
+        else:
+            parts.append("下方")
+
+    # 水平方位（UE: X+ = 北/前, Y+ = 东/右）
+    if h_dist > 1.0:
+        angle = math.degrees(math.atan2(dy, dx))  # -180 ~ 180
+        if -22.5 <= angle < 22.5:
+            parts.append("北")
+        elif 22.5 <= angle < 67.5:
+            parts.append("东北")
+        elif 67.5 <= angle < 112.5:
+            parts.append("东")
+        elif 112.5 <= angle < 157.5:
+            parts.append("东南")
+        elif angle >= 157.5 or angle < -157.5:
+            parts.append("南")
+        elif -157.5 <= angle < -112.5:
+            parts.append("西南")
+        elif -112.5 <= angle < -67.5:
+            parts.append("西")
+        elif -67.5 <= angle < -22.5:
+            parts.append("西北")
+
+    return " ".join(parts) if parts else "同位置"
+
+
+# ============================================================================
 # Scene Skills - 创建 / 修改 / 删除
 # ============================================================================
 
@@ -235,7 +524,7 @@ def get_actor_details(arguments: dict) -> str:
 def spawn_actor(arguments: dict) -> str:
     """在关卡中生成新 Actor"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     asset_path = arguments.get("asset_path", "")
     actor_class = arguments.get("actor_class", "")
@@ -247,7 +536,7 @@ def spawn_actor(arguments: dict) -> str:
     if not asset_path and not actor_class:
         return json.dumps({
             "success": False,
-            "error": "Either asset_path or actor_class is required"
+            "error": "需要提供 asset_path 或 actor_class"
         })
 
     try:
@@ -261,7 +550,7 @@ def spawn_actor(arguments: dict) -> str:
                 if asset is None:
                     return json.dumps({
                         "success": False,
-                        "error": f"Asset not found: {asset_path}"
+                        "error": f"未找到资产: {asset_path}"
                     })
                 actor = unreal.EditorLevelLibrary.spawn_actor_from_object(
                     asset, loc, rot
@@ -272,7 +561,7 @@ def spawn_actor(arguments: dict) -> str:
                 if cls is None:
                     return json.dumps({
                         "success": False,
-                        "error": f"Actor class not found: {actor_class}"
+                        "error": f"未找到 Actor 类: {actor_class}"
                     })
                 actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
                     cls, loc, rot
@@ -281,7 +570,7 @@ def spawn_actor(arguments: dict) -> str:
             if actor is None:
                 return json.dumps({
                     "success": False,
-                    "error": "Failed to spawn actor (returned None)"
+                    "error": "生成 Actor 失败（返回 None）"
                 })
 
             # 设置缩放
@@ -312,13 +601,13 @@ def spawn_actor(arguments: dict) -> str:
 def delete_actors(arguments: dict) -> str:
     """删除指定名称的 Actor"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     actor_names = arguments.get("actor_names", [])
     if isinstance(actor_names, str):
         actor_names = [actor_names]
     if not actor_names:
-        return json.dumps({"success": False, "error": "actor_names is required (string or list)"})
+        return json.dumps({"success": False, "error": "需要提供 actor_names 参数（字符串或列表）"})
 
     try:
         deleted = []
@@ -359,11 +648,11 @@ def delete_actors(arguments: dict) -> str:
 def set_actor_transform(arguments: dict) -> str:
     """设置 Actor 的变换（位置、旋转、缩放）"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     actor_name = arguments.get("actor_name", "")
     if not actor_name:
-        return json.dumps({"success": False, "error": "actor_name is required"})
+        return json.dumps({"success": False, "error": "需要提供 actor_name 参数"})
 
     location = arguments.get("location", None)
     rotation = arguments.get("rotation", None)
@@ -372,13 +661,13 @@ def set_actor_transform(arguments: dict) -> str:
     if location is None and rotation is None and scale is None:
         return json.dumps({
             "success": False,
-            "error": "At least one of location, rotation, or scale is required"
+            "error": "至少需要提供 location、rotation 或 scale 之一"
         })
 
     try:
         actor = _find_actor_by_name(actor_name)
         if actor is None:
-            return json.dumps({"success": False, "error": f"Actor not found: {actor_name}"})
+            return json.dumps({"success": False, "error": f"未找到 Actor: {actor_name}"})
 
         with unreal.ScopedEditorTransaction("Set Actor Transform via AI"):
             if location is not None:
@@ -408,19 +697,19 @@ def set_actor_transform(arguments: dict) -> str:
 def rename_actor(arguments: dict) -> str:
     """重命名 Actor 的显示标签"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     actor_name = arguments.get("actor_name", "")
     new_label = arguments.get("new_label", "")
     if not actor_name:
-        return json.dumps({"success": False, "error": "actor_name is required"})
+        return json.dumps({"success": False, "error": "需要提供 actor_name 参数"})
     if not new_label:
-        return json.dumps({"success": False, "error": "new_label is required"})
+        return json.dumps({"success": False, "error": "需要提供 new_label 参数"})
 
     try:
         actor = _find_actor_by_name(actor_name)
         if actor is None:
-            return json.dumps({"success": False, "error": f"Actor not found: {actor_name}"})
+            return json.dumps({"success": False, "error": f"未找到 Actor: {actor_name}"})
 
         old_label = str(actor.get_actor_label())
         with unreal.ScopedEditorTransaction("Rename Actor via AI"):
@@ -448,17 +737,17 @@ def rename_actor(arguments: dict) -> str:
 def focus_on_actor(arguments: dict) -> str:
     """将视口聚焦到指定 Actor"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     actor_name = arguments.get("actor_name", "")
     select = arguments.get("select", True)
     if not actor_name:
-        return json.dumps({"success": False, "error": "actor_name is required"})
+        return json.dumps({"success": False, "error": "需要提供 actor_name 参数"})
 
     try:
         actor = _find_actor_by_name(actor_name)
         if actor is None:
-            return json.dumps({"success": False, "error": f"Actor not found: {actor_name}"})
+            return json.dumps({"success": False, "error": f"未找到 Actor: {actor_name}"})
 
         if select:
             # 选中该 Actor
@@ -487,13 +776,13 @@ def focus_on_actor(arguments: dict) -> str:
 def select_actors(arguments: dict) -> str:
     """选择指定名称的 Actor"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     actor_names = arguments.get("actor_names", [])
     if isinstance(actor_names, str):
         actor_names = [actor_names]
     if not actor_names:
-        return json.dumps({"success": False, "error": "actor_names is required"})
+        return json.dumps({"success": False, "error": "需要提供 actor_names 参数"})
 
     try:
         found = []
@@ -532,13 +821,13 @@ def select_actors(arguments: dict) -> str:
 def duplicate_actors(arguments: dict) -> str:
     """复制指定的 Actor"""
     if unreal is None:
-        return json.dumps({"success": False, "error": "Not running in Unreal Engine"})
+        return json.dumps({"success": False, "error": "未在 Unreal Engine 中运行"})
 
     actor_names = arguments.get("actor_names", [])
     if isinstance(actor_names, str):
         actor_names = [actor_names]
     if not actor_names:
-        return json.dumps({"success": False, "error": "actor_names is required"})
+        return json.dumps({"success": False, "error": "需要提供 actor_names 参数"})
 
     offset = arguments.get("offset", {"x": 100, "y": 0, "z": 0})
 

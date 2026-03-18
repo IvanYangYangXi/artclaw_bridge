@@ -52,6 +52,8 @@ _CLIENT_VERSION = "0.1.0"
 # ---------------------------------------------------------------------------
 
 _bridge: Optional["OpenClawBridge"] = None
+# 当前活跃的 send_chat_async_to_file 请求 ID（用于防止被取消的旧请求写文件）
+_send_chat_async_to_file_current_id: Optional[str] = None
 
 
 def _load_config() -> dict:
@@ -96,6 +98,8 @@ class OpenClawBridge:
         self.on_ai_thinking: Optional[Callable[[str, str], None]] = None  # (state, thinking_text)
         # 当前活跃的 chat runId（用于过滤事件，只处理属于当前聊天的事件）
         self._active_run_id: Optional[str] = None
+        # 取消信号: 由 cancel_current() 设置，_wait_for_final 检测到后立即返回
+        self._cancel_event: Optional[asyncio.Event] = None
 
     # ------------------------------------------------------------------
     # 公开 API (同步, 供 C++ 调用)
@@ -152,13 +156,13 @@ class OpenClawBridge:
     def is_connected(self) -> bool:
         return self._connected
 
-    def send_message(self, message: str, timeout: float = 300.0) -> str:
+    def send_message(self, message: str, timeout: float = 1800.0) -> str:
         """
         发送消息给 AI 并等待完整回复 (同步阻塞)。
 
         Args:
             message: 用户消息
-            timeout: 超时秒数
+            timeout: 超时秒数 (默认 1800s = 30 分钟，支持复杂任务)
 
         Returns:
             AI 的完整回复文本，出错时返回 "[Error] ..." 格式
@@ -197,6 +201,20 @@ class OpenClawBridge:
                 callback(result)
 
         threading.Thread(target=_worker, daemon=True, name="OCBridge-Chat").start()
+
+    def cancel_current(self):
+        """
+        取消当前正在进行的 AI 请求。
+
+        设置 _cancel_event 让 _wait_for_final 立即返回，
+        同时清理 _active_run_id 使后续事件被忽略。
+        供 C++ /cancel 命令调用。
+        """
+        if self._cancel_event and self._loop:
+            # 必须在 asyncio 线程中设置 Event
+            self._loop.call_soon_threadsafe(self._cancel_event.set)
+            UELogger.info("OpenClaw Bridge: cancel requested")
+        self._active_run_id = None
 
     # ------------------------------------------------------------------
     # 内部: asyncio 事件循环
@@ -557,6 +575,9 @@ class OpenClawBridge:
         chat.send 需要 sessionKey。
         对于 UE Editor 通道，使用 agent/ue-editor 格式。
         """
+        # 重置取消信号（每次新请求前清除）
+        self._cancel_event = asyncio.Event()
+
         if not self._session_key:
             # 构建 session key: {agentId}/ue-editor
             self._session_key = f"{self.agent_id}/ue-editor"
@@ -592,7 +613,7 @@ class OpenClawBridge:
                         f"OpenClaw chat started (runId={run_id[:8]}...), "
                         f"waiting for AI response..."
                     )
-                    return await self._wait_for_final(timeout=300.0)
+                    return await self._wait_for_final(timeout=1800.0)
 
                 # 同步返回 (某些场景下 Gateway 直接在 res 帧返回完整结果)
                 msg = result.get("message", "")
@@ -607,8 +628,8 @@ class OpenClawBridge:
             UELogger.mcp_error(f"OpenClaw chat.send error: {error_str}")
             return f"[Error] {error_str}"
 
-    async def _wait_for_final(self, timeout: float = 120.0) -> str:
-        """等待 chat final 事件"""
+    async def _wait_for_final(self, timeout: float = 1800.0) -> str:
+        """等待 chat final 事件，支持外部取消"""
         # 注意: OpenClaw 的 delta 事件中 message.content[0].text 是
         # **到目前为止的累积全文**，而不是增量片段。
         # 所以我们用 latest_text 保留最新一次的完整文本即可。
@@ -638,12 +659,49 @@ class OpenClawBridge:
         self.on_ai_message = _capture
 
         try:
-            await asyncio.wait_for(final_event.wait(), timeout=timeout)
-            return final_text[0]
+            # 同时等待 final_event 和 _cancel_event，任一触发即返回
+            cancel_evt = self._cancel_event
+
+            async def _wait_final():
+                await final_event.wait()
+
+            async def _wait_cancel():
+                if cancel_evt:
+                    await cancel_evt.wait()
+                else:
+                    # 没有 cancel event，永远不会触发
+                    await asyncio.Event().wait()
+
+            done, pending = await asyncio.wait(
+                [asyncio.ensure_future(_wait_final()),
+                 asyncio.ensure_future(_wait_cancel())],
+                timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            # 取消未完成的任务
+            for task in pending:
+                task.cancel()
+
+            # 判断是 cancel 还是 final
+            if cancel_evt and cancel_evt.is_set():
+                UELogger.info("OpenClaw Bridge: request cancelled by user")
+                # 返回已收到的部分文本（如有）
+                if latest_text[0]:
+                    return latest_text[0] + "\n\n[已取消]"
+                return "[已取消] AI 请求已被用户取消"
+
+            if final_event.is_set():
+                return final_text[0]
+
+            # timeout
+            if latest_text[0]:
+                return latest_text[0] + "\n\n[响应超时]"
+            return "[错误] AI 响应超时"
         except asyncio.TimeoutError:
             if latest_text[0]:
-                return latest_text[0] + "\n\n[Response truncated - timeout]"
-            return "[Error] AI response timed out"
+                return latest_text[0] + "\n\n[响应超时]"
+            return "[错误] AI 响应超时"
         finally:
             self.on_ai_message = original_handler
             self._active_run_id = None  # 清除，允许下次聊天
@@ -749,9 +807,15 @@ def send_chat_async_to_file(message: str, output_file: str):
         message: 用户消息
         output_file: 响应写入的文件路径
     """
-    global _bridge
+    global _bridge, _send_chat_async_to_file_current_id
     if not _bridge:
         init_bridge()
+    if _bridge:
+        _bridge.cancel_current()
+
+    # 为每次请求分配唯一 ID，用于防止被取消的旧请求写文件
+    request_id = str(uuid.uuid4())
+    _send_chat_async_to_file_current_id = request_id
 
     # 流式文件：与 output_file 同目录，后缀改为 _stream.jsonl
     stream_file = output_file.replace(".txt", "_stream.jsonl")
@@ -764,6 +828,9 @@ def send_chat_async_to_file(message: str, output_file: str):
 
     def _write_stream_event(event_type: str, state: str, text: str):
         """追写一行 JSON 到流式文件"""
+        # 如果请求已被新请求取代，不再写流式文件
+        if _send_chat_async_to_file_current_id != request_id:
+            return
         try:
             import json as _json
             line = _json.dumps({
@@ -783,6 +850,10 @@ def send_chat_async_to_file(message: str, output_file: str):
         _write_stream_event("delta", state, text)
 
     def _on_result(result: str):
+        # 如果请求已被新请求取代，不写最终结果文件
+        if _send_chat_async_to_file_current_id != request_id:
+            UELogger.info(f"OpenClaw Bridge: skipping stale response write (request superseded)")
+            return
         # 写入最终结果（保持原有行为）
         try:
             with open(output_file, "w", encoding="utf-8") as f:
@@ -837,6 +908,17 @@ def disconnect():
 def is_connected() -> bool:
     """检查连接状态"""
     return _bridge is not None and _bridge.is_connected()
+
+
+def cancel_current_request():
+    """
+    取消当前正在进行的 AI 请求。
+
+    供 C++ /cancel 命令调用:
+        from openclaw_bridge import cancel_current_request; cancel_current_request()
+    """
+    if _bridge:
+        _bridge.cancel_current()
 
 
 # ---------------------------------------------------------------------------
