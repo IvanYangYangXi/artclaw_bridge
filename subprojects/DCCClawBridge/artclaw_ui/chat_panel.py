@@ -4,29 +4,42 @@ chat_panel.py - ArtClaw Chat Panel (Qt)
 
 通用聊天面板，Maya / Max 共享。
 通过 DCC adapter 适配各软件的主窗口和线程调度。
+
+功能:
+  - 消息列表（流式逐字显示，累积文本覆盖）
+  - 输入框（Enter 发送，Shift+Enter 换行）
+  - / 命令补全下拉
+  - 快捷输入面板（可配置常用短语）
+  - 连接状态指示
+  - Markdown 基础渲染（代码块 + 加粗）
 """
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Optional
+import os
+from typing import List, Optional
 
 try:
     from PySide2.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
-        QPushButton, QLabel, QScrollArea, QFrame, QSplitter,
-        QApplication,
+        QPushButton, QLabel, QFrame, QListWidget, QListWidgetItem,
+        QSizePolicy, QApplication, QToolButton, QMenu, QAction,
+        QFlowLayout if False else QWidget,  # QFlowLayout 不存在，用 workaround
     )
-    from PySide2.QtCore import Qt, Slot, QTimer
-    from PySide2.QtGui import QFont, QColor, QTextCursor
+    from PySide2.QtCore import Qt, Slot, QTimer, QSize, Signal
+    from PySide2.QtGui import QFont, QTextCursor, QKeyEvent
     HAS_QT = True
 except ImportError:
     HAS_QT = False
 
 logger = logging.getLogger("artclaw.ui")
 
-# 全局面板引用（防止重复创建）
 _panel_instance: Optional["ChatPanel"] = None
+
+# 最大消息数（参考 UE 的 MaxMessages = 500）
+MAX_MESSAGES = 500
 
 
 class ChatPanel(QWidget):
@@ -36,6 +49,10 @@ class ChatPanel(QWidget):
         super().__init__(parent)
         self._adapter = adapter
         self._bridge_manager = None
+        self._is_streaming = False
+        self._streaming_text = ""  # 当前流式累积文本
+        self._message_count = 0
+        self._quick_inputs: List[dict] = []
 
         self.setWindowTitle("ArtClaw Chat")
         self.setMinimumSize(400, 500)
@@ -44,6 +61,7 @@ class ChatPanel(QWidget):
 
         self._setup_ui()
         self._setup_bridge()
+        self._load_quick_inputs()
 
     def _setup_ui(self):
         """构建界面"""
@@ -62,9 +80,14 @@ class ChatPanel(QWidget):
         self._connect_btn.setFixedWidth(60)
         self._connect_btn.clicked.connect(self._on_connect_clicked)
 
+        self._new_btn = QPushButton("新对话")
+        self._new_btn.setFixedWidth(60)
+        self._new_btn.clicked.connect(self._on_new_chat_clicked)
+
         status_layout.addWidget(self._status_dot)
         status_layout.addWidget(self._status_label)
         status_layout.addStretch()
+        status_layout.addWidget(self._new_btn)
         status_layout.addWidget(self._connect_btn)
         layout.addLayout(status_layout)
 
@@ -79,10 +102,26 @@ class ChatPanel(QWidget):
         self._message_area.setReadOnly(True)
         self._message_area.setStyleSheet(
             "QTextEdit { background: #2B2B2B; color: #E0E0E0; border: none; "
-            "font-size: 13px; padding: 8px; }"
+            "font-size: 13px; padding: 8px; font-family: 'Consolas', 'Microsoft YaHei'; }"
         )
         self._message_area.setPlaceholderText("对话消息将显示在这里...")
         layout.addWidget(self._message_area, stretch=1)
+
+        # --- 快捷输入区 ---
+        self._quick_input_layout = QHBoxLayout()
+        self._quick_input_layout.setSpacing(4)
+        layout.addLayout(self._quick_input_layout)
+
+        # --- / 命令补全列表 ---
+        self._slash_list = QListWidget()
+        self._slash_list.setMaximumHeight(150)
+        self._slash_list.setStyleSheet(
+            "QListWidget { background: #3C3C3C; color: #E0E0E0; border: 1px solid #555; "
+            "font-size: 12px; } QListWidget::item:selected { background: #5285A6; }"
+        )
+        self._slash_list.hide()
+        self._slash_list.itemClicked.connect(self._on_slash_item_clicked)
+        layout.addWidget(self._slash_list)
 
         # --- 输入区域 ---
         input_layout = QHBoxLayout()
@@ -92,17 +131,20 @@ class ChatPanel(QWidget):
         self._input_box.setPlaceholderText("输入消息... (Enter 发送, Shift+Enter 换行)")
         self._input_box.setStyleSheet(
             "QTextEdit { background: #3C3C3C; color: #E0E0E0; border: 1px solid #555; "
-            "border-radius: 4px; font-size: 13px; padding: 6px; }"
+            "border-radius: 4px; font-size: 13px; padding: 6px; "
+            "font-family: 'Consolas', 'Microsoft YaHei'; }"
         )
+        self._input_box.textChanged.connect(self._on_input_changed)
         self._input_box.installEventFilter(self)
 
         self._send_btn = QPushButton("发送")
         self._send_btn.setFixedSize(60, 36)
         self._send_btn.setStyleSheet(
             "QPushButton { background: #5285A6; color: white; border: none; "
-            "border-radius: 4px; font-size: 12px; }"
+            "border-radius: 4px; font-size: 12px; font-weight: bold; }"
             "QPushButton:hover { background: #6295B6; }"
             "QPushButton:pressed { background: #4275A6; }"
+            "QPushButton:disabled { background: #555; color: #888; }"
         )
         self._send_btn.clicked.connect(self._on_send_clicked)
 
@@ -111,9 +153,19 @@ class ChatPanel(QWidget):
         layout.addLayout(input_layout)
 
         # 整体暗色主题
-        self.setStyleSheet(
-            "ChatPanel { background: #333; }"
-        )
+        self.setStyleSheet("ChatPanel { background: #333; }")
+
+        # Slash 命令定义
+        self._slash_commands = [
+            ("/connect", "连接 OpenClaw Gateway"),
+            ("/disconnect", "断开连接"),
+            ("/status", "查看连接状态"),
+            ("/clear", "清空聊天记录"),
+            ("/cancel", "取消当前 AI 请求"),
+            ("/diagnose", "运行连接诊断"),
+            ("/new", "开始新对话"),
+            ("/help", "显示帮助"),
+        ]
 
     def _setup_bridge(self):
         """初始化 Bridge 连接"""
@@ -122,38 +174,147 @@ class ChatPanel(QWidget):
             self._bridge_manager = DCCBridgeManager.instance()
 
             if self._bridge_manager.signals:
-                self._bridge_manager.signals.connection_changed.connect(
-                    self._on_connection_changed
-                )
-                self._bridge_manager.signals.ai_message.connect(
-                    self._on_ai_message
-                )
-                self._bridge_manager.signals.response_complete.connect(
-                    self._on_response_complete
-                )
+                self._bridge_manager.signals.connection_changed.connect(self._on_connection_changed)
+                self._bridge_manager.signals.ai_message.connect(self._on_ai_message)
+                self._bridge_manager.signals.response_complete.connect(self._on_response_complete)
 
-            # 更新状态
             if self._bridge_manager.is_connected():
                 self._update_status(True)
-
         except Exception as e:
             logger.warning(f"Bridge setup failed: {e}")
+
+    # --- 快捷输入 ---
+
+    def _get_quick_input_path(self) -> str:
+        try:
+            from core.config import get_data_dir
+            dcc = self._adapter.get_software_name() if self._adapter else "dcc"
+            ver = self._adapter.get_software_version() if self._adapter else ""
+            return os.path.join(get_data_dir(dcc, ver), "quick_inputs.json")
+        except Exception:
+            return ""
+
+    def _load_quick_inputs(self):
+        path = self._get_quick_input_path()
+        if path and os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    self._quick_inputs = json.load(f)
+            except Exception:
+                self._quick_inputs = []
+        else:
+            self._quick_inputs = [
+                {"name": "选中信息", "content": "描述一下我当前选中的对象"},
+                {"name": "场景概览", "content": "分析一下当前场景的结构"},
+                {"name": "帮我优化", "content": "帮我优化选中对象的拓扑"},
+            ]
+
+        self._rebuild_quick_inputs()
+
+    def _rebuild_quick_inputs(self):
+        # 清空现有按钮
+        while self._quick_input_layout.count():
+            item = self._quick_input_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        for qi in self._quick_inputs:
+            btn = QPushButton(qi["name"])
+            btn.setStyleSheet(
+                "QPushButton { background: #4A4A4A; color: #CCC; border: 1px solid #555; "
+                "border-radius: 3px; padding: 2px 8px; font-size: 11px; }"
+                "QPushButton:hover { background: #5A5A5A; color: white; }"
+            )
+            btn.setFixedHeight(24)
+            content = qi["content"]
+            btn.clicked.connect(lambda checked, c=content: self._fill_input(c))
+            self._quick_input_layout.addWidget(btn)
+
+        self._quick_input_layout.addStretch()
+
+    def _fill_input(self, text: str):
+        self._input_box.setPlainText(text)
+        self._input_box.setFocus()
 
     # --- 事件处理 ---
 
     def eventFilter(self, obj, event):
-        """拦截输入框的 Enter 键"""
         if obj is self._input_box and hasattr(event, "key"):
             from PySide2.QtCore import QEvent
             if event.type() == QEvent.KeyPress:
-                if event.key() == Qt.Key_Return and not event.modifiers() & Qt.ShiftModifier:
+                key = event.key()
+                mods = event.modifiers()
+
+                # Enter 发送（无 Shift）
+                if key in (Qt.Key_Return, Qt.Key_Enter) and not (mods & Qt.ShiftModifier):
+                    # 如果 slash 列表可见，选择当前项
+                    if self._slash_list.isVisible() and self._slash_list.currentItem():
+                        self._on_slash_item_clicked(self._slash_list.currentItem())
+                        return True
                     self._on_send_clicked()
                     return True
+
+                # Tab 补全 slash 命令
+                if key == Qt.Key_Tab and self._slash_list.isVisible():
+                    current = self._slash_list.currentItem()
+                    if current:
+                        self._on_slash_item_clicked(current)
+                    return True
+
+                # Escape 关闭补全
+                if key == Qt.Key_Escape and self._slash_list.isVisible():
+                    self._slash_list.hide()
+                    return True
+
+                # 上下键导航补全列表
+                if self._slash_list.isVisible():
+                    if key == Qt.Key_Up:
+                        row = self._slash_list.currentRow() - 1
+                        if row >= 0:
+                            self._slash_list.setCurrentRow(row)
+                        return True
+                    elif key == Qt.Key_Down:
+                        row = self._slash_list.currentRow() + 1
+                        if row < self._slash_list.count():
+                            self._slash_list.setCurrentRow(row)
+                        return True
+
         return super().eventFilter(obj, event)
+
+    def _on_input_changed(self):
+        """输入框文本变化 — 更新 slash 命令补全"""
+        text = self._input_box.toPlainText()
+        if text.startswith("/") and "\n" not in text:
+            self._update_slash_suggestions(text)
+        else:
+            self._slash_list.hide()
+
+    def _update_slash_suggestions(self, text: str):
+        self._slash_list.clear()
+        prefix = text.lower()
+        matches = [(cmd, desc) for cmd, desc in self._slash_commands if cmd.startswith(prefix)]
+
+        if not matches:
+            self._slash_list.hide()
+            return
+
+        for cmd, desc in matches:
+            self._slash_list.addItem(f"{cmd}  —  {desc}")
+
+        self._slash_list.setCurrentRow(0)
+        self._slash_list.setFixedHeight(min(len(matches) * 24 + 4, 150))
+        self._slash_list.show()
+
+    def _on_slash_item_clicked(self, item):
+        text = item.text().split("  —  ")[0].strip()
+        self._input_box.setPlainText(text + " ")
+        cursor = self._input_box.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        self._input_box.setTextCursor(cursor)
+        self._slash_list.hide()
 
     @Slot()
     def _on_connect_clicked(self):
-        """连接/断开按钮"""
         if self._bridge_manager and self._bridge_manager.is_connected():
             self._bridge_manager.disconnect()
             self._add_system_message("已断开连接")
@@ -163,59 +324,67 @@ class ChatPanel(QWidget):
                 self._bridge_manager.connect()
 
     @Slot()
+    def _on_new_chat_clicked(self):
+        self._message_area.clear()
+        self._message_count = 0
+        if self._bridge_manager:
+            self._bridge_manager.reset_session()
+        self._add_system_message("新对话已开始")
+
+    @Slot()
     def _on_send_clicked(self):
-        """发送消息"""
         text = self._input_box.toPlainText().strip()
         if not text:
             return
 
         self._input_box.clear()
+        self._slash_list.hide()
 
-        # 检查本地命令
         if text.startswith("/"):
             self._handle_slash_command(text)
             return
 
-        # 显示用户消息
         self._add_message("user", text)
 
-        # 发送给 AI
         if self._bridge_manager:
             if not self._bridge_manager.is_connected():
-                self._add_system_message("未连接到 OpenClaw，正在尝试连接...")
+                self._add_system_message("未连接，正在尝试连接...")
                 self._bridge_manager.connect()
 
-            self._add_system_message("思考中...")
+            self._is_streaming = True
+            self._streaming_text = ""
+            self._send_btn.setEnabled(False)
+            self._send_btn.setText("等待...")
+            self._add_message("assistant", "思考中...")
             self._bridge_manager.send_message(text)
         else:
             self._add_system_message("[错误] Bridge 未初始化")
 
     @Slot(bool, str)
     def _on_connection_changed(self, connected: bool, detail: str):
-        """连接状态变更"""
         self._update_status(connected)
         if connected:
             self._add_system_message("已连接到 OpenClaw Gateway")
-        else:
-            if detail and detail != "shutdown":
-                self._add_system_message(f"连接断开: {detail}")
+        elif detail and detail not in ("shutdown", ""):
+            self._add_system_message(f"连接断开: {detail}")
 
     @Slot(str, str)
     def _on_ai_message(self, state: str, text: str):
-        """AI 流式消息"""
-        if state == "delta":
-            self._update_streaming_message(text)
+        """AI 流式消息（delta text 是累积全文，直接覆盖）"""
+        if state == "delta" and self._is_streaming:
+            self._streaming_text = text
+            self._update_last_message("assistant", text)
 
     @Slot(str)
     def _on_response_complete(self, result: str):
-        """AI 响应完成"""
-        # 移除 "思考中..." 并显示最终回复
-        self._finalize_streaming_message(result)
+        self._is_streaming = False
+        self._send_btn.setEnabled(True)
+        self._send_btn.setText("发送")
+        self._update_last_message("assistant", result)
 
-    # --- UI 辅助方法 ---
+    # --- UI 辅助 ---
 
     def _update_status(self, connected: bool):
-        """更新状态指示"""
         if connected:
             self._status_dot.setStyleSheet("color: #4CAF50; font-size: 14px;")
             self._status_label.setText("已连接")
@@ -228,51 +397,71 @@ class ChatPanel(QWidget):
             self._connect_btn.setText("连接")
 
     def _add_message(self, sender: str, content: str):
-        """添加消息到消息区域"""
+        """添加消息"""
+        self._message_count += 1
+
+        # 限制消息数
+        if self._message_count > MAX_MESSAGES:
+            cursor = self._message_area.textCursor()
+            cursor.movePosition(QTextCursor.Start)
+            cursor.movePosition(QTextCursor.Down, QTextCursor.KeepAnchor, 3)
+            cursor.removeSelectedText()
+            self._message_count -= 1
+
+        color, label = self._get_sender_style(sender)
+        html = self._format_message(label, color, content)
+
         cursor = self._message_area.textCursor()
         cursor.movePosition(QTextCursor.End)
-
-        if sender == "user":
-            color = "#7CB3F2"
-            label = "你"
-        elif sender == "assistant":
-            color = "#C0C0C0"
-            label = "AI"
-        else:
-            color = "#888"
-            label = "系统"
-
-        html = (
-            f'<div style="margin: 4px 0;">'
-            f'<span style="color: {color}; font-weight: bold;">{label}:</span> '
-            f'<span style="color: #E0E0E0;">{_escape_html(content)}</span>'
-            f'</div>'
-        )
-
         cursor.insertHtml(html)
         cursor.insertBlock()
         self._message_area.setTextCursor(cursor)
         self._message_area.ensureCursorVisible()
 
+    def _update_last_message(self, sender: str, content: str):
+        """更新最后一条消息（流式覆盖）"""
+        # 移除最后一个 block 并重新写入
+        cursor = self._message_area.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        cursor.movePosition(QTextCursor.StartOfBlock, QTextCursor.KeepAnchor)
+        # 向上再选一行（消息 + 空行）
+        cursor.movePosition(QTextCursor.PreviousBlock, QTextCursor.KeepAnchor)
+        cursor.movePosition(QTextCursor.StartOfBlock, QTextCursor.KeepAnchor)
+        cursor.removeSelectedText()
+        cursor.deletePreviousChar()  # 移除多余换行
+
+        color, label = self._get_sender_style(sender)
+        html = self._format_message(label, color, content)
+        cursor.insertHtml(html)
+        cursor.insertBlock()
+        self._message_area.setTextCursor(cursor)
+        self._message_area.ensureCursorVisible()
+
+    def _get_sender_style(self, sender: str):
+        if sender == "user":
+            return "#7CB3F2", "你"
+        elif sender == "assistant":
+            return "#C0C0C0", "AI"
+        else:
+            return "#888", "系统"
+
+    def _format_message(self, label: str, color: str, content: str) -> str:
+        """格式化消息 HTML，支持基础 Markdown"""
+        # 处理代码块
+        formatted = _render_markdown(content)
+        return (
+            f'<div style="margin: 4px 0;">'
+            f'<span style="color: {color}; font-weight: bold;">{label}:</span> '
+            f'<span style="color: #E0E0E0;">{formatted}</span>'
+            f'</div>'
+        )
+
     def _add_system_message(self, content: str):
-        """添加系统消息"""
         self._add_message("system", content)
 
-    def _update_streaming_message(self, text: str):
-        """更新流式消息（累积文本）"""
-        # 简化实现：直接替换最后一条消息
-        # TODO: 更精细的流式更新
-        pass
-
-    def _finalize_streaming_message(self, text: str):
-        """完成流式消息，显示最终结果"""
-        self._add_message("assistant", text)
-
     def _handle_slash_command(self, command_text: str):
-        """处理 / 命令"""
         parts = command_text.split(maxsplit=1)
         cmd = parts[0].lower()
-        args = parts[1] if len(parts) > 1 else ""
 
         if cmd == "/connect":
             self._on_connect_clicked()
@@ -283,69 +472,125 @@ class ChatPanel(QWidget):
         elif cmd == "/status":
             connected = self._bridge_manager.is_connected() if self._bridge_manager else False
             status = "已连接" if connected else "未连接"
-            self._add_system_message(f"连接状态: {status}")
+            lines = [f"连接状态: {status}"]
             if self._adapter:
-                info = f"软件: {self._adapter.get_software_name()} {self._adapter.get_software_version()}"
-                self._add_system_message(info)
+                lines.append(f"软件: {self._adapter.get_software_name()} {self._adapter.get_software_version()}")
+            try:
+                from core.mcp_server import get_mcp_server
+                server = get_mcp_server()
+                if server and server.is_running:
+                    lines.append(f"MCP Server: {server.server_address} ({len(server._tools)} 工具)")
+                else:
+                    lines.append("MCP Server: 未运行")
+            except Exception:
+                pass
+            self._add_system_message("\n".join(lines))
         elif cmd == "/clear":
             self._message_area.clear()
+            self._message_count = 0
         elif cmd == "/cancel":
             if self._bridge_manager:
                 self._bridge_manager.cancel()
+                self._is_streaming = False
+                self._send_btn.setEnabled(True)
+                self._send_btn.setText("发送")
                 self._add_system_message("已取消当前请求")
+        elif cmd == "/new":
+            self._on_new_chat_clicked()
         elif cmd == "/diagnose":
-            self._add_system_message("运行连接诊断...")
-            if self._bridge_manager:
-                report = self._bridge_manager.run_diagnostics()
-                self._add_system_message(report)
+            self._add_system_message("运行环境健康检查...")
+            try:
+                from core.health_check import run_health_check
+                report = run_health_check()
+            except ImportError:
+                if self._bridge_manager:
+                    report = self._bridge_manager.run_diagnostics()
+                else:
+                    report = "健康检查模块未找到"
+            self._add_system_message(report)
         elif cmd == "/help":
-            help_text = (
-                "可用命令:\n"
-                "  /connect    - 连接 OpenClaw\n"
-                "  /disconnect - 断开连接\n"
-                "  /status     - 查看状态\n"
-                "  /clear      - 清空聊天\n"
-                "  /cancel     - 取消等待\n"
-                "  /diagnose   - 连接诊断\n"
-                "  /help       - 显示帮助"
-            )
-            self._add_system_message(help_text)
+            lines = ["可用命令:"]
+            for slash_cmd, desc in self._slash_commands:
+                lines.append(f"  {slash_cmd:<14} {desc}")
+            self._add_system_message("\n".join(lines))
         else:
-            # 未知的 / 命令 → 发送给 AI
+            # 未知 / 命令 → 发送给 AI
             self._add_message("user", command_text)
             if self._bridge_manager:
                 self._bridge_manager.send_message(command_text)
 
     def closeEvent(self, event):
-        """窗口关闭时隐藏而不是销毁"""
         self.hide()
         event.ignore()
 
 
+# --- Markdown 渲染 ---
+
+def _render_markdown(text: str) -> str:
+    """基础 Markdown → HTML 渲染"""
+    lines = text.split("\n")
+    result = []
+    in_code_block = False
+    code_lines = []
+
+    for line in lines:
+        if line.strip().startswith("```"):
+            if in_code_block:
+                # 结束代码块
+                code_html = _escape_html("\n".join(code_lines))
+                result.append(
+                    f'<div style="background: #1E1E1E; padding: 6px 8px; '
+                    f'border-radius: 4px; margin: 4px 0; font-family: Consolas, monospace; '
+                    f'font-size: 12px; white-space: pre;">{code_html}</div>'
+                )
+                code_lines = []
+                in_code_block = False
+            else:
+                in_code_block = True
+        elif in_code_block:
+            code_lines.append(line)
+        else:
+            formatted = _escape_html(line)
+            # 行内代码
+            import re
+            formatted = re.sub(
+                r'`([^`]+)`',
+                r'<span style="background: #1E1E1E; padding: 1px 4px; border-radius: 2px; '
+                r'font-family: Consolas, monospace; font-size: 12px;">\1</span>',
+                formatted
+            )
+            # 加粗
+            formatted = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', formatted)
+            result.append(formatted)
+
+    # 未关闭的代码块
+    if in_code_block and code_lines:
+        code_html = _escape_html("\n".join(code_lines))
+        result.append(
+            f'<div style="background: #1E1E1E; padding: 6px 8px; '
+            f'border-radius: 4px; font-family: Consolas, monospace; '
+            f'font-size: 12px; white-space: pre;">{code_html}</div>'
+        )
+
+    return "<br>".join(result)
+
+
 def _escape_html(text: str) -> str:
-    """转义 HTML 特殊字符"""
     return (
         text.replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
-        .replace("\n", "<br>")
     )
 
 
-def show_chat_panel(parent=None, adapter=None) -> Optional[ChatPanel]:
-    """
-    显示 Chat Panel（单例模式）。
+# --- 公开接口 ---
 
-    Args:
-        parent: 父窗口（DCC 主窗口）
-        adapter: DCC adapter 实例
-    """
+def show_chat_panel(parent=None, adapter=None) -> Optional[ChatPanel]:
     if not HAS_QT:
-        logger.error("PySide2 not available — cannot show Chat Panel")
+        logger.error("PySide2 not available")
         return None
 
     global _panel_instance
-
     if _panel_instance is not None:
         _panel_instance.show()
         _panel_instance.raise_()
