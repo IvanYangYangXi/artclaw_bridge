@@ -8,6 +8,7 @@
 #include "Widgets/Views/SListView.h"
 #include "Containers/Ticker.h"
 
+class IAgentPlatformBridge;
 class UUEAgentSubsystem;
 class SScrollBox;
 class SMultiLineEditableTextBox;
@@ -162,6 +163,9 @@ private:
 	/** Subsystem */
 	TWeakObjectPtr<UUEAgentSubsystem> CachedSubsystem;
 	bool bCachedIsConnected = false;
+
+	/** AI 平台通信桥接 (当前: OpenClaw) */
+	TSharedPtr<IAgentPlatformBridge> PlatformBridge;
 
 	/** 状态栏折叠 */
 	bool bStatusExpanded = false;

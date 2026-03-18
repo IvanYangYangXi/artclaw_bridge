@@ -3,6 +3,8 @@
 #include "UEAgentDashboard.h"
 #include "UEAgentSubsystem.h"
 #include "UEAgentLocalization.h"
+#include "IAgentPlatformBridge.h"
+#include "OpenClawPlatformBridge.h"
 #include "Editor.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -50,6 +52,9 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		CachedSubsystem->OnConnectionStatusChangedNative.AddSP(
 			this, &SUEAgentDashboard::HandleConnectionStatusChanged);
 	}
+
+	// 创建平台通信桥接 (当前: OpenClaw)
+	PlatformBridge = MakeShared<FOpenClawPlatformBridge>();
 
 	// 初始化 Slash 快捷命令
 	InitSlashCommands();
@@ -693,12 +698,8 @@ FReply SUEAgentDashboard::OnNewChatClicked()
 	RebuildMessageList();
 	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("NewChatStarted")));
 
-	// 2) 重置 Python Bridge 的 session key
-	IPythonScriptPlugin::Get()->ExecPythonCommand(
-		TEXT("try:\n")
-		TEXT("    from openclaw_bridge import _bridge\n")
-		TEXT("    if _bridge: _bridge._session_key = ''\n")
-		TEXT("except: pass"));
+	// 2) 重置平台桥接的会话
+	PlatformBridge->ResetSession();
 
 	// 3) 发送 /new 给 AI（重置远端会话），非静默——显示 AI 的回复
 	SendToOpenClaw(TEXT("/new"));
@@ -953,9 +954,8 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 				PollTimerHandle.Reset();
 			}
 
-			// 通知 Python 端取消当前请求（释放 _wait_for_final 阻塞）
-			IPythonScriptPlugin::Get()->ExecPythonCommand(
-				TEXT("from openclaw_bridge import cancel_current_request; cancel_current_request()"));
+			// 通知平台取消当前请求
+			PlatformBridge->CancelCurrentRequest();
 
 			// 移除 "Thinking..." 或流式消息
 			while (Messages.Num() > 0)
@@ -1008,24 +1008,8 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 		FString StatusText = FString::Format(*FUEAgentL10n::GetStr(TEXT("StatusFormat")), FormatArgs);
 		AddMessage(TEXT("system"), StatusText);
 
-		// 检查 MCP Server + OpenClaw Bridge 状态
-		FString PythonCheck = TEXT(
-			"import socket\n"
-			"_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
-			"_s.settimeout(0.5)\n"
-			"mcp_ok = False\n"
-			"try:\n"
-			"    _s.connect(('127.0.0.1', 8080))\n"
-			"    mcp_ok = True\n"
-			"except: pass\n"
-			"finally: _s.close()\n"
-			"from openclaw_bridge import is_connected as _oc_connected\n"
-			"oc_ok = _oc_connected()\n"
-			"_mcp_s = 'OK' if mcp_ok else 'DOWN'\n"
-			"_oc_s = 'Connected' if oc_ok else 'Disconnected'\n"
-			"print(f'[LogUEAgent] Status: MCP Server={_mcp_s}, OpenClaw Bridge={_oc_s}')\n"
-		);
-		IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCheck);
+		// 检查 MCP Server + 平台桥接状态
+		PlatformBridge->QueryStatus();
 	}
 	else if (Command == TEXT("/help"))
 	{
@@ -1170,41 +1154,13 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 {
 	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("Connecting")));
 
-	// 检测 UE MCP Server 是否就绪（只检查，不重复启动；
-	// init_unreal.py 已通过 Slate tick 延迟启动 MCP，这里只需等待）
-	FString CheckMcp = TEXT(
-		"import socket\n"
-		"def _check_mcp_ready():\n"
-		"    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
-		"    s.settimeout(0.5)\n"
-		"    try:\n"
-		"        s.connect(('127.0.0.1', 8080))\n"
-		"        s.close()\n"
-		"        print('[LogUEAgent] MCP Server: OK')\n"
-		"    except:\n"
-		"        s.close()\n"
-		"        print('[LogUEAgent] MCP Server: not ready yet (init_unreal will start it)')\n"
-		"_check_mcp_ready()\n"
-	);
-	IPythonScriptPlugin::Get()->ExecPythonCommand(*CheckMcp);
-
-	// 连接 OpenClaw Bridge (Chat 通道) + 检查结果
+	// 通过平台桥接连接
 	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString StatusFile = TempDir / TEXT("_connect_status.txt");
 	IFileManager::Get().Delete(*StatusFile, false, false, true);
 
-	FString ConnectBridge = FString::Printf(
-		TEXT("import time\n"
-			 "from openclaw_bridge import connect, is_connected\n"
-			 "connect()\n"
-			 "time.sleep(1.5)\n"
-			 "status = 'ok' if is_connected() else 'fail'\n"
-			 "with open(r'%s', 'w') as f:\n"
-			 "    f.write(status)\n"),
-		*StatusFile
-	);
-	IPythonScriptPlugin::Get()->ExecPythonCommand(*ConnectBridge);
+	PlatformBridge->Connect(StatusFile);
 
 	// 轮询连接结果
 	auto Self = SharedThis(this);
@@ -1241,12 +1197,7 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 
 void SUEAgentDashboard::DisconnectOpenClawBridge()
 {
-	FString PythonCmd = TEXT(
-		"from openclaw_bridge import shutdown\n"
-		"shutdown()\n"
-		"print('[LogUEAgent] OpenClaw Bridge disconnected')\n"
-	);
-	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+	PlatformBridge->Disconnect();
 	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("BridgeDisconnected")));
 }
 
@@ -1262,7 +1213,7 @@ void SUEAgentDashboard::RunDiagnoseConnection()
 	// 清除上次结果
 	IFileManager::Get().Delete(*DiagFile, false, false, true);
 
-	// 优先使用完整 Health Check，fallback 到 diagnose_connection
+	// 优先使用完整 Health Check，fallback 到平台桥接诊断
 	// 强制 reload 确保使用最新代码
 	FString PythonCmd = FString::Printf(
 		TEXT("import importlib\n"
@@ -1270,13 +1221,18 @@ void SUEAgentDashboard::RunDiagnoseConnection()
 			 "    import health_check\n"
 			 "    importlib.reload(health_check)\n"
 			 "    result = health_check.run_health_check()\n"
+			 "    with open(r'%s', 'w', encoding='utf-8') as f:\n"
+			 "        f.write(result)\n"
 			 "except ImportError:\n"
-			 "    from openclaw_bridge import diagnose_connection\n"
-			 "    result = diagnose_connection()\n"
-			 "with open(r'%s', 'w', encoding='utf-8') as f:\n"
-			 "    f.write(result)\n"),
+			 "    pass\n"),
 		*DiagFile);
 	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+
+	// 如果 health_check 没有生成文件，走平台桥接诊断
+	if (!FPaths::FileExists(DiagFile))
+	{
+		PlatformBridge->RunDiagnostics(DiagFile);
+	}
 
 	// 轮询诊断结果文件
 	auto Self = SharedThis(this);
@@ -1317,11 +1273,7 @@ void SUEAgentDashboard::SendEnvironmentContext()
 	FString ContextFile = TempDir / TEXT("_env_context.txt");
 	IFileManager::Get().Delete(*ContextFile, false, false, true);
 
-	FString PythonCmd = FString::Printf(
-		TEXT("from openclaw_bridge import _collect_and_save_context\n")
-		TEXT("_collect_and_save_context(r'%s')\n"),
-		*ContextFile);
-	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+	PlatformBridge->CollectEnvironmentContext(ContextFile);
 
 	// 轮询等待 context 文件生成，然后作为消息发送给 AI
 	auto Self = SharedThis(this);
@@ -1393,13 +1345,8 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 	IFileManager::Get().Delete(*ResponseFile, false, false, true);
 	IFileManager::Get().Delete(*StreamFile, false, false, true);
 
-	// 通过 Python Bridge 异步发送
-	// Python 侧会把结果写入临时文件
-	FString PythonCmd = FString::Printf(
-		TEXT("from openclaw_bridge import send_chat_async_to_file; send_chat_async_to_file('%s', r'%s')"),
-		*EscapedMsg, *ResponseFile);
-
-	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+	// 通过平台桥接异步发送
+	PlatformBridge->SendMessageAsync(EscapedMsg, ResponseFile);
 
 	// 启动定时器轮询临时文件
 	auto Self = SharedThis(this);
