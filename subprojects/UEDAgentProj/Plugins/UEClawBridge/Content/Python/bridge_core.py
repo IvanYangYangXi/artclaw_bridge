@@ -189,31 +189,27 @@ class OpenClawBridge:
     def reset_session(self):
         """重置会话: 向 Gateway 发送 /new 并清空 session key。
         
-        /new 发送在后台线程执行，不阻塞调用方。
+        通过正常的 chat.send 路径发送，AI 回复会通过流式回调回传到 UI。
         """
         # session_key 可能还没生成（惰性创建），主动构造
         session_key = self._session_key or f"{self.agent_id}/{self.client_id}"
 
         if self._connected and self._loop:
-            def _send_new():
-                try:
-                    future = asyncio.run_coroutine_threadsafe(
-                        self._async_reset_session(session_key), self._loop
-                    )
-                    future.result(timeout=10.0)
-                    self._log.info("OpenClaw Bridge: /new sent successfully")
-                except Exception as e:
-                    self._log.warning(f"OpenClaw Bridge: reset_session /new failed: {e}")
+            # 临时设置 session_key 供 _async_chat_send 使用
+            self._session_key = session_key
 
-            threading.Thread(
-                target=_send_new, daemon=True, name="OCBridge-Reset"
-            ).start()
+            def _on_result(result):
+                # /new 完成后清空 session_key，下次对话重新生成
+                self._session_key = None
+                self._log.info("OpenClaw Bridge: /new completed")
+
+            self.send_message_async("/new", _on_result)
         else:
             self._log.warning(
                 f"OpenClaw Bridge: reset_session skipped (connected={self._connected}, loop={self._loop is not None})"
             )
+            self._session_key = None
 
-        self._session_key = None
         self._log.info("OpenClaw Bridge: session reset")
 
     async def _async_reset_session(self, session_key: str):

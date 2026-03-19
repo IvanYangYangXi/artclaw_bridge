@@ -244,10 +244,30 @@ class DCCBridgeManager:
             self._bridge.cancel_current()
 
     def reset_session(self):
-        """重置会话 — 向 Gateway 发送 /new 并清空 session"""
-        if self._bridge:
-            self._bridge.reset_session()
+        """重置会话 — 向 Gateway 发送 /new，AI 回复显示在面板中"""
+        if not self._bridge or not self._bridge.is_connected():
+            return
         self._context_injected = False
+
+        # 确保有 session_key（惰性生成时可能还是 None）
+        if not self._bridge._session_key:
+            self._bridge._session_key = f"{self._bridge.agent_id}/{self._bridge.client_id}"
+
+        # 设置流式回调，让 AI 回复能回传到 Chat Panel
+        self._bridge.on_ai_message = self._on_ai_message
+        self._bridge.on_ai_thinking = self._on_ai_thinking
+
+        def _on_result(result: str):
+            if self.signals:
+                self.signals.response_complete.emit(result)
+            # 清理回调和 session_key
+            if self._bridge:
+                self._bridge.on_ai_message = None
+                self._bridge.on_ai_thinking = None
+                self._bridge._session_key = None
+
+        # 直接走 bridge 的 send_message_async，不经过 _enrich_with_briefing
+        self._bridge.send_message_async("/new", _on_result)
 
     def run_diagnostics(self) -> str:
         """运行连接诊断，返回报告文本"""
