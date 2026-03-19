@@ -26,15 +26,26 @@ import time
 import uuid
 from typing import Optional
 
-# 确保 openclaw-mcp-bridge 目录在 sys.path 中
-_bridge_pkg_dir = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "openclaw-mcp-bridge")
-)
-if os.path.isdir(_bridge_pkg_dir) and _bridge_pkg_dir not in sys.path:
-    sys.path.insert(0, _bridge_pkg_dir)
+# ---------------------------------------------------------------------------
+# 导入 bridge_core / bridge_diagnostics
+# 优先级:
+#   1. 自包含部署: bridge_core.py 已复制到当前 core/ 目录 (同级文件)
+#   2. 开发模式: 通过相对路径找到 openclaw-mcp-bridge/ 目录
+# ---------------------------------------------------------------------------
 
-from bridge_core import OpenClawBridge, BridgeLogger  # noqa: E402
-from bridge_diagnostics import diagnose_connection  # noqa: E402
+try:
+    # 自包含部署: 安装器已将 bridge_core.py 等复制到 core/ 目录
+    from bridge_core import OpenClawBridge, BridgeLogger  # noqa: E402
+    from bridge_diagnostics import diagnose_connection  # noqa: E402
+except ImportError:
+    # 开发模式: 通过相对路径回溯到 openclaw-mcp-bridge/
+    _bridge_pkg_dir = os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "openclaw-mcp-bridge")
+    )
+    if os.path.isdir(_bridge_pkg_dir) and _bridge_pkg_dir not in sys.path:
+        sys.path.insert(0, _bridge_pkg_dir)
+    from bridge_core import OpenClawBridge, BridgeLogger  # noqa: E402
+    from bridge_diagnostics import diagnose_connection  # noqa: E402
 
 # Qt imports — PySide2 在 Maya 2022+/Max 2022+ 内置
 try:

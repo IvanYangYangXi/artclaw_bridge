@@ -23,11 +23,11 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max 等数字内容创作（DCC）
 | 软件 | 状态 | 插件 | 说明 |
 |------|------|------|------|
 | **Unreal Engine 5.7** | ✅ 已实现 | UEClawBridge | C++ + Python，编辑器内 AI 对话面板 |
-| **Maya** | 🔜 计划中 | — | Python + MEL，节点编辑器集成 |
-| **3ds Max** | 🔜 计划中 | — | Python / MaxScript |
+| **Maya 2022+** | ✅ 已实现 | DCCClawBridge | Python + PySide2，ArtClaw Chat Panel |
+| **3ds Max 2024+** | ✅ 已实现 | DCCClawBridge | Python + PySide2，ArtClaw Chat Panel |
 | **Blender** | 💡 考虑中 | — | Python API |
 
-> 当前已完成 Unreal Engine 端的完整实现。其他 DCC 软件的支持正在规划中，框架层面已预留扩展接口。欢迎社区贡献其他 DCC 的桥接实现！
+> UE、Maya、3ds Max 三端均已实现完整的 MCP Server + AI 对话面板。Blender 支持正在规划中，框架层面已预留扩展接口。欢迎社区贡献！
 
 ## 🏗️ 架构
 
@@ -47,6 +47,7 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max 等数字内容创作（DCC）
 │ UE     ││ Maya   ││ 3dsMax ││ ...    │
 │ MCP    ││ MCP    ││ MCP    ││ MCP    │
 │ Server ││ Server ││ Server ││ Server │
+│ :8080  ││ :8081  ││ :8082  ││        │
 └───┬────┘└───┬────┘└───┬────┘└───┬────┘
     │         │         │         │
     ▼         ▼         ▼         ▼
@@ -59,105 +60,174 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max 等数字内容创作（DCC）
 
 ```
 artclaw_bridge/
+├── install.bat                      # 📦 一键安装器 (Windows 交互菜单)
+├── install.py                       # 📦 跨平台安装器 (CLI, 支持卸载)
 ├── subprojects/                     # 各 DCC 软件的工程实现
 │   ├── UEDAgentProj/                # ✅ Unreal Engine 工程
 │   │   └── Plugins/UEClawBridge/    #    UE 插件（C++ + Python）
-│   ├── MayaAgentProj/               # 🔜 Maya 工程（计划中）
-│   └── MaxAgentProj/                # 🔜 3ds Max 工程（计划中）
-├── openclaw-mcp-bridge/             # OpenClaw MCP Bridge 插件（通用）
+│   └── DCCClawBridge/               # ✅ Maya / 3ds Max 共享插件
+│       ├── artclaw_ui/              #    通用 Qt 聊天面板
+│       ├── adapters/                #    DCC 适配层 (Maya / Max)
+│       ├── core/                    #    共享核心 (bridge, MCP, skill...)
+│       ├── maya_setup/              #    Maya 部署文件
+│       ├── max_setup/               #    Max 部署文件
+│       └── skills/                  #    DCC Skill 模板
+├── openclaw-mcp-bridge/             # OpenClaw MCP Bridge 插件 + 共享模块
+│   ├── bridge_core.py               #    通信核心 (UE/DCC 共用)
+│   ├── bridge_config.py             #    配置管理
+│   ├── bridge_diagnostics.py        #    诊断工具
+│   ├── mcp-bridge/                  #    OpenClaw 插件文件
+│   ├── setup.bat                    #    UE 快速安装脚本
+│   └── setup_openclaw_config.py     #    OpenClaw 配置生成
 ├── cli/                             # ArtClaw CLI 工具
 ├── skills/                          # Skill 模板库（跨 DCC 共享）
 ├── team_skills/                     # 团队共享 Skill（Git 同步）
 ├── docs/                            # 项目文档
-│   ├── specs/                       #   通用规范
-│   ├── skills/                      #   Skill 开发文档
-│   ├── UEClawBridge/                #   ✅ UE 插件文档
-│   ├── MayaAgent/                   #   🔜 Maya 插件文档（待建）
-│   └── features/                    #   OpenClaw 集成功能
 └── tests/                           # 测试用例
 ```
 
-## 🚀 快速开始（Unreal Engine）
-
-> 以下安装说明针对当前已实现的 UE 端。其他 DCC 软件的安装文档将在实现后补充。
+## 🚀 安装
 
 ### 前置条件
 
-- **Unreal Engine** 5.7（其他版本未验证）
+- **Python** 3.9+（用于运行安装脚本）
 - **OpenClaw** 已安装（`npm install -g openclaw`）
-- **Python 依赖**：`websockets`、`pydantic`（由插件自动安装）
+- 目标 DCC 软件已安装：
+  - UE: Unreal Engine 5.3+（推荐 5.7）
+  - Maya: 2022+（内置 Python 3.9+、PySide2）
+  - Max: 2024+（内置 Python 3.9+、PySide2）
 
-### 方式一：一键安装
+### 方式一：一键安装（推荐）
 
 ```bash
-# 克隆仓库
+# 1. 克隆仓库
 git clone https://github.com/IvanYangYangXi/artclaw_bridge.git
+cd artclaw_bridge
 
-# 运行安装脚本（Windows）
-cd artclaw_bridge/openclaw-mcp-bridge
-setup.bat "C:\path\to\your\UE_Project"
+# 2a. Windows 交互菜单 — 双击或命令行运行:
+install.bat
+
+# 2b. 或使用 Python CLI (跨平台):
+python install.py --help                                     # 查看所有选项
+python install.py --maya                                     # 安装 Maya 插件 (默认版本 2023)
+python install.py --maya --maya-version 2024                 # 指定 Maya 2024
+python install.py --max --max-version 2024                   # 安装 Max 插件
+python install.py --ue --ue-project "C:\path\to\project"     # 安装 UE 插件
+python install.py --openclaw                                 # 配置 OpenClaw
+python install.py --all --ue-project "C:\path\to\project"    # 全部安装
 ```
 
 安装脚本会自动：
-1. 复制 UEClawBridge 插件到你的 UE 项目
-2. 安装 Python 依赖
-3. 配置 OpenClaw 集成
+1. 复制插件文件到目标 DCC 的标准目录
+2. 打包 `bridge_core` 共享模块（自包含部署，无需源码目录）
+3. **安全处理 startup 文件**（追加模式，不覆盖用户已有内容）
+4. 配置 OpenClaw mcp-bridge 集成
+5. 重复运行安全（幂等）
 
 ### 方式二：手动安装
 
-#### 1. 安装 UE 插件
+<details>
+<summary>手动安装步骤（点击展开）</summary>
 
-将 `subprojects/UEDAgentProj/Plugins/UEClawBridge` 复制到你的 UE 项目的 `Plugins/` 目录。
-
-#### 2. 安装 Python 依赖
-
-使用 UE 内置 Python 安装：
+#### UE 插件
 
 ```bash
-# Windows 示例（路径根据 UE 版本调整）
+# 1. 复制插件
+# 将 subprojects/UEDAgentProj/Plugins/UEClawBridge 复制到 <UE项目>/Plugins/
+xcopy /E /I subprojects\UEDAgentProj\Plugins\UEClawBridge "<UE项目路径>\Plugins\UEClawBridge"
+
+# 2. 复制共享模块到插件的 Python 目录
+copy openclaw-mcp-bridge\bridge_core.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
+copy openclaw-mcp-bridge\bridge_config.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
+copy openclaw-mcp-bridge\bridge_diagnostics.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
+
+# 3. 安装 Python 依赖 (使用 UE 内置 Python)
 "C:\Epic Games\UE_5.7\Engine\Binaries\ThirdParty\Python3\Win64\python.exe" -m pip install websockets pydantic
 ```
 
-#### 3. 配置 OpenClaw
-
-部署 MCP Bridge 插件：
+#### Maya 插件
 
 ```bash
-# 复制插件文件到 OpenClaw 扩展目录
+# 将 <Maya版本> 替换为实际版本号，如 2023、2024
+
+# 1. 复制 DCCClawBridge 目录
+xcopy /E /I subprojects\DCCClawBridge "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\DCCClawBridge"
+
+# 2. 复制共享模块到 core/ (自包含部署)
+copy openclaw-mcp-bridge\bridge_core.py "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\DCCClawBridge\core\"
+copy openclaw-mcp-bridge\bridge_config.py "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\DCCClawBridge\core\"
+copy openclaw-mcp-bridge\bridge_diagnostics.py "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\DCCClawBridge\core\"
+
+# 3. 复制 userSetup.py (如果已有该文件，请追加而非覆盖!)
+# 方式 A: 无已有 userSetup.py — 直接复制:
+copy subprojects\DCCClawBridge\maya_setup\userSetup.py "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\"
+
+# 方式 B: 已有 userSetup.py — 将以下内容追加到文件末尾:
+#   打开 subprojects/DCCClawBridge/maya_setup/userSetup.py
+#   将其全部内容用以下注释包裹后追加:
+#     # ===== ArtClaw Bridge START =====
+#     (userSetup.py 内容)
+#     # ===== ArtClaw Bridge END =====
+```
+
+#### 3ds Max 插件
+
+```bash
+# 将 <Max版本> 替换为实际版本号，如 2024、2025
+
+# 1. 复制 DCCClawBridge 目录
+xcopy /E /I subprojects\DCCClawBridge "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\DCCClawBridge"
+
+# 2. 复制共享模块到 core/ (自包含部署)
+copy openclaw-mcp-bridge\bridge_core.py "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\DCCClawBridge\core\"
+copy openclaw-mcp-bridge\bridge_config.py "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\DCCClawBridge\core\"
+copy openclaw-mcp-bridge\bridge_diagnostics.py "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\DCCClawBridge\core\"
+
+# 3. 复制 startup 脚本
+copy subprojects\DCCClawBridge\max_setup\startup.py "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\startup\artclaw_startup.py"
+```
+
+#### OpenClaw 配置
+
+```bash
+# 1. 复制 mcp-bridge 插件
 mkdir %USERPROFILE%\.openclaw\extensions\mcp-bridge
 copy openclaw-mcp-bridge\mcp-bridge\* %USERPROFILE%\.openclaw\extensions\mcp-bridge\
+
+# 2. 运行配置脚本 (自动合并到 openclaw.json)
+python openclaw-mcp-bridge\setup_openclaw_config.py --ue --maya --max
+
+# 3. 重启 Gateway
+openclaw gateway restart
 ```
 
-在 `~/.openclaw/openclaw.json` 中添加配置：
+</details>
 
-```json
-{
-  "plugins": {
-    "allow": ["mcp-bridge"],
-    "entries": {
-      "mcp-bridge": {
-        "enabled": true,
-        "config": {
-          "servers": {
-            "ue-editor-agent": {
-              "type": "websocket",
-              "url": "ws://127.0.0.1:8080"
-            }
-          }
-        }
-      }
-    }
-  }
-}
+### 安装后验证
+
+| DCC | 验证步骤 |
+|-----|---------|
+| **UE** | 打开项目 → 启用 "UE Claw Bridge" 插件 → 重启 → Window → UE Claw Bridge → 输入 `/diagnose` |
+| **Maya** | 启动 Maya → 菜单栏出现 **ArtClaw** → 打开 Chat Panel → 输入 `/connect` |
+| **3ds Max** | 启动 Max → ArtClaw 自动加载 → 菜单栏 ArtClaw → Chat Panel → 输入 `/connect` |
+| **OpenClaw** | 运行 `openclaw gateway restart` → 确认日志中 `mcp-bridge` 已加载 |
+
+### 卸载
+
+```bash
+# 使用安装脚本卸载 (推荐):
+python install.py --uninstall --maya                           # 卸载 Maya 插件
+python install.py --uninstall --maya --maya-version 2024       # 指定版本
+python install.py --uninstall --max                            # 卸载 Max 插件
+python install.py --uninstall --ue --ue-project "C:\project"   # 卸载 UE 插件
+
+# 或使用 install.bat 交互菜单 (选项 6/7/8)
 ```
 
-#### 4. 启动
-
-1. 打开 UE 项目，启用 **UE Claw Bridge** 插件
-2. 重启编辑器
-3. 打开面板：**Window 菜单 → UE Claw Bridge**
-4. 重启 OpenClaw Gateway：`openclaw gateway restart`
-5. 在面板中输入 `/diagnose` 验证连接
+卸载脚本会：
+- 删除 DCCClawBridge / UEClawBridge 目录
+- 从 `userSetup.py` / `startup.py` 中**仅移除 ArtClaw 代码块**（不删除用户自己的内容）
+- OpenClaw 配置需手动修改（避免误删其他 server 配置）
 
 ## 🛠️ Skill 系统
 
@@ -189,7 +259,7 @@ python artclaw.py skill test scene_ops   # 测试指定 Skill
 
 欢迎提交 Issue 和 Pull Request！特别欢迎以下方向的贡献：
 
-- 🔌 **新 DCC 桥接实现** — Maya、3ds Max、Blender 等
+- 🔌 **新 DCC 桥接实现** — Blender、Houdini 等
 - 🛠️ **新 Skill** — 适用于各 DCC 的实用 Skill
 - 📖 **文档改进** — 使用教程、最佳实践
 
@@ -210,6 +280,7 @@ python artclaw.py skill test scene_ops   # 测试指定 Skill
 - **[Skill 开发指南](docs/skills/SKILL_DEVELOPMENT_GUIDE.md)** — 编写自定义 Skill
 - **[Skill 规范](docs/skills/MANIFEST_SPEC.md)** — manifest.json 格式规范
 - **[MCP Bridge 部署](openclaw-mcp-bridge/README.md)** — OpenClaw 集成详细说明
+- **[DCCClawBridge](subprojects/DCCClawBridge/README.md)** — Maya / 3ds Max 插件详细说明
 - **[贡献指南](docs/skills/CONTRIBUTING.md)** — 如何为项目贡献
 
 ## 📄 许可证

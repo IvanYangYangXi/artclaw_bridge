@@ -26,26 +26,35 @@ except ImportError:
 from init_unreal import UELogger
 
 # ---------------------------------------------------------------------------
-# 确保 openclaw-mcp-bridge 目录在 sys.path 中（bridge_core 等模块在那里）
+# 导入 bridge_core / bridge_config / bridge_diagnostics
+# 优先级:
+#   1. 自包含部署: 安装器已将 bridge_core.py 等复制到当前 Content/Python/ 目录
+#   2. 开发模式: 通过相对路径找到 openclaw-mcp-bridge/ 目录
 # ---------------------------------------------------------------------------
 
-_bridge_pkg_dir = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "..",
-                 "openclaw-mcp-bridge")
-)
-if os.path.isdir(_bridge_pkg_dir) and _bridge_pkg_dir not in sys.path:
-    sys.path.insert(0, _bridge_pkg_dir)
+try:
+    # 自包含部署: bridge_core.py 与 openclaw_bridge.py 在同一目录
+    from bridge_core import OpenClawBridge, BridgeLogger  # noqa: E402
+    from bridge_config import (  # noqa: E402
+        DEFAULT_GATEWAY_URL, DEFAULT_AGENT_ID, DEFAULT_TOKEN,
+        PROTOCOL_VERSION, CLIENT_NAME, CLIENT_VERSION,
+        load_config as _load_config,
+    )
+except ImportError:
+    # 开发模式: 通过相对路径回溯到 openclaw-mcp-bridge/
+    _bridge_pkg_dir = os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "..",
+                     "openclaw-mcp-bridge")
+    )
+    if os.path.isdir(_bridge_pkg_dir) and _bridge_pkg_dir not in sys.path:
+        sys.path.insert(0, _bridge_pkg_dir)
 
-from bridge_core import OpenClawBridge, BridgeLogger  # noqa: E402
-from bridge_config import (  # noqa: E402
-    DEFAULT_GATEWAY_URL,
-    DEFAULT_AGENT_ID,
-    DEFAULT_TOKEN,
-    PROTOCOL_VERSION,
-    CLIENT_NAME,
-    CLIENT_VERSION,
-    load_config as _load_config,
-)
+    from bridge_core import OpenClawBridge, BridgeLogger  # noqa: E402
+    from bridge_config import (  # noqa: E402
+        DEFAULT_GATEWAY_URL, DEFAULT_AGENT_ID, DEFAULT_TOKEN,
+        PROTOCOL_VERSION, CLIENT_NAME, CLIENT_VERSION,
+        load_config as _load_config,
+    )
 
 
 # ---------------------------------------------------------------------------
