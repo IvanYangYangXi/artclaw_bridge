@@ -213,9 +213,20 @@ class DCCBridgeManager:
                 if adapter:
                     sw_name = adapter.get_software_name()
                     sw_ver = adapter.get_software_version()
+                    # 工具前缀映射
+                    _PREFIX_MAP = {
+                        "maya": "mcp_maya-primary_",
+                        "3dsmax": "mcp_max-primary_",
+                        "max": "mcp_max-primary_",
+                    }
+                    my_prefix = _PREFIX_MAP.get(sw_name.lower(), f"mcp_{sw_name.lower()}-primary_")
+                    other_tools = (
+                        "mcp_ue-editor-agent_（UE）、mcp_maya-primary_（Maya）、mcp_max-primary_（Max）"
+                    )
                     prefix_parts.append(
                         f"[DCC Context] 用户正在 {sw_name} {sw_ver} 中与你对话。"
-                        f"请使用 {sw_name} 相关的工具和知识来回答。"
+                        f"当前软件的工具前缀为 {my_prefix}，应优先使用这些工具。"
+                        f"如需操作其他软件，可使用对应前缀的工具：{other_tools}。"
                     )
                     self._context_injected = True
             except Exception:

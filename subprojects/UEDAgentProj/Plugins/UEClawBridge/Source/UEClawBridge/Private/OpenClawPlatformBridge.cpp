@@ -116,7 +116,9 @@ void FOpenClawPlatformBridge::ResetSession()
 	ExecPython(
 		TEXT("try:\n")
 		TEXT("    from openclaw_bridge import _bridge\n")
+		TEXT("    import openclaw_bridge as _ob\n")
 		TEXT("    if _bridge: _bridge.reset_session()\n")
+		TEXT("    _ob._context_injected = False\n")
 		TEXT("except: pass")
 	);
 }

@@ -198,31 +198,42 @@ def init_bridge() -> bool:
 # 记忆摘要注入
 # ---------------------------------------------------------------------------
 
+_context_injected = False  # DCC 上下文是否已注入（每个 session 只注入首条）
+
 def _enrich_with_briefing(message: str) -> str:
-    """在用户消息前附加记忆摘要 (Memory Briefing)
+    """在用户消息前附加 DCC 上下文 + 记忆摘要 (Memory Briefing)
 
-    仅在 MemoryStore v2 可用且有内容时注入。
-    注入格式:
-        [Memory Briefing]
-        ... briefing content ...
-
-        [User Message]
-        ... original message ...
+    DCC 上下文仅在 session 首条消息注入。
+    记忆摘要每条消息都注入（如有内容）。
     """
+    global _context_injected
+    prefix_parts = []
+
+    # UE 环境上下文 + 跨软件提示（只在首条注入）
+    if not _context_injected:
+        prefix_parts.append(
+            "[DCC Context] 用户正在 Unreal Engine 编辑器中与你对话。"
+            "当前软件的工具前缀为 mcp_ue-editor-agent_，应优先使用这些工具。"
+            "如需操作其他软件，可使用对应前缀的工具："
+            "mcp_maya-primary_（Maya）、mcp_max-primary_（Max）。"
+        )
+        _context_injected = True
+
+    # 记忆摘要
     try:
         from memory_store import get_memory_store
         store = get_memory_store()
-        if store is None:
-            return message
-
-        briefing = store.manager.export_briefing(max_tokens=1500)
-        if not briefing or "记忆库为空" in briefing:
-            return message
-
-        return f"{briefing}\n\n[User Message]\n{message}"
+        if store:
+            briefing = store.manager.export_briefing(max_tokens=1500)
+            if briefing and "记忆库为空" not in briefing:
+                prefix_parts.append(briefing)
     except Exception:
-        # 任何错误都不应影响正常消息发送
-        return message
+        pass
+
+    if prefix_parts:
+        prefix = "\n\n".join(prefix_parts)
+        return f"{prefix}\n\n[User Message]\n{message}"
+    return message
 
 
 def send_chat(message: str) -> str:
