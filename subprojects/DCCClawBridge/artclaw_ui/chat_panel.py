@@ -433,13 +433,8 @@ class ChatPanel(QWidget):
         self._message_count = 0
         self._last_ai_cursor_pos = -1
         if self._bridge_manager:
-            self._is_streaming = True
-            self._streaming_text = ""
-            self._send_btn.setEnabled(False)
-            self._send_btn.setText("等待...")
-            self._add_system_message("新对话已开始")
-            self._add_message("assistant", "...")
             self._bridge_manager.reset_session()
+        self._add_system_message("新对话已开始")
 
     @Slot()
     def _on_send_clicked(self):
