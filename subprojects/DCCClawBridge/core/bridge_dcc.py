@@ -244,10 +244,17 @@ class DCCBridgeManager:
             self._bridge.cancel_current()
 
     def reset_session(self):
-        """重置会话 — 清空 session key，下次发消息时创建全新 session"""
-        if self._bridge:
-            self._bridge.reset_session()
+        """重置会话 — 创建新 session 并发送 /new，AI 回复显示在面板中"""
+        if not self._bridge:
+            return
+
+        # 清空 session key，下次发消息时生成新的带时间戳 key = 新 session
+        self._bridge.reset_session()
         self._context_injected = False
+
+        # 在新 session 中发送 /new，走正常消息路径让 AI 回复回传到面板
+        if self._bridge.is_connected():
+            self.send_message("/new")
 
     def run_diagnostics(self) -> str:
         """运行连接诊断，返回报告文本"""
