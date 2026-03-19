@@ -1,27 +1,32 @@
 """
-memory_store.py - 分层记忆与偏好存储
-======================================
+memory_store.py - UE 记忆管理 v2 适配层
+========================================
 
-阶段 3.4: Tiered Memory Management
+将 memory_core.MemoryManagerV2（平台无关）接入 UE MCP Server。
 
-宪法约束:
-  - 开发路线图 §3.4: 事实记忆、用户偏好、跨端同步
-  - 系统架构设计 §1.3: Resource Manager 提供按需拉取
+职责:
+  - 确定 UE 项目的存储路径
+  - 注册 MCP Tool (memory)
+  - 旧格式自动迁移
+  - 适配 UE 日志系统
 
-设计说明:
-  - 持久化到 Saved/UEAgent/ 目录下的 JSON 文件
-  - 分三层: facts (项目事实), preferences (用户偏好), conventions (项目规范)
-  - 通过 MCP Resource 暴露给 AI
-  - 通过 MCP Tool 允许 AI 读写
+共享核心:
+  - memory_core.py (openclaw-mcp-bridge/)
+  - 开发模式: 通过相对路径回溯导入
+  - 部署模式: setup.bat 已复制到 Content/Python/
+
+旧版兼容:
+  - 原 MemoryStore 类保留为 LegacyMemoryStore 别名
+  - init_memory_store() 签名不变，C++/Python 调用方无需改动
 """
 
 from __future__ import annotations
 
 import json
 import os
-import time
+import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 try:
     import unreal
@@ -31,197 +36,150 @@ except Exception:
 
 from init_unreal import UELogger
 
+# ---------------------------------------------------------------------------
+# 导入 memory_core
+# 优先级:
+#   1. 自包含部署: memory_core.py 与本文件在同一目录
+#   2. 开发模式: 通过相对路径找到 openclaw-mcp-bridge/
+# ---------------------------------------------------------------------------
+
+try:
+    from memory_core import MemoryManagerV2, DEFAULT_CONFIG  # noqa: E402
+except ImportError:
+    _bridge_pkg_dir = os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "..",
+                     "openclaw-mcp-bridge")
+    )
+    if os.path.isdir(_bridge_pkg_dir) and _bridge_pkg_dir not in sys.path:
+        sys.path.insert(0, _bridge_pkg_dir)
+
+    from memory_core import MemoryManagerV2, DEFAULT_CONFIG  # noqa: E402
+
 
 # ============================================================================
-# 1. Memory Store 核心
+# 1. UE 适配层
 # ============================================================================
 
-class MemoryStore:
-    """
-    分层记忆存储。
-
-    三个存储层:
-      - facts: 项目事实 (常用资产路径、命名规则等)
-      - preferences: 用户偏好 (灯光强度、间距等审美偏好)
-      - conventions: 项目规范 (编码规范、文件结构约定)
-
-    每层都是 key-value 存储，自动持久化到 JSON 文件。
-    """
-
-    LAYERS = ("facts", "preferences", "conventions")
+class UEMemoryStore:
+    """UE 环境下的记忆管理器封装"""
 
     def __init__(self, base_dir: Optional[Path] = None):
         self._base_dir = base_dir or _project_dir
         self._base_dir.mkdir(parents=True, exist_ok=True)
 
-        # 内存缓存
-        self._data: Dict[str, Dict[str, Any]] = {}
+        storage_path = str(self._base_dir / "memory_v2.json")
 
-        # 加载所有层
-        for layer in self.LAYERS:
-            self._data[layer] = self._load_layer(layer)
+        self._manager = MemoryManagerV2(
+            storage_path=storage_path,
+            dcc_name="unreal_engine",
+        )
 
-        UELogger.info(f"MemoryStore initialized: {self._base_dir}")
-        for layer in self.LAYERS:
-            count = len(self._data[layer])
-            if count > 0:
-                UELogger.info(f"  {layer}: {count} entries")
+        # 检查并迁移旧格式
+        self._try_migrate_v1()
+
+        UELogger.info(f"MemoryStore v2 初始化完成: {storage_path}")
+        stats = self._manager.get_stats()
+        UELogger.info(f"  记忆条目: {stats.get('total_entries', 0)}")
+
+        # 启动定时维护
+        self._manager.start_maintenance_timer()
+
+    def _try_migrate_v1(self):
+        """检测并迁移 v1 格式的记忆文件"""
+        v1_files = ["memory_facts.json", "memory_preferences.json", "memory_conventions.json"]
+        has_v1 = any((self._base_dir / f).exists() for f in v1_files)
+
+        if has_v1 and not (self._base_dir / "memory_v2.json").exists():
+            UELogger.info("检测到 v1 格式记忆文件，开始迁移...")
+            try:
+                count = MemoryManagerV2.migrate_from_ue_v1(
+                    str(self._base_dir),
+                    str(self._base_dir / "memory_v2.json")
+                )
+                # 迁移成功后重新加载
+                self._manager = MemoryManagerV2(
+                    storage_path=str(self._base_dir / "memory_v2.json"),
+                    dcc_name="unreal_engine",
+                )
+                UELogger.info(f"v1 迁移完成: {count} 条记录")
+            except Exception as e:
+                UELogger.mcp_error(f"v1 迁移失败: {e}")
+
+    @property
+    def manager(self) -> MemoryManagerV2:
+        """获取底层 MemoryManagerV2 实例"""
+        return self._manager
 
     # ------------------------------------------------------------------
-    # 公开接口
+    # 向后兼容: 旧版 MemoryStore 接口代理
     # ------------------------------------------------------------------
+
+    # 旧 layer 名到新 tag 的映射
+    _LAYER_TO_TAG = {
+        "facts": "fact",
+        "preferences": "preference",
+        "conventions": "convention",
+    }
 
     def get(self, layer: str, key: str, default: Any = None) -> Any:
-        """获取指定层的值"""
-        if layer not in self.LAYERS:
+        """兼容旧版 get(layer, key)"""
+        result = self._manager.get(key)
+        if result is None:
             return default
-        entry = self._data[layer].get(key)
-        if entry is None:
-            return default
-        return entry.get("value", default)
+        return result.get("value", default)
 
     def set(self, layer: str, key: str, value: Any, metadata: Optional[dict] = None) -> bool:
-        """设置指定层的值"""
-        if layer not in self.LAYERS:
-            return False
-
-        self._data[layer][key] = {
-            "value": value,
-            "updated_at": time.time(),
-            "metadata": metadata or {},
-        }
-        self._save_layer(layer)
-        return True
+        """兼容旧版 set(layer, key, value)"""
+        tag = self._LAYER_TO_TAG.get(layer, "fact")
+        return self._manager.record(key, value, tag=tag, importance=0.5, source=f"mcp:{layer}")
 
     def delete(self, layer: str, key: str) -> bool:
-        """删除指定层的键"""
-        if layer not in self.LAYERS:
-            return False
-        if key in self._data[layer]:
-            del self._data[layer][key]
-            self._save_layer(layer)
-            return True
-        return False
+        """兼容旧版 delete(layer, key)"""
+        return self._manager.delete(key)
 
-    def list_keys(self, layer: str) -> List[str]:
-        """列出指定层的所有键"""
-        if layer not in self.LAYERS:
-            return []
-        return list(self._data[layer].keys())
+    def list_keys(self, layer: str) -> list:
+        """兼容旧版 list_keys(layer)"""
+        tag = self._LAYER_TO_TAG.get(layer)
+        entries = self._manager.list_entries(tag=tag, limit=500)
+        return [e["key"] for e in entries]
 
-    def search(self, query: str, layer: Optional[str] = None) -> List[dict]:
-        """按关键词搜索记忆（简单子串匹配）"""
-        results = []
-        layers = [layer] if layer else self.LAYERS
-
-        query_lower = query.lower()
-        for l in layers:
-            if l not in self._data:
-                continue
-            for key, entry in self._data[l].items():
-                val_str = json.dumps(entry.get("value", ""), default=str).lower()
-                if query_lower in key.lower() or query_lower in val_str:
-                    results.append({
-                        "layer": l,
-                        "key": key,
-                        "value": entry.get("value"),
-                        "updated_at": entry.get("updated_at"),
-                    })
-
-        return results
-
-    def get_layer_summary(self, layer: str) -> dict:
-        """获取指定层的摘要"""
-        if layer not in self.LAYERS:
-            return {"error": f"Unknown layer: {layer}"}
-
-        data = self._data[layer]
-        return {
-            "layer": layer,
-            "count": len(data),
-            "keys": list(data.keys())[:50],
-            "file": str(self._layer_path(layer)),
-        }
-
-    def get_all_summary(self) -> dict:
-        """获取所有层的摘要"""
-        return {
-            layer: self.get_layer_summary(layer)
-            for layer in self.LAYERS
-        }
+    def search(self, query: str, layer: Optional[str] = None) -> list:
+        """兼容旧版 search(query, layer)"""
+        tag = self._LAYER_TO_TAG.get(layer) if layer else None
+        return self._manager.search(query, tag=tag)
 
     def export_for_prompt(self) -> str:
-        """
-        导出记忆为 Prompt 可用的文本格式。
+        """兼容旧版 export_for_prompt()"""
+        return self._manager.export_briefing()
 
-        宪法约束:
-          - 开发路线图 §3.4: 跨端同步，AI "入乡随俗"
-        """
-        parts = []
+    def get_all_summary(self) -> dict:
+        """兼容旧版 get_all_summary()"""
+        return self._manager.get_stats()
 
-        # 项目规范
-        conventions = self._data.get("conventions", {})
-        if conventions:
-            parts.append("## Project Conventions")
-            for key, entry in list(conventions.items())[:20]:
-                parts.append(f"- **{key}**: {entry.get('value', '')}")
+    def flush(self):
+        """强制保存（关闭时调用）"""
+        self._manager.stop_maintenance_timer()
 
-        # 项目事实
-        facts = self._data.get("facts", {})
-        if facts:
-            parts.append("\n## Project Facts")
-            for key, entry in list(facts.items())[:20]:
-                parts.append(f"- **{key}**: {entry.get('value', '')}")
 
-        # 用户偏好
-        prefs = self._data.get("preferences", {})
-        if prefs:
-            parts.append("\n## User Preferences")
-            for key, entry in list(prefs.items())[:20]:
-                parts.append(f"- **{key}**: {entry.get('value', '')}")
-
-        return "\n".join(parts) if parts else "(No memories stored yet)"
-
-    # ------------------------------------------------------------------
-    # 持久化
-    # ------------------------------------------------------------------
-
-    def _layer_path(self, layer: str) -> Path:
-        return self._base_dir / f"memory_{layer}.json"
-
-    def _load_layer(self, layer: str) -> Dict[str, Any]:
-        path = self._layer_path(layer)
-        if not path.exists():
-            return {}
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            UELogger.mcp_error(f"Failed to load memory layer {layer}: {e}")
-            return {}
-
-    def _save_layer(self, layer: str) -> None:
-        path = self._layer_path(layer)
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(self._data[layer], f, ensure_ascii=False, indent=2, default=str)
-        except Exception as e:
-            UELogger.mcp_error(f"Failed to save memory layer {layer}: {e}")
+# 旧名称别名
+MemoryStore = UEMemoryStore
+TieredMemoryStore = UEMemoryStore
 
 
 # ============================================================================
-# 2. MCP Tool / Resource 注册
+# 2. MCP Tool 注册
 # ============================================================================
 
-_memory_store_instance: Optional[MemoryStore] = None
+_memory_store_instance: Optional[UEMemoryStore] = None
 
 
-def init_memory_store(mcp_server, base_dir: Optional[Path] = None) -> MemoryStore:
-    """初始化 Memory Store 并注册 MCP 接口"""
+def init_memory_store(mcp_server, base_dir: Optional[Path] = None) -> UEMemoryStore:
+    """初始化 Memory Store 并注册 MCP 接口
+
+    签名与旧版完全兼容，C++/Python 调用方无需改动。
+    """
     global _memory_store_instance
-    _memory_store_instance = MemoryStore(base_dir)
-
-    # --- MCP Tool: 统一 memory 接口 ---
+    _memory_store_instance = UEMemoryStore(base_dir)
 
     mcp_server.register_tool(
         name="memory",
@@ -229,31 +187,53 @@ def init_memory_store(mcp_server, base_dir: Optional[Path] = None) -> MemoryStor
             "Project memory store. Use action='get' to retrieve, 'set' to store, "
             "'search' to find by keyword, 'list' to enumerate keys. "
             "Layers: facts (project knowledge), preferences (user aesthetics), "
-            "conventions (naming rules)."
+            "conventions (naming rules). "
+            "New v2 actions: 'check_operation' (query operation history), "
+            "'maintain' (trigger memory maintenance)."
         ),
         input_schema={
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["get", "set", "search", "list"],
+                    "enum": ["get", "set", "search", "list", "delete",
+                             "check_operation", "maintain"],
                     "description": "Action to perform",
                 },
                 "layer": {
                     "type": "string",
-                    "enum": ["facts", "preferences", "conventions"],
-                    "description": "Memory layer",
+                    "enum": ["facts", "preferences", "conventions",
+                             "short_term", "mid_term", "long_term"],
+                    "description": "Memory layer (v1 names auto-mapped to v2 tags)",
                 },
                 "key": {
                     "type": "string",
-                    "description": "Memory key (for get/set)",
+                    "description": "Memory key (for get/set/delete)",
                 },
                 "value": {
                     "description": "Value to store (for set action)",
                 },
+                "tag": {
+                    "type": "string",
+                    "enum": ["fact", "preference", "convention",
+                             "operation", "crash", "pattern", "context"],
+                    "description": "Semantic tag (v2)",
+                },
+                "importance": {
+                    "type": "number",
+                    "description": "Importance score 0-1 (v2, default 0.5)",
+                },
                 "query": {
                     "type": "string",
                     "description": "Search keyword (for search action)",
+                },
+                "tool": {
+                    "type": "string",
+                    "description": "Tool name (for check_operation)",
+                },
+                "action_hint": {
+                    "type": "string",
+                    "description": "Action hint (for check_operation)",
                 },
             },
             "required": ["action"],
@@ -261,75 +241,140 @@ def init_memory_store(mcp_server, base_dir: Optional[Path] = None) -> MemoryStor
         handler=_handle_memory,
     )
 
-    UELogger.info("MemoryStore: registered 1 MCP tool (unified)")
+    UELogger.info("MemoryStore v2: MCP tool 已注册")
     return _memory_store_instance
 
 
-def get_memory_store() -> Optional[MemoryStore]:
+def get_memory_store() -> Optional[UEMemoryStore]:
     return _memory_store_instance
 
 
-# --- Handlers ---
+# ============================================================================
+# 3. MCP Handlers
+# ============================================================================
+
+# 旧 layer 名 → v2 tag 映射
+_LAYER_TAG_MAP = {
+    "facts": "fact",
+    "preferences": "preference",
+    "conventions": "convention",
+}
+
 
 def _handle_memory(arguments: dict) -> str:
     """统一 memory 操作入口"""
     action = arguments.get("action", "")
-    if action == "get":
-        return _handle_memory_get(arguments)
-    elif action == "set":
-        return _handle_memory_set(arguments)
-    elif action == "search":
-        return _handle_memory_search(arguments)
-    elif action == "list":
-        return _handle_memory_list(arguments)
-    else:
-        return json.dumps({"error": f"Unknown action: {action}. Use get/set/search/list."})
+
+    handlers = {
+        "get": _handle_get,
+        "set": _handle_set,
+        "search": _handle_search,
+        "list": _handle_list,
+        "delete": _handle_delete,
+        "check_operation": _handle_check_operation,
+        "maintain": _handle_maintain,
+    }
+
+    handler = handlers.get(action)
+    if handler:
+        return handler(arguments)
+    return json.dumps({"error": f"未知操作: {action}，支持: {', '.join(handlers.keys())}"})
 
 
-def _handle_memory_get(arguments: dict) -> str:
+def _handle_get(args: dict) -> str:
     store = get_memory_store()
     if not store:
-        return json.dumps({"error": "MemoryStore not initialized"})
+        return json.dumps({"error": "MemoryStore 未初始化"})
 
-    layer = arguments.get("layer", "facts")
-    key = arguments.get("key", "")
-    value = store.get(layer, key)
+    key = args.get("key", "")
+    if not key:
+        return json.dumps({"error": "未指定 key"})
 
-    if value is None:
-        return json.dumps({"found": False, "layer": layer, "key": key})
-    return json.dumps({"found": True, "layer": layer, "key": key, "value": value}, default=str)
+    result = store.manager.get(key)
+    if result is None:
+        return json.dumps({"found": False, "key": key})
+    return json.dumps({"found": True, **result}, default=str)
 
 
-def _handle_memory_set(arguments: dict) -> str:
+def _handle_set(args: dict) -> str:
     store = get_memory_store()
     if not store:
-        return json.dumps({"error": "MemoryStore not initialized"})
+        return json.dumps({"error": "MemoryStore 未初始化"})
 
-    layer = arguments.get("layer", "facts")
-    key = arguments.get("key", "")
-    value = arguments.get("value")
+    key = args.get("key", "")
+    value = args.get("value")
+    if not key:
+        return json.dumps({"error": "未指定 key"})
 
-    ok = store.set(layer, key, value)
-    return json.dumps({"success": ok, "layer": layer, "key": key})
+    # 兼容旧版 layer 参数
+    layer = args.get("layer", "")
+    tag = args.get("tag") or _LAYER_TAG_MAP.get(layer, "fact")
+    importance = args.get("importance", 0.5)
+
+    ok = store.manager.record(key, value, tag=tag, importance=importance, source="mcp:set")
+    return json.dumps({"success": ok, "key": key, "tag": tag})
 
 
-def _handle_memory_search(arguments: dict) -> str:
+def _handle_search(args: dict) -> str:
     store = get_memory_store()
     if not store:
-        return json.dumps({"error": "MemoryStore not initialized"})
+        return json.dumps({"error": "MemoryStore 未初始化"})
 
-    query = arguments.get("query", "")
-    layer = arguments.get("layer")
-    results = store.search(query, layer)
+    query = args.get("query", "")
+    layer = args.get("layer")
+    tag = args.get("tag") or _LAYER_TAG_MAP.get(layer) if layer else None
+
+    # v2 layer 名直接传
+    v2_layer = layer if layer in ("short_term", "mid_term", "long_term") else None
+
+    results = store.manager.search(query, tag=tag, layer=v2_layer)
     return json.dumps({"query": query, "count": len(results), "results": results}, default=str)
 
 
-def _handle_memory_list(arguments: dict) -> str:
+def _handle_list(args: dict) -> str:
     store = get_memory_store()
     if not store:
-        return json.dumps({"error": "MemoryStore not initialized"})
+        return json.dumps({"error": "MemoryStore 未初始化"})
 
-    layer = arguments.get("layer")
-    if layer:
-        return json.dumps(store.get_layer_summary(layer))
-    return json.dumps(store.get_all_summary())
+    layer = args.get("layer")
+    tag = args.get("tag") or _LAYER_TAG_MAP.get(layer) if layer else None
+    v2_layer = layer if layer in ("short_term", "mid_term", "long_term") else None
+
+    entries = store.manager.list_entries(layer=v2_layer, tag=tag)
+    return json.dumps({"count": len(entries), "entries": entries}, default=str)
+
+
+def _handle_delete(args: dict) -> str:
+    store = get_memory_store()
+    if not store:
+        return json.dumps({"error": "MemoryStore 未初始化"})
+
+    key = args.get("key", "")
+    if not key:
+        return json.dumps({"error": "未指定 key"})
+
+    ok = store.manager.delete(key)
+    return json.dumps({"success": ok, "key": key})
+
+
+def _handle_check_operation(args: dict) -> str:
+    store = get_memory_store()
+    if not store:
+        return json.dumps({"error": "MemoryStore 未初始化"})
+
+    tool = args.get("tool", "")
+    action_hint = args.get("action_hint", "")
+    if not tool:
+        return json.dumps({"error": "未指定 tool"})
+
+    result = store.manager.check_operation(tool, action_hint)
+    return json.dumps(result, default=str)
+
+
+def _handle_maintain(args: dict) -> str:
+    store = get_memory_store()
+    if not store:
+        return json.dumps({"error": "MemoryStore 未初始化"})
+
+    result = store.manager.maintain(full=True)
+    return json.dumps(result, default=str)

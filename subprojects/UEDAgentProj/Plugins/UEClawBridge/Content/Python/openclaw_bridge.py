@@ -194,6 +194,37 @@ def init_bridge() -> bool:
     return _bridge.start()
 
 
+# ---------------------------------------------------------------------------
+# 记忆摘要注入
+# ---------------------------------------------------------------------------
+
+def _enrich_with_briefing(message: str) -> str:
+    """在用户消息前附加记忆摘要 (Memory Briefing)
+
+    仅在 MemoryStore v2 可用且有内容时注入。
+    注入格式:
+        [Memory Briefing]
+        ... briefing content ...
+
+        [User Message]
+        ... original message ...
+    """
+    try:
+        from memory_store import get_memory_store
+        store = get_memory_store()
+        if store is None:
+            return message
+
+        briefing = store.manager.export_briefing(max_tokens=1500)
+        if not briefing or "记忆库为空" in briefing:
+            return message
+
+        return f"{briefing}\n\n[User Message]\n{message}"
+    except Exception:
+        # 任何错误都不应影响正常消息发送
+        return message
+
+
 def send_chat(message: str) -> str:
     """同步发送消息 (C++ 调用入口)。"""
     global _bridge
@@ -201,7 +232,8 @@ def send_chat(message: str) -> str:
         init_bridge()
     if not _bridge:
         return "[错误] Bridge 未初始化"
-    return _bridge.send_message(message)
+    enriched = _enrich_with_briefing(message)
+    return _bridge.send_message(enriched)
 
 
 def send_chat_async(message: str, callback_name: str = ""):
@@ -283,7 +315,8 @@ def send_chat_async_to_file(message: str, output_file: str):
     if _bridge:
         _bridge.on_ai_thinking = _on_thinking
         _bridge.on_ai_message = _on_delta
-        _bridge.send_message_async(message, _on_result)
+        enriched = _enrich_with_briefing(message)
+        _bridge.send_message_async(enriched, _on_result)
     else:
         try:
             with open(output_file, "w", encoding="utf-8") as f:

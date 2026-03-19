@@ -45,6 +45,34 @@ def _setup_paths():
 def _deferred_startup():
     """延迟启动"""
     try:
+        # 共享模块完整性检查
+        try:
+            core_dir = None
+            for p in sys.path:
+                candidate = os.path.join(p, "core")
+                if os.path.isdir(candidate) and os.path.exists(os.path.join(candidate, "__init__.py")):
+                    core_dir = candidate
+                    break
+
+            if core_dir:
+                try:
+                    from integrity_check import check_and_repair
+                except ImportError:
+                    _bridge_dir = os.path.normpath(
+                        os.path.join(core_dir, "..", "..", "..", "openclaw-mcp-bridge")
+                    )
+                    if os.path.isdir(_bridge_dir) and _bridge_dir not in sys.path:
+                        sys.path.insert(0, _bridge_dir)
+                    from integrity_check import check_and_repair
+
+                integrity = check_and_repair(core_dir, auto_repair=True)
+                if integrity.repaired:
+                    logger.info(f"ArtClaw: 共享模块自动修复: {', '.join(integrity.repaired)}")
+                if not integrity.ok:
+                    logger.error(f"ArtClaw: 共享模块缺失: {', '.join(integrity.failed)}")
+        except Exception as e:
+            logger.warning(f"ArtClaw: 完整性检查跳过: {e}")
+
         from core.dependency_manager import ensure_dependencies
 
         def _on_deps(success, message):

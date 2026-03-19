@@ -102,6 +102,8 @@ if not exist "%PYTHON_DST%" mkdir "%PYTHON_DST%"
 copy /Y "%BRIDGE_MODULES%\bridge_core.py" "%PYTHON_DST%\" >nul
 copy /Y "%BRIDGE_MODULES%\bridge_config.py" "%PYTHON_DST%\" >nul
 copy /Y "%BRIDGE_MODULES%\bridge_diagnostics.py" "%PYTHON_DST%\" >nul
+copy /Y "%BRIDGE_MODULES%\memory_core.py" "%PYTHON_DST%\" >nul
+copy /Y "%BRIDGE_MODULES%\integrity_check.py" "%PYTHON_DST%\" >nul
 echo [OK] 共享模块已打包: %PYTHON_DST%
 
 :: ----- 步骤 3: 安装 Python 依赖 -----

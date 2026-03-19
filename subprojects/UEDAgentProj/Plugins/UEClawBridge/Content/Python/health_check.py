@@ -378,12 +378,22 @@ def _check_memory_store() -> CheckResult:
     try:
         from memory_store import TieredMemoryStore
         store = TieredMemoryStore()
-        stats = store.get_stats() if hasattr(store, "get_stats") else {}
+        stats = store.get_all_summary() if hasattr(store, "get_all_summary") else {}
 
         total = stats.get("total_entries", 0)
         r.ok(f"{total} entries stored")
-        for tier, count in stats.get("by_tier", {}).items():
-            r.info(f"  {tier}: {count}")
+
+        # v2 格式: layer_stats
+        layer_stats = stats.get("layer_stats", {})
+        for layer_name, layer_info in layer_stats.items():
+            count = layer_info.get("total_entries", 0)
+            r.info(f"  {layer_name}: {count}")
+
+        # 健康度
+        health = stats.get("memory_health", {})
+        score = health.get("overall_score", 0)
+        if score > 0:
+            r.info(f"  health: {score:.2f}")
     except ImportError:
         r.skip("memory_store module not available")
     except Exception as e:

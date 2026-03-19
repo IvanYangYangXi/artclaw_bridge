@@ -171,6 +171,9 @@ class DCCBridgeManager:
                 )
             return
 
+        # 记忆摘要注入
+        enriched = self._enrich_with_briefing(message)
+
         # 设置流式回调
         self._bridge.on_ai_message = self._on_ai_message
         self._bridge.on_ai_thinking = self._on_ai_thinking
@@ -183,7 +186,23 @@ class DCCBridgeManager:
                 self._bridge.on_ai_message = None
                 self._bridge.on_ai_thinking = None
 
-        self._bridge.send_message_async(message, _on_result)
+        self._bridge.send_message_async(enriched, _on_result)
+
+    @staticmethod
+    def _enrich_with_briefing(message: str) -> str:
+        """在用户消息前附加记忆摘要"""
+        try:
+            from memory_store import DCCMemoryStore
+            # 通过全局 adapter 获取 memory store
+            import builtins
+            adapter = getattr(builtins, '_artclaw_adapter', None)
+            if adapter and hasattr(adapter, '_memory_store') and adapter._memory_store:
+                briefing = adapter._memory_store.manager.export_briefing(max_tokens=1500)
+                if briefing and "记忆库为空" not in briefing:
+                    return f"{briefing}\n\n[User Message]\n{message}"
+        except Exception:
+            pass
+        return message
 
     def cancel(self):
         """取消当前 AI 请求"""
