@@ -26,7 +26,6 @@ try:
         QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
         QPushButton, QLabel, QFrame, QListWidget, QListWidgetItem,
         QSizePolicy, QApplication, QToolButton, QMenu, QAction,
-        QFlowLayout if False else QWidget,  # QFlowLayout 不存在，用 workaround
     )
     from PySide2.QtCore import Qt, Slot, QTimer, QSize, Signal
     from PySide2.QtGui import QFont, QTextCursor, QKeyEvent
@@ -53,6 +52,7 @@ class ChatPanel(QWidget):
         self._streaming_text = ""  # 当前流式累积文本
         self._message_count = 0
         self._quick_inputs: List[dict] = []
+        self._last_ai_cursor_pos: int = -1  # 最后一条 AI 消息的起始位置
 
         self.setWindowTitle("ArtClaw Chat")
         self.setMinimumSize(400, 500)
@@ -62,6 +62,16 @@ class ChatPanel(QWidget):
         self._setup_ui()
         self._setup_bridge()
         self._load_quick_inputs()
+        self._update_window_title()
+
+    def _update_window_title(self):
+        """根据 DCC 名称设置窗口标题"""
+        if self._adapter:
+            try:
+                sw_name = self._adapter.get_software_name()
+                self.setWindowTitle(f"ArtClaw Chat - {sw_name}")
+            except Exception:
+                pass
 
     def _setup_ui(self):
         """构建界面"""
@@ -227,14 +237,108 @@ class ChatPanel(QWidget):
             )
             btn.setFixedHeight(24)
             content = qi["content"]
-            btn.clicked.connect(lambda checked, c=content: self._fill_input(c))
+            btn.clicked.connect(lambda _checked=False, c=content: self._fill_input(c))
             self._quick_input_layout.addWidget(btn)
+
+        # 创建 Skill 按钮
+        skill_btn = QPushButton("+ 创建技能")
+        skill_btn.setStyleSheet(
+            "QPushButton { background: #2D6B4D; color: #CCC; border: 1px solid #3A7D5C; "
+            "border-radius: 3px; padding: 2px 8px; font-size: 11px; }"
+            "QPushButton:hover { background: #3A7D5C; color: white; }"
+        )
+        skill_btn.setFixedHeight(24)
+        skill_btn.setToolTip("用自然语言描述想要的技能，AI 会自动生成")
+        skill_btn.clicked.connect(lambda _checked=False: self._on_create_skill())
+        self._quick_input_layout.addWidget(skill_btn)
+
+        # 自定义按钮
+        edit_btn = QPushButton("...")
+        edit_btn.setStyleSheet(
+            "QPushButton { background: #3C3C3C; color: #999; border: 1px solid #555; "
+            "border-radius: 3px; padding: 2px 6px; font-size: 11px; }"
+            "QPushButton:hover { background: #4A4A4A; color: white; }"
+        )
+        edit_btn.setFixedHeight(24)
+        edit_btn.setFixedWidth(28)
+        edit_btn.setToolTip("编辑快捷输入")
+        edit_btn.clicked.connect(lambda _checked=False: self._on_edit_quick_inputs())
+        self._quick_input_layout.addWidget(edit_btn)
 
         self._quick_input_layout.addStretch()
 
     def _fill_input(self, text: str):
         self._input_box.setPlainText(text)
         self._input_box.setFocus()
+
+    def _on_create_skill(self):
+        """创建技能 — 填充提示并发送"""
+        self._input_box.setPlainText(
+            "帮我创建一个 ArtClaw 技能: "
+        )
+        self._input_box.setFocus()
+        # 光标移到末尾
+        cursor = self._input_box.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        self._input_box.setTextCursor(cursor)
+
+    def _on_edit_quick_inputs(self):
+        """编辑快捷输入配置"""
+        from PySide2.QtWidgets import QDialog, QDialogButtonBox, QTextEdit as QTE, QVBoxLayout as QVL
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("编辑快捷输入")
+        dlg.setMinimumSize(400, 300)
+        dlg_layout = QVL(dlg)
+
+        hint = QLabel(
+            '每行一个，格式: 按钮名称|发送内容\n'
+            '示例: 选中信息|描述一下我当前选中的对象'
+        )
+        hint.setStyleSheet("color: #AAA; font-size: 11px;")
+        dlg_layout.addWidget(hint)
+
+        editor = QTE()
+        editor.setStyleSheet(
+            "QTextEdit { background: #2B2B2B; color: #E0E0E0; border: 1px solid #555; "
+            "font-size: 12px; padding: 6px; font-family: 'Consolas', 'Microsoft YaHei'; }"
+        )
+        # 填充当前配置
+        lines = []
+        for qi in self._quick_inputs:
+            lines.append(f'{qi["name"]}|{qi["content"]}')
+        editor.setPlainText("\n".join(lines))
+        dlg_layout.addWidget(editor)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        dlg_layout.addWidget(buttons)
+
+        if dlg.exec_() == QDialog.Accepted:
+            new_inputs = []
+            for line in editor.toPlainText().strip().split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                if "|" in line:
+                    name, content = line.split("|", 1)
+                    new_inputs.append({"name": name.strip(), "content": content.strip()})
+                else:
+                    new_inputs.append({"name": line[:8], "content": line})
+
+            self._quick_inputs = new_inputs
+            self._rebuild_quick_inputs()
+
+            # 保存到文件
+            path = self._get_quick_input_path()
+            if path:
+                try:
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(self._quick_inputs, f, ensure_ascii=False, indent=2)
+                except Exception as e:
+                    logger.warning(f"保存快捷输入失败: {e}")
 
     # --- 事件处理 ---
 
@@ -413,22 +517,28 @@ class ChatPanel(QWidget):
 
         cursor = self._message_area.textCursor()
         cursor.movePosition(QTextCursor.End)
+
+        # 记录 AI 消息的起始位置（用于流式覆盖）
+        if sender == "assistant":
+            self._last_ai_cursor_pos = cursor.position()
+
         cursor.insertHtml(html)
         cursor.insertBlock()
         self._message_area.setTextCursor(cursor)
         self._message_area.ensureCursorVisible()
 
     def _update_last_message(self, sender: str, content: str):
-        """更新最后一条消息（流式覆盖）"""
-        # 移除最后一个 block 并重新写入
+        """更新最后一条 AI 消息（流式覆盖）"""
+        if self._last_ai_cursor_pos < 0:
+            # 没有记录位置，fallback 到追加
+            self._add_message(sender, content)
+            return
+
         cursor = self._message_area.textCursor()
-        cursor.movePosition(QTextCursor.End)
-        cursor.movePosition(QTextCursor.StartOfBlock, QTextCursor.KeepAnchor)
-        # 向上再选一行（消息 + 空行）
-        cursor.movePosition(QTextCursor.PreviousBlock, QTextCursor.KeepAnchor)
-        cursor.movePosition(QTextCursor.StartOfBlock, QTextCursor.KeepAnchor)
+        # 选中从上次 AI 消息起始位置到文档末尾
+        cursor.setPosition(self._last_ai_cursor_pos)
+        cursor.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
         cursor.removeSelectedText()
-        cursor.deletePreviousChar()  # 移除多余换行
 
         color, label = self._get_sender_style(sender)
         html = self._format_message(label, color, content)

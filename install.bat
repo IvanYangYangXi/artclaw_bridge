@@ -227,10 +227,28 @@ echo  请输入 Maya 版本 (默认 2023):
 set /p MAYA_VER_INPUT="  > "
 if not "%MAYA_VER_INPUT%"=="" set "MAYA_VER=%MAYA_VER_INPUT%"
 
-set "MAYA_SCRIPTS=%USERPROFILE%\Documents\maya\%MAYA_VER%\scripts"
-set "DCC_DST=%MAYA_SCRIPTS%\DCCClawBridge"
+:: 检测 Maya 目录
+set "MAYA_BASE=%USERPROFILE%\Documents\maya\%MAYA_VER%"
+set "MAYA_SCRIPTS=%MAYA_BASE%\scripts"
+set "MAYA_LOCALE_SCRIPTS="
 
+:: 检测 locale 子目录 (zh_CN, ja_JP, ko_KR 等)
+for /D %%D in ("%MAYA_BASE%\*") do (
+    if exist "%%D\scripts" (
+        for %%N in ("%%~nxD") do (
+            echo %%~N | findstr /R "^[a-z][a-z]_[A-Z][A-Z]$" >nul 2>&1
+            if !ERRORLEVEL! EQU 0 (
+                set "MAYA_LOCALE_SCRIPTS=%%D\scripts"
+                echo [检测] 发现 Maya locale 目录: %%~nxD
+            )
+        )
+    )
+)
+
+:: 安装到默认 scripts/ (始终安装)
+set "DCC_DST=%MAYA_SCRIPTS%\DCCClawBridge"
 echo  目标目录: %DCC_DST%
+if defined MAYA_LOCALE_SCRIPTS echo  Locale 目录: !MAYA_LOCALE_SCRIPTS!\DCCClawBridge
 echo.
 
 :: 检查目标已存在
@@ -263,9 +281,25 @@ echo [复制] bridge_core 共享模块到 core/...
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_core.py" "%DCC_DST%\core\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_config.py" "%DCC_DST%\core\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "%DCC_DST%\core\" >nul
+copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "%DCC_DST%\core\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "%DCC_DST%\core\" >nul 2>&1
 echo [OK] 共享模块已打包 (自包含部署)
 
-:: 处理 userSetup.py (幂等注入)
+:: 如果有 locale 目录，也复制一份
+if defined MAYA_LOCALE_SCRIPTS (
+    set "LOCALE_DST=!MAYA_LOCALE_SCRIPTS!\DCCClawBridge"
+    echo [复制] DCCClawBridge 到 locale 目录...
+    robocopy "%DCC_BRIDGE_SRC%" "!LOCALE_DST!" /MIR /NFL /NDL /NJH /NJS /NC /NS /NP >nul 2>&1
+    copy /Y "%BRIDGE_MODULES_SRC%\bridge_core.py" "!LOCALE_DST!\core\" >nul
+    copy /Y "%BRIDGE_MODULES_SRC%\bridge_config.py" "!LOCALE_DST!\core\" >nul
+    copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "!LOCALE_DST!\core\" >nul
+    copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "!LOCALE_DST!\core\" >nul 2>&1
+    copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "!LOCALE_DST!\core\" >nul 2>&1
+    echo [OK] 已同步到: !LOCALE_DST!
+    call :inject_maya_startup "!MAYA_LOCALE_SCRIPTS!"
+)
+
+:: 处理 userSetup.py (幂等注入) — 默认 scripts/
 call :inject_maya_startup "%MAYA_SCRIPTS%"
 
 echo [完成] Maya 插件安装成功!
@@ -279,7 +313,7 @@ set "TARGET_DIR=%~1"
 set "SETUP_DST=%TARGET_DIR%\userSetup.py"
 set "SETUP_SRC=%DCC_BRIDGE_SRC%\maya_setup\userSetup.py"
 
-:: 目标不存在 → 创建新文件 (带标记块)
+:: 目标不存在 -> 创建新文件 (带标记块)
 if not exist "%SETUP_DST%" (
     echo %INJECT_START%> "%SETUP_DST%"
     type "%SETUP_SRC%" >> "%SETUP_DST%"
@@ -289,7 +323,7 @@ if not exist "%SETUP_DST%" (
     goto :eof
 )
 
-:: 已有标记块 → 委托给 Python 更新 (bat 不擅长多行替换)
+:: 已有标记块 -> 委托给 Python 更新 (bat 不擅长多行替换)
 findstr /C:"ArtClaw Bridge START" "%SETUP_DST%" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo [更新] userSetup.py 中已有 ArtClaw 标记块，通过 install.py 更新...
@@ -331,7 +365,14 @@ echo  请输入 Maya 版本 (默认 2023):
 set /p MAYA_VER_INPUT="  > "
 if not "%MAYA_VER_INPUT%"=="" set "MAYA_VER=%MAYA_VER_INPUT%"
 
-set "MAYA_SCRIPTS=%USERPROFILE%\Documents\maya\%MAYA_VER%\scripts"
+:: 检测 locale 目录 (同安装逻辑)
+set "MAYA_BASE=%USERPROFILE%\Documents\maya\%MAYA_VER%"
+set "MAYA_SCRIPTS=%MAYA_BASE%\scripts"
+for /D %%D in ("%MAYA_BASE%\*") do (
+    if exist "%%D\scripts\DCCClawBridge" (
+        set "MAYA_SCRIPTS=%%D\scripts"
+    )
+)
 set "DCC_DST=%MAYA_SCRIPTS%\DCCClawBridge"
 
 :: 删除 DCCClawBridge 目录
@@ -374,7 +415,29 @@ echo  请输入 3ds Max 版本 (默认 2024):
 set /p MAX_VER_INPUT="  > "
 if not "%MAX_VER_INPUT%"=="" set "MAX_VER=%MAX_VER_INPUT%"
 
-set "MAX_SCRIPTS=%LOCALAPPDATA%\Autodesk\3dsMax\%MAX_VER%\ENU\scripts"
+:: 检测 Max locale 目录 (ENU=英文, CHS=中文, JPN=日文 等)
+set "MAX_BASE=%LOCALAPPDATA%\Autodesk\3dsMax\%MAX_VER%"
+set "MAX_LOCALE="
+set "MAX_SCRIPTS="
+
+:: 按优先级检测已有的 locale 目录
+for %%L in (CHS ENU JPN KOR FRA DEU) do (
+    if exist "%MAX_BASE%\%%L\scripts" (
+        if "!MAX_LOCALE!"=="" (
+            set "MAX_LOCALE=%%L"
+            set "MAX_SCRIPTS=%MAX_BASE%\%%L\scripts"
+        )
+    )
+)
+:: 如果都没找到，回退 ENU
+if "!MAX_SCRIPTS!"=="" (
+    set "MAX_LOCALE=ENU"
+    set "MAX_SCRIPTS=%MAX_BASE%\ENU\scripts"
+    echo [提示] 未检测到已有 Max locale 目录，使用默认 ENU
+) else (
+    echo [检测] 发现 Max locale 目录: !MAX_LOCALE!
+)
+
 set "MAX_STARTUP=%MAX_SCRIPTS%\startup"
 set "DCC_DST=%MAX_SCRIPTS%\DCCClawBridge"
 
@@ -415,6 +478,8 @@ echo [复制] bridge_core 共享模块到 core/...
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_core.py" "%DCC_DST%\core\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_config.py" "%DCC_DST%\core\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "%DCC_DST%\core\" >nul
+copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "%DCC_DST%\core\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "%DCC_DST%\core\" >nul 2>&1
 echo [OK] 共享模块已打包 (自包含部署)
 
 :: 处理 startup.py (幂等注入)
@@ -430,7 +495,7 @@ exit /b 0
 set "STARTUP_DST=%MAX_STARTUP%\artclaw_startup.py"
 set "STARTUP_SRC=%DCC_BRIDGE_SRC%\max_setup\startup.py"
 
-:: 目标不存在 → 创建新文件
+:: 目标不存在 -> 创建新文件
 if not exist "%STARTUP_DST%" (
     echo %INJECT_START%> "%STARTUP_DST%"
     type "%STARTUP_SRC%" >> "%STARTUP_DST%"
@@ -440,7 +505,7 @@ if not exist "%STARTUP_DST%" (
     goto :eof
 )
 
-:: 已有标记块 → 委托给 Python 更新
+:: 已有标记块 -> 委托给 Python 更新
 findstr /C:"ArtClaw Bridge START" "%STARTUP_DST%" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo [更新] artclaw_startup.py 中已有 ArtClaw 标记块，通过 install.py 更新...
@@ -482,7 +547,15 @@ echo  请输入 3ds Max 版本 (默认 2024):
 set /p MAX_VER_INPUT="  > "
 if not "%MAX_VER_INPUT%"=="" set "MAX_VER=%MAX_VER_INPUT%"
 
-set "MAX_SCRIPTS=%LOCALAPPDATA%\Autodesk\3dsMax\%MAX_VER%\ENU\scripts"
+set "MAX_BASE=%LOCALAPPDATA%\Autodesk\3dsMax\%MAX_VER%"
+set "MAX_SCRIPTS="
+:: 自动检测 locale 目录
+for %%L in (CHS ENU JPN KOR FRA DEU) do (
+    if exist "%MAX_BASE%\%%L\scripts\DCCClawBridge" (
+        if "!MAX_SCRIPTS!"=="" set "MAX_SCRIPTS=%MAX_BASE%\%%L\scripts"
+    )
+)
+if "!MAX_SCRIPTS!"=="" set "MAX_SCRIPTS=%MAX_BASE%\ENU\scripts"
 set "DCC_DST=%MAX_SCRIPTS%\DCCClawBridge"
 
 :: 删除 DCCClawBridge 目录
@@ -584,17 +657,17 @@ echo.
 echo    UE:
 echo      1. 打开 UE 项目，启用 "UE Claw Bridge" 插件
 echo      2. 重启编辑器
-echo      3. Window 菜单 → UE Claw Bridge
+echo      3. Window 菜单 -- UE Claw Bridge
 echo      4. 输入 /diagnose 验证连接
 echo.
 echo    Maya:
-echo      1. 启动 Maya → ArtClaw 菜单自动出现
-echo      2. ArtClaw → 打开 Chat Panel
+echo      1. 启动 Maya -- ArtClaw 菜单自动出现
+echo      2. ArtClaw -- 打开 Chat Panel
 echo      3. 点击 连接 或输入 /connect
 echo.
 echo    3ds Max:
-echo      1. 启动 Max → ArtClaw 自动加载
-echo      2. 菜单栏 → ArtClaw → Chat Panel
+echo      1. 启动 Max -- ArtClaw 自动加载
+echo      2. 菜单栏 -- ArtClaw -- Chat Panel
 echo      3. 点击 连接 或输入 /connect
 echo.
 echo    OpenClaw:

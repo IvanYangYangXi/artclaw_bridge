@@ -33,6 +33,11 @@ from typing import Optional
 #   2. 开发模式: 通过相对路径找到 openclaw-mcp-bridge/ 目录
 # ---------------------------------------------------------------------------
 
+# 确保 core/ 目录在 sys.path 上（bridge_core.py 用裸导入）
+_core_dir = os.path.dirname(os.path.abspath(__file__))
+if _core_dir not in sys.path:
+    sys.path.insert(0, _core_dir)
+
 try:
     # 自包含部署: 安装器已将 bridge_core.py 等复制到 core/ 目录
     from bridge_core import OpenClawBridge, BridgeLogger  # noqa: E402
@@ -124,6 +129,7 @@ class DCCBridgeManager:
     """
 
     _instance: Optional["DCCBridgeManager"] = None
+    _dcc_name: str = "dcc"  # 由 adapter 设置: maya / max
 
     @classmethod
     def instance(cls) -> "DCCBridgeManager":
@@ -131,9 +137,15 @@ class DCCBridgeManager:
             cls._instance = cls()
         return cls._instance
 
+    @classmethod
+    def set_dcc_name(cls, name: str):
+        """设置当前 DCC 名称 (maya/max)，影响 session key"""
+        cls._dcc_name = name.lower()
+
     def __init__(self):
         self._bridge: Optional[OpenClawBridge] = None
         self.signals = _BridgeSignals() if _BridgeSignals else None
+        self._context_injected = False  # 是否已注入过 DCC 上下文
 
     def connect(self) -> bool:
         """连接到 OpenClaw Gateway"""
@@ -141,6 +153,7 @@ class DCCBridgeManager:
             return True
 
         self._bridge = OpenClawBridge(
+            client_id=f"{self._dcc_name}-editor",
             logger=_DCCBridgeLogger(),
             on_status_changed=self._on_status_changed,
         )
@@ -188,20 +201,41 @@ class DCCBridgeManager:
 
         self._bridge.send_message_async(enriched, _on_result)
 
-    @staticmethod
-    def _enrich_with_briefing(message: str) -> str:
-        """在用户消息前附加记忆摘要"""
+    def _enrich_with_briefing(self, message: str) -> str:
+        """在用户消息前附加 DCC 上下文 + 记忆摘要"""
+        prefix_parts = []
+
+        # DCC 环境上下文（只在 session 首条消息注入）
+        if not self._context_injected:
+            try:
+                import builtins
+                adapter = getattr(builtins, '_artclaw_adapter', None)
+                if adapter:
+                    sw_name = adapter.get_software_name()
+                    sw_ver = adapter.get_software_version()
+                    prefix_parts.append(
+                        f"[DCC Context] 用户正在 {sw_name} {sw_ver} 中与你对话。"
+                        f"请使用 {sw_name} 相关的工具和知识来回答。"
+                    )
+                    self._context_injected = True
+            except Exception:
+                pass
+
+        # 记忆摘要
         try:
             from memory_store import DCCMemoryStore
-            # 通过全局 adapter 获取 memory store
             import builtins
             adapter = getattr(builtins, '_artclaw_adapter', None)
             if adapter and hasattr(adapter, '_memory_store') and adapter._memory_store:
                 briefing = adapter._memory_store.manager.export_briefing(max_tokens=1500)
                 if briefing and "记忆库为空" not in briefing:
-                    return f"{briefing}\n\n[User Message]\n{message}"
+                    prefix_parts.append(briefing)
         except Exception:
             pass
+
+        if prefix_parts:
+            prefix = "\n\n".join(prefix_parts)
+            return f"{prefix}\n\n[User Message]\n{message}"
         return message
 
     def cancel(self):
@@ -210,9 +244,10 @@ class DCCBridgeManager:
             self._bridge.cancel_current()
 
     def reset_session(self):
-        """重置会话 (清除 session key)"""
+        """重置会话 — 向 Gateway 发送 /new 并清空 session"""
         if self._bridge:
-            self._bridge._session_key = ""
+            self._bridge.reset_session()
+        self._context_injected = False
 
     def run_diagnostics(self) -> str:
         """运行连接诊断，返回报告文本"""

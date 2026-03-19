@@ -164,12 +164,48 @@ def main():
     # 合并
     changed = ensure_mcp_bridge(config, servers)
 
+    # 自动注入 MCP 工具到 agent 的 tools.allow 列表
+    tool_map = {
+        "ue-editor-agent": [
+            "run_ue_python", "get_editor_context", "highlight_actors",
+            "get_selected_actors", "get_all_level_actors", "get_actor_details",
+            "focus_on_actor", "select_actors", "load_asset", "get_asset_path",
+            "list_assets_in_directory", "rename_asset", "get_actor_materials",
+            "get_material_parameters", "get_current_level", "get_level_actors",
+            "get_viewport_info", "memory", "knowledge_search",
+            "skill_list", "skill_manage", "skill_generate",
+        ],
+        "maya-primary": [
+            "run_python", "get_editor_context", "get_selected_objects",
+            "get_scene_info", "knowledge_search", "memory",
+        ],
+        "max-primary": [
+            "run_python", "get_editor_context", "get_selected_objects",
+            "get_scene_info", "knowledge_search", "memory",
+        ],
+    }
+
+    agents_list = config.get("agents", {}).get("list", [])
+    for agent in agents_list:
+        allow = agent.get("tools", {}).get("allow", [])
+        added = 0
+        for server_name in servers:
+            if server_name in tool_map:
+                for tool in tool_map[server_name]:
+                    full_name = f"mcp_{server_name}_{tool}"
+                    if full_name not in allow:
+                        allow.append(full_name)
+                        added += 1
+        if added > 0:
+            agent.setdefault("tools", {})["allow"] = allow
+            changed = True
+
     if changed:
         save_config(config)
-        print(f"\n  ✅ 配置已更新: {OPENCLAW_CONFIG}")
+        print(f"\n  配置已更新: {OPENCLAW_CONFIG}")
         print("  请运行 'openclaw gateway restart' 使配置生效")
     else:
-        print("\n  ℹ️  配置无需修改（已是最新）")
+        print("\n  配置无需修改（已是最新）")
 
 
 if __name__ == "__main__":

@@ -56,6 +56,13 @@ class MaxAdapter(BaseDCCAdapter):
         logger.info("ArtClaw: Max adapter startup")
         self.register_menu(self._menu_name, self._open_chat_panel)
 
+        # 设置 DCC 名称（影响 Gateway session key）
+        try:
+            from core.bridge_dcc import DCCBridgeManager
+            DCCBridgeManager.set_dcc_name("max")
+        except Exception:
+            pass
+
         # 启动 MCP Server
         try:
             from core.mcp_server import start_mcp_server

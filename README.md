@@ -9,12 +9,17 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max 等数字内容创作（DCC）
 
 ---
 
+## 展示
+[UEClawBridge](docs\示例\UE连接openClaw效果.png)
+
+---
+
 ## ✨ 特性
 
 - **统一 MCP 协议** — 各 DCC 软件通过标准 MCP 协议与 AI Agent 通信，一套框架多端接入
 - **Skill 热加载系统** — 分层管理（官方/团队/用户/临时），运行时动态加载，跨 DCC 复用
 - **AI 生成 Skill** — 用自然语言描述需求，AI 自动生成可执行的编辑器 Skill
-- **本地 RAG 知识库** — 索引 API 文档和项目文档，语义检索辅助 AI 决策
+- **本地 RAG 知识库（未验证）** — 索引 API 文档和项目文档，语义检索辅助 AI 决策
 - **安全守卫** — 事务保护、风险评估、主线程调度
 - **OpenClaw 集成** — 通过 MCP Bridge 插件无缝接入 [OpenClaw](https://github.com/openclaw/openclaw) Agent 框架
 
