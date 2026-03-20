@@ -10,7 +10,14 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max 等数字内容创作（DCC）
 ---
 
 ## 展示
-[UEClawBridge](docs\示例\UE连接openClaw效果.png)
+![UEClawBridge](docs/示例/UE连接openClaw效果.png)  ![UEClawBridge](docs/示例/打通不同软件间的上下流交接.png)  ![UEClawBridge](docs/示例/上下流交接maya中的示例.png) 
+---
+
+## 项目愿景
+
+在一个框架下做软件和 Agent 桥接，把 AI 能力接入到整个游戏开发的美术流，赋予 Agent 操作软件和解决上下游对接问题的能力。
+
+桥接的好处是**未来可以接各种软件和各种 Agent 平台**，形成通用的软件-Agent 交互层。
 
 ---
 
@@ -287,6 +294,43 @@ python artclaw.py skill test scene_ops   # 测试指定 Skill
 - **[MCP Bridge 部署](openclaw-mcp-bridge/README.md)** — OpenClaw 集成详细说明
 - **[DCCClawBridge](subprojects/DCCClawBridge/README.md)** — Maya / 3ds Max 插件详细说明
 - **[贡献指南](docs/skills/CONTRIBUTING.md)** — 如何为项目贡献
+
+---
+
+## 🧾 一些想法说明（不一定正确，欢迎指正）
+
+### 为什么不做直接接入大模型？
+
+Agent 平台是个大工程。现在很多公司都有做自己的 Agent 管理平台，龙虾也属于 Agent 管理平台。
+
+这部分是个大工程，龙虾要落地但项目其实还有很多**工程问题要解决**。本项目只做了**当前需要的工程问题方案**，专注于软件桥接这个细分领域。
+
+### Skill vs 定制记忆：各司其职
+
+| 维度 | Skill | 记忆 |
+|------|-------|------|
+| 适用场景 | 固定流程、反复使用的场景 | 非固定流程、需要上下文理解的场景 |
+| 管理方式 | 人工管理 | 自动管理 |
+| 作用 | 标准化、可复用的流程 | 持续上下文、个性化交互 |
+
+**定制记忆应用方法**：
+- 定向内容记忆，比如要求 Agent 把某个软件操作崩溃或流程走通的链路添加到**定制的记忆模块**
+- 定向内容记忆跟 Agent 记忆区分存储
+- 操作哪个软件只看哪个软件的记忆，更高效
+
+### 多 Agent vs 单 Agent + 定制记忆
+
+**多 Agent 方案**：不同 Agent 做不同事情
+- 优点：职责分离
+- 缺点：长链条工作中需要多 Agent 交换信息，增加复杂度
+
+**本方案**：一个 Agent + 按需提取特定记忆
+- 单 Agent 有持续记忆
+- 按需提取特定记忆
+- 处理长链条工作时**省去了多 Agent 交换信息的过程**
+
+
+---
 
 ## 📄 许可证
 
