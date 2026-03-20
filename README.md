@@ -39,7 +39,7 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max 等数字内容创作（DCC）
 |------|------|------|------|
 | **Unreal Engine 5.7** | ✅ 已实现 | UEClawBridge | C++ + Python，编辑器内 AI 对话面板 |
 | **Maya 2022+** | ✅ 已实现 | DCCClawBridge | Python + PySide2，ArtClaw Chat Panel |
-| **3ds Max 2024+** | ✅ 已实现 | DCCClawBridge | Python + PySide2，ArtClaw Chat Panel |
+| **3ds Max 2024+** | ✅ 已实现（未测试） | DCCClawBridge | Python + PySide2，ArtClaw Chat Panel |
 | **Blender** | 💡 考虑中 | — | Python API |
 
 > UE、Maya、3ds Max 三端均已实现完整的 MCP Server + AI 对话面板。Blender 支持正在规划中，框架层面已预留扩展接口。欢迎社区贡献！
