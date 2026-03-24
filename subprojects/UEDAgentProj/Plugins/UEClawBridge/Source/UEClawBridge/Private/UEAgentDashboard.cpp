@@ -423,34 +423,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	// 打开面板时自动连接 OpenClaw Bridge
 	ConnectOpenClawBridge();
 
-	// MCP Server 状态检查延迟到 3 秒后执行，避免在启动阶段误报
-	// （MCP Server 通过 Slate tick 异步启动，Dashboard 构造时可能还没就绪）
-	{
-		auto Self = SharedThis(this);
-		FTSTicker::GetCoreTicker().AddTicker(
-			FTickerDelegate::CreateLambda([Self](float) -> bool
-			{
-				FString CheckMcpCmd = TEXT(
-					"import socket\n"
-					"_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
-					"_s.settimeout(0.5)\n"
-					"try:\n"
-					"    _s.connect(('127.0.0.1', 8080))\n"
-					"    _s.close()\n"
-					"    print('[LogUEAgent] MCP Server: port 8080 OK')\n"
-					"except:\n"
-					"    _s.close()\n"
-					"    print('[LogUEAgent_Error] MCP Server: port 8080 NOT listening')\n"
-				);
-				IPythonScriptPlugin::Get()->ExecPythonCommand(*CheckMcpCmd);
-				return false; // 只执行一次
-			}),
-			3.0f // 延迟 3 秒
-		);
-	}
-
 	// Bridge 连接状态持续轮询 — 读取 Python 侧写入的 _bridge_status.json
-	// 实现断连/重连时 UI 自动更新，无需用户手动 /status
+	// 统一处理 Bridge 连接状态 + MCP Server 就绪状态，无需额外 socket 探测
 	{
 		auto Self = SharedThis(this);
 		BridgeStatusPollHandle = FTSTicker::GetCoreTicker().AddTicker(
@@ -486,6 +460,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				Self->LastBridgeStatusTimestamp = Timestamp;
 
 				bool bConnected = JsonObj->GetBoolField(TEXT("connected"));
+				bool bMcpReady = false;
+				JsonObj->TryGetBoolField(TEXT("mcp_ready"), bMcpReady);
 
 				// 更新 Subsystem 状态（触发图标颜色变化等）
 				if (Self->CachedSubsystem.IsValid())

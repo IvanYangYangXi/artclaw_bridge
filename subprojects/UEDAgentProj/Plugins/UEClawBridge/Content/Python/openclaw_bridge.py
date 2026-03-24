@@ -93,14 +93,28 @@ def _get_bridge_status_path() -> str:
         return ""
 
 
-def _write_bridge_status(connected: bool, detail: str = ""):
-    """写入 bridge 连接状态文件，供 C++ FTSTicker 轮询读取"""
+def _write_bridge_status(connected: bool, detail: str = "", mcp_ready: bool = None):
+    """写入 bridge 连接状态文件，供 C++ FTSTicker 轮询读取。
+
+    mcp_ready: True/False 表示 MCP Server 状态；None 表示保留上次值。
+    """
     path = _get_bridge_status_path()
     if not path:
         return
     try:
+        # 读取现有状态以保留 mcp_ready（当本次不显式设置时）
+        prev_mcp_ready = False
+        if mcp_ready is None:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    prev = json.load(f)
+                    prev_mcp_ready = prev.get("mcp_ready", False)
+            except Exception:
+                pass
+
         status = {
             "connected": connected,
+            "mcp_ready": mcp_ready if mcp_ready is not None else prev_mcp_ready,
             "timestamp": time.time(),
             "detail": detail,
         }
@@ -113,6 +127,27 @@ def _write_bridge_status(connected: bool, detail: str = ""):
 def _on_bridge_status_changed(connected: bool, detail: str):
     """桥接状态变更回调 — 写入文件供 C++ 读取"""
     _write_bridge_status(connected, detail)
+
+
+def write_mcp_ready(ready: bool):
+    """供 MCP Server 调用：更新 mcp_ready 状态到 bridge 状态文件"""
+    path = _get_bridge_status_path()
+    if not path:
+        return
+    try:
+        # 读取现有状态保留 connected 等字段
+        prev = {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                prev = json.load(f)
+        except Exception:
+            pass
+        prev["mcp_ready"] = ready
+        prev["timestamp"] = time.time()
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(prev, f)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

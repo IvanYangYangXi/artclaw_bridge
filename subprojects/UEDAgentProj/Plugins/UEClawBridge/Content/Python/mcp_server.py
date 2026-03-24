@@ -611,6 +611,13 @@ class MCPServer:
         except Exception:
             pass  # 方法可能尚未在 C++ 侧定义
 
+        # 同步 MCP 就绪状态到 bridge 状态文件
+        try:
+            from openclaw_bridge import write_mcp_ready
+            write_mcp_ready(True)
+        except Exception:
+            pass
+
     async def _stop_server(self) -> None:
         """停止 WebSocket 服务器（内部异步方法）"""
         self._running = False
@@ -634,6 +641,14 @@ class MCPServer:
 
         self._actual_port = None
         sync_connection_state(False)
+
+        # 同步 MCP 停止状态到 bridge 状态文件
+        try:
+            from openclaw_bridge import write_mcp_ready
+            write_mcp_ready(False)
+        except Exception:
+            pass
+
         UELogger.info("MCP Server stopped")
 
 
