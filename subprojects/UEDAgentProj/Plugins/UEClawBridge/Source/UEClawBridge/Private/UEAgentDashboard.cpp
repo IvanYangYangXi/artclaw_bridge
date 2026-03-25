@@ -459,7 +459,11 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				}
 				Self->LastBridgeStatusTimestamp = Timestamp;
 
-				bool bConnected = JsonObj->GetBoolField(TEXT("connected"));
+				bool bConnected = false;
+				if (!JsonObj->TryGetBoolField(TEXT("connected"), bConnected))
+				{
+					return true; // connected 字段缺失，跳过本次（文件可能正在被写入）
+				}
 				bool bMcpReady = false;
 				JsonObj->TryGetBoolField(TEXT("mcp_ready"), bMcpReady);
 

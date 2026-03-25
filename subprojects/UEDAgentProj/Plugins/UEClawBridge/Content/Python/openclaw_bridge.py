@@ -130,22 +130,25 @@ def _on_bridge_status_changed(connected: bool, detail: str):
 
 
 def write_mcp_ready(ready: bool):
-    """供 MCP Server 调用：更新 mcp_ready 状态到 bridge 状态文件"""
+    """供 MCP Server 调用：更新 mcp_ready 状态到 bridge 状态文件。
+
+    通过 _write_bridge_status 统一写入，避免文件竞态和字段缺失。
+    """
     path = _get_bridge_status_path()
     if not path:
         return
     try:
-        # 读取现有状态保留 connected 等字段
-        prev = {}
+        # 读取现有状态，保留 connected / detail 等字段
+        prev_connected = False
+        prev_detail = ""
         try:
             with open(path, "r", encoding="utf-8") as f:
                 prev = json.load(f)
+                prev_connected = prev.get("connected", False)
+                prev_detail = prev.get("detail", "")
         except Exception:
             pass
-        prev["mcp_ready"] = ready
-        prev["timestamp"] = time.time()
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(prev, f)
+        _write_bridge_status(prev_connected, prev_detail, mcp_ready=ready)
     except Exception:
         pass
 

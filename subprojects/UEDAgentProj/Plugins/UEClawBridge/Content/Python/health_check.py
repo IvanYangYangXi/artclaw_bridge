@@ -74,6 +74,8 @@ class CheckResult:
 
     def ok(self, msg: str = ""):
         self.status = "✅"
+        self.is_warning = False
+        self.is_error = False
         if msg:
             self.details.append(msg)
 
@@ -189,22 +191,33 @@ def _check_mcp_server() -> CheckResult:
         return r
 
     # 尝试 WebSocket 握手 (快速连接+断开)
+    # 注意: UE 环境中已有 asyncio 事件循环在运行 (MCP Server)，
+    # 不能用 asyncio.run()，改用同步 socket 发送 HTTP Upgrade。
     try:
-        import websockets
-        import asyncio
-
-        async def _test_ws():
-            ws = await asyncio.wait_for(
-                websockets.connect(f"ws://{host}:{port}"),
-                timeout=3.0
-            )
-            await ws.close()
-            return True
-
-        asyncio.run(_test_ws())
-        r.info("WebSocket handshake OK")
+        import http.client
+        conn = http.client.HTTPConnection(host, port, timeout=3)
+        conn.request(
+            "GET", "/",
+            headers={
+                "Upgrade": "websocket",
+                "Connection": "Upgrade",
+                "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+                "Sec-WebSocket-Version": "13",
+            },
+        )
+        resp = conn.getresponse()
+        conn.close()
+        if resp.status == 101:
+            r.info("WebSocket handshake OK")
+        else:
+            r.info(f"WebSocket upgrade returned HTTP {resp.status} (expected 101)")
     except Exception as e:
-        r.warn(f"WebSocket test: {e}")
+        # TCP 已通过 (前面的检查)，WebSocket 握手失败不算严重问题
+        err_msg = str(e).strip()
+        if err_msg:
+            r.info(f"WebSocket handshake: {type(e).__name__}: {err_msg}")
+        else:
+            r.info(f"WebSocket handshake: {type(e).__name__} (non-critical)")
 
     return r
 
@@ -246,7 +259,7 @@ def _check_openclaw_gateway() -> CheckResult:
         masked = token[:8] + "..." + token[-4:] if len(token) > 12 else "***"
         r.info(f"Auth token: {masked}")
     else:
-        r.warn("No auth token found")
+        r.info("No auth token configured (OK for local use)")
 
     # WebSocket 握手 (完整)
     try:
