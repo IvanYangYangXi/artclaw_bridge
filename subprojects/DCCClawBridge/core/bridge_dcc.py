@@ -220,13 +220,26 @@ class DCCBridgeManager:
                         "max": "mcp_max-primary_",
                     }
                     my_prefix = _PREFIX_MAP.get(sw_name.lower(), f"mcp_{sw_name.lower()}-primary_")
-                    other_tools = (
-                        "mcp_ue-editor-agent_（UE）、mcp_maya-primary_（Maya）、mcp_max-primary_（Max）"
+                    # 构建其他工具列表（排除当前软件）
+                    _ALL_TOOLS = {
+                        "mcp_ue-editor-agent_": "UE",
+                        "mcp_maya-primary_": "Maya",
+                        "mcp_max-primary_": "Max",
+                    }
+                    other_tools = "、".join(
+                        f"{prefix}（{label}）"
+                        for prefix, label in _ALL_TOOLS.items()
+                        if prefix != my_prefix
                     )
                     prefix_parts.append(
-                        f"[DCC Context] 用户正在 {sw_name} {sw_ver} 中与你对话。"
-                        f"当前软件的工具前缀为 {my_prefix}，应优先使用这些工具。"
-                        f"如需操作其他软件，可使用对应前缀的工具：{other_tools}。"
+                        f"[DCC Context - 重要]\n"
+                        f"当前对话环境: {sw_name} {sw_ver}\n"
+                        f"必须使用的工具前缀: {my_prefix}\n\n"
+                        f"约束规则:\n"
+                        f"1. 所有操作默认使用 {my_prefix} 前缀的工具\n"
+                        f"2. 获取编辑器上下文请用 {my_prefix}run_python 的 get_context=true\n"
+                        f"3. 禁止调用其他软件的工具，除非用户明确要求操作其他软件\n"
+                        f"4. 如需操作其他软件，对应前缀: {other_tools}"
                     )
                     self._context_injected = True
             except Exception:

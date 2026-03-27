@@ -315,10 +315,15 @@ def _enrich_with_briefing(message: str) -> str:
     # UE 环境上下文 + 跨软件提示（只在首条注入）
     if not _context_injected:
         prefix_parts.append(
-            "[DCC Context] 用户正在 Unreal Engine 编辑器中与你对话。"
-            "当前软件的工具前缀为 mcp_ue-editor-agent_，应优先使用这些工具。"
-            "如需操作其他软件，可使用对应前缀的工具："
-            "mcp_maya-primary_（Maya）、mcp_max-primary_（Max）。"
+            "[DCC Context - 重要]\n"
+            "当前对话环境: Unreal Engine 编辑器\n"
+            "必须使用的工具前缀: mcp_ue-editor-agent_\n\n"
+            "约束规则:\n"
+            "1. 所有操作默认使用 mcp_ue-editor-agent_ 前缀的工具\n"
+            "2. 获取编辑器上下文请用 mcp_ue-editor-agent_run_ue_python 的 get_context=true\n"
+            "3. 禁止调用其他软件的工具（mcp_maya-primary_、mcp_max-primary_），"
+            "除非用户明确要求操作其他软件\n"
+            "4. 如需操作其他软件，对应前缀: mcp_maya-primary_（Maya）、mcp_max-primary_（Max）"
         )
         _context_injected = True
 
@@ -414,6 +419,39 @@ def send_chat_async_to_file(message: str, output_file: str):
     def _on_delta(state: str, text: str):
         _write_stream_event("delta", state, text)
 
+    def _on_tool_call(tool_name: str, tool_id: str, arguments: dict):
+        if _send_chat_async_to_file_current_id != request_id:
+            return
+        try:
+            line = json.dumps({
+                "type": "tool_call",
+                "tool_name": tool_name,
+                "tool_id": tool_id,
+                "arguments": arguments,
+            }, ensure_ascii=False)
+            with open(stream_file, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
+
+    def _on_tool_result(tool_name: str, tool_id: str, content: str, is_error: bool):
+        if _send_chat_async_to_file_current_id != request_id:
+            return
+        try:
+            # 截断过长的结果内容
+            truncated = content[:2000] if len(content) > 2000 else content
+            line = json.dumps({
+                "type": "tool_result",
+                "tool_name": tool_name,
+                "tool_id": tool_id,
+                "content": truncated,
+                "is_error": is_error,
+            }, ensure_ascii=False)
+            with open(stream_file, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
+
     def _on_result(result: str):
         """最终结果回调 — 直接写文件（不走游戏线程调度，避免 tick 丢失导致卡死）"""
         if _send_chat_async_to_file_current_id != request_id:
@@ -434,10 +472,14 @@ def send_chat_async_to_file(message: str, output_file: str):
         if _bridge:
             _bridge.on_ai_thinking = None
             _bridge.on_ai_message = None
+            _bridge.on_tool_call = None
+            _bridge.on_tool_result = None
 
     if _bridge:
         _bridge.on_ai_thinking = _on_thinking
         _bridge.on_ai_message = _on_delta
+        _bridge.on_tool_call = _on_tool_call
+        _bridge.on_tool_result = _on_tool_result
         enriched = _enrich_with_briefing(message)
 
         # 直接用 worker 线程调用 send_message，绕过 monkey-patched send_message_async

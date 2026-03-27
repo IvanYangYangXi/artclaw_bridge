@@ -45,10 +45,18 @@ private:
 	// --- 消息模型 ---
 	struct FChatMessage
 	{
-		FString Sender;   // "user", "assistant", "system"
+		FString Sender;   // "user", "assistant", "system", "tool_call", "tool_result"
 		FString Content;
 		FDateTime Timestamp;
 		bool bIsCode = false;
+
+		// 工具调用信息 (Sender == "tool_call" 或 "tool_result" 时使用)
+		FString ToolName;         // 工具名称
+		FString ToolId;           // 工具调用 ID
+		FString ToolArguments;    // 参数 JSON 字符串
+		FString ToolResult;       // 结果内容
+		bool bToolError = false;  // 是否报错
+		bool bToolCollapsed = true; // 默认折叠
 	};
 
 	// --- Slash 命令模型 ---
@@ -99,8 +107,13 @@ private:
 
 	// --- 聊天辅助方法 ---
 	void AddMessage(const FString& Sender, const FString& Content, bool bIsCode = false);
+	void AddToolCallMessage(const FString& ToolName, const FString& ToolId, const FString& Arguments);
+	void AddToolResultMessage(const FString& ToolName, const FString& ToolId, const FString& ResultContent, bool bIsError);
 	void RebuildMessageList();
 	FSlateColor GetSenderColor(const FString& Sender) const;
+
+	/** 工具调用折叠切换 */
+	FReply OnToggleToolCollapse(int32 MessageIndex);
 
 	// --- OpenClaw Bridge 连接管理 ---
 	void ConnectOpenClawBridge();

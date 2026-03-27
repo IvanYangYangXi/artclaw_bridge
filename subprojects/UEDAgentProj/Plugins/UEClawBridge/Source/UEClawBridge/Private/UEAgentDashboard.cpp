@@ -1082,6 +1082,76 @@ void SUEAgentDashboard::AddMessage(const FString& Sender, const FString& Content
 	RebuildMessageList();
 }
 
+void SUEAgentDashboard::AddToolCallMessage(const FString& ToolName, const FString& ToolId, const FString& Arguments)
+{
+	if (Messages.Num() >= MaxMessages)
+	{
+		Messages.RemoveAt(0, Messages.Num() - MaxMessages + 1);
+	}
+
+	FChatMessage Msg;
+	Msg.Sender = TEXT("tool_call");
+	Msg.ToolName = ToolName;
+	Msg.ToolId = ToolId;
+	Msg.ToolArguments = Arguments;
+	Msg.Timestamp = FDateTime::Now();
+	Msg.bToolCollapsed = true;
+
+	// 生成摘要作为 Content
+	Msg.Content = FString::Printf(TEXT("[%s] %s"), *ToolName, *ToolId);
+
+	Messages.Add(MoveTemp(Msg));
+	RebuildMessageList();
+}
+
+void SUEAgentDashboard::AddToolResultMessage(const FString& ToolName, const FString& ToolId, const FString& ResultContent, bool bIsError)
+{
+	// 尝试找到对应的 tool_call 消息并更新它（而非追加新消息）
+	for (int32 i = Messages.Num() - 1; i >= 0; --i)
+	{
+		if (Messages[i].Sender == TEXT("tool_call") && Messages[i].ToolId == ToolId)
+		{
+			Messages[i].ToolResult = ResultContent;
+			Messages[i].bToolError = bIsError;
+			if (bIsError)
+			{
+				Messages[i].Sender = TEXT("tool_error");
+			}
+			RebuildMessageList();
+			return;
+		}
+	}
+
+	// 没找到对应 call，作为独立 result 消息添加
+	if (Messages.Num() >= MaxMessages)
+	{
+		Messages.RemoveAt(0, Messages.Num() - MaxMessages + 1);
+	}
+
+	FChatMessage Msg;
+	Msg.Sender = bIsError ? TEXT("tool_error") : TEXT("tool_result");
+	Msg.ToolName = ToolName;
+	Msg.ToolId = ToolId;
+	Msg.ToolResult = ResultContent;
+	Msg.bToolError = bIsError;
+	Msg.Timestamp = FDateTime::Now();
+	Msg.bToolCollapsed = true;
+	Msg.Content = FString::Printf(TEXT("[%s] %s"), *ToolName, *ToolId);
+
+	Messages.Add(MoveTemp(Msg));
+	RebuildMessageList();
+}
+
+FReply SUEAgentDashboard::OnToggleToolCollapse(int32 MessageIndex)
+{
+	if (Messages.IsValidIndex(MessageIndex))
+	{
+		Messages[MessageIndex].bToolCollapsed = !Messages[MessageIndex].bToolCollapsed;
+		RebuildMessageList();
+	}
+	return FReply::Handled();
+}
+
 void SUEAgentDashboard::RebuildMessageList()
 {
 	if (!MessageScrollBox.IsValid())
@@ -1091,10 +1161,136 @@ void SUEAgentDashboard::RebuildMessageList()
 
 	MessageScrollBox->ClearChildren();
 
-	for (const FChatMessage& Msg : Messages)
+	for (int32 MsgIdx = 0; MsgIdx < Messages.Num(); ++MsgIdx)
 	{
+		const FChatMessage& Msg = Messages[MsgIdx];
 		FString TimeStr = Msg.Timestamp.ToString(TEXT("%H:%M"));
 
+		// --- 工具调用/结果消息 ---
+		if (Msg.Sender == TEXT("tool_call") || Msg.Sender == TEXT("tool_result") || Msg.Sender == TEXT("tool_error"))
+		{
+			bool bIsError = Msg.bToolError;
+			bool bHasResult = !Msg.ToolResult.IsEmpty();
+			FString StatusIcon = bHasResult ? (bIsError ? TEXT("X") : TEXT("ok")) : TEXT("...");
+			FString ToggleLabel = Msg.bToolCollapsed ? TEXT("+") : TEXT("-");
+
+			// 工具调用卡片
+			MessageScrollBox->AddSlot()
+			.Padding(6.0f, 1.0f)
+			[
+				SNew(SVerticalBox)
+
+				// 工具标题行: [toggle] tool_icon ToolName  时间  状态
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					SNew(SHorizontalBox)
+
+					// 展开/折叠按钮
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+					[
+						SNew(SButton)
+						.ButtonStyle(FCoreStyle::Get(), "NoBorder")
+						.ContentPadding(FMargin(2.0f, 0.0f))
+						.OnClicked_Lambda([this, MsgIdx]() { return OnToggleToolCollapse(MsgIdx); })
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(ToggleLabel))
+							.Font(FCoreStyle::GetDefaultFontStyle("Mono", 9))
+							.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+						]
+					]
+
+					// 工具名称
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					[
+						SNew(STextBlock)
+						.Text(FText::FromString(Msg.ToolName))
+						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+						.ColorAndOpacity(GetSenderColor(Msg.Sender))
+					]
+
+					// 时间
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text(FText::FromString(TimeStr))
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+						.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
+					]
+
+					// 状态
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text(FText::FromString(FString::Printf(TEXT("[%s]"), *StatusIcon)))
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+						.ColorAndOpacity(bIsError
+							? FSlateColor(FLinearColor(0.9f, 0.3f, 0.3f))
+							: FSlateColor(FLinearColor(0.5f, 0.7f, 0.5f)))
+					]
+				]
+
+				// 展开的详情
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					SNew(SBox)
+					.Visibility(Msg.bToolCollapsed ? EVisibility::Collapsed : EVisibility::Visible)
+					[
+						SNew(SVerticalBox)
+
+						// 参数
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(20.0f, 2.0f, 0.0f, 2.0f)
+						[
+							SNew(SMultiLineEditableText)
+							.Text(FText::FromString(
+								Msg.ToolArguments.IsEmpty()
+									? TEXT("(no arguments)")
+									: Msg.ToolArguments))
+							.Font(FCoreStyle::GetDefaultFontStyle("Mono", 8))
+							.AutoWrapText(true)
+							.IsReadOnly(true)
+							.AllowContextMenu(true)
+							.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+						]
+
+						// 结果
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(20.0f, 2.0f, 0.0f, 4.0f)
+						[
+							SNew(SBox)
+							.Visibility(bHasResult ? EVisibility::Visible : EVisibility::Collapsed)
+							[
+								SNew(SMultiLineEditableText)
+								.Text(FText::FromString(Msg.ToolResult.Left(1000)))
+								.Font(FCoreStyle::GetDefaultFontStyle("Mono", 8))
+								.AutoWrapText(true)
+								.IsReadOnly(true)
+								.AllowContextMenu(true)
+								.ColorAndOpacity(bIsError
+									? FSlateColor(FLinearColor(0.9f, 0.4f, 0.4f))
+									: FSlateColor(FLinearColor(0.5f, 0.7f, 0.5f)))
+							]
+						]
+					]
+				]
+			];
+
+			continue;
+		}
+
+		// --- 常规消息 ---
 		FString SenderLabel;
 		if (Msg.Sender == TEXT("user"))
 		{
@@ -1425,17 +1621,52 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 						if (FJsonSerializer::Deserialize(Reader, JsonObj) && JsonObj.IsValid())
 						{
 							FString EventType = JsonObj->GetStringField(TEXT("type"));
-							FString EventText = JsonObj->GetStringField(TEXT("text"));
 
-							if (!EventText.IsEmpty())
+							if (EventType == TEXT("thinking"))
 							{
-								if (EventType == TEXT("thinking"))
+								FString EventText = JsonObj->GetStringField(TEXT("text"));
+								if (!EventText.IsEmpty())
 								{
 									Self->UpdateStreamingMessage(TEXT("thinking"), EventText);
 								}
-								else if (EventType == TEXT("delta"))
+							}
+							else if (EventType == TEXT("delta"))
+							{
+								FString EventText = JsonObj->GetStringField(TEXT("text"));
+								if (!EventText.IsEmpty())
 								{
 									Self->UpdateStreamingMessage(TEXT("assistant"), EventText);
+								}
+							}
+							else if (EventType == TEXT("tool_call"))
+							{
+								FString ToolName = JsonObj->GetStringField(TEXT("tool_name"));
+								FString ToolId = JsonObj->GetStringField(TEXT("tool_id"));
+
+								// 序列化 arguments 对象为字符串
+								FString ArgsStr;
+								const TSharedPtr<FJsonObject>* ArgsObj = nullptr;
+								if (JsonObj->TryGetObjectField(TEXT("arguments"), ArgsObj) && ArgsObj)
+								{
+									TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ArgsStr);
+									FJsonSerializer::Serialize(ArgsObj->ToSharedRef(), Writer);
+								}
+
+								if (!ToolName.IsEmpty())
+								{
+									Self->AddToolCallMessage(ToolName, ToolId, ArgsStr);
+								}
+							}
+							else if (EventType == TEXT("tool_result"))
+							{
+								FString ToolName = JsonObj->GetStringField(TEXT("tool_name"));
+								FString ToolId = JsonObj->GetStringField(TEXT("tool_id"));
+								FString Content = JsonObj->GetStringField(TEXT("content"));
+								bool bIsError = JsonObj->GetBoolField(TEXT("is_error"));
+
+								if (!ToolName.IsEmpty())
+								{
+									Self->AddToolResultMessage(ToolName, ToolId, Content, bIsError);
 								}
 							}
 						}
@@ -1481,10 +1712,22 @@ void SUEAgentDashboard::UpdateStreamingMessage(const FString& Sender, const FStr
 
 	if (!bHasStreamingMessage)
 	{
-		// 替换 "Thinking..." 消息
-		if (Messages.Num() > 0 && Messages.Last().Content == FUEAgentL10n::GetStr(TEXT("Thinking")))
+		// 替换 "Thinking..." 消息 — 从末尾往前查找（跳过 tool 消息）
+		for (int32 i = Messages.Num() - 1; i >= 0; --i)
 		{
-			Messages.RemoveAt(Messages.Num() - 1);
+			if (Messages[i].Content == FUEAgentL10n::GetStr(TEXT("Thinking"))
+				&& Messages[i].Sender == TEXT("system"))
+			{
+				Messages.RemoveAt(i);
+				break;
+			}
+			// 只跳过 tool 消息，遇到其他类型就停止
+			if (Messages[i].Sender != TEXT("tool_call")
+				&& Messages[i].Sender != TEXT("tool_result")
+				&& Messages[i].Sender != TEXT("tool_error"))
+			{
+				break;
+			}
 		}
 		// 添加流式消息
 		FChatMessage Msg;
@@ -1496,10 +1739,27 @@ void SUEAgentDashboard::UpdateStreamingMessage(const FString& Sender, const FStr
 	}
 	else
 	{
-		// 更新最后一条消息（如果 sender 类型相同则更新内容，否则追加新消息）
-		if (Messages.Num() > 0 && Messages.Last().Sender == StreamSender)
+		// 从末尾往前找最后一条 streaming/thinking 消息（跳过 tool 消息）
+		int32 LastStreamIdx = INDEX_NONE;
+		for (int32 i = Messages.Num() - 1; i >= 0; --i)
 		{
-			Messages.Last().Content = Content;
+			if (Messages[i].Sender == StreamSender)
+			{
+				LastStreamIdx = i;
+				break;
+			}
+			// 只跳过 tool 消息
+			if (Messages[i].Sender != TEXT("tool_call")
+				&& Messages[i].Sender != TEXT("tool_result")
+				&& Messages[i].Sender != TEXT("tool_error"))
+			{
+				break;
+			}
+		}
+
+		if (LastStreamIdx != INDEX_NONE)
+		{
+			Messages[LastStreamIdx].Content = Content;
 		}
 		else
 		{
@@ -1525,27 +1785,37 @@ void SUEAgentDashboard::HandlePythonResponse(const FString& Response)
 	bIsWaitingForResponse = false;
 
 	// 移除 "Thinking..." 消息（如果流式显示还没替换掉的话）
-	if (!bHasStreamingMessage && Messages.Num() > 0 && Messages.Last().Content == FUEAgentL10n::GetStr(TEXT("Thinking")))
+	if (!bHasStreamingMessage && Messages.Num() > 0)
 	{
-		Messages.RemoveAt(Messages.Num() - 1);
-		RebuildMessageList();
-	}
-
-	// 如果有流式消息，移除它们（最终回复会替代）
-	// 找到最后的 thinking/流式消息并移除
-	if (bHasStreamingMessage)
-	{
-		// 从末尾往前找，移除所有流式 thinking/streaming 消息
-		while (Messages.Num() > 0)
+		for (int32 i = Messages.Num() - 1; i >= 0; --i)
 		{
-			const FString& LastSender = Messages.Last().Sender;
-			if (LastSender == TEXT("thinking") || LastSender == TEXT("streaming"))
+			if (Messages[i].Content == FUEAgentL10n::GetStr(TEXT("Thinking"))
+				&& Messages[i].Sender == TEXT("system"))
 			{
-				Messages.RemoveAt(Messages.Num() - 1);
+				Messages.RemoveAt(i);
+				RebuildMessageList();
+				break;
 			}
-			else
+			// 跳过 tool 消息
+			if (Messages[i].Sender != TEXT("tool_call")
+				&& Messages[i].Sender != TEXT("tool_result")
+				&& Messages[i].Sender != TEXT("tool_error"))
 			{
 				break;
+			}
+		}
+	}
+
+	// 如果有流式消息，移除 thinking/streaming 消息（最终回复会替代）
+	// 保留 tool 消息
+	if (bHasStreamingMessage)
+	{
+		for (int32 i = Messages.Num() - 1; i >= 0; --i)
+		{
+			const FString& S = Messages[i].Sender;
+			if (S == TEXT("thinking") || S == TEXT("streaming"))
+			{
+				Messages.RemoveAt(i);
 			}
 		}
 		RebuildMessageList();
@@ -2065,6 +2335,21 @@ FSlateColor SUEAgentDashboard::GetSenderColor(const FString& Sender) const
 	{
 		// 淡紫色，区分 thinking 过程
 		return FSlateColor(FLinearColor(0.7f, 0.5f, 0.9f));
+	}
+	else if (Sender == TEXT("tool_call"))
+	{
+		// 橙色，工具调用
+		return FSlateColor(FLinearColor(1.0f, 0.6f, 0.2f));
+	}
+	else if (Sender == TEXT("tool_result"))
+	{
+		// 暗绿，工具结果
+		return FSlateColor(FLinearColor(0.3f, 0.6f, 0.3f));
+	}
+	else if (Sender == TEXT("tool_error"))
+	{
+		// 红色，工具执行报错
+		return FSlateColor(FLinearColor(0.9f, 0.3f, 0.3f));
 	}
 	else
 	{

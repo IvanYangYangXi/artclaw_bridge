@@ -91,6 +91,10 @@ class OpenClawBridge:
         self.on_ai_message: Optional[Callable[[str, str], None]] = None
         # 回调: 收到 AI thinking 内容时
         self.on_ai_thinking: Optional[Callable[[str, str], None]] = None
+        # 回调: 收到工具调用时 (tool_name, tool_id, arguments_dict)
+        self.on_tool_call: Optional[Callable[[str, str, dict], None]] = None
+        # 回调: 收到工具结果时 (tool_name, tool_id, content_text, is_error)
+        self.on_tool_result: Optional[Callable[[str, str, str, bool], None]] = None
         # 当前活跃的 chat runId
         self._active_run_id: Optional[str] = None
         # 取消信号
@@ -429,6 +433,11 @@ class OpenClawBridge:
         message = payload.get("message", {})
         run_id = payload.get("runId", "")
 
+        # Session key 过滤: 只处理当前 session 的事件
+        session_key = payload.get("sessionKey", "")
+        if session_key and self._session_key and session_key != self._session_key:
+            return
+
         if self._active_run_id and run_id and run_id != self._active_run_id:
             return
 
@@ -448,6 +457,38 @@ class OpenClawBridge:
                             thinking_parts.append(
                                 block.get("thinking", "") or block.get("text", "")
                             )
+                        elif block_type == "toolCall":
+                            # 解析工具调用事件
+                            tool_name = block.get("name", "")
+                            tool_id = block.get("id", "")
+                            tool_args = block.get("arguments", {})
+                            if isinstance(tool_args, str):
+                                try:
+                                    tool_args = json.loads(tool_args)
+                                except (json.JSONDecodeError, ValueError):
+                                    tool_args = {"raw": tool_args}
+                            if self.on_tool_call and tool_name:
+                                self.on_tool_call(tool_name, tool_id, tool_args)
+                        elif block_type == "toolResult":
+                            # 解析工具结果事件
+                            tool_name = block.get("toolName", "")
+                            tool_id = block.get("toolCallId", "")
+                            is_error = block.get("isError", False)
+                            result_content = block.get("content", "")
+                            if isinstance(result_content, list):
+                                result_text = "\n".join(
+                                    item.get("text", "")
+                                    for item in result_content
+                                    if isinstance(item, dict)
+                                )
+                            elif isinstance(result_content, str):
+                                result_text = result_content
+                            else:
+                                result_text = str(result_content)
+                            if self.on_tool_result and tool_name:
+                                self.on_tool_result(
+                                    tool_name, tool_id, result_text, is_error
+                                )
                 text = "".join(text_parts)
                 thinking_text = "".join(thinking_parts)
             elif isinstance(content, str):
@@ -481,6 +522,11 @@ class OpenClawBridge:
         stream = payload.get("stream", "")
         data = payload.get("data", {})
         run_id = payload.get("runId", "")
+
+        # Session key 过滤: 只处理当前 session 的事件
+        session_key = payload.get("sessionKey", "")
+        if session_key and self._session_key and session_key != self._session_key:
+            return
 
         if self._active_run_id and run_id and run_id != self._active_run_id:
             return
