@@ -175,6 +175,25 @@ def run_ue_python(arguments: dict) -> str:
         code = arguments
         inject_context = True
     else:
+        # v2.6: get_context 快捷模式 — 直接返回编辑器上下文，无需写代码
+        if arguments.get("get_context", False):
+            try:
+                from tools.context_provider import _read_editor_context
+                ctx = _read_editor_context()
+                return json.dumps({
+                    "success": True,
+                    "exec_id": _execution_counter + 1,
+                    "context": ctx,
+                    "output": "",
+                    "result": ctx,
+                    "execution_time": 0,
+                })
+            except Exception as e:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Failed to read editor context: {e}",
+                })
+
         code = arguments.get("code", "")
         inject_context = arguments.get("inject_context", True)
 
@@ -326,6 +345,17 @@ TOOL_DEFINITION = {
         "Pre-injected variables: S (selected actors), W (editor world), L (unreal module). "
         "All operations are wrapped in an undo transaction (Ctrl+Z to revert). "
         "Dangerous operations (os.system, subprocess, etc.) are blocked by the security scanner."
+        "\n\nQuick context: set get_context=true (no code needed) to get editor state: "
+        "active_panel (viewport/content_browser), selected (items from the active panel), "
+        "selected_source, viewport_selection_count, content_browser_selection_count, "
+        "mode, total_actors, level_name. "
+        "The 'selected' field automatically contains viewport actors or content browser assets "
+        "based on which panel the user was last interacting with."
+        "\n\nAvailable internal APIs (import and call via this tool):\n"
+        "- knowledge_base.get_knowledge_base().search(query, top_k) — search local knowledge base\n"
+        "- memory_store.get_memory_store() — memory read/write (store/get/search/check_operation)\n"
+        "- skill_hub.get_skill_hub().execute_skill(name, params) — execute a registered Skill\n"
+        "- skill_hub.get_skill_hub().list_skills() — list available Skills"
     ),
     "inputSchema": {
         "type": "object",
@@ -344,8 +374,13 @@ TOOL_DEFINITION = {
                 "description": "Whether to inject S/W/L context variables (default: true)",
                 "default": True,
             },
+            "get_context": {
+                "type": "boolean",
+                "description": "If true, return editor context (mode, selection, actors, level) without executing any code. No 'code' parameter needed.",
+                "default": False,
+            },
         },
-        "required": ["code"],
+        "required": [],
     },
 }
 

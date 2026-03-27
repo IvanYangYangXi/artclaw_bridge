@@ -325,27 +325,31 @@ def init_knowledge_base(mcp_server, base_dir: Optional[Path] = None) -> Knowledg
 
     # --- MCP Tools ---
 
-    mcp_server.register_tool(
-        name="knowledge_search",
-        description=(
-            "Search the local knowledge base for UE API documentation, project conventions, "
-            "and code examples. Use this before writing complex UE Python code to find correct API usage."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Search query (e.g. 'set material color', 'spawn actor')"},
-                "top_k": {"type": "integer", "default": 5, "description": "Number of results"},
+    # v2.6: knowledge_search 不再注册为 MCP 工具，通过 run_ue_python 调用 Python API
+    if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() == "true":
+        mcp_server.register_tool(
+            name="knowledge_search",
+            description=(
+                "Search the local knowledge base for UE API documentation, project conventions, "
+                "and code examples. Use this before writing complex UE Python code to find correct API usage."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query (e.g. 'set material color', 'spawn actor')"},
+                    "top_k": {"type": "integer", "default": 5, "description": "Number of results"},
+                },
+                "required": ["query"],
             },
-            "required": ["query"],
-        },
-        handler=_handle_kb_search,
-    )
+            handler=_handle_kb_search,
+        )
+        UELogger.info("KnowledgeBase: registered 1 MCP tool (legacy mode)")
+    else:
+        UELogger.info("KnowledgeBase: MCP tool skipped (v2.6 slim mode), Python API available via get_knowledge_base()")
 
     # knowledge_index / knowledge_stats 已移除为 MCP Tool（低频，可通过 run_ue_python 调用）
     # 函数仍保留供内部使用
 
-    UELogger.info("KnowledgeBase: registered 1 MCP tool (search only)")
     return _kb_instance
 
 

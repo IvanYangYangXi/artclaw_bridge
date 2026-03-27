@@ -40,7 +40,14 @@ from skill_manifest import (
 # ============================================================================
 
 def register_skill_tools(mcp_server, skill_hub) -> None:
-    """将精简后的 Skill 管理 Tool 注册到 MCP Server（12→3）"""
+    """将精简后的 Skill 管理 Tool 注册到 MCP Server（v2.6: 默认不注册）"""
+
+    if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() != "true":
+        UELogger.info("Skill management MCP tools: skipped (v2.6 slim mode). "
+                      "Use skill_hub.execute_skill() / list_skills() Python API instead.")
+        return
+
+    # --- 以下为旧版 MCP 注册（仅 ARTCLAW_LEGACY_MCP=true 时执行）---
 
     # --- skill_list: 保留，查询用 ---
     mcp_server.register_tool(

@@ -4,6 +4,7 @@
 #include "Interfaces/IPluginManager.h"
 #include "Selection.h"
 #include "ContentBrowserModule.h"
+#include "GameFramework/Actor.h"
 
 // ------------------------------------------------------------------
 // 日志分类定义 (阶段 0.4)
@@ -127,6 +128,41 @@ void UUEAgentSubsystem::CleanupSelectionTracking()
 
 void UUEAgentSubsystem::OnViewportSelectionChanged(UObject* NewSelection)
 {
+    // USelection::SelectionChangedEvent 是全局事件，
+    // Content Browser 选资产时也会触发（UE 内部的 UObject selection 变化）。
+    // 用时间窗口防抖：如果 CB 刚刚设置了 ActivePanel，忽略紧随其后的 Viewport 事件。
+    const double Now = FPlatformTime::Seconds();
+    constexpr double DebounceWindow = 0.1; // 100ms 防抖
+
+    if (ActivePanel == EUEAgentActivePanel::ContentBrowser
+        && (Now - LastContentBrowserSelectionTime) < DebounceWindow)
+    {
+        // Content Browser 刚触发过，忽略这次连带的 SelectionChangedEvent
+        return;
+    }
+
+    // 额外检查：只有当 NewSelection 是 Actor selection set 时才标记 Viewport
+    // USelection::SelectionChangedEvent 传入的 UObject* 就是 USelection 本身
+    USelection* Selection = Cast<USelection>(NewSelection);
+    if (Selection)
+    {
+        // 检查这个 selection set 是否包含 Actor（而非 UObject/资产）
+        bool bHasActor = false;
+        for (int32 i = 0; i < Selection->Num(); ++i)
+        {
+            if (Selection->GetSelectedObject(i) && Selection->GetSelectedObject(i)->IsA<AActor>())
+            {
+                bHasActor = true;
+                break;
+            }
+        }
+
+        if (!bHasActor)
+        {
+            return; // 不是 Actor 选择变化，不更新面板
+        }
+    }
+
     ActivePanel = EUEAgentActivePanel::Viewport;
 }
 
@@ -135,5 +171,6 @@ void UUEAgentSubsystem::OnContentBrowserSelectionChanged(const TArray<FAssetData
     if (NewSelectedAssets.Num() > 0)
     {
         ActivePanel = EUEAgentActivePanel::ContentBrowser;
+        LastContentBrowserSelectionTime = FPlatformTime::Seconds();
     }
 }

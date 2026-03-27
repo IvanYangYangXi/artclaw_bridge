@@ -30,6 +30,7 @@ set "DCC_BRIDGE_SRC=%ROOT_DIR%\subprojects\DCCClawBridge"
 set "UE_PLUGIN_SRC=%ROOT_DIR%\subprojects\UEDAgentProj\Plugins\UEClawBridge"
 set "BRIDGE_MODULES_SRC=%ROOT_DIR%\openclaw-mcp-bridge"
 set "MCP_BRIDGE_SRC=%ROOT_DIR%\openclaw-mcp-bridge\mcp-bridge"
+set "OPENCLAW_SKILLS_SRC=%ROOT_DIR%\openclaw-skills"
 
 :: 标记常量
 set "INJECT_START=# ===== ArtClaw Bridge START ====="
@@ -51,8 +52,8 @@ if not exist "%UE_PLUGIN_SRC%\UEClawBridge.uplugin" (
 
 echo.
 echo  ╔══════════════════════════════════════════════════════╗
-echo  ║       ArtClaw Bridge — 统一安装器 v1.0               ║
-echo  ║       UE / Maya / 3ds Max 一键部署                   ║
+echo  ║       ArtClaw Bridge — 统一安装器 v1.1               ║
+echo  ║       UE / Maya / 3ds Max / OpenClaw 一键部署        ║
 echo  ╚══════════════════════════════════════════════════════╝
 echo.
 echo  项目目录: %ROOT_DIR%
@@ -164,6 +165,8 @@ if not exist "%PYTHON_DST%" mkdir "%PYTHON_DST%"
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_core.py" "%PYTHON_DST%\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_config.py" "%PYTHON_DST%\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "%PYTHON_DST%\" >nul
+copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "%PYTHON_DST%\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "%PYTHON_DST%\" >nul 2>&1
 echo [OK] 共享模块已打包到: %PYTHON_DST%
 
 :: 安装 Python 依赖
@@ -605,6 +608,24 @@ copy /Y "%MCP_BRIDGE_SRC%\index.ts" "%OPENCLAW_EXT%\" >nul
 copy /Y "%MCP_BRIDGE_SRC%\openclaw.plugin.json" "%OPENCLAW_EXT%\" >nul
 echo [OK] mcp-bridge 已复制到: %OPENCLAW_EXT%
 
+:: 安装 OpenClaw Skills (artclaw-*)
+set "OPENCLAW_SKILLS_DST=%USERPROFILE%\.openclaw\skills"
+if not exist "%OPENCLAW_SKILLS_DST%" mkdir "%OPENCLAW_SKILLS_DST%"
+
+if exist "%OPENCLAW_SKILLS_SRC%" (
+    echo [复制] OpenClaw Skills...
+    for /D %%S in ("%OPENCLAW_SKILLS_SRC%\artclaw-*") do (
+        set "SKILL_NAME=%%~nxS"
+        set "SKILL_DST=%OPENCLAW_SKILLS_DST%\!SKILL_NAME!"
+        if not exist "!SKILL_DST!" mkdir "!SKILL_DST!"
+        copy /Y "%%S\SKILL.md" "!SKILL_DST!\SKILL.md" >nul 2>&1
+        echo   [OK] !SKILL_NAME!
+    )
+    echo [OK] OpenClaw Skills 已安装到: %OPENCLAW_SKILLS_DST%
+) else (
+    echo [跳过] 未找到 OpenClaw Skills 源: %OPENCLAW_SKILLS_SRC%
+)
+
 :: 运行配置脚本
 echo [配置] 运行 setup_openclaw_config.py...
 where python >nul 2>&1
@@ -673,6 +694,7 @@ echo.
 echo    OpenClaw:
 echo      1. 重启 Gateway: openclaw gateway restart
 echo      2. 确认 mcp-bridge 已加载
+echo      3. 确认 artclaw-* Skills 已安装到 ~/.openclaw/skills/
 echo.
 echo  提示: 更完整的功能 (卸载、跨平台、CLI) 请使用:
 echo        python install.py --help

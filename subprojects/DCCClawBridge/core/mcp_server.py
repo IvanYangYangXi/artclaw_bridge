@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import socket
 import threading
 import time
@@ -470,6 +471,24 @@ def _register_builtin_tools(server: MCPServer, adapter=None) -> None:
 
     # --- run_python: 万能执行器 ---
     def _handle_run_python(arguments: dict) -> dict:
+        # v2.6: get_context 快捷模式 — 直接返回编辑器上下文
+        if arguments.get("get_context", False):
+            if not adapter:
+                return {"content": [{"type": "text", "text": "错误: DCC adapter 未初始化"}], "isError": True}
+            try:
+                import json as _json
+                info = {
+                    "software": adapter.get_software_name(),
+                    "version": adapter.get_software_version(),
+                    "python": adapter.get_python_version(),
+                    "current_file": adapter.get_current_file() or "untitled",
+                    "selected_objects": adapter.get_selected_objects(),
+                    "scene_info": adapter.get_scene_info(),
+                }
+                return {"content": [{"type": "text", "text": _json.dumps(info, ensure_ascii=False, indent=2)}], "isError": False}
+            except Exception as e:
+                return {"content": [{"type": "text", "text": f"错误: {e}"}], "isError": True}
+
         code = arguments.get("code", "")
         if not code:
             return {"content": [{"type": "text", "text": "错误: 未提供代码"}], "isError": True}
@@ -494,7 +513,7 @@ def _register_builtin_tools(server: MCPServer, adapter=None) -> None:
 
     server.register_tool(
         name="run_python",
-        description="在 DCC 软件中执行 Python 代码。上下文变量: S=选中对象列表, W=当前场景文件, L=DCC命令模块。所有写操作都有 Undo 支持。",
+        description="在 DCC 软件中执行 Python 代码。上下文变量: S=选中对象列表, W=当前场景文件, L=DCC命令模块。所有写操作都有 Undo 支持。\n\n快捷上下文: 设 get_context=true（无需 code）可获取编辑器状态: 软件名/版本/当前文件/选中对象/场景信息。\n\n可用的内部 API（import 后调用）:\n- core.knowledge_base.get_knowledge_base().search(query, top_k) — 搜索知识库\n- core.memory_store.get_memory_store() — 记忆读写\n- core.skill_runtime 的 SkillRuntime 实例 — Skill 执行",
         input_schema={
             "type": "object",
             "properties": {
@@ -502,8 +521,13 @@ def _register_builtin_tools(server: MCPServer, adapter=None) -> None:
                     "type": "string",
                     "description": "要执行的 Python 代码",
                 },
+                "get_context": {
+                    "type": "boolean",
+                    "description": "设为 true 时直接返回编辑器上下文（软件/版本/选中对象/场景），无需提供 code",
+                    "default": False,
+                },
             },
-            "required": ["code"],
+            "required": [],
         },
         handler=_handle_run_python,
         main_thread=True,
@@ -524,14 +548,6 @@ def _register_builtin_tools(server: MCPServer, adapter=None) -> None:
         except Exception as e:
             return f"错误: {e}"
 
-    server.register_tool(
-        name="get_editor_context",
-        description="获取当前 DCC 软件的基本信息（软件名、版本、当前文件等）",
-        input_schema={"type": "object", "properties": {}},
-        handler=_handle_get_editor_context,
-        main_thread=True,
-    )
-
     # --- get_selected_objects: 选中对象 ---
     def _handle_get_selected_objects(arguments: dict) -> str:
         if not adapter:
@@ -544,14 +560,6 @@ def _register_builtin_tools(server: MCPServer, adapter=None) -> None:
         except Exception as e:
             return f"错误: {e}"
 
-    server.register_tool(
-        name="get_selected_objects",
-        description="获取当前选中的对象列表（名称、类型、路径）",
-        input_schema={"type": "object", "properties": {}},
-        handler=_handle_get_selected_objects,
-        main_thread=True,
-    )
-
     # --- get_scene_info: 场景信息 ---
     def _handle_get_scene_info(arguments: dict) -> str:
         if not adapter:
@@ -562,15 +570,36 @@ def _register_builtin_tools(server: MCPServer, adapter=None) -> None:
         except Exception as e:
             return f"错误: {e}"
 
-    server.register_tool(
-        name="get_scene_info",
-        description="获取当前场景概览信息（对象数、Mesh数、帧范围、FPS、场景文件路径等）",
-        input_schema={"type": "object", "properties": {}},
-        handler=_handle_get_scene_info,
-        main_thread=True,
-    )
+    # v2.6: 默认只注册 run_python，其余通过 run_python 调用 Python API
+    if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() == "true":
+        # --- 以下为旧版 MCP 注册（仅 legacy 模式）---
+        server.register_tool(
+            name="get_editor_context",
+            description="获取当前 DCC 软件的基本信息（软件名、版本、当前文件等）",
+            input_schema={"type": "object", "properties": {}},
+            handler=_handle_get_editor_context,
+            main_thread=True,
+        )
 
-    logger.info(f"Registered {len(server._tools)} builtin tools")
+        server.register_tool(
+            name="get_selected_objects",
+            description="获取当前选中的对象列表（名称、类型、路径）",
+            input_schema={"type": "object", "properties": {}},
+            handler=_handle_get_selected_objects,
+            main_thread=True,
+        )
+
+        server.register_tool(
+            name="get_scene_info",
+            description="获取当前场景概览信息（对象数、Mesh数、帧范围、FPS、场景文件路径等）",
+            input_schema={"type": "object", "properties": {}},
+            handler=_handle_get_scene_info,
+            main_thread=True,
+        )
+
+        logger.info(f"Registered {len(server._tools)} builtin tools (legacy mode)")
+    else:
+        logger.info("Registered 1 builtin tool: run_python (v2.6 slim mode)")
 
 
 def _init_skill_runtime(server: MCPServer, adapter=None) -> None:
@@ -601,10 +630,10 @@ def _init_skill_runtime(server: MCPServer, adapter=None) -> None:
     except Exception as e:
         logger.warning(f"Memory store init failed: {e}")
 
-    # Skill 运行时
+    # Skill 运行时（使用 init_skill_runtime 设置全局单例，供 run_python 内部调用）
     try:
-        from core.skill_runtime import SkillRuntime
-        runtime = SkillRuntime(mcp_server=server, adapter=adapter)
+        from core.skill_runtime import init_skill_runtime
+        runtime = init_skill_runtime(mcp_server=server, adapter=adapter)
         count = runtime.scan_and_register()
         logger.info(f"Skill runtime: {count} skills loaded")
     except Exception as e:

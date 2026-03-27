@@ -14,6 +14,7 @@ context_provider.py - 动态上下文感知与资源映射
 """
 
 import json
+import os
 from typing import Any, Dict, List, Optional
 
 import unreal
@@ -256,7 +257,7 @@ def _read_all_actors() -> dict:
 
 
 def _read_editor_context() -> dict:
-    """读取编辑器上下文信息"""
+    """读取编辑器上下文信息，根据 active_panel 返回对应面板的选区详情。"""
     mode = detect_editor_mode()
     mode_ctx = get_mode_context(mode)
 
@@ -264,6 +265,7 @@ def _read_editor_context() -> dict:
         selection = unreal.EditorLevelLibrary.get_selected_level_actors()
         sel_count = len(selection)
     except Exception:
+        selection = []
         sel_count = 0
 
     try:
@@ -281,22 +283,51 @@ def _read_editor_context() -> dict:
     except Exception:
         pass
 
-    # Content Browser 选区计数 (辅助 AI 判断)
+    # Content Browser 选区
+    cb_selected_assets = []
     cb_sel_count = 0
     try:
         cb_selected = unreal.EditorUtilityLibrary.get_selected_asset_data()
         cb_sel_count = len(cb_selected)
+        for ad in cb_selected[:20]:  # 最多 20 个
+            asset_info = {
+                "name": str(ad.asset_name),
+                "path": str(ad.package_name),
+            }
+            try:
+                asset_info["class"] = str(ad.asset_class)
+            except Exception:
+                pass
+            cb_selected_assets.append(asset_info)
     except Exception:
         pass
 
-    return {
+    result = {
         "mode": mode_ctx,
-        "selection_count": sel_count,
-        "content_browser_selection_count": cb_sel_count,
         "active_panel": active_panel,
         "total_actors": actor_count,
         "level_name": str(unreal.EditorLevelLibrary.get_editor_world().get_name()) if sel_count >= 0 else "Unknown",
+        "viewport_selection_count": sel_count,
+        "content_browser_selection_count": cb_sel_count,
     }
+
+    # 根据 active_panel 填充 "selected" 字段 —— AI 可以直接使用
+    MAX_SELECTED = 20  # 防止大量选区撑爆上下文
+
+    if active_panel == "content_browser" and cb_sel_count > 0:
+        items = cb_selected_assets[:MAX_SELECTED]
+        if cb_sel_count > MAX_SELECTED:
+            items.append({"_truncated": True, "total": cb_sel_count, "shown": MAX_SELECTED})
+        result["selected"] = items
+        result["selected_source"] = "content_browser"
+    elif sel_count > 0:
+        result["selected"] = prune_actor_list(selection, max_count=MAX_SELECTED)
+        result["selected_source"] = "viewport"
+    else:
+        result["selected"] = []
+        result["selected_source"] = active_panel
+
+    return result
 
 
 def _read_viewport() -> dict:
@@ -340,7 +371,19 @@ def register_resources(mcp_server) -> None:
 
 
 def register_tools(mcp_server) -> None:
-    """注册阶段 2 的 MCP Tools（精简版：仅保留不与 Skill 重复的）。"""
+    """注册阶段 2 的 MCP Tools（v2.6: 默认不注册，保留 Python API）。
+
+    设置环境变量 ARTCLAW_LEGACY_MCP=true 可恢复 MCP 工具注册。
+    """
+
+    # v2.6: MCP 工具精简——get_editor_context 和 highlight_actors
+    # 不再注册为 MCP 工具，AI 通过 run_ue_python 调用 Python API
+    if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() != "true":
+        UELogger.info("Phase 2 tools: skipped MCP registration (v2.6 slim mode). "
+                      "Set ARTCLAW_LEGACY_MCP=true to restore.")
+        return
+
+    # --- 以下为旧版 MCP 注册（仅 ARTCLAW_LEGACY_MCP=true 时执行）---
 
     # --- 2.2: 获取编辑器上下文 ---
     mcp_server.register_tool(

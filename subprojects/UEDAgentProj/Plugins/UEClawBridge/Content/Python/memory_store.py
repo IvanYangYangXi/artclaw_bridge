@@ -181,67 +181,71 @@ def init_memory_store(mcp_server, base_dir: Optional[Path] = None) -> UEMemorySt
     global _memory_store_instance
     _memory_store_instance = UEMemoryStore(base_dir)
 
-    mcp_server.register_tool(
-        name="memory",
-        description=(
-            "Project memory store. Use action='get' to retrieve, 'set' to store, "
-            "'search' to find by keyword, 'list' to enumerate keys. "
-            "Layers: facts (project knowledge), preferences (user aesthetics), "
-            "conventions (naming rules). "
-            "New v2 actions: 'check_operation' (query operation history), "
-            "'maintain' (trigger memory maintenance)."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["get", "set", "search", "list", "delete",
-                             "check_operation", "maintain"],
-                    "description": "Action to perform",
+    # v2.6: memory 不再注册为 MCP 工具，通过 run_ue_python 调用 Python API
+    if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() == "true":
+        mcp_server.register_tool(
+            name="memory",
+            description=(
+                "Project memory store. Use action='get' to retrieve, 'set' to store, "
+                "'search' to find by keyword, 'list' to enumerate keys. "
+                "Layers: facts (project knowledge), preferences (user aesthetics), "
+                "conventions (naming rules). "
+                "New v2 actions: 'check_operation' (query operation history), "
+                "'maintain' (trigger memory maintenance)."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["get", "set", "search", "list", "delete",
+                                 "check_operation", "maintain"],
+                        "description": "Action to perform",
+                    },
+                    "layer": {
+                        "type": "string",
+                        "enum": ["facts", "preferences", "conventions",
+                                 "short_term", "mid_term", "long_term"],
+                        "description": "Memory layer (v1 names auto-mapped to v2 tags)",
+                    },
+                    "key": {
+                        "type": "string",
+                        "description": "Memory key (for get/set/delete)",
+                    },
+                    "value": {
+                        "description": "Value to store (for set action)",
+                    },
+                    "tag": {
+                        "type": "string",
+                        "enum": ["fact", "preference", "convention",
+                                 "operation", "crash", "pattern", "context"],
+                        "description": "Semantic tag (v2)",
+                    },
+                    "importance": {
+                        "type": "number",
+                        "description": "Importance score 0-1 (v2, default 0.5)",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Search keyword (for search action)",
+                    },
+                    "tool": {
+                        "type": "string",
+                        "description": "Tool name (for check_operation)",
+                    },
+                    "action_hint": {
+                        "type": "string",
+                        "description": "Action hint (for check_operation)",
+                    },
                 },
-                "layer": {
-                    "type": "string",
-                    "enum": ["facts", "preferences", "conventions",
-                             "short_term", "mid_term", "long_term"],
-                    "description": "Memory layer (v1 names auto-mapped to v2 tags)",
-                },
-                "key": {
-                    "type": "string",
-                    "description": "Memory key (for get/set/delete)",
-                },
-                "value": {
-                    "description": "Value to store (for set action)",
-                },
-                "tag": {
-                    "type": "string",
-                    "enum": ["fact", "preference", "convention",
-                             "operation", "crash", "pattern", "context"],
-                    "description": "Semantic tag (v2)",
-                },
-                "importance": {
-                    "type": "number",
-                    "description": "Importance score 0-1 (v2, default 0.5)",
-                },
-                "query": {
-                    "type": "string",
-                    "description": "Search keyword (for search action)",
-                },
-                "tool": {
-                    "type": "string",
-                    "description": "Tool name (for check_operation)",
-                },
-                "action_hint": {
-                    "type": "string",
-                    "description": "Action hint (for check_operation)",
-                },
+                "required": ["action"],
             },
-            "required": ["action"],
-        },
-        handler=_handle_memory,
-    )
+            handler=_handle_memory,
+        )
+        UELogger.info("Memory MCP tool registered (legacy mode)")
+    else:
+        UELogger.info("Memory: MCP tool skipped (v2.6 slim mode), Python API available via get_memory_store()")
 
-    UELogger.info("MemoryStore v2: MCP tool 已注册")
     return _memory_store_instance
 
 

@@ -136,6 +136,9 @@ private:
     /** 当前活跃面板 */
     EUEAgentActivePanel ActivePanel = EUEAgentActivePanel::Viewport;
 
+    /** Content Browser 最近一次设置 ActivePanel 的时间戳 (防抖) */
+    double LastContentBrowserSelectionTime = 0.0;
+
     /** 委托句柄 */
     FDelegateHandle ViewportSelectionHandle;
     FDelegateHandle ContentBrowserSelectionHandle;

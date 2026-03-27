@@ -167,12 +167,15 @@ _send_chat_async_to_file_current_id: Optional[str] = None
 
 _pending_callbacks = []
 _callback_lock = threading.Lock()
+_tick_handle = None  # Slate tick callback handle，防止重复注册和 GC
 
 
 def _schedule_on_game_thread(fn: Callable):
     """将回调排入队列，等待 Tick 时执行"""
     with _callback_lock:
         _pending_callbacks.append(fn)
+    # 确保 tick 回调已注册（自愈：如果注册丢失会重新注册）
+    _ensure_tick_registered()
 
 
 def _tick_flush_callbacks(dt: float):
@@ -186,6 +189,18 @@ def _tick_flush_callbacks(dt: float):
             fn()
         except Exception as e:
             UELogger.mcp_error(f"OpenClaw callback error: {e}")
+
+
+def _ensure_tick_registered():
+    """确保 Slate tick 回调已注册且仅注册一次。"""
+    global _tick_handle
+    if _tick_handle is not None:
+        return  # 已注册
+    try:
+        if unreal:
+            _tick_handle = unreal.register_slate_post_tick_callback(_tick_flush_callbacks)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -222,12 +237,8 @@ def init_bridge() -> bool:
 
     _bridge.send_message_async = _ue_send_message_async
 
-    # 注册 Tick 回调
-    try:
-        if unreal:
-            unreal.register_slate_post_tick_callback(_tick_flush_callbacks)
-    except Exception:
-        pass
+    # 注册 Tick 回调（幂等，仅首次生效）
+    _ensure_tick_registered()
 
     return _bridge.start()
 
@@ -342,6 +353,7 @@ def send_chat_async_to_file(message: str, output_file: str):
         _write_stream_event("delta", state, text)
 
     def _on_result(result: str):
+        """最终结果回调 — 直接写文件（不走游戏线程调度，避免 tick 丢失导致卡死）"""
         if _send_chat_async_to_file_current_id != request_id:
             UELogger.info("OpenClaw Bridge: skipping stale response write (request superseded)")
             return
@@ -365,7 +377,17 @@ def send_chat_async_to_file(message: str, output_file: str):
         _bridge.on_ai_thinking = _on_thinking
         _bridge.on_ai_message = _on_delta
         enriched = _enrich_with_briefing(message)
-        _bridge.send_message_async(enriched, _on_result)
+
+        # 直接用 worker 线程调用 send_message，绕过 monkey-patched send_message_async
+        # _on_result 只写文件，不需要在游戏线程执行
+        def _worker():
+            try:
+                result = _bridge.send_message(enriched)
+                _on_result(result)
+            except Exception as e:
+                _on_result(f"[错误] {e}")
+
+        threading.Thread(target=_worker, daemon=True, name="OCBridge-Chat").start()
     else:
         try:
             with open(output_file, "w", encoding="utf-8") as f:

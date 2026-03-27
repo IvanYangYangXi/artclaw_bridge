@@ -99,6 +99,7 @@
 ### 2.5 底部工具栏
 - **+ 新会话**: 清空聊天记录 + 重置 session key + 发送 `/new` 给 AI
 - **创建 Skill**: 在输入框填充引导文本 `"Create an artclaw skill: "`，聚焦输入框让用户续写
+- **⚙ 管理**: 打开 MCP 与 Skill 管理面板（详见第十一章）
 - **语言切换按钮**: 显示 "En" 或 "中"，切换中英文界面
 - **发送模式复选框**: 在最右侧
 
@@ -398,6 +399,60 @@ Dashboard 通过抽象接口与 AI 平台通信，不依赖具体平台实现:
 
 ---
 
+## 十一、MCP 与 Skill 管理面板（待实现）
+
+> **详细设计文档**: `docs/UEClawBridge/features/Skill与MCP管理面板设计.md`
+
+### 11.1 入口
+- Dashboard 底部工具栏新增 **⚙ 管理** 按钮
+- 点击打开管理面板（独立弹窗或 Tab 切换）
+
+### 11.2 MCP 连接 Tab
+- MCP Server 运行状态（端口、连接数）
+- 已注册工具列表 + 调用统计
+- 操作: 刷新 / 查看日志 / 重启
+
+### 11.3 Skill 管理 Tab
+- **三层展示**: 系统(official) / 市集(marketplace) / 用户(user)
+- **每行信息**: 勾选框(启用/禁用) + 名称 + 描述 + 版本
+- **筛选**: 层级/分类/搜索
+- **系统 Skill**: 🔒 不可卸载，可禁用，随安装器更新
+- **市集 Skill**: 可安装、卸载、更新、启用/禁用
+- **用户 Skill**: 可编辑、删除、发布到市集或系统
+
+### 11.4 操作功能
+- **安装**: 从市集浏览 / 本地文件 / Git URL
+- **更新**: 检测可用更新，一键更新
+- **发布**: 发布检查(manifest/SKILL.md/语法) → 选择目标(市集/系统) → 填写版本+说明 → 发布
+- **启用/禁用**: 持久化到 `~/.artclaw/config.json`，热生效
+
+### 11.5 Skill 详情弹窗
+- 元信息: 版本/作者/分类/适用软件/风险级别/层级
+- 描述全文
+- 文件组成: manifest.json / `__init__.py` / SKILL.md / references/
+- 操作按钮
+
+### 11.6 实现要点
+- **C++ 新文件**: `SUEAgentManagePanel.h/cpp`
+- **Python API**: `skill_hub.get_skill_details()` / `set_skill_enabled()` / `publish_skill()` / `install_skill()` / `get_mcp_status()`
+- **DCC 版本**: Qt `artclaw_ui/manage_panel.py`，功能一致
+
+---
+
+## 十二、Skill 目录统一（待实施）
+
+### 12.1 合并方案
+- `openclaw-skills/` + `UEClawBridge/.../Skills/00_official/` → `skills/official/`
+- `team_skills/` → `skills/marketplace/`
+- 运行时层级名: `00_official` → `official`, `01_team` → `marketplace`, `02_user` → `user`, `99_custom` → `custom`
+
+### 12.2 安装策略
+- **系统 Skill**: install.bat 默认安装，不可卸载
+- **市集 Skill**: 用户通过管理面板手动安装
+- **用户 Skill**: 编辑器内创建或本地安装
+
+---
+
 ## 附录: 源码文件索引
 
 | 文件 | 职责 |
@@ -411,3 +466,4 @@ Dashboard 通过抽象接口与 AI 平台通信，不依赖具体平台实现:
 | `UEAgentLocalization.h/cpp` | 本地化模块 |
 | `IAgentPlatformBridge.h` | 平台通信抽象接口 |
 | `OpenClawPlatformBridge.h/cpp` | OpenClaw 平台实现 |
+| `SUEAgentManagePanel.h/cpp` | MCP 与 Skill 管理面板（待实现） |

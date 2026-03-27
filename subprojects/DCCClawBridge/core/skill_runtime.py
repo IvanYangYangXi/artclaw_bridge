@@ -175,18 +175,22 @@ class SkillRuntime:
                 handler_name = tool_def.get("handler", tool_name)
                 handler = getattr(module, handler_name, None)
                 if handler and callable(handler):
-                    self._server.register_tool(
-                        name=tool_name,
-                        description=tool_def.get("description", ""),
-                        input_schema=tool_def.get("inputSchema", {"type": "object", "properties": {}}),
-                        handler=handler,
-                        main_thread=tool_def.get("mainThread", True),
-                    )
+                    # v2.6: 默认不注册 Skill MCP 工具，通过 run_python 调用
+                    if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() == "true":
+                        self._server.register_tool(
+                            name=tool_name,
+                            description=tool_def.get("description", ""),
+                            input_schema=tool_def.get("inputSchema", {"type": "object", "properties": {}}),
+                            handler=handler,
+                            main_thread=tool_def.get("mainThread", True),
+                        )
 
         # 检查 register_tools 函数（约定式注册）
         register_fn = getattr(module, "register_tools", None)
         if register_fn and callable(register_fn):
-            register_fn(self._server)
+            # v2.6: 默认不调用约定式 MCP 注册，通过 run_python 调用
+            if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() == "true":
+                register_fn(self._server)
 
     # --- 查询接口 ---
 
@@ -236,3 +240,109 @@ class SkillRuntime:
                 self._server.unregister_tool(tool_def.get("name", ""))
             return True
         return False
+
+    # --- Skill 执行接口（供 run_python 内部调用） ---
+
+    def execute_skill(self, skill_name: str, params: dict = None) -> dict:
+        """
+        统一 Skill 执行入口，供 run_python 调用。
+
+        用法 (AI 通过 run_python 执行):
+            from core.skill_runtime import get_skill_runtime
+            rt = get_skill_runtime()
+            result = rt.execute_skill("batch_rename_nodes", {"prefix": "SM_"})
+
+        Returns:
+            {"success": True, "result": ...} 或 {"success": False, "error": "..."}
+        """
+        if params is None:
+            params = {}
+
+        if skill_name not in self._skills:
+            return {"success": False, "error": f"Skill 未找到: {skill_name}"}
+
+        manifest = self._skills[skill_name]
+
+        # 检查是否被禁用
+        if skill_name in self._disabled:
+            return {"success": False, "error": f"Skill '{skill_name}' 已被禁用"}
+
+        # 从 manifest.tools 中找到对应的 handler
+        # 尝试加载模块并调用 handler
+        entry_path = Path(manifest.skill_dir) / manifest.entry
+        module_name = f"artclaw_skill_{manifest.name}"
+        module = sys.modules.get(module_name)
+
+        if not module:
+            return {"success": False, "error": f"Skill '{skill_name}' 模块未加载"}
+
+        # 查找 execute 或与 skill 同名的函数
+        handler = getattr(module, "execute", None)
+        if not handler:
+            handler = getattr(module, skill_name, None)
+        if not handler:
+            # 尝试 manifest 中第一个 tool 的 handler
+            if manifest.tools:
+                handler_name = manifest.tools[0].get("handler", manifest.tools[0].get("name", ""))
+                handler = getattr(module, handler_name, None)
+
+        if not handler or not callable(handler):
+            return {"success": False, "error": f"Skill '{skill_name}' 没有可调用的 handler"}
+
+        try:
+            result = handler(params)
+            return {"success": True, "result": result}
+        except Exception as e:
+            logger.exception(f"Skill execution error ({skill_name}): {e}")
+            return {"success": False, "error": str(e)}
+
+    def list_skills(self, category: str = None, layer: str = None) -> list:
+        """
+        列出已注册的 Skill，供 run_python 调用。
+
+        用法:
+            from core.skill_runtime import get_skill_runtime
+            rt = get_skill_runtime()
+            skills = rt.list_skills(category="material")
+
+        Returns:
+            [{"name": "...", "description": "...", "category": "...", ...}, ...]
+        """
+        results = []
+        for name, manifest in self._skills.items():
+            entry = {
+                "name": manifest.name,
+                "description": manifest.description,
+                "category": manifest.category,
+                "version": manifest.version,
+                "layer": manifest.layer,
+                "author": manifest.author,
+                "enabled": name not in self._disabled,
+                "tools": [t.get("name", "") for t in manifest.tools],
+            }
+
+            # 过滤
+            if category and entry.get("category") != category:
+                continue
+            if layer and entry.get("layer") != layer:
+                continue
+
+            results.append(entry)
+        return results
+
+
+# --- 全局单例 ---
+
+_skill_runtime_instance: Optional[SkillRuntime] = None
+
+
+def get_skill_runtime() -> Optional[SkillRuntime]:
+    """获取 SkillRuntime 单例，供 run_python 内部调用"""
+    return _skill_runtime_instance
+
+
+def init_skill_runtime(mcp_server, skills_base_dir: str = "", adapter=None) -> SkillRuntime:
+    """初始化 SkillRuntime 单例并返回"""
+    global _skill_runtime_instance
+    _skill_runtime_instance = SkillRuntime(mcp_server, skills_base_dir, adapter)
+    return _skill_runtime_instance

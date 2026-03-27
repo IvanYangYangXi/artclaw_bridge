@@ -71,19 +71,24 @@ def init_knowledge_base(mcp_server, data_dir: str = "") -> KnowledgeBase:
             return f"未找到与 '{query}' 相关的文档"
         return json.dumps(results, ensure_ascii=False, indent=2)
 
-    mcp_server.register_tool(
-        name="knowledge_search",
-        description="在本地知识库中搜索相关文档（API 文档、项目规范、代码示例等）",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "搜索关键词"},
-                "limit": {"type": "integer", "description": "返回结果数量", "default": 5},
+    # v2.6: 默认不注册 MCP 工具，通过 run_python 调用 Python API
+    if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() == "true":
+        mcp_server.register_tool(
+            name="knowledge_search",
+            description="在本地知识库中搜索相关文档（API 文档、项目规范、代码示例等）",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "搜索关键词"},
+                    "limit": {"type": "integer", "description": "返回结果数量", "default": 5},
+                },
+                "required": ["query"],
             },
-            "required": ["query"],
-        },
-        handler=_handle_search,
-    )
+            handler=_handle_search,
+        )
+        logger.info("KnowledgeBase: registered 1 MCP tool (legacy mode)")
+    else:
+        logger.info("KnowledgeBase: MCP tool skipped (v2.6 slim mode)")
 
     logger.info(f"Knowledge base initialized ({kb.get_stats()['total_documents']} docs)")
     return kb

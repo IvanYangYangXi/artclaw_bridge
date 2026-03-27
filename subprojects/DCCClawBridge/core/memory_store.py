@@ -227,47 +227,50 @@ def init_memory_store(mcp_server, data_dir: str = "", dcc_name: str = "maya") ->
         else:
             return json.dumps({"error": f"未知操作: {action}"}, ensure_ascii=False)
 
-    mcp_server.register_tool(
-        name="memory",
-        description=(
-            "分层记忆管理 v2。action: get(读取)/set(存储)/search(搜索)/list(列出)/"
-            "delete(删除)/check_operation(查询操作历史)/maintain(触发维护)。"
-            "tag: fact/preference/convention/operation/crash/pattern/context"
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["get", "set", "search", "list", "delete",
-                             "check_operation", "maintain"],
+    # v2.6: 默认不注册 MCP 工具，通过 run_python 调用 Python API
+    if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() == "true":
+        mcp_server.register_tool(
+            name="memory",
+            description=(
+                "分层记忆管理 v2。action: get(读取)/set(存储)/search(搜索)/list(列出)/"
+                "delete(删除)/check_operation(查询操作历史)/maintain(触发维护)。"
+                "tag: fact/preference/convention/operation/crash/pattern/context"
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["get", "set", "search", "list", "delete",
+                                 "check_operation", "maintain"],
+                    },
+                    "key": {"type": "string", "description": "记忆键名"},
+                    "value": {"description": "要存储的值 (action=set 时使用)"},
+                    "layer": {
+                        "type": "string",
+                        "enum": ["short_term", "mid_term", "long_term",
+                                 "system", "project"],
+                        "description": "记忆层级（旧名称自动映射）",
+                    },
+                    "tag": {
+                        "type": "string",
+                        "enum": ["fact", "preference", "convention",
+                                 "operation", "crash", "pattern", "context"],
+                        "description": "语义标签 (v2)",
+                    },
+                    "importance": {
+                        "type": "number",
+                        "description": "重要性评分 0-1 (默认 0.5)",
+                    },
+                    "query": {"type": "string", "description": "搜索关键词"},
+                    "tool": {"type": "string", "description": "工具名称 (check_operation)"},
+                    "action_hint": {"type": "string", "description": "动作提示 (check_operation)"},
                 },
-                "key": {"type": "string", "description": "记忆键名"},
-                "value": {"description": "要存储的值 (action=set 时使用)"},
-                "layer": {
-                    "type": "string",
-                    "enum": ["short_term", "mid_term", "long_term",
-                             "system", "project"],
-                    "description": "记忆层级（旧名称自动映射）",
-                },
-                "tag": {
-                    "type": "string",
-                    "enum": ["fact", "preference", "convention",
-                             "operation", "crash", "pattern", "context"],
-                    "description": "语义标签 (v2)",
-                },
-                "importance": {
-                    "type": "number",
-                    "description": "重要性评分 0-1 (默认 0.5)",
-                },
-                "query": {"type": "string", "description": "搜索关键词"},
-                "tool": {"type": "string", "description": "工具名称 (check_operation)"},
-                "action_hint": {"type": "string", "description": "动作提示 (check_operation)"},
+                "required": ["action"],
             },
-            "required": ["action"],
-        },
-        handler=_handle_memory,
-    )
-
-    logger.info(f"MemoryStore v2: MCP tool 已注册 ({store._manager.get_stats().get('total_entries', 0)} entries)")
+            handler=_handle_memory,
+        )
+        logger.info(f"MemoryStore v2: MCP tool registered - legacy mode ({store._manager.get_stats().get('total_entries', 0)} entries)")
+    else:
+        logger.info(f"MemoryStore v2: MCP tool skipped - v2.6 slim mode ({store._manager.get_stats().get('total_entries', 0)} entries)")
     return store

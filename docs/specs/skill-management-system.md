@@ -1,9 +1,18 @@
 # ArtClaw Skill 管理体系设计文档
 
-**版本**: v2.0  
-**日期**: 2026-03-17  
+**版本**: v2.1  
+**日期**: 2026-03-27  
 **状态**: 已完成  
 **文档路径**: `docs/specs/skill-management-system.md`
+
+> **v2.1 变更说明 (2026-03-27)**:
+> - MCP 工具精简重构：每个 DCC 仅保留 1 个 MCP 工具（`run_ue_python` / `run_python`），原有工具全部降级为 Python API
+> - Skill 不再注册为 MCP 工具，通过 `execute_skill()` Python API 提供执行入口
+> - 新增 5 个 OpenClaw Skill（SKILL.md 触发文档），指导 AI 通过 `run_python` 调用 Python API
+> - ArtClaw 从"Skill 运行时"转型为"Skill 市集"
+> - §8 对话式 Skill 创建流程更新
+> - §9 MCP 接口扩展整节重写
+> - §10 开发工作清单同步更新
 
 ---
 
@@ -38,7 +47,7 @@
 ### 2.4 热加载与实时生效
 - 保存即生效，无需重启 DCC
 - 文件监控自动检测变更
-- MCP 通知客户端刷新工具列表
+- 内部 API 注册表自动更新，无需 MCP 工具列表刷新
 
 ### 2.5 C++ 接口开发规范
 - **原则**: Skill 优先使用 Python/蓝图实现
@@ -383,9 +392,11 @@ AI 展示确认摘要:
    ⚠️ 风险: medium
    确认创建？"
         ↓
-用户确认 → AI 调用 skill_manage(action=create)
+用户确认 → AI 通过 run_ue_python 调用 skill_hub.create_skill(...)
         ↓
-自动安装 + 热加载 + 注册到 MCP
+自动安装 + 热加载（注册为内部 Python API，不再注册 MCP）
+        ↓
+同时生成 OpenClaw SKILL.md → 保存到 ~/.openclaw/skills/
 ```
 
 **AI 自动获取/推断的字段**:
@@ -404,13 +415,13 @@ AI 展示确认摘要:
 
 ### 8.2 备用入口：Create Skill 按钮
 
-保留按钮，但行为改为在聊天输入框填充引导文本:
+保留按钮，但行为改为在聊天输入框填充引导文本（Skill 创建全程由 AI 对话驱动，不涉及 MCP 工具注册）:
 
 ```
 [用户点击 Create Skill]
   → 输入框自动填充: "Create an artclaw skill: "
   → 用户继续输入描述
-  → 发送给 AI，走对话式流程
+  → 发送给 AI，走对话式流程（通过 run_ue_python 调用 Python API）
 ```
 
 如 AI 未连接，提示用户先执行 `/connect`。
@@ -419,58 +430,127 @@ AI 展示确认摘要:
 
 ## 9. MCP 接口扩展
 
-### 9.1 MCP Tools（精简版 v2.0）
+### 9.1 MCP 工具与 Python API（v2.1 重构）
 
-经过 2026-03-17 精简优化，MCP Tools 从 55 个缩减至 22 个。
+> **v2.1 重构 (2026-03-27)**: MCP 工具从 22 个精简为 **1 个**。
+> 每个 DCC 仅保留 1 个 MCP 工具作为唯一执行入口，所有其他功能降级为 Python API。
+> AI 通过 OpenClaw Skill（SKILL.md 触发文档）获取调用指引，经由 `run_python` 调用 Python API。
 
-**设计原则**: 保留查询/读取类工具，写操作由 `run_ue_python` 万能执行器替代。
+#### 9.1.1 唯一 MCP 工具
+
+| DCC 侧 | MCP 工具名 | 说明 |
+|---------|-----------|------|
+| UE 编辑器 | `run_ue_python` | UE 侧唯一 MCP 工具，万能 Python 执行器 |
+| DCC 软件（Maya 等） | `run_python` | DCC 侧唯一 MCP 工具，万能 Python 执行器 |
+
+#### 9.1.2 Python API（原 MCP 工具降级）
+
+原有 MCP 工具功能完整保留，降级为 Python API，AI 通过 `run_ue_python` / `run_python` 调用。
+
+**Core API**:
+
+| 原 MCP 工具 | Python API 调用方式 | 说明 |
+|-------------|---------------------|------|
+| `get_editor_context()` | `from artclaw.api import context; context.get_editor_context()` | 编辑器上下文 |
+| `highlight_actors(names)` | `from artclaw.api import scene; scene.highlight_actors(names)` | 高亮 Actor |
+
+**Scene Ops API**:
+
+| 原 MCP 工具 | Python API 调用方式 | 说明 |
+|-------------|---------------------|------|
+| `get_selected_actors()` | `from artclaw.api import scene; scene.get_selected_actors()` | 选中 Actor 列表 |
+| `get_all_level_actors(filter)` | `scene.get_all_level_actors(class_filter=filter)` | 全部 Actor |
+| `get_actor_details(name)` | `scene.get_actor_details(actor_name=name)` | Actor 详情 |
+| `focus_on_actor(name)` | `scene.focus_on_actor(actor_name=name)` | 视口聚焦 |
+| `select_actors(names)` | `scene.select_actors(actor_names=names)` | 选择 Actor |
+
+**Asset Ops API**:
+
+| 原 MCP 工具 | Python API 调用方式 | 说明 |
+|-------------|---------------------|------|
+| `load_asset(path)` | `from artclaw.api import asset; asset.load_asset(asset_path=path)` | 加载资产信息 |
+| `get_asset_path(query)` | `asset.get_asset_path(query=query)` | 搜索资产路径 |
+| `list_assets_in_directory(dir)` | `asset.list_assets_in_directory(directory=dir)` | 列出目录资产 |
+| `rename_asset(path, name)` | `asset.rename_asset(asset_path=path, new_name=name)` | 重命名资产 |
+
+**Material Ops API**:
+
+| 原 MCP 工具 | Python API 调用方式 | 说明 |
+|-------------|---------------------|------|
+| `get_actor_materials(name)` | `from artclaw.api import material; material.get_actor_materials(actor_name=name)` | Actor 材质列表 |
+| `get_material_parameters(path)` | `material.get_material_parameters(material_path=path)` | 材质参数 |
+
+**Level Ops API**:
+
+| 原 MCP 工具 | Python API 调用方式 | 说明 |
+|-------------|---------------------|------|
+| `get_current_level()` | `from artclaw.api import level; level.get_current_level()` | 当前关卡信息 |
+| `get_level_actors()` | `level.get_level_actors()` | 关卡 Actor 分类汇总 |
+| `get_viewport_info()` | `level.get_viewport_info()` | 视口相机信息 |
+
+**Memory API**:
+
+| 原 MCP 工具 | Python API 调用方式 | 说明 |
+|-------------|---------------------|------|
+| `memory(action, ...)` | `from artclaw.api import memory; memory.memory(action=action, layer=layer, key=key, value=value, query=query)` | 统一记忆操作 |
+
+**Knowledge API**:
+
+| 原 MCP 工具 | Python API 调用方式 | 说明 |
+|-------------|---------------------|------|
+| `knowledge_search(query, top_k)` | `from artclaw.api import knowledge; knowledge.search(query=query, top_k=top_k)` | 知识库搜索 |
+
+**Skill Management API**:
+
+| 原 MCP 工具 | Python API 调用方式 | 说明 |
+|-------------|---------------------|------|
+| `skill_list(...)` | `from artclaw import skill_hub; skill_hub.list_skills(category=..., software=..., layer=..., keyword=...)` | 列出 Skill |
+| `skill_manage(action, ...)` | `skill_hub.manage_skill(action=action, name=name, ...)` | 统一管理操作 |
+| `skill_generate(desc, ...)` | `skill_hub.generate_skill(description=desc, category=..., software=...)` | 自然语言生成 |
+
+**Skill 执行（统一入口）**:
 
 ```python
-# Core Tools (3)
-run_ue_python(code, inject_context)                   # 万能 Python 执行器
-get_editor_context()                                  # 编辑器上下文
-highlight_actors(actor_names)                         # 高亮 Actor
-
-# Scene Ops (5 — 仅查询+导航)
-get_selected_actors()                                 # 选中 Actor 列表
-get_all_level_actors(class_filter)                    # 全部 Actor
-get_actor_details(actor_name)                         # Actor 详情
-focus_on_actor(actor_name)                            # 视口聚焦
-select_actors(actor_names)                            # 选择 Actor
-
-# Asset Ops (4 — 仅查询)
-load_asset(asset_path)                                # 加载资产信息
-get_asset_path(query)                                 # 搜索资产路径
-list_assets_in_directory(directory)                   # 列出目录资产
-rename_asset(asset_path, new_name)                    # 重命名资产
-
-# Material Ops (2 — 仅查询)
-get_actor_materials(actor_name)                       # Actor 材质列表
-get_material_parameters(material_path)                # 材质参数
-
-# Level Ops (3 — 仅查询+视口)
-get_current_level()                                   # 当前关卡信息
-get_level_actors()                                    # 关卡 Actor 分类汇总
-get_viewport_info()                                   # 视口相机信息
-
-# Memory (1 — 统一接口)
-memory(action, layer, key, value, query)              # get/set/search/list
-
-# Knowledge (1 — 仅搜索)
-knowledge_search(query, top_k)                        # 知识库搜索
-
-# Skill Management (3 — 精简合并)
-skill_list(category, software, layer, keyword)        # 列出 Skill
-skill_manage(action, name, ...)                       # 统一管理操作
-skill_generate(description, category, software)       # 自然语言生成
+# AI 通过 run_ue_python / run_python 调用：
+from artclaw import skill_hub
+result = skill_hub.execute_skill("skill_name", {"param1": "value1", "param2": "value2"})
 ```
 
-**已内化（不再暴露为 MCP Tool）**:
+#### 9.1.3 OpenClaw Skill（SKILL.md 触发文档）
+
+以下 5 个 OpenClaw Skill 保存在 `~/.openclaw/skills/`，作为按需加载的触发文档。当 AI 识别到相关意图时自动加载对应 SKILL.md，获取调用指引后通过 `run_ue_python` / `run_python` 执行 Python API。
+
+| OpenClaw Skill | 路径 | 说明 | 对应 Python API |
+|----------------|------|------|----------------|
+| `artclaw-context` | `~/.openclaw/skills/artclaw-context/SKILL.md` | 编辑器上下文获取与场景信息查询 | `artclaw.api.context.*` / `artclaw.api.scene.*` / `artclaw.api.level.*` |
+| `artclaw-memory` | `~/.openclaw/skills/artclaw-memory/SKILL.md` | 项目记忆读写（对话上下文、偏好设置等） | `artclaw.api.memory.*` |
+| `artclaw-knowledge` | `~/.openclaw/skills/artclaw-knowledge/SKILL.md` | 知识库搜索与索引 | `artclaw.api.knowledge.*` |
+| `artclaw-skill-manage` | `~/.openclaw/skills/artclaw-skill-manage/SKILL.md` | Skill 列表查看、创建、管理 | `artclaw.skill_hub.*` |
+| `artclaw-highlight` | `~/.openclaw/skills/artclaw-highlight/SKILL.md` | Actor 高亮与视觉反馈 | `artclaw.api.scene.highlight_actors()` |
+
+**工作流示意**:
+```
+用户意图（如 "查看场景中所有灯光"）
+        ↓
+OpenClaw 按需加载 artclaw-context SKILL.md
+        ↓
+AI 获得调用指引 → 生成 Python 代码
+        ↓
+AI 通过 run_ue_python 执行:
+  from artclaw.api import scene
+  actors = scene.get_all_level_actors(class_filter="Light")
+        ↓
+返回结果给用户
+```
+
+#### 9.1.4 已内化（不再暴露为工具或 API）
+
 - `assess_risk` → 内化到 `run_ue_python` 流程
 - `analyze_error` → 内化到 `run_ue_python` 流程
 - `get_dynamic_prompt` → 内化到 system prompt
 
-**已由 run_ue_python 替代（代码保留供内部调用）**:
+#### 9.1.5 已由 run_ue_python 替代（代码保留供内部调用）
+
 - `spawn_actor`, `delete_actors`, `set_actor_transform`, `rename_actor`, `duplicate_actors`
 - `set_actor_material`, `create_material_instance`, `does_asset_exist`
 - `save_current_level`, `save_all_dirty_packages`, `open_level`, `set_viewport_camera`
@@ -529,7 +609,7 @@ notifications/skills/dependencies_resolved            # 依赖解析完成
 | B2 | 实现 manifest 解析 | `skill_manifest.py` JSON Schema 验证 | ✅ |
 | B3 | 实现软件版本匹配 | `skill_version.py` | ✅ |
 | B4 | 实现 Skill 冲突检测 | `skill_conflict.py` | ✅ |
-| B5 | MCP Tools | `skill_mcp_tools.py` (精简为 3 个: skill_list/skill_manage/skill_generate) | ✅ |
+| B5 | MCP Tools | `skill_mcp_tools.py` (精简为 0 个 MCP 工具，全部降级为 Python API，通过 execute_skill() 调用) | ✅ |
 | B6 | MCP Resources | `skill_mcp_resources.py` (8 个 resources) | ✅ |
 
 ### 阶段 C: CLI 工具 (P0) ✅
@@ -570,7 +650,9 @@ notifications/skills/dependencies_resolved            # 依赖解析完成
 | 合并 | 12 个 skill_* → skill_list + skill_manage + skill_generate | -9 |
 | 排除 | 写操作工具由 run_ue_python 替代 | -14 |
 | 移除 | knowledge_index / knowledge_stats | -2 |
-| **总计** | **55 → 22 个 MCP Tools** | **-60%** |
+| **v1→v2 总计** | **55 → 22 个 MCP Tools** | **-60%** |
+| v2.1 重构 | Skill 不再注册 MCP 工具，全部通过 run_python + execute_skill() API 调用 | -21（降为 1 个） |
+| **v1→v2.1 总计** | **55 → 1 个 MCP Tool（run_ue_python）** | **-98%** |
 
 ---
 

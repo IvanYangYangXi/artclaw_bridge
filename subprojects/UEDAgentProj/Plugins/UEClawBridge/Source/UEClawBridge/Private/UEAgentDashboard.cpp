@@ -1160,6 +1160,12 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 
 			if (Status == TEXT("ok"))
 			{
+				// 立即更新 Subsystem 状态（不等 _bridge_status.json 轮询）
+				if (Self->CachedSubsystem.IsValid())
+				{
+					Self->CachedSubsystem->SetConnectionStatus(true);
+				}
+
 				Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ConnectOK")));
 
 				// 连接成功后，发送环境信息给 AI（非静默，显示回复）
@@ -1167,6 +1173,12 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 			}
 			else
 			{
+				// 连接失败也要确保状态为 disconnected
+				if (Self->CachedSubsystem.IsValid())
+				{
+					Self->CachedSubsystem->SetConnectionStatus(false);
+				}
+
 				Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ConnectFail")));
 			}
 			return false;
@@ -1178,6 +1190,13 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 void SUEAgentDashboard::DisconnectOpenClawBridge()
 {
 	PlatformBridge->Disconnect();
+
+	// 立即更新 Subsystem 状态（不等 _bridge_status.json 轮询）
+	if (CachedSubsystem.IsValid())
+	{
+		CachedSubsystem->SetConnectionStatus(false);
+	}
+
 	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("BridgeDisconnected")));
 }
 

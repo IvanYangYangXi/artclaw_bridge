@@ -769,6 +769,75 @@ class SkillHub:
     def get_disabled_skills(self) -> List[str]:
         """获取被禁用的 Skill 列表"""
         return list(self._disabled_skills)
+
+    # ------------------------------------------------------------------
+    # Skill 执行接口（供 run_ue_python 内部调用）
+    # ------------------------------------------------------------------
+
+    def execute_skill(self, skill_name: str, params: dict = None) -> dict:
+        """
+        统一 Skill 执行入口，供 run_ue_python 调用。
+
+        用法 (AI 通过 run_ue_python 执行):
+            from skill_hub import get_skill_hub
+            hub = get_skill_hub()
+            result = hub.execute_skill("batch_rename_actors", {"prefix": "SM_"})
+
+        Returns:
+            {"success": True, "result": ...} 或 {"success": False, "error": "..."}
+        """
+        if params is None:
+            params = {}
+
+        if skill_name not in self._registered_skills:
+            return {"success": False, "error": f"Skill 未找到: {skill_name}"}
+
+        info = self._registered_skills[skill_name]
+        handler = info.get("handler")
+        if not handler:
+            return {"success": False, "error": f"Skill '{skill_name}' 没有 handler"}
+
+        try:
+            result = handler(params)
+            return {"success": True, "result": result}
+        except Exception as e:
+            UELogger.exception(f"Skill execution error ({skill_name}): {e}")
+            return {"success": False, "error": str(e)}
+
+    def list_skills(self, category: str = None, software: str = None) -> list:
+        """
+        列出已注册的 Skill，供 run_ue_python 调用。
+
+        用法:
+            from skill_hub import get_skill_hub
+            hub = get_skill_hub()
+            skills = hub.list_skills(category="material")
+
+        Returns:
+            [{"name": "...", "description": "...", "category": "...", ...}, ...]
+        """
+        results = []
+        for name, info in self._registered_skills.items():
+            manifest = info.get("manifest")
+            entry = {
+                "name": name,
+                "description": info.get("description", ""),
+            }
+            if manifest:
+                entry["category"] = getattr(manifest, "category", "")
+                entry["software"] = getattr(manifest, "software", "")
+                entry["version"] = getattr(manifest, "version", "")
+                entry["display_name"] = getattr(manifest, "display_name", name)
+
+            # 过滤
+            if category and entry.get("category") != category:
+                continue
+            if software and entry.get("software") != software:
+                continue
+
+            results.append(entry)
+        return results
+
     # ------------------------------------------------------------------
     # Skill 管理操作
     # ------------------------------------------------------------------
@@ -793,7 +862,8 @@ class SkillHub:
             manifest = self._manifests.get(skill_name)
             if manifest:
                 for t in manifest.tools:
-                    self._mcp_server.unregister_tool(t.name)
+                    if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() == "true":
+                        self._mcp_server.unregister_tool(t.name)
                     self._registered_skills.pop(t.name, None)
                 del self._manifests[skill_name]
 
@@ -824,7 +894,8 @@ class SkillHub:
 
             # 从 MCP Server 注销旧 Skill
             for skill_name in old_skills:
-                self._mcp_server.unregister_tool(skill_name)
+                if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() == "true":
+                    self._mcp_server.unregister_tool(skill_name)
                 del self._registered_skills[skill_name]
 
             # 清除装饰器注册表中该模块的条目
@@ -880,7 +951,7 @@ class SkillHub:
         UELogger.info(f"  Loaded skill module: {py_file.name}")
 
     def _register_skill_to_mcp(self, skill_name: str, info: dict) -> None:
-        """将 Skill 注册到 MCP Server"""
+        """将 Skill 注册到内部 API（v2.6: 不再注册 MCP 工具）"""
         # 排除列表过滤
         if skill_name in self._excluded_tools:
             UELogger.info(f"  Skipped tool (excluded): {skill_name}")
@@ -891,12 +962,16 @@ class SkillHub:
         if manifest:
             info["manifest_name"] = manifest.name
 
-        self._mcp_server.register_tool(
-            name=skill_name,
-            description=info["description"],
-            input_schema=info["input_schema"],
-            handler=info["handler"],
-        )
+        # v2.6: 仅在 legacy 模式下注册 MCP 工具
+        if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() == "true":
+            self._mcp_server.register_tool(
+                name=skill_name,
+                description=info["description"],
+                input_schema=info["input_schema"],
+                handler=info["handler"],
+            )
+
+        # 无论是否注册 MCP，都注册到内部字典（供 execute_skill 使用）
         self._registered_skills[skill_name] = info
     def _on_directory_changed(self, changes):
         """DirectoryWatcher 回调"""
