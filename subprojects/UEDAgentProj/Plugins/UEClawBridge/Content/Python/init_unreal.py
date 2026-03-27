@@ -712,7 +712,6 @@ def _start_mcp_gateway():
     # 步骤 1: 检测是否已在运行
     if _is_mcp_server_alive(host, port):
         UELogger.info(f"MCP Server already running on {host}:{port}")
-        sync_connection_state(False)  # 等 client 连接后再改 True
         return
 
     _bi._UE_MCP_GATEWAY_STARTING = True

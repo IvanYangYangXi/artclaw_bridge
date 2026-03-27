@@ -1,0 +1,531 @@
+"""
+skill_sync.py - Skill 安装/卸载/同步/发布 工具
+===================================================
+
+Phase 4: 对比项目源码 vs 运行时目录差异，提供安装、卸载、同步、发布操作。
+
+依赖:
+  - ~/.artclaw/config.json 中的 project_root 字段
+  - skill_hub.py 中的 SkillHub 实例
+
+宪法约束:
+  - Skill与MCP管理面板设计 §3 (完整生命周期)
+  - 系统架构设计 §2.3 (Python 负责业务逻辑)
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from init_unreal import UELogger
+
+
+# ============================================================================
+# 配置
+# ============================================================================
+
+def _get_config() -> dict:
+    """读取 ~/.artclaw/config.json"""
+    config_path = Path.home() / ".artclaw" / "config.json"
+    if config_path.exists():
+        try:
+            return json.loads(config_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def _get_project_root() -> Optional[Path]:
+    """获取项目源码根目录"""
+    cfg = _get_config()
+    root = cfg.get("project_root")
+    if root and Path(root).is_dir():
+        return Path(root)
+    return None
+
+
+def _get_runtime_skills_dir() -> Path:
+    """获取 UE 运行时 Skills 目录"""
+    return Path(__file__).parent / "Skills"
+
+
+def _get_openclaw_skills_dir() -> Path:
+    """获取 ~/.openclaw/skills/ 目录"""
+    return Path.home() / ".openclaw" / "skills"
+
+
+# ============================================================================
+# 扫描
+# ============================================================================
+
+def _scan_source_skills(project_root: Path) -> Dict[str, dict]:
+    """
+    扫描项目源码中的所有 Skill。
+    返回: {skill_name: {layer, dcc, path, has_code, has_skill_md, version}}
+    """
+    skills = {}
+    skills_dir = project_root / "skills"
+
+    for layer in ("official", "marketplace"):
+        layer_dir = skills_dir / layer
+        if not layer_dir.is_dir():
+            continue
+
+        for dcc in ("universal", "unreal", "maya", "max"):
+            dcc_dir = layer_dir / dcc
+            if not dcc_dir.is_dir():
+                continue
+
+            for skill_dir in sorted(dcc_dir.iterdir()):
+                if not skill_dir.is_dir() or skill_dir.name.startswith("."):
+                    continue
+
+                manifest_path = skill_dir / "manifest.json"
+                skill_md_path = skill_dir / "SKILL.md"
+                init_path = skill_dir / "__init__.py"
+
+                version = ""
+                if manifest_path.exists():
+                    try:
+                        m = json.loads(manifest_path.read_text(encoding="utf-8"))
+                        version = m.get("version", "")
+                    except Exception:
+                        pass
+
+                skills[skill_dir.name] = {
+                    "name": skill_dir.name,
+                    "layer": layer,
+                    "dcc": dcc,
+                    "path": str(skill_dir),
+                    "has_code": init_path.exists(),
+                    "has_skill_md": skill_md_path.exists(),
+                    "version": version,
+                }
+
+    return skills
+
+
+def _scan_runtime_skills() -> Dict[str, dict]:
+    """
+    扫描运行时已安装的 Skill（代码包）。
+    返回: {skill_name: {layer, path, version}}
+    """
+    skills = {}
+    runtime_dir = _get_runtime_skills_dir()
+
+    for layer in ("official", "marketplace", "user", "custom"):
+        layer_dir = runtime_dir / layer
+        if not layer_dir.is_dir():
+            continue
+
+        for skill_dir in sorted(layer_dir.iterdir()):
+            if not skill_dir.is_dir() or skill_dir.name.startswith("."):
+                continue
+
+            version = ""
+            manifest_path = skill_dir / "manifest.json"
+            if manifest_path.exists():
+                try:
+                    m = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    version = m.get("version", "")
+                except Exception:
+                    pass
+
+            skills[skill_dir.name] = {
+                "name": skill_dir.name,
+                "layer": layer,
+                "path": str(skill_dir),
+                "version": version,
+            }
+
+    return skills
+
+
+# ============================================================================
+# 差异对比
+# ============================================================================
+
+def compare_source_vs_runtime() -> dict:
+    """
+    对比项目源码 vs 运行时，返回差异报告。
+
+    返回:
+    {
+        "available": [...],      # 源码中有但运行时没有（可安装）
+        "installed": [...],      # 运行时已安装
+        "updatable": [...],      # 两边都有但版本不同（可更新）
+        "orphaned": [...],       # 运行时有但源码没有（可卸载）
+        "project_root": "...",
+        "error": null
+    }
+    """
+    project_root = _get_project_root()
+    if not project_root:
+        return {
+            "available": [], "installed": [], "updatable": [], "orphaned": [],
+            "project_root": None,
+            "error": "project_root 未配置。运行 install.bat 或在 ~/.artclaw/config.json 中设置。"
+        }
+
+    source = _scan_source_skills(project_root)
+    runtime = _scan_runtime_skills()
+
+    available = []
+    updatable = []
+    installed = []
+    orphaned = []
+
+    # 源码中有的
+    for name, info in source.items():
+        if name in runtime:
+            rt = runtime[name]
+            installed.append({**info, "runtime_version": rt["version"],
+                              "runtime_path": rt["path"]})
+            # 版本不同 → 可更新
+            if info["version"] and rt["version"] and info["version"] != rt["version"]:
+                updatable.append({**info, "runtime_version": rt["version"]})
+        else:
+            # 也检查旧名映射（artclaw_material → ue54_material_node_edit）
+            available.append(info)
+
+    # 运行时有但源码没有
+    for name, info in runtime.items():
+        if name not in source:
+            # user/custom 层的不算 orphaned
+            if info["layer"] in ("user", "custom"):
+                continue
+            orphaned.append(info)
+
+    return {
+        "available": available,
+        "installed": installed,
+        "updatable": updatable,
+        "orphaned": orphaned,
+        "project_root": str(project_root),
+        "error": None,
+    }
+
+
+# ============================================================================
+# 安装
+# ============================================================================
+
+def install_skill(skill_name: str) -> dict:
+    """
+    从项目源码安装一个 Skill 到运行时。
+
+    1. 复制代码包到运行时 Skills/{layer}/
+    2. 复制 SKILL.md 到 ~/.openclaw/skills/
+    3. 通知 skill_hub 热重载
+
+    返回: {"ok": bool, "message": str}
+    """
+    project_root = _get_project_root()
+    if not project_root:
+        return {"ok": False, "message": "project_root 未配置"}
+
+    source = _scan_source_skills(project_root)
+    if skill_name not in source:
+        return {"ok": False, "message": f"源码中找不到 Skill: {skill_name}"}
+
+    info = source[skill_name]
+    src_path = Path(info["path"])
+    layer = info["layer"]
+
+    # 目标：运行时目录
+    runtime_dir = _get_runtime_skills_dir() / layer / skill_name
+    runtime_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # 复制代码包
+        if runtime_dir.exists():
+            shutil.rmtree(runtime_dir)
+        shutil.copytree(src_path, runtime_dir)
+        UELogger.info(f"Skill installed: {skill_name} → {runtime_dir}")
+
+        # 复制 SKILL.md 到 ~/.openclaw/skills/
+        skill_md = src_path / "SKILL.md"
+        if skill_md.exists():
+            oc_dir = _get_openclaw_skills_dir() / skill_name
+            oc_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(skill_md, oc_dir / "SKILL.md")
+
+        # 通知 skill_hub 重新扫描
+        _notify_skill_hub()
+
+        return {"ok": True, "message": f"已安装: {skill_name} ({layer})"}
+    except Exception as e:
+        return {"ok": False, "message": f"安装失败: {e}"}
+
+
+def install_all_available() -> dict:
+    """安装所有可用但未安装的 Skill。"""
+    diff = compare_source_vs_runtime()
+    if diff["error"]:
+        return {"ok": False, "message": diff["error"], "results": []}
+
+    results = []
+    for skill_info in diff["available"]:
+        r = install_skill(skill_info["name"])
+        results.append({"name": skill_info["name"], **r})
+
+    ok_count = sum(1 for r in results if r["ok"])
+    return {
+        "ok": True,
+        "message": f"安装完成: {ok_count}/{len(results)} 个 Skill",
+        "results": results,
+    }
+
+
+# ============================================================================
+# 卸载
+# ============================================================================
+
+def uninstall_skill(skill_name: str) -> dict:
+    """
+    从运行时卸载一个 Skill。
+
+    1. 删除运行时 Skills/{layer}/{name}/
+    2. 删除 ~/.openclaw/skills/{name}/
+    3. 通知 skill_hub
+
+    返回: {"ok": bool, "message": str}
+    """
+    runtime = _scan_runtime_skills()
+    if skill_name not in runtime:
+        return {"ok": False, "message": f"运行时找不到: {skill_name}"}
+
+    info = runtime[skill_name]
+    runtime_path = Path(info["path"])
+
+    try:
+        # 删除运行时
+        if runtime_path.exists():
+            shutil.rmtree(runtime_path)
+            UELogger.info(f"Skill uninstalled: {skill_name}")
+
+        # 删除 openclaw skills
+        oc_path = _get_openclaw_skills_dir() / skill_name
+        if oc_path.exists():
+            shutil.rmtree(oc_path)
+
+        _notify_skill_hub()
+
+        return {"ok": True, "message": f"已卸载: {skill_name}"}
+    except Exception as e:
+        return {"ok": False, "message": f"卸载失败: {e}"}
+
+
+# ============================================================================
+# 更新
+# ============================================================================
+
+def update_skill(skill_name: str) -> dict:
+    """从源码更新运行时的 Skill（覆盖安装）。"""
+    return install_skill(skill_name)  # 安装逻辑已处理覆盖
+
+
+def update_all() -> dict:
+    """更新所有版本不一致的 Skill。"""
+    diff = compare_source_vs_runtime()
+    if diff["error"]:
+        return {"ok": False, "message": diff["error"], "results": []}
+
+    results = []
+    for skill_info in diff["updatable"]:
+        r = update_skill(skill_info["name"])
+        results.append({"name": skill_info["name"], **r})
+
+    ok_count = sum(1 for r in results if r["ok"])
+    return {
+        "ok": True,
+        "message": f"更新完成: {ok_count}/{len(results)} 个 Skill",
+        "results": results,
+    }
+
+
+# ============================================================================
+# 同步（安装全部可用 + 更新全部过期）
+# ============================================================================
+
+def sync_all() -> dict:
+    """一键同步：安装未安装的 + 更新版本不一致的。"""
+    diff = compare_source_vs_runtime()
+    if diff["error"]:
+        return {"ok": False, "message": diff["error"], "installed": [], "updated": []}
+
+    installed_results = []
+    for info in diff["available"]:
+        r = install_skill(info["name"])
+        installed_results.append({"name": info["name"], **r})
+
+    updated_results = []
+    for info in diff["updatable"]:
+        r = update_skill(info["name"])
+        updated_results.append({"name": info["name"], **r})
+
+    return {
+        "ok": True,
+        "message": f"同步完成: 安装 {len(installed_results)} 个, 更新 {len(updated_results)} 个",
+        "installed": installed_results,
+        "updated": updated_results,
+    }
+
+
+# ============================================================================
+# 发布（用户 Skill → 市集）
+# ============================================================================
+
+def publish_skill(skill_name: str, target_layer: str = "marketplace",
+                  bump: str = "patch", changelog: str = "") -> dict:
+    """
+    发布 Skill：从当前层搬到目标层 + 同步到项目源码 + git commit。
+
+    搬家语义：运行时只保留一份。
+
+    Args:
+        skill_name: Skill 名称
+        target_layer: "marketplace" 或 "official"
+        bump: "patch" / "minor" / "major"
+        changelog: 变更说明
+
+    返回: {"ok": bool, "message": str, "new_version": str}
+    """
+    project_root = _get_project_root()
+    if not project_root:
+        return {"ok": False, "message": "project_root 未配置", "new_version": ""}
+
+    runtime = _scan_runtime_skills()
+    if skill_name not in runtime:
+        return {"ok": False, "message": f"运行时找不到: {skill_name}", "new_version": ""}
+
+    info = runtime[skill_name]
+    src_layer = info["layer"]
+    runtime_path = Path(info["path"])
+
+    # 检查层级合法性
+    if target_layer == "official" and src_layer not in ("marketplace", "user", "custom"):
+        return {"ok": False, "message": f"不能从 {src_layer} 直接发布到 official",
+                "new_version": ""}
+    if target_layer == "marketplace" and src_layer not in ("user", "custom"):
+        return {"ok": False, "message": f"不能从 {src_layer} 发布到 marketplace（已在更高层级）",
+                "new_version": ""}
+
+    # 版本号递增
+    old_version = info["version"] or "0.0.0"
+    new_version = _bump_version(old_version, bump)
+
+    try:
+        # 1. 更新 manifest 版本号
+        manifest_path = runtime_path / "manifest.json"
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["version"] = new_version
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2, ensure_ascii=False),
+                encoding="utf-8")
+
+        # 2. 运行时：搬家到目标层
+        target_runtime_path = _get_runtime_skills_dir() / target_layer / skill_name
+        target_runtime_path.parent.mkdir(parents=True, exist_ok=True)
+        if target_runtime_path.exists():
+            shutil.rmtree(target_runtime_path)
+        shutil.move(str(runtime_path), str(target_runtime_path))
+        UELogger.info(f"Skill moved: {src_layer}/{skill_name} → {target_layer}/{skill_name}")
+
+        # 3. 复制到项目源码
+        # 推断 DCC 类型
+        dcc = _infer_dcc_from_name(skill_name)
+        source_target = project_root / "skills" / target_layer / dcc / skill_name
+        source_target.parent.mkdir(parents=True, exist_ok=True)
+        if source_target.exists():
+            shutil.rmtree(source_target)
+        shutil.copytree(target_runtime_path, source_target)
+
+        # 4. 更新 ~/.openclaw/skills/
+        skill_md = target_runtime_path / "SKILL.md"
+        if skill_md.exists():
+            oc_dir = _get_openclaw_skills_dir() / skill_name
+            oc_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(skill_md, oc_dir / "SKILL.md")
+
+        # 5. git add + commit（如果在 git 仓库中）
+        _git_commit(project_root, skill_name, target_layer, new_version, changelog)
+
+        _notify_skill_hub()
+
+        return {
+            "ok": True,
+            "message": f"已发布: {skill_name} v{new_version} → {target_layer}",
+            "new_version": new_version,
+        }
+    except Exception as e:
+        return {"ok": False, "message": f"发布失败: {e}", "new_version": ""}
+
+
+# ============================================================================
+# 辅助函数
+# ============================================================================
+
+def _bump_version(version: str, bump: str) -> str:
+    """版本号递增"""
+    try:
+        parts = [int(x) for x in version.split(".")]
+        while len(parts) < 3:
+            parts.append(0)
+        major, minor, patch = parts[0], parts[1], parts[2]
+    except (ValueError, IndexError):
+        return "1.0.0"
+
+    if bump == "major":
+        return f"{major + 1}.0.0"
+    elif bump == "minor":
+        return f"{major}.{minor + 1}.0"
+    else:  # patch
+        return f"{major}.{minor}.{patch + 1}"
+
+
+def _infer_dcc_from_name(skill_name: str) -> str:
+    """从 Skill 名称推断 DCC 类型"""
+    if skill_name.startswith("ue"):
+        return "unreal"
+    elif skill_name.startswith("maya"):
+        return "maya"
+    elif skill_name.startswith("max"):
+        return "max"
+    else:
+        return "universal"
+
+
+def _git_commit(project_root: Path, skill_name: str, layer: str,
+                version: str, changelog: str) -> None:
+    """尝试 git add + commit"""
+    import subprocess
+    try:
+        skill_rel = f"skills/{layer}/{_infer_dcc_from_name(skill_name)}/{skill_name}"
+        msg = f"skill: publish {skill_name} v{version} to {layer}"
+        if changelog:
+            msg += f"\n\n{changelog}"
+
+        subprocess.run(["git", "add", skill_rel],
+                       cwd=str(project_root), capture_output=True, timeout=10)
+        subprocess.run(["git", "commit", "-m", msg],
+                       cwd=str(project_root), capture_output=True, timeout=10)
+        UELogger.info(f"Git commit: {msg.splitlines()[0]}")
+    except Exception as e:
+        UELogger.warning(f"Git commit skipped: {e}")
+
+
+def _notify_skill_hub() -> None:
+    """通知 skill_hub 重新扫描"""
+    try:
+        from skill_hub import get_skill_hub
+        hub = get_skill_hub()
+        if hub:
+            hub.scan_and_register()
+    except Exception:
+        pass

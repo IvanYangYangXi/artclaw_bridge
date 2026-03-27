@@ -30,7 +30,7 @@ set "DCC_BRIDGE_SRC=%ROOT_DIR%\subprojects\DCCClawBridge"
 set "UE_PLUGIN_SRC=%ROOT_DIR%\subprojects\UEDAgentProj\Plugins\UEClawBridge"
 set "BRIDGE_MODULES_SRC=%ROOT_DIR%\openclaw-mcp-bridge"
 set "MCP_BRIDGE_SRC=%ROOT_DIR%\openclaw-mcp-bridge\mcp-bridge"
-set "OPENCLAW_SKILLS_SRC=%ROOT_DIR%\openclaw-skills"
+set "SKILLS_SRC=%ROOT_DIR%\skills"
 
 :: 标记常量
 set "INJECT_START=# ===== ArtClaw Bridge START ====="
@@ -52,7 +52,7 @@ if not exist "%UE_PLUGIN_SRC%\UEClawBridge.uplugin" (
 
 echo.
 echo  ╔══════════════════════════════════════════════════════╗
-echo  ║       ArtClaw Bridge — 统一安装器 v1.1               ║
+echo  ║       ArtClaw Bridge — 统一安装器 v1.2               ║
 echo  ║       UE / Maya / 3ds Max / OpenClaw 一键部署        ║
 echo  ╚══════════════════════════════════════════════════════╝
 echo.
@@ -608,22 +608,41 @@ copy /Y "%MCP_BRIDGE_SRC%\index.ts" "%OPENCLAW_EXT%\" >nul
 copy /Y "%MCP_BRIDGE_SRC%\openclaw.plugin.json" "%OPENCLAW_EXT%\" >nul
 echo [OK] mcp-bridge 已复制到: %OPENCLAW_EXT%
 
-:: 安装 OpenClaw Skills (artclaw-*)
+:: 安装 OpenClaw Skills (从 skills/official/ 扫描所有 SKILL.md)
 set "OPENCLAW_SKILLS_DST=%USERPROFILE%\.openclaw\skills"
 if not exist "%OPENCLAW_SKILLS_DST%" mkdir "%OPENCLAW_SKILLS_DST%"
 
-if exist "%OPENCLAW_SKILLS_SRC%" (
+if exist "%SKILLS_SRC%\official" (
     echo [复制] OpenClaw Skills...
-    for /D %%S in ("%OPENCLAW_SKILLS_SRC%\artclaw-*") do (
-        set "SKILL_NAME=%%~nxS"
-        set "SKILL_DST=%OPENCLAW_SKILLS_DST%\!SKILL_NAME!"
-        if not exist "!SKILL_DST!" mkdir "!SKILL_DST!"
-        copy /Y "%%S\SKILL.md" "!SKILL_DST!\SKILL.md" >nul 2>&1
-        echo   [OK] !SKILL_NAME!
+    :: 扫描 official/universal/ 和 official/unreal/ 等子目录
+    for /D %%D in ("%SKILLS_SRC%\official\*") do (
+        for /D %%S in ("%%D\*") do (
+            if exist "%%S\SKILL.md" (
+                set "SKILL_NAME=%%~nxS"
+                set "SKILL_DST=%OPENCLAW_SKILLS_DST%\!SKILL_NAME!"
+                if not exist "!SKILL_DST!" mkdir "!SKILL_DST!"
+                copy /Y "%%S\SKILL.md" "!SKILL_DST!\SKILL.md" >nul 2>&1
+                echo   [OK] !SKILL_NAME!
+            )
+        )
     )
     echo [OK] OpenClaw Skills 已安装到: %OPENCLAW_SKILLS_DST%
 ) else (
-    echo [跳过] 未找到 OpenClaw Skills 源: %OPENCLAW_SKILLS_SRC%
+    echo [跳过] 未找到 Skills 源: %SKILLS_SRC%\official
+)
+
+:: 写入 ~/.artclaw/config.json (project_root)
+set "ARTCLAW_CFG_DIR=%USERPROFILE%\.artclaw"
+if not exist "%ARTCLAW_CFG_DIR%" mkdir "%ARTCLAW_CFG_DIR%"
+set "ARTCLAW_CFG=%ARTCLAW_CFG_DIR%\config.json"
+echo [配置] 写入 %ARTCLAW_CFG%...
+:: 使用 Python 写入 JSON (bat 不擅长 JSON)
+where python >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    python -c "import json,os;p=r'%ROOT_DIR%';f=r'%ARTCLAW_CFG%';d={};exec('try:\n with open(f,\"r\",encoding=\"utf-8\") as fh: d=json.load(fh)\nexcept: pass');d['project_root']=p;open(f,'w',encoding='utf-8').write(json.dumps(d,indent=2,ensure_ascii=False))" 2>nul
+    echo [OK] project_root 已写入
+) else (
+    echo [跳过] 未找到 Python，请手动创建 %ARTCLAW_CFG%
 )
 
 :: 运行配置脚本

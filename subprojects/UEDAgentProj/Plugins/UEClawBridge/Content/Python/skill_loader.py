@@ -48,11 +48,20 @@ except ImportError:
 # ============================================================================
 
 # 分层目录名 → 优先级 (数字越小优先级越高)
+# v2.6: 去掉数字前缀，改用语义目录名
 LAYER_DIRS = {
-    "00_official": 0,
-    "01_team": 1,
-    "02_user": 2,
-    "99_custom": 99,
+    "official": 0,
+    "marketplace": 1,
+    "user": 2,
+    "custom": 99,
+}
+
+# 向后兼容：旧目录名映射到新目录名
+_LEGACY_LAYER_MAP = {
+    "00_official": "official",
+    "01_team": "marketplace",
+    "02_user": "user",
+    "99_custom": "custom",
 }
 
 # 有效的软件标识
@@ -309,7 +318,7 @@ class LayeredSkillLoader:
     分层 Skill 加载器。
 
     负责:
-      - B1: 按优先级从 00_official → 01_team → 02_user → 99_custom 扫描
+      - B1: 按优先级从 official → marketplace → user → custom 扫描
       - B2: 解析每个 Skill 的 manifest.json
       - B3: 过滤不兼容的版本
       - B4: 检测同名冲突，高优先级覆盖低优先级
@@ -317,6 +326,7 @@ class LayeredSkillLoader:
     宪法约束:
       - skill-management-system.md §2.1: 分层加载机制
       - skill-management-system.md §5: 加载优先级
+      - Skill与MCP管理面板设计 §6: DCC 区分
     """
 
     def __init__(
@@ -327,7 +337,7 @@ class LayeredSkillLoader:
     ):
         """
         Args:
-            skills_dir: Skills/ 根目录 (含 00_official/ 等子目录)
+            skills_dir: Skills/ 根目录 (含 official/ 等子目录)
             current_software: 当前 DCC 软件标识
             current_version: 当前 DCC 版本号
         """
@@ -361,13 +371,12 @@ class LayeredSkillLoader:
         self._manifests.clear()
         self._overridden.clear()
 
-        # 按优先级顺序扫描
-        for layer_name in sorted(LAYER_DIRS.keys()):
+        # 按优先级顺序扫描（数字越小优先级越高）
+        for layer_name, priority in sorted(LAYER_DIRS.items(), key=lambda x: x[1]):
             layer_dir = self._skills_dir / layer_name
             if not layer_dir.exists():
                 continue
 
-            priority = LAYER_DIRS[layer_name]
             self._scan_layer(layer_name, layer_dir, priority)
 
         UELogger.info(
@@ -434,7 +443,26 @@ class LayeredSkillLoader:
         return skill_name in self._disabled
 
     def ensure_layer_dirs(self):
-        """确保所有层级目录存在"""
+        """确保所有层级目录存在，并迁移旧目录名"""
+        # 迁移旧目录名到新目录名
+        for old_name, new_name in _LEGACY_LAYER_MAP.items():
+            old_path = self._skills_dir / old_name
+            new_path = self._skills_dir / new_name
+            if old_path.exists() and not new_path.exists():
+                old_path.rename(new_path)
+                UELogger.info(f"LayeredSkillLoader: migrated {old_name} → {new_name}")
+            elif old_path.exists() and new_path.exists():
+                # 两个都存在：把旧目录内容合并到新目录
+                for item in old_path.iterdir():
+                    dest = new_path / item.name
+                    if not dest.exists():
+                        if item.is_dir():
+                            shutil.copytree(str(item), str(dest))
+                        else:
+                            shutil.copy2(str(item), str(dest))
+                shutil.rmtree(str(old_path))
+                UELogger.info(f"LayeredSkillLoader: merged {old_name} into {new_name}")
+
         for layer_name in LAYER_DIRS:
             layer_dir = self._skills_dir / layer_name
             layer_dir.mkdir(parents=True, exist_ok=True)
@@ -442,7 +470,7 @@ class LayeredSkillLoader:
     def install_skill(
         self,
         source_path: Path,
-        target_layer: str = "02_user",
+        target_layer: str = "user",
     ) -> Optional[SkillManifest]:
         """
         安装一个 Skill 包到指定层级。
@@ -510,10 +538,12 @@ class LayeredSkillLoader:
     # ------------------------------------------------------------------
 
     def _scan_layer(self, layer_name: str, layer_dir: Path, priority: int):
-        """扫描一个层级目录"""
+        """扫描一个层级目录，支持 DCC 子目录 (universal/unreal/maya/max)"""
         UELogger.info(f"  Scanning layer: {layer_name}/ (priority={priority})")
 
-        # 扫描子目录（每个子目录是一个 Skill 包）
+        DCC_SUBDIRS = {"universal", "unreal", "maya", "max"}
+
+        # 扫描子目录
         for item in sorted(layer_dir.iterdir()):
             if not item.is_dir():
                 continue
@@ -521,69 +551,80 @@ class LayeredSkillLoader:
                 continue
 
             manifest_path = item / "manifest.json"
-            if not manifest_path.exists():
-                # 没有 manifest.json → 可能是旧式单文件 Skill，跳过
-                # （向后兼容：旧的 .py 文件由 SkillHub 原有逻辑处理）
-                continue
+            if manifest_path.exists():
+                # 直接是 Skill 包
+                self._try_register(item, manifest_path, layer_name, priority)
+            elif item.name in DCC_SUBDIRS:
+                # DCC 子目录：扫描其下的 Skill 包
+                for sub_item in sorted(item.iterdir()):
+                    if not sub_item.is_dir():
+                        continue
+                    if sub_item.name.startswith((".", "_", "__")):
+                        continue
+                    sub_manifest = sub_item / "manifest.json"
+                    if sub_manifest.exists():
+                        self._try_register(sub_item, sub_manifest, layer_name, priority)
+            # else: 不是 DCC 子目录也不是 Skill 包，跳过
 
-            try:
-                manifest = SkillManifest.parse(manifest_path)
-            except ManifestError as e:
-                UELogger.mcp_error(f"    Skipping {item.name}: {e}")
-                continue
+    def _try_register(self, item: Path, manifest_path: Path, layer_name: str, priority: int):
+        """尝试解析 manifest 并注册一个 Skill"""
+        try:
+            manifest = SkillManifest.parse(manifest_path)
+        except ManifestError as e:
+            UELogger.mcp_error(f"    Skipping {item.name}: {e}")
+            return
 
-            manifest.layer = layer_name
-            manifest.priority = priority
+        manifest.layer = layer_name
+        manifest.priority = priority
 
-            # B3: 版本匹配检查
-            if not check_version_match(
-                manifest, self._current_software, self._current_version
-            ):
-                UELogger.info(
-                    f"    Skipping {manifest.name}: incompatible "
-                    f"(requires {manifest.software} {manifest.min_version}~{manifest.max_version}, "
-                    f"current: {self._current_software} {self._current_version})"
-                )
-                continue
-
-            # B4: 冲突检测
-            if manifest.name in self._manifests:
-                existing = self._manifests[manifest.name]
-                if priority < existing.priority:
-                    # 当前层级优先级更高 → 覆盖
-                    UELogger.info(
-                        f"    Conflict: {manifest.name} in {layer_name} "
-                        f"overrides {existing.layer} (priority {priority} < {existing.priority})"
-                    )
-                    # 记录被覆盖的
-                    if manifest.name not in self._overridden:
-                        self._overridden[manifest.name] = []
-                    self._overridden[manifest.name].append(
-                        (existing.layer, existing.source_path)
-                    )
-                else:
-                    # 当前层级优先级更低 → 被覆盖，记录但不替换
-                    UELogger.info(
-                        f"    Conflict: {manifest.name} in {layer_name} "
-                        f"shadowed by {existing.layer} (priority {priority} >= {existing.priority})"
-                    )
-                    if manifest.name not in self._overridden:
-                        self._overridden[manifest.name] = []
-                    self._overridden[manifest.name].append(
-                        (layer_name, manifest.source_path)
-                    )
-                    continue
-
-            # 检查禁用状态
-            if manifest.name in self._disabled:
-                manifest.enabled = False
-
-            self._manifests[manifest.name] = manifest
+        # B3: 版本匹配检查
+        if not check_version_match(
+            manifest, self._current_software, self._current_version
+        ):
             UELogger.info(
-                f"    Registered: {manifest.name} v{manifest.version} "
-                f"[{manifest.category}] ({layer_name})"
-                + (" [DISABLED]" if not manifest.enabled else "")
+                f"    Skipping {manifest.name}: incompatible "
+                f"(requires {manifest.software} {manifest.min_version}~{manifest.max_version}, "
+                f"current: {self._current_software} {self._current_version})"
             )
+            return
+
+        # B4: 冲突检测
+        if manifest.name in self._manifests:
+            existing = self._manifests[manifest.name]
+            if priority < existing.priority:
+                # 当前层级优先级更高 → 覆盖
+                UELogger.info(
+                    f"    Conflict: {manifest.name} in {layer_name} "
+                    f"overrides {existing.layer} (priority {priority} < {existing.priority})"
+                )
+                if manifest.name not in self._overridden:
+                    self._overridden[manifest.name] = []
+                self._overridden[manifest.name].append(
+                    (existing.layer, existing.source_path)
+                )
+            else:
+                # 当前层级优先级更低 → 被覆盖
+                UELogger.info(
+                    f"    Conflict: {manifest.name} in {layer_name} "
+                    f"shadowed by {existing.layer} (priority {priority} >= {existing.priority})"
+                )
+                if manifest.name not in self._overridden:
+                    self._overridden[manifest.name] = []
+                self._overridden[manifest.name].append(
+                    (layer_name, manifest.source_path)
+                )
+                return
+
+        # 检查禁用状态
+        if manifest.name in self._disabled:
+            manifest.enabled = False
+
+        self._manifests[manifest.name] = manifest
+        UELogger.info(
+            f"    Registered: {manifest.name} v{manifest.version} "
+            f"[{manifest.category}] ({layer_name})"
+            + (" [DISABLED]" if not manifest.enabled else "")
+        )
 
     def _load_disabled_list(self):
         """加载禁用列表"""

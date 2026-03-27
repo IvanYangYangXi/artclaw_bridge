@@ -269,31 +269,50 @@ def _generate_schema_from_hints(func: Callable) -> dict:
 # ============================================================================
 
 # 层级目录名称 → 来源标识
+# v2.6: 去掉数字前缀，改用语义目录名
 LAYER_DIRS = {
+    "official": "official",
+    "marketplace": "marketplace",
+    "user": "user",
+    "custom": "custom",
+}
+
+# 向后兼容：旧目录名映射到新目录名
+_LEGACY_LAYER_MAP = {
     "00_official": "official",
-    "01_team": "team",
+    "01_team": "marketplace",
     "02_user": "user",
     "99_custom": "custom",
 }
 
-# 层级加载顺序（按目录名排序，数字越小优先级越高）
-LAYER_ORDER = sorted(LAYER_DIRS.keys())
+# 层级加载顺序（优先级从高到低）
+LAYER_ORDER = ["official", "marketplace", "user", "custom"]
 
 
 # ============================================================================
 # 3. Skill Hub 核心（Phase B 增强版）
 # ============================================================================
 
+# Skill 改名兼容映射：旧名 → 新名 (v2.6 改名迁移)
+_NAME_ALIAS_MAP = {
+    "artclaw_material": "ue54_material_node_edit",
+    "ue54_artclaw_material": "ue54_material_node_edit",
+    "get_material_nodes": "ue54_get_material_nodes",
+    "generate_material_documentation": "ue54_generate_material_documentation",
+}
+
+
 class SkillHub:
     """
     Skill 管理中心 (Phase B Enhanced)。
 
     职责:
-      - 分层扫描 Skills/ 目录 (00_official → 01_team → 02_user → 99_custom)
+      - 分层扫描 Skills/ 目录 (official → marketplace → user → custom)
+      - 支持 DCC 子目录 (official/unreal/, official/universal/ 等)
       - 解析并验证每个 Skill 的 manifest.json
       - 检测软件版本兼容性
       - 检测 Skill/Tool 冲突并按优先级解决
-      - 注册到 MCP Server
+      - 注册到内部字典（v2.6: 仅 legacy 模式注册 MCP）
       - 监控文件变更，热重载
       - 变更后通知所有 MCP 客户端
 
@@ -301,6 +320,7 @@ class SkillHub:
       - 系统架构设计 §1.3: Skill Hub (统一管理)
       - 系统架构设计 §1.5.4: Skill Hub 扫描与注册流程
       - skill-management-system.md §5: 分层加载
+      - Skill与MCP管理面板设计 §9: Phase 1 目录重构
     """
 
     def __init__(self, mcp_server, skills_dir: Optional[str] = None):
@@ -376,8 +396,29 @@ class SkillHub:
             return "5.4"  # fallback
 
     def _ensure_layer_dirs(self) -> None:
-        """确保分层目录存在"""
+        """确保分层目录存在，并迁移旧目录名"""
         self._skills_dir.mkdir(parents=True, exist_ok=True)
+
+        # 迁移旧目录名到新目录名（如 00_official → official）
+        for old_name, new_name in _LEGACY_LAYER_MAP.items():
+            old_path = self._skills_dir / old_name
+            new_path = self._skills_dir / new_name
+            if old_path.exists() and not new_path.exists():
+                old_path.rename(new_path)
+                UELogger.info(f"SkillHub: migrated layer dir {old_name} → {new_name}")
+            elif old_path.exists() and new_path.exists():
+                # 两个都存在：把旧目录内容合并到新目录
+                import shutil
+                for item in old_path.iterdir():
+                    dest = new_path / item.name
+                    if not dest.exists():
+                        if item.is_dir():
+                            shutil.copytree(str(item), str(dest))
+                        else:
+                            shutil.copy2(str(item), str(dest))
+                shutil.rmtree(str(old_path))
+                UELogger.info(f"SkillHub: merged {old_name} into {new_name}, removed {old_name}")
+
         for layer_dir_name in LAYER_DIRS.keys():
             layer_path = self._skills_dir / layer_dir_name
             layer_path.mkdir(exist_ok=True)
@@ -473,10 +514,17 @@ class SkillHub:
         """
         扫描一个层级目录，查找所有 Skill 包。
 
-        Skill 包的识别条件: 子目录中包含 manifest.json 或 SKILL.md
+        支持两种结构:
+          1. 直接子目录: official/my_skill/ (manifest.json or SKILL.md)
+          2. DCC 子目录: official/unreal/my_skill/, official/universal/my_skill/
+
+        DCC 子目录名: universal, unreal, maya, max
         """
         if not layer_path.is_dir():
             return
+
+        # 已知 DCC 子目录名
+        DCC_SUBDIRS = {"universal", "unreal", "maya", "max"}
 
         for entry in sorted(layer_path.iterdir()):
             if not entry.is_dir():
@@ -487,17 +535,28 @@ class SkillHub:
             has_manifest = (entry / "manifest.json").exists()
             has_skill_md = (entry / "SKILL.md").exists()
 
-            if not has_manifest and not has_skill_md:
-                # 检查子目录是否是 category 分组 (如 material/, scene/)
+            if has_manifest or has_skill_md:
+                # 直接是 Skill 包
+                self._parse_and_collect(entry, layer_id)
+            elif entry.name in DCC_SUBDIRS:
+                # DCC 子目录：扫描其下的 Skill 包
+                for sub_entry in sorted(entry.iterdir()):
+                    if not sub_entry.is_dir():
+                        continue
+                    if sub_entry.name.startswith("_") or sub_entry.name.startswith("."):
+                        continue
+                    sub_has_manifest = (sub_entry / "manifest.json").exists()
+                    sub_has_skill_md = (sub_entry / "SKILL.md").exists()
+                    if sub_has_manifest or sub_has_skill_md:
+                        self._parse_and_collect(sub_entry, layer_id)
+            else:
+                # 可能是 category 分组目录 (material/, scene/ 等)
                 for sub_entry in sorted(entry.iterdir()):
                     if sub_entry.is_dir() and (
                         (sub_entry / "manifest.json").exists()
                         or (sub_entry / "SKILL.md").exists()
                     ):
                         self._parse_and_collect(sub_entry, layer_id)
-                continue
-
-            self._parse_and_collect(entry, layer_id)
 
     def _parse_and_collect(self, skill_dir: Path, layer_id: str) -> None:
         """解析一个 Skill 目录的 manifest 并收集。
@@ -778,6 +837,8 @@ class SkillHub:
         """
         统一 Skill 执行入口，供 run_ue_python 调用。
 
+        支持旧名自动映射（如 "artclaw_material" → "ue54_artclaw_material"）。
+
         用法 (AI 通过 run_ue_python 执行):
             from skill_hub import get_skill_hub
             hub = get_skill_hub()
@@ -789,10 +850,15 @@ class SkillHub:
         if params is None:
             params = {}
 
-        if skill_name not in self._registered_skills:
+        # 旧名兼容映射
+        resolved_name = _NAME_ALIAS_MAP.get(skill_name, skill_name)
+        if resolved_name != skill_name:
+            UELogger.info(f"SkillHub: alias '{skill_name}' → '{resolved_name}' (deprecated, use new name)")
+
+        if resolved_name not in self._registered_skills:
             return {"success": False, "error": f"Skill 未找到: {skill_name}"}
 
-        info = self._registered_skills[skill_name]
+        info = self._registered_skills[resolved_name]
         handler = info.get("handler")
         if not handler:
             return {"success": False, "error": f"Skill '{skill_name}' 没有 handler"}
@@ -837,6 +903,76 @@ class SkillHub:
 
             results.append(entry)
         return results
+
+    # ------------------------------------------------------------------
+    # Skill 命名工具
+    # ------------------------------------------------------------------
+
+    def auto_name(self, description: str, software: str = None) -> str:
+        """
+        根据描述和当前 DCC 环境自动生成 Skill 名称。
+
+        命名规范: {dcc}{major_version}_{skill_name}
+        - UE 5.4 → ue54_
+        - Maya 2023 → maya23_
+        - Max 2024 → max24_
+        - 通用 → 无前缀
+
+        用法 (AI 通过 run_ue_python 调用):
+            from skill_hub import get_skill_hub
+            hub = get_skill_hub()
+            name = hub.auto_name("batch rename actors in level")
+            # → "ue54_batch_rename_actors"
+
+        Args:
+            description: Skill 功能的自然语言描述（英文或中文）
+            software: 覆盖 DCC 标识（默认用当前环境检测）
+
+        Returns:
+            符合命名规范的 skill_name (snake_case)
+        """
+        import re
+
+        sw = software or self._current_software
+        ver = self._current_version
+
+        # 构建前缀
+        prefix = ""
+        if sw == "unreal_engine":
+            # "5.4.1" → "54"
+            major_minor = ver.replace(".", "")[:2] if ver else "54"
+            prefix = f"ue{major_minor}_"
+        elif sw == "maya":
+            major = ver.split(".")[0][:2] if ver else "23"
+            prefix = f"maya{major}_"
+        elif sw == "3ds_max":
+            major = ver.split(".")[0][:2] if ver else "24"
+            prefix = f"max{major}_"
+        # universal → no prefix
+
+        # 从描述提取 snake_case 名称
+        # 移除中文字符，保留英文+数字
+        desc_ascii = re.sub(r'[^\w\s]', '', description.lower())
+        # 常见停用词
+        stop_words = {'a', 'an', 'the', 'in', 'on', 'for', 'to', 'of', 'and', 'or', 'with', 'this', 'that'}
+        words = [w for w in desc_ascii.split() if w and w not in stop_words]
+        # 截断到 4 个词
+        name_part = "_".join(words[:4])
+        if not name_part:
+            name_part = "unnamed_skill"
+
+        # 确保不重名
+        candidate = f"{prefix}{name_part}"
+        if candidate not in self._registered_skills:
+            return candidate
+
+        # 加数字后缀
+        for i in range(2, 100):
+            suffixed = f"{candidate}_{i}"
+            if suffixed not in self._registered_skills:
+                return suffixed
+
+        return candidate
 
     # ------------------------------------------------------------------
     # Skill 管理操作

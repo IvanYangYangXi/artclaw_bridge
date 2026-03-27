@@ -1,5 +1,10 @@
 // UEAgentLocalization.cpp — 中英文本注册与运行时切换
 #include "UEAgentLocalization.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "HAL/PlatformProcess.h"
+#include "Internationalization/Internationalization.h"
+#include "Internationalization/Culture.h"
 
 bool FUEAgentL10n::bInitialized = false;
 EUEAgentLanguage FUEAgentL10n::CurrentLanguage = EUEAgentLanguage::Chinese;
@@ -17,6 +22,17 @@ void FUEAgentL10n::Initialize()
 	if (bInitialized) return;
 	bInitialized = true;
 
+	// --- 先决定语言：加载用户偏好 > 检测系统语言 ---
+	EUEAgentLanguage UserPref;
+	if (LoadLanguagePreference(UserPref))
+	{
+		CurrentLanguage = UserPref;
+	}
+	else
+	{
+		CurrentLanguage = DetectSystemLanguage();
+	}
+
 	// ==================================================================
 	// 状态栏
 	// ==================================================================
@@ -29,7 +45,8 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("DisconnectedDot"),    TEXT("○ 未连接"),                  TEXT("○ Disconnected"));
 	Reg(TEXT("VersionUnknown"),     TEXT("未知"),                      TEXT("Unknown"));
 	Reg(TEXT("ServerNotStarted"),   TEXT("未启动"),                    TEXT("Not started"));
-	Reg(TEXT("StatsFormat"),        TEXT("活跃连接: %d  |  消息: %d"), TEXT("Active Connections: %d  |  Messages: %d"));
+	Reg(TEXT("StatsFormat"),        TEXT("活跃连接: {0}  |  消息: {1}"), TEXT("Active Connections: {0}  |  Messages: {1}"));
+	Reg(TEXT("MsgCountLabel"),      TEXT("消息: "),                    TEXT("Messages: "));
 
 	// ==================================================================
 	// 按钮
@@ -117,6 +134,113 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("LangToggleTip"),      TEXT("切换到 English"),            TEXT("Switch to 中文"));
 	Reg(TEXT("LangZh"),             TEXT("中"),                        TEXT("中"));
 	Reg(TEXT("LangEn"),             TEXT("En"),                        TEXT("En"));
+
+	// ==================================================================
+	// ChatPanel (旧面板兼容)
+	// ==================================================================
+	Reg(TEXT("ClearBtn"),           TEXT("清空"),                      TEXT("Clear"));
+	Reg(TEXT("InputHint"),          TEXT("输入消息... (Enter 发送)"),  TEXT("Type a message... (Enter to send)"));
+	Reg(TEXT("ChatWelcomeMsg"),     TEXT("你好！我是 UE Claw Bridge AI 助手。\n\n输入 / 查看可用命令，或直接向我提问。"),
+	                                TEXT("Hello! I'm the UE Claw Bridge AI Assistant. I can help you with level editing, asset management, and more.\n\nTry asking me to:\n  - List selected actors\n  - Create objects in the scene\n  - Modify material properties\n\nNote: Connect an MCP client to enable AI responses."));
+	Reg(TEXT("ChatMsgReceived"),    TEXT("(已收到消息: \"{0}\")\n\n连接 MCP 客户端后，AI 回复将在此显示。"),
+	                                TEXT("(Message received: \"{0}\")\n\nAI responses will appear here when an MCP client is connected."));
+	Reg(TEXT("ChatMcpConnected"),   TEXT("MCP 客户端已连接。AI 回复现已可用。"), TEXT("MCP client connected. AI responses are now available."));
+	Reg(TEXT("ChatMcpDisconnected"),TEXT("MCP 客户端已断开。"),        TEXT("MCP client disconnected."));
+
+	// ==================================================================
+	// /help 命令文本
+	// ==================================================================
+	Reg(TEXT("HelpTitle"),          TEXT("可用命令:"),                 TEXT("Available commands:"));
+	Reg(TEXT("HelpSectionConnect"), TEXT("\n  连接:"),                 TEXT("\n  Connection:"));
+	Reg(TEXT("HelpSectionChat"),    TEXT("\n  会话:"),                 TEXT("\n  Chat:"));
+	Reg(TEXT("HelpSectionAI"),      TEXT("\n  AI 命令:"),              TEXT("\n  AI Commands:"));
+
+	// ==================================================================
+	// Slash 命令描述
+	// ==================================================================
+	Reg(TEXT("SlashConnect"),       TEXT("连接 OpenClaw 网关"),        TEXT("Connect to OpenClaw Gateway"));
+	Reg(TEXT("SlashDisconnect"),    TEXT("断开 OpenClaw 网关连接"),    TEXT("Disconnect from OpenClaw Gateway"));
+	Reg(TEXT("SlashDiagnose"),      TEXT("运行连接诊断"),              TEXT("Run connection diagnostics"));
+	Reg(TEXT("SlashStatus"),        TEXT("显示连接状态"),              TEXT("Show connection status"));
+	Reg(TEXT("SlashClear"),         TEXT("清空聊天记录"),              TEXT("Clear chat history"));
+	Reg(TEXT("SlashCancel"),        TEXT("取消等待 AI 响应"),          TEXT("Cancel pending AI response"));
+	Reg(TEXT("SlashHelp"),          TEXT("显示所有可用命令"),          TEXT("Show all available commands"));
+	Reg(TEXT("SlashNew"),           TEXT("开始新会话"),                TEXT("Start new conversation"));
+	Reg(TEXT("SlashCompact"),       TEXT("压缩上下文 (释放 token 空间)"), TEXT("Compact context (free up token space)"));
+	Reg(TEXT("SlashReview"),        TEXT("审查选中 Actor / 当前场景"),  TEXT("Review selected Actors / current scene"));
+	Reg(TEXT("SlashUndo"),          TEXT("撤销上一步 AI 操作"),        TEXT("Undo last AI operation"));
+
+	// ==================================================================
+	// Tab 标题
+	// ==================================================================
+	Reg(TEXT("DashboardTabTitle"),  TEXT("UE Claw Bridge"),            TEXT("UE Claw Bridge"));
+
+	// ==================================================================
+	// 管理面板 (Phase 2-3)
+	// ==================================================================
+	Reg(TEXT("ManageBtn"),           TEXT("管理"),                      TEXT("Manage"));
+	Reg(TEXT("ManageTip"),           TEXT("打开 Skill/MCP 管理面板"),   TEXT("Open Skill/MCP management panel"));
+	Reg(TEXT("ManageWindowTitle"),   TEXT("Skill 与 MCP 管理"),         TEXT("Skill & MCP Management"));
+	Reg(TEXT("ManageTabSkill"),      TEXT("Skill"),                     TEXT("Skills"));
+	Reg(TEXT("ManageTabMcp"),        TEXT("MCP"),                       TEXT("MCP"));
+	Reg(TEXT("ManageRefreshBtn"),    TEXT("刷新"),                      TEXT("Refresh"));
+	Reg(TEXT("ManageMcpStatus"),     TEXT("MCP 服务器: {0}  |  工具: {1}"), TEXT("MCP Server: {0}  |  Tools: {1}"));
+	Reg(TEXT("ManageSkillCount"),    TEXT("显示 {0} / {1} 个 Skill"),   TEXT("Showing {0} / {1} Skills"));
+	Reg(TEXT("ManagePinTip"),        TEXT("钉选此 Skill (强制注入 AI 上下文)"), TEXT("Pin this Skill (force-inject into AI context)"));
+	Reg(TEXT("ManageUnpinTip"),      TEXT("取消钉选"),                  TEXT("Unpin"));
+	Reg(TEXT("ManageDetailTip"),     TEXT("查看详情"),                  TEXT("View details"));
+	Reg(TEXT("ManageDetailLayer"),   TEXT("层级"),                      TEXT("Layer"));
+	Reg(TEXT("ManageDetailSoftware"),TEXT("软件"),                      TEXT("Software"));
+	Reg(TEXT("ManageDetailCategory"),TEXT("分类"),                      TEXT("Category"));
+	Reg(TEXT("ManageDetailRisk"),    TEXT("风险级别"),                  TEXT("Risk Level"));
+	Reg(TEXT("ManageDetailCode"),    TEXT("代码"),                      TEXT("Code"));
+	Reg(TEXT("ManageDetailSkillMd"), TEXT("SKILL.md"),                  TEXT("SKILL.md"));
+	Reg(TEXT("ManageDetailPath"),    TEXT("文件路径"),                  TEXT("File Path"));
+	Reg(TEXT("ManageDetailInstall"), TEXT("安装类型"),                  TEXT("Install Type"));
+	Reg(TEXT("ManageFilterLayer"),   TEXT("层级: "),                    TEXT("Layer: "));
+	Reg(TEXT("ManageFilterInstall"), TEXT("安装: "),                    TEXT("Install: "));
+
+	// ==================================================================
+	// MCP 管理 (Phase 2 增强)
+	// ==================================================================
+	Reg(TEXT("ManageMcpSummary"),    TEXT("MCP Server: {0} 个  |  已连接: {1}  |  已启用: {2}"),
+	                                 TEXT("MCP Servers: {0}  |  Connected: {1}  |  Enabled: {2}"));
+	Reg(TEXT("ManageMcpToolCount"),  TEXT("{0} 个工具"),                TEXT("{0} tools"));
+	Reg(TEXT("ManageMcpAddBtn"),     TEXT("+ 添加"),                    TEXT("+ Add"));
+	Reg(TEXT("ManageMcpAddTitle"),   TEXT("添加 MCP Server 连接"),      TEXT("Add MCP Server Connection"));
+	Reg(TEXT("ManageMcpAddDesc"),    TEXT("添加一个 MCP Server 的连接配置。如需安装新的 MCP Server，请直接在聊天中告诉 AI 你下载的 MCP 地址，AI 会自动完成安装和配置。"),
+	                                 TEXT("Add an MCP Server connection. To install a new MCP Server, just tell the AI the download URL in chat — it will handle installation and configuration automatically."));
+	Reg(TEXT("ManageMcpAddIdLabel"), TEXT("Server ID (唯一标识):"),     TEXT("Server ID (unique key):"));
+	Reg(TEXT("ManageMcpAddUrlLabel"),TEXT("WebSocket URL:"),            TEXT("WebSocket URL:"));
+	Reg(TEXT("ManageMcpAddConfirm"), TEXT("添加"),                      TEXT("Add"));
+	Reg(TEXT("ManageMcpEnableTip"),  TEXT("启用此 MCP Server"),         TEXT("Enable this MCP Server"));
+	Reg(TEXT("ManageMcpDisableTip"), TEXT("禁用此 MCP Server"),         TEXT("Disable this MCP Server"));
+	Reg(TEXT("ManageMcpStdio"),      TEXT("stdio 模式"),                TEXT("stdio mode"));
+	Reg(TEXT("ManageMcpAddTypeLabel"), TEXT("连接类型:"),               TEXT("Connection type:"));
+	Reg(TEXT("ManageMcpAddCmdLabel"), TEXT("启动命令 (stdio):"),        TEXT("Launch command (stdio):"));
+
+	Reg(TEXT("ManageFilterLayerAll"), TEXT("全部"),                    TEXT("All"));
+	Reg(TEXT("ManageFilterLayerOfficial"), TEXT("官方"),              TEXT("Official"));
+	Reg(TEXT("ManageFilterLayerMarket"), TEXT("市集"),                TEXT("Market"));
+	Reg(TEXT("ManageFilterLayerUser"), TEXT("用户"),                  TEXT("User"));
+	Reg(TEXT("ManageFilterLayerOpenClaw"), TEXT("OC"),                TEXT("OC"));
+
+	// Skill 安装状态
+	Reg(TEXT("ManageInstallFull"),    TEXT("运行时"),                    TEXT("Runtime"));
+	Reg(TEXT("ManageInstallDoc"),     TEXT("文档"),                      TEXT("Guide"));
+	Reg(TEXT("ManageInstallFilterAll"), TEXT("全部"),                    TEXT("All"));
+
+	// Phase 4: 安装/卸载/同步/发布
+	Reg(TEXT("ManageInstallNotInstalled"), TEXT("未装"),                TEXT("New"));
+	Reg(TEXT("ManageInstallBtn"),    TEXT("安装"),                      TEXT("Install"));
+	Reg(TEXT("ManageUninstallBtn"),  TEXT("卸载"),                      TEXT("Del"));
+	Reg(TEXT("ManageUpdateBtn"),     TEXT("更新"),                      TEXT("Up"));
+	Reg(TEXT("ManageSyncBtn"),       TEXT("同步 ({0})"),                TEXT("Sync ({0})"));
+	Reg(TEXT("ManagePublishBtn"),    TEXT("发布"),                      TEXT("Pub"));
+	Reg(TEXT("ManagePublishTitle"),  TEXT("发布 Skill: {0}"),           TEXT("Publish Skill: {0}"));
+	Reg(TEXT("ManagePublishDesc"),   TEXT("将 {0} (v{1}) 发布到市集。选择版本号递增方式，填写变更说明后发布。"),
+	                                 TEXT("Publish {0} (v{1}) to marketplace. Choose version bump type and add changelog."));
+	Reg(TEXT("ManagePublishChangelogLabel"), TEXT("变更说明:"),         TEXT("Changelog:"));
 }
 
 FText FUEAgentL10n::Get(const FString& Key)
@@ -143,6 +267,7 @@ FString FUEAgentL10n::GetStr(const FString& Key)
 void FUEAgentL10n::SetLanguage(EUEAgentLanguage Lang)
 {
 	CurrentLanguage = Lang;
+	SaveLanguagePreference();
 }
 
 EUEAgentLanguage FUEAgentL10n::GetLanguage()
@@ -155,6 +280,7 @@ void FUEAgentL10n::ToggleLanguage()
 	CurrentLanguage = (CurrentLanguage == EUEAgentLanguage::Chinese)
 		? EUEAgentLanguage::English
 		: EUEAgentLanguage::Chinese;
+	SaveLanguagePreference();
 }
 
 FText FUEAgentL10n::GetLanguageDisplayName()
@@ -162,4 +288,75 @@ FText FUEAgentL10n::GetLanguageDisplayName()
 	return (CurrentLanguage == EUEAgentLanguage::Chinese)
 		? FText::FromString(TEXT("中文"))
 		: FText::FromString(TEXT("English"));
+}
+
+// ==================================================================
+// 系统语言检测
+// ==================================================================
+
+EUEAgentLanguage FUEAgentL10n::DetectSystemLanguage()
+{
+	// 使用 UE 的国际化系统检测当前 culture
+	FString Culture = FInternationalization::Get().GetCurrentCulture()->GetName();
+
+	// 匹配中文系列: zh, zh-CN, zh-TW, zh-Hans, zh-Hant 等
+	if (Culture.StartsWith(TEXT("zh")))
+	{
+		return EUEAgentLanguage::Chinese;
+	}
+
+	// 默认英文
+	return EUEAgentLanguage::English;
+}
+
+// ==================================================================
+// 语言配置持久化
+// ==================================================================
+
+FString FUEAgentL10n::GetConfigFilePath()
+{
+	// 保存在 ProjectSaved/UEAgent/language_pref.txt
+	return FPaths::ProjectSavedDir() / TEXT("UEAgent") / TEXT("language_pref.txt");
+}
+
+bool FUEAgentL10n::LoadLanguagePreference(EUEAgentLanguage& OutLang)
+{
+	FString ConfigPath = GetConfigFilePath();
+	if (!FPaths::FileExists(ConfigPath))
+	{
+		return false;
+	}
+
+	FString Content;
+	if (!FFileHelper::LoadFileToString(Content, *ConfigPath))
+	{
+		return false;
+	}
+
+	Content.TrimStartAndEndInline();
+
+	if (Content == TEXT("zh") || Content == TEXT("Chinese"))
+	{
+		OutLang = EUEAgentLanguage::Chinese;
+		return true;
+	}
+	else if (Content == TEXT("en") || Content == TEXT("English"))
+	{
+		OutLang = EUEAgentLanguage::English;
+		return true;
+	}
+
+	return false;
+}
+
+void FUEAgentL10n::SaveLanguagePreference()
+{
+	FString ConfigPath = GetConfigFilePath();
+
+	// 确保目录存在
+	FString Dir = FPaths::GetPath(ConfigPath);
+	IFileManager::Get().MakeDirectory(*Dir, true);
+
+	FString LangStr = (CurrentLanguage == EUEAgentLanguage::Chinese) ? TEXT("zh") : TEXT("en");
+	FFileHelper::SaveStringToFile(LangStr, *ConfigPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 }

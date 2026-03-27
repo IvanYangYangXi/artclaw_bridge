@@ -32,7 +32,7 @@ except ImportError:
 import unreal
 
 # 从 init_unreal 导入日志系统
-from init_unreal import UELogger, log_mcp_call, sync_connection_state
+from init_unreal import UELogger, log_mcp_call
 
 
 # ============================================================================
@@ -223,9 +223,6 @@ class MCPServer:
         UELogger.mcp(f"Client connected: {self._client_info[client_id]['remote']} "
                       f"(total: {len(self._clients)})")
 
-        # 有客户端连接时同步状态
-        sync_connection_state(True)
-
         try:
             async for raw_message in websocket:
                 try:
@@ -256,10 +253,6 @@ class MCPServer:
             self._client_info.pop(client_id, None)
 
             UELogger.mcp(f"Client cleaned up (remaining: {len(self._clients)})")
-
-            # 无客户端时同步状态
-            if not self._clients:
-                sync_connection_state(False)
 
     # --- MCP 消息处理 ---
 
@@ -640,7 +633,6 @@ class MCPServer:
             self._server = None
 
         self._actual_port = None
-        sync_connection_state(False)
 
         # 同步 MCP 停止状态到 bridge 状态文件
         try:
@@ -893,20 +885,10 @@ def _init_phase3_subsystems(server: MCPServer) -> None:
     # §3.1 Skill Hub — 最后初始化，依赖 MCP Server 已就绪
     # Phase B: 增强版 — 分层加载、manifest 解析、版本匹配、冲突检测
     try:
-        from skill_hub import SkillHub
-        hub = SkillHub(server)
-        count = hub.scan_and_register()
-        hub.start_watching()
+        from skill_hub import init_skill_hub
+        hub = init_skill_hub(server)
 
-        # 注册 Skill 列表资源
-        server.register_resource(
-            uri="unreal://skills/list",
-            name="Skill List",
-            description="All registered AI skills and their capabilities",
-            handler=lambda: json.dumps(hub.get_skill_list(), indent=2),
-        )
-
-        UELogger.info(f"Phase 3.1: Skill Hub ready ({count} skills)")
+        UELogger.info(f"Phase 3.1: Skill Hub ready ({len(hub._registered_skills)} skills)")
 
         # Phase B5: 注册 Skill 管理 MCP Tools
         try:

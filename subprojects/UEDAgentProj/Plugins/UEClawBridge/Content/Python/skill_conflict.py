@@ -29,18 +29,24 @@ from skill_manifest import SkillManifest
 # ============================================================================
 
 # 数字越小优先级越高
+# v2.6: 层级名更新 (team → marketplace)
 LAYER_PRIORITY = {
-    "official": 0,   # 00_official
-    "team": 1,       # 01_team
-    "user": 2,       # 02_user
-    "custom": 99,    # 99_custom
+    "official": 0,       # skills/official/
+    "marketplace": 1,    # skills/marketplace/ (原 team)
+    "user": 2,           # Skills/user/ (运行时)
+    "custom": 99,        # Skills/custom/ (运行时)
 }
 
 LAYER_DISPLAY = {
     "official": "官方库",
-    "team": "团队库",
+    "marketplace": "市集",
     "user": "用户库",
     "custom": "临时/实验",
+}
+
+# 旧层级名兼容（旧名 → 新名）
+_LAYER_ALIAS = {
+    "team": "marketplace",
 }
 
 

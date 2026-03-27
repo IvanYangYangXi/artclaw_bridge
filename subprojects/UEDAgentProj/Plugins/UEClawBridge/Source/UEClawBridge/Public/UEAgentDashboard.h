@@ -197,6 +197,12 @@ private:
 	FTSTicker::FDelegateHandle BridgeStatusPollHandle;
 	double LastBridgeStatusTimestamp = 0.0;
 
+	/** 环境上下文待发送标记：Connect 成功后设为 true，等 mcp_ready 后实际发送 */
+	bool bEnvContextPending = false;
+
+	/** Connect 成功后的宽限期截止时间 (FPlatformTime::Seconds)，期间忽略轮询的 connected=false */
+	double ConnectGraceUntil = 0.0;
+
 	/** 流式显示: 已读取的流式文件行数 */
 	int32 StreamLinesRead = 0;
 	/** 流式显示: 是否已显示过 thinking 消息 */
@@ -218,6 +224,9 @@ private:
 
 	/** "Create Skill" 按钮回调: 在输入框填充引导文本 */
 	FReply OnCreateSkillClicked();
+
+	/** 管理面板按钮回调: 打开 Skill/MCP 管理窗口 */
+	FReply OnManageClicked();
 
 	/** 语言切换按钮回调 */
 	FReply OnToggleLanguageClicked();

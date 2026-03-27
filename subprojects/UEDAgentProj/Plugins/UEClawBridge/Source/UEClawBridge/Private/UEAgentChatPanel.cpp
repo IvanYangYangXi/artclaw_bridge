@@ -2,6 +2,7 @@
 
 #include "UEAgentChatPanel.h"
 #include "UEAgentSubsystem.h"
+#include "UEAgentLocalization.h"
 #include "Editor.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
@@ -50,7 +51,7 @@ void SUEAgentChatPanel::Construct(const FArguments& InArgs)
 			.AutoWidth()
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("ClearBtn", "Clear"))
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ClearBtn")); })
 				.OnClicked(this, &SUEAgentChatPanel::OnClearClicked)
 			]
 		]
@@ -88,7 +89,7 @@ void SUEAgentChatPanel::Construct(const FArguments& InArgs)
 			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
 			[
 				SAssignNew(InputTextBox, SEditableTextBox)
-				.HintText(LOCTEXT("InputHint", "Type a message... (Enter to send)"))
+				.HintText_Lambda([]() { return FUEAgentL10n::Get(TEXT("InputHint")); })
 				.OnTextCommitted(this, &SUEAgentChatPanel::OnInputTextCommitted)
 			]
 
@@ -98,20 +99,14 @@ void SUEAgentChatPanel::Construct(const FArguments& InArgs)
 			.VAlign(VAlign_Center)
 			[
 				SNew(SButton)
-				.Text(LOCTEXT("SendBtn", "Send"))
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("SendBtn")); })
 				.OnClicked(this, &SUEAgentChatPanel::OnSendClicked)
 			]
 		]
 	];
 
 	// 添加欢迎消息
-	AddMessage(TEXT("assistant"),
-		TEXT("Hello! I'm the UE Claw Bridge AI Assistant. I can help you with level editing, asset management, and more.\n\n")
-		TEXT("Try asking me to:\n")
-		TEXT("  - List selected actors\n")
-		TEXT("  - Create objects in the scene\n")
-		TEXT("  - Modify material properties\n\n")
-		TEXT("Note: Connect an MCP client to enable AI responses."));
+	AddMessage(TEXT("assistant"), FUEAgentL10n::GetStr(TEXT("ChatWelcomeMsg")));
 }
 
 SUEAgentChatPanel::~SUEAgentChatPanel()
@@ -147,9 +142,11 @@ FReply SUEAgentChatPanel::OnSendClicked()
 
 	// TODO: 阶段 3+ 连接 MCP 客户端，将消息发送给 AI
 	// 当前仅作为 UI 展示，实际的 AI 通信通过外部 MCP 客户端完成
-	AddMessage(TEXT("assistant"),
-		FString::Printf(TEXT("(Message received: \"%s\")\n\nAI responses will appear here when an MCP client is connected."),
-			*InputText.Left(100)));
+	FString TruncatedInput = InputText.Left(100);
+	TArray<FStringFormatArg> FormatArgs;
+	FormatArgs.Add(FStringFormatArg(TruncatedInput));
+	FString ReplyMsg = FString::Format(*FUEAgentL10n::GetStr(TEXT("ChatMsgReceived")), FormatArgs);
+	AddMessage(TEXT("assistant"), ReplyMsg);
 
 	return FReply::Handled();
 }
@@ -174,8 +171,8 @@ void SUEAgentChatPanel::HandleConnectionStatusChanged(bool bNewStatus)
 	bCachedIsConnected = bNewStatus;
 
 	FString StatusMsg = bNewStatus
-		? TEXT("MCP client connected. AI responses are now available.")
-		: TEXT("MCP client disconnected.");
+		? FUEAgentL10n::GetStr(TEXT("ChatMcpConnected"))
+		: FUEAgentL10n::GetStr(TEXT("ChatMcpDisconnected"));
 	AddMessage(TEXT("system"), StatusMsg);
 }
 
@@ -219,15 +216,15 @@ void SUEAgentChatPanel::RebuildMessageList()
 		FString SenderLabel;
 		if (Msg.Sender == TEXT("user"))
 		{
-			SenderLabel = TEXT("You");
+			SenderLabel = FUEAgentL10n::GetStr(TEXT("SenderYou"));
 		}
 		else if (Msg.Sender == TEXT("assistant"))
 		{
-			SenderLabel = TEXT("AI Agent");
+			SenderLabel = FUEAgentL10n::GetStr(TEXT("SenderAI"));
 		}
 		else
 		{
-			SenderLabel = TEXT("System");
+			SenderLabel = FUEAgentL10n::GetStr(TEXT("SenderSystem"));
 		}
 
 		// 消息气泡
@@ -301,8 +298,8 @@ FSlateColor SUEAgentChatPanel::GetSenderColor(const FString& Sender) const
 FText SUEAgentChatPanel::GetStatusBarText() const
 {
 	FString Status = bCachedIsConnected
-		? TEXT("● Connected")
-		: TEXT("○ Disconnected");
+		? FUEAgentL10n::GetStr(TEXT("ConnectedDot"))
+		: FUEAgentL10n::GetStr(TEXT("DisconnectedDot"));
 
 	if (CachedSubsystem.IsValid())
 	{
@@ -313,7 +310,9 @@ FText SUEAgentChatPanel::GetStatusBarText() const
 		}
 	}
 
-	Status += FString::Printf(TEXT("  |  Messages: %d"), Messages.Num());
+	Status += FString::Printf(TEXT("  |  %s%d"),
+		*FUEAgentL10n::GetStr(TEXT("MsgCountLabel")),
+		Messages.Num());
 
 	return FText::FromString(Status);
 }

@@ -3,6 +3,7 @@
 #include "UEAgentDashboard.h"
 #include "UEAgentSubsystem.h"
 #include "UEAgentLocalization.h"
+#include "UEAgentManagePanel.h"
 #include "IAgentPlatformBridge.h"
 #include "OpenClawPlatformBridge.h"
 #include "Editor.h"
@@ -16,6 +17,7 @@
 #include "Widgets/Text/SMultiLineEditableText.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SMenuAnchor.h"
@@ -358,6 +360,19 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					.ContentPadding(FMargin(4.0f, 1.0f))
 				]
 
+				// Skill/MCP 管理按钮
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ManageBtn")); })
+					.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("ManageTip")); })
+					.OnClicked(this, &SUEAgentDashboard::OnManageClicked)
+					.ContentPadding(FMargin(4.0f, 1.0f))
+				]
+
 				// 语言切换按钮 (中/En)
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
@@ -467,10 +482,26 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				bool bMcpReady = false;
 				JsonObj->TryGetBoolField(TEXT("mcp_ready"), bMcpReady);
 
+				// Connect 成功后的宽限期内，忽略 connected=false（防止旧值覆盖）
+				if (!bConnected && Self->ConnectGraceUntil > 0.0
+					&& FPlatformTime::Seconds() < Self->ConnectGraceUntil)
+				{
+					return true;
+				}
+				// 宽限期过后或读到 connected=true 时，清除宽限期
+				Self->ConnectGraceUntil = 0.0;
+
 				// 更新 Subsystem 状态（触发图标颜色变化等）
 				if (Self->CachedSubsystem.IsValid())
 				{
 					Self->CachedSubsystem->SetConnectionStatus(bConnected);
+				}
+
+				// 当 Bridge 已连接 + MCP Server 就绪 + 环境上下文待发送 → 发送环境信息给 AI
+				if (bConnected && bMcpReady && Self->bEnvContextPending)
+				{
+					Self->bEnvContextPending = false;
+					Self->SendEnvironmentContext();
 				}
 
 				return true; // 持续轮询
@@ -558,16 +589,18 @@ FText SUEAgentDashboard::GetStatsText() const
 	{
 		Connections = CachedSubsystem->GetClientCount();
 	}
-	return FText::FromString(FString::Printf(
-		TEXT("Active Connections: %d  |  Messages: %d"),
-		Connections, Messages.Num()));
+	FString FormatStr = FUEAgentL10n::GetStr(TEXT("StatsFormat"));
+	FStringFormatOrderedArguments Args;
+	Args.Add(Connections);
+	Args.Add(Messages.Num());
+	return FText::FromString(FString::Format(*FormatStr, Args));
 }
 
 FText SUEAgentDashboard::GetStatusSummaryText() const
 {
 	FString Summary = bCachedIsConnected
-		? TEXT("● Connected")
-		: TEXT("○ Disconnected");
+		? FUEAgentL10n::GetStr(TEXT("ConnectedDot"))
+		: FUEAgentL10n::GetStr(TEXT("DisconnectedDot"));
 
 	if (CachedSubsystem.IsValid())
 	{
@@ -771,29 +804,29 @@ FText SUEAgentDashboard::GetSendHintText() const
 
 void SUEAgentDashboard::InitSlashCommands()
 {
-	auto MakeCmd = [](const FString& Cmd, const FString& Desc, bool bLocal) -> FSlashCommandPtr {
+	auto MakeCmd = [](const FString& Cmd, const FString& L10nKey, bool bLocal) -> FSlashCommandPtr {
 		auto Item = MakeShared<FSlashCommand>();
 		Item->Command = Cmd;
-		Item->Description = Desc;
+		Item->Description = FUEAgentL10n::GetStr(L10nKey);
 		Item->bIsLocal = bLocal;
 		return Item;
 	};
 
 	AllSlashCommands = {
 		// --- 本地命令 (不转发，本地执行) ---
-		MakeCmd(TEXT("/connect"),    TEXT("连接 OpenClaw 网关"), true),
-		MakeCmd(TEXT("/disconnect"), TEXT("断开 OpenClaw 网关连接"), true),
-		MakeCmd(TEXT("/diagnose"),   TEXT("运行连接诊断"), true),
-		MakeCmd(TEXT("/status"),     TEXT("显示连接状态"), true),
-		MakeCmd(TEXT("/clear"),      TEXT("清空聊天记录"), true),
-		MakeCmd(TEXT("/cancel"),     TEXT("取消等待 AI 响应"), true),
-		MakeCmd(TEXT("/help"),       TEXT("显示所有可用命令"), true),
+		MakeCmd(TEXT("/connect"),    TEXT("SlashConnect"), true),
+		MakeCmd(TEXT("/disconnect"), TEXT("SlashDisconnect"), true),
+		MakeCmd(TEXT("/diagnose"),   TEXT("SlashDiagnose"), true),
+		MakeCmd(TEXT("/status"),     TEXT("SlashStatus"), true),
+		MakeCmd(TEXT("/clear"),      TEXT("SlashClear"), true),
+		MakeCmd(TEXT("/cancel"),     TEXT("SlashCancel"), true),
+		MakeCmd(TEXT("/help"),       TEXT("SlashHelp"), true),
 
 		// --- AI 命令 (选中后发送给 AI Agent) ---
-		MakeCmd(TEXT("/new"),        TEXT("开始新会话"), false),
-		MakeCmd(TEXT("/compact"),    TEXT("压缩上下文 (释放 token 空间)"), false),
-		MakeCmd(TEXT("/review"),     TEXT("审查选中 Actor / 当前场景"), false),
-		MakeCmd(TEXT("/undo"),       TEXT("撤销上一步 AI 操作"), false),
+		MakeCmd(TEXT("/new"),        TEXT("SlashNew"), false),
+		MakeCmd(TEXT("/compact"),    TEXT("SlashCompact"), false),
+		MakeCmd(TEXT("/review"),     TEXT("SlashReview"), false),
+		MakeCmd(TEXT("/undo"),       TEXT("SlashUndo"), false),
 	};
 }
 
@@ -993,17 +1026,17 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 	}
 	else if (Command == TEXT("/help"))
 	{
-		FString HelpText = TEXT("可用命令:\n");
-		HelpText += TEXT("\n  连接:\n");
-		HelpText += TEXT("    /connect     连接 OpenClaw 网关\n");
-		HelpText += TEXT("    /disconnect  断开连接\n");
-		HelpText += TEXT("    /diagnose    运行连接诊断\n");
-		HelpText += TEXT("    /status      显示连接状态\n");
-		HelpText += TEXT("\n  会话:\n");
-		HelpText += TEXT("    /clear       清空聊天记录\n");
-		HelpText += TEXT("    /cancel      取消等待 AI 响应\n");
-		HelpText += TEXT("    /help        显示此帮助\n");
-		HelpText += TEXT("\n  AI 命令:\n");
+		FString HelpText = FUEAgentL10n::GetStr(TEXT("HelpTitle")) + TEXT("\n");
+		HelpText += FUEAgentL10n::GetStr(TEXT("HelpSectionConnect")) + TEXT("\n");
+		HelpText += FString::Printf(TEXT("    /connect     %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashConnect")));
+		HelpText += FString::Printf(TEXT("    /disconnect  %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashDisconnect")));
+		HelpText += FString::Printf(TEXT("    /diagnose    %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashDiagnose")));
+		HelpText += FString::Printf(TEXT("    /status      %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashStatus")));
+		HelpText += FUEAgentL10n::GetStr(TEXT("HelpSectionChat")) + TEXT("\n");
+		HelpText += FString::Printf(TEXT("    /clear       %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashClear")));
+		HelpText += FString::Printf(TEXT("    /cancel      %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashCancel")));
+		HelpText += FString::Printf(TEXT("    /help        %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashHelp")));
+		HelpText += FUEAgentL10n::GetStr(TEXT("HelpSectionAI")) + TEXT("\n");
 		for (const auto& Cmd : AllSlashCommands)
 		{
 			if (Cmd->bIsLocal)
@@ -1166,10 +1199,14 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 					Self->CachedSubsystem->SetConnectionStatus(true);
 				}
 
+				// 防止旧的 _bridge_status.json 轮询覆盖刚设置的 connected 状态：
+				// 设置宽限期，在此期间轮询跳过状态更新
+				Self->ConnectGraceUntil = FPlatformTime::Seconds() + 5.0;
+
 				Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ConnectOK")));
 
-				// 连接成功后，发送环境信息给 AI（非静默，显示回复）
-				Self->SendEnvironmentContext();
+				// 环境上下文延迟到 mcp_ready=true 时发送（见 BridgeStatusPoll）
+				Self->bEnvContextPending = true;
 			}
 			else
 			{
@@ -1190,6 +1227,9 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 void SUEAgentDashboard::DisconnectOpenClawBridge()
 {
 	PlatformBridge->Disconnect();
+
+	bEnvContextPending = false;
+	ConnectGraceUntil = 0.0;
 
 	// 立即更新 Subsystem 状态（不等 _bridge_status.json 轮询）
 	if (CachedSubsystem.IsValid())
@@ -2053,6 +2093,26 @@ FReply SUEAgentDashboard::OnCreateSkillClicked()
 }
 
 // ==================================================================
+// Skill/MCP 管理面板
+// ==================================================================
+
+FReply SUEAgentDashboard::OnManageClicked()
+{
+	// 打开管理面板为独立窗口
+	TSharedRef<SWindow> ManageWindow = SNew(SWindow)
+		.Title(FUEAgentL10n::Get(TEXT("ManageWindowTitle")))
+		.ClientSize(FVector2D(520.0f, 480.0f))
+		.SupportsMinimize(false)
+		.SupportsMaximize(false)
+		[
+			SNew(SUEAgentManagePanel)
+		];
+
+	FSlateApplication::Get().AddWindow(ManageWindow);
+	return FReply::Handled();
+}
+
+// ==================================================================
 // 语言切换
 // ==================================================================
 
@@ -2065,6 +2125,9 @@ FReply SUEAgentDashboard::OnToggleLanguageClicked()
 
 void SUEAgentDashboard::RebuildAfterLanguageChange()
 {
+	// 重新初始化 Slash 命令（更新描述文本）
+	InitSlashCommands();
+
 	// 重建消息列表（更新 sender 标签）
 	RebuildMessageList();
 
@@ -2073,8 +2136,6 @@ void SUEAgentDashboard::RebuildAfterLanguageChange()
 
 	// 输入框 hint text 会自动通过 lambda/binding 刷新
 	// 按钮文本通过 Text_Lambda 自动刷新
-	// 对于非动态绑定的文本，Slate 不支持运行时更新静态 .Text()
-	// 这些需要在下次打开面板时生效，或通过 Invalidate 触发
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -243,11 +243,65 @@ def init_bridge() -> bool:
     return _bridge.start()
 
 
+
 # ---------------------------------------------------------------------------
 # 记忆摘要注入
 # ---------------------------------------------------------------------------
 
 _context_injected = False  # DCC 上下文是否已注入（每个 session 只注入首条）
+
+def _get_pinned_skill_contents() -> str:
+    """读取 ~/.artclaw/config.json 中钉选 Skill 的 SKILL.md 内容，拼接注入 AI 上下文。
+
+    最多注入 5 个 Skill（config 层已限制），每个 SKILL.md 截断到 2000 字符。
+    """
+    config_path = os.path.expanduser("~/.artclaw/config.json")
+    if not os.path.exists(config_path):
+        return ""
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        return ""
+
+    pinned = cfg.get("pinned_skills", [])
+    if not pinned:
+        return ""
+
+    # 查找 Skill 目录：优先从 skill_hub 获取，fallback 到 Skills/ 目录扫描
+    skill_dirs = {}
+    try:
+        from skill_hub import get_skill_hub
+        hub = get_skill_hub()
+        if hub:
+            for name, info in hub._registered_skills.items():
+                manifest = info.get("manifest")
+                if manifest and hasattr(manifest, "source_dir"):
+                    skill_dirs[name] = manifest.source_dir
+    except Exception:
+        pass
+
+    parts = []
+    for skill_name in pinned[:5]:
+        source_dir = skill_dirs.get(skill_name, "")
+        if not source_dir:
+            continue
+        skill_md = os.path.join(str(source_dir), "SKILL.md")
+        if not os.path.exists(skill_md):
+            continue
+        try:
+            with open(skill_md, "r", encoding="utf-8") as f:
+                content = f.read(2000)
+            parts.append(f"[Pinned Skill: {skill_name}]\n{content}")
+        except Exception:
+            continue
+
+    if not parts:
+        return ""
+
+    return "[Pinned Skills Context]\n" + "\n\n".join(parts)
+
 
 def _enrich_with_briefing(message: str) -> str:
     """在用户消息前附加 DCC 上下文 + 记忆摘要 (Memory Briefing)
@@ -276,6 +330,14 @@ def _enrich_with_briefing(message: str) -> str:
             briefing = store.manager.export_briefing(max_tokens=1500)
             if briefing and "记忆库为空" not in briefing:
                 prefix_parts.append(briefing)
+    except Exception:
+        pass
+
+    # 钉选 Skill 注入：读取 pinned_skills 的 SKILL.md 内容
+    try:
+        pinned_skills = _get_pinned_skill_contents()
+        if pinned_skills:
+            prefix_parts.append(pinned_skills)
     except Exception:
         pass
 

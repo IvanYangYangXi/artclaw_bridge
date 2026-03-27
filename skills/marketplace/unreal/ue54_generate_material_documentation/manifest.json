@@ -1,6 +1,6 @@
 {
   "manifest_version": "1.0",
-  "name": "generate_material_documentation",
+  "name": "ue54_generate_material_documentation",
   "display_name": "生成材质使用文档",
   "description": "Read a master material's blueprint, extract all parameters (scalar, vector, texture, static switch), and generate a comprehensive Markdown documentation file.",
   "version": "1.0.0",
@@ -23,7 +23,7 @@
 
   "tools": [
     {
-      "name": "generate_material_documentation",
+      "name": "ue54_generate_material_documentation",
       "description": "Generate Markdown documentation for a master material, including all parameter types and their defaults"
     }
   ]
