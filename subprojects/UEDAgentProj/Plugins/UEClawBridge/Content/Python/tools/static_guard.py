@@ -77,8 +77,9 @@ class ScanResult:
 # ============================================================================
 
 # 危险模块 - 导入即阻止
+# 注意: shutil 已移至阶段 5.6 文件操作确认系统处理
 _BLOCKED_IMPORTS = {
-    "subprocess", "shutil", "ctypes", "socket",
+    "subprocess", "ctypes", "socket",
     "http", "urllib", "requests", "ftplib", "smtplib",
     "multiprocessing", "signal", "pty", "resource",
 }
@@ -91,10 +92,8 @@ _BLOCKED_CALLS = {
     "os.execvpe", "os.spawnl", "os.spawnle", "os.spawnlp",
     "os.spawnlpe", "os.spawnv", "os.spawnve", "os.spawnvp",
     "os.spawnvpe", "os.fork", "os.forkpty", "os.kill", "os.killpg",
-    "os.remove", "os.unlink", "os.rmdir", "os.removedirs",
-    "os.rename", "os.renames",
-    # shutil
-    "shutil.rmtree", "shutil.move", "shutil.copy2",
+    # 注意: os.remove/unlink/rmdir/rename 和 shutil.rmtree/move 已移至
+    # 阶段 5.6 文件操作确认系统处理，不再在此阻止
     # builtins
     "eval", "compile", "__import__",
 }
@@ -221,13 +220,14 @@ class ASTScanner(ast.NodeVisitor):
             )
 
         # 检查 open() 写模式
+        # 阶段 5.6: 降级为 MEDIUM，由文件操作确认系统处理
         if call_name == "open" and len(node.args) >= 2:
             mode_arg = node.args[1]
             if isinstance(mode_arg, ast.Constant) and isinstance(mode_arg.value, str):
                 if any(c in mode_arg.value for c in ("w", "a", "x")):
                     self._add_issue(
-                        RiskLevel.HIGH,
-                        f"File write operation: open(..., '{mode_arg.value}') (needs review)",
+                        RiskLevel.MEDIUM,
+                        f"File write operation: open(..., '{mode_arg.value}') (handled by confirmation)",
                         node,
                     )
 
@@ -245,6 +245,172 @@ class ASTScanner(ast.NodeVisitor):
                     )
                     break
         self.generic_visit(node)
+
+
+# ============================================================================
+# 3b. 文件操作风险检测器 (阶段 5.6)
+# ============================================================================
+
+# 中风险文件操作 — 需弹窗确认
+_MEDIUM_RISK_FILE_OPS = {
+    "os.rename", "os.replace", "shutil.move",
+    "unreal.EditorAssetLibrary.rename_asset",
+}
+
+# 高风险文件操作 — 必须弹窗确认
+_HIGH_RISK_FILE_OPS = {
+    "os.remove", "os.unlink", "os.rmdir", "os.removedirs",
+    "shutil.rmtree",
+    "unreal.EditorAssetLibrary.delete_asset",
+    "unreal.EditorAssetLibrary.delete_directory",
+}
+
+# 合并所有需确认的文件操作
+_ALL_CONFIRMABLE_FILE_OPS = _MEDIUM_RISK_FILE_OPS | _HIGH_RISK_FILE_OPS
+
+
+@dataclass
+class FileOperationRisk:
+    """文件操作风险评估结果"""
+    needs_confirmation: bool = False
+    risk_level: str = "safe"          # "safe", "medium", "high"
+    operations: List[dict] = field(default_factory=list)
+    is_batch: bool = False
+    code_preview: str = ""
+
+
+class FileOpDetector(ast.NodeVisitor):
+    """
+    检测代码中的文件操作及其风险等级。
+
+    阶段 5.6: 文件修改/删除/批量操作弹窗确认
+    """
+
+    def __init__(self):
+        self.detected_ops: List[dict] = []
+        self._in_loop_depth = 0  # 循环嵌套深度
+
+    def _get_call_name(self, node: ast.Call) -> str:
+        """从 Call 节点提取函数全名"""
+        if isinstance(node.func, ast.Name):
+            return node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            parts = []
+            current = node.func
+            while isinstance(current, ast.Attribute):
+                parts.append(current.attr)
+                current = current.value
+            if isinstance(current, ast.Name):
+                parts.append(current.id)
+            return ".".join(reversed(parts))
+        return ""
+
+    def visit_For(self, node: ast.For):
+        self._in_loop_depth += 1
+        self.generic_visit(node)
+        self._in_loop_depth -= 1
+
+    def visit_While(self, node: ast.While):
+        self._in_loop_depth += 1
+        self.generic_visit(node)
+        self._in_loop_depth -= 1
+
+    def visit_Call(self, node: ast.Call):
+        call_name = self._get_call_name(node)
+        if not call_name:
+            self.generic_visit(node)
+            return
+
+        # 检查高风险文件操作
+        if call_name in _HIGH_RISK_FILE_OPS:
+            risk = "high"
+            op_type = "delete" if any(kw in call_name for kw in ("remove", "unlink", "rmdir", "rmtree", "delete")) else "modify"
+            self.detected_ops.append({
+                "op": op_type,
+                "call": call_name,
+                "line": getattr(node, "lineno", 0),
+                "in_loop": self._in_loop_depth > 0,
+                "risk": risk,
+            })
+        # 检查中风险文件操作
+        elif call_name in _MEDIUM_RISK_FILE_OPS:
+            risk = "medium"
+            op_type = "rename" if "rename" in call_name else "move"
+            self.detected_ops.append({
+                "op": op_type,
+                "call": call_name,
+                "line": getattr(node, "lineno", 0),
+                "in_loop": self._in_loop_depth > 0,
+                "risk": risk,
+            })
+        # 检查 open() 写模式
+        elif call_name == "open":
+            mode_val = None
+            # 位置参数
+            if len(node.args) >= 2:
+                mode_arg = node.args[1]
+                if isinstance(mode_arg, ast.Constant) and isinstance(mode_arg.value, str):
+                    mode_val = mode_arg.value
+            # 关键字参数 mode=
+            for kw in node.keywords:
+                if kw.arg == "mode" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    mode_val = kw.value.value
+            if mode_val and any(c in mode_val for c in ("w", "a", "x")):
+                self.detected_ops.append({
+                    "op": "write_file",
+                    "call": f"open(..., '{mode_val}')",
+                    "line": getattr(node, "lineno", 0),
+                    "in_loop": self._in_loop_depth > 0,
+                    "risk": "medium",
+                })
+
+        self.generic_visit(node)
+
+
+def detect_file_operations(code: str) -> FileOperationRisk:
+    """
+    检测代码中的文件操作并评估风险。
+
+    Returns:
+        FileOperationRisk 包含是否需要确认、风险等级、操作列表等。
+    """
+    result = FileOperationRisk()
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return result  # 语法错误不做文件操作检测
+
+    detector = FileOpDetector()
+    detector.visit(tree)
+
+    if not detector.detected_ops:
+        return result
+
+    result.operations = detector.detected_ops
+    result.needs_confirmation = True
+
+    # 确定总体风险等级
+    has_high = any(op["risk"] == "high" for op in detector.detected_ops)
+    has_loop = any(op.get("in_loop", False) for op in detector.detected_ops)
+    result.is_batch = has_loop
+
+    if has_high or has_loop:
+        result.risk_level = "high"
+    else:
+        result.risk_level = "medium"
+
+    # 代码预览 (截取相关行)
+    lines = code.split("\n")
+    relevant_lines = set()
+    for op in detector.detected_ops:
+        line_no = op.get("line", 0)
+        if 0 < line_no <= len(lines):
+            relevant_lines.add(line_no)
+    preview_parts = [f"L{ln}: {lines[ln-1].strip()}" for ln in sorted(relevant_lines)]
+    result.code_preview = "\n".join(preview_parts[:10])  # 最多 10 行
+
+    return result
 
 
 # ============================================================================

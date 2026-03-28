@@ -21,11 +21,14 @@ public:
 	virtual void Connect(const FString& StatusOutFile) override;
 	virtual void Disconnect() override;
 	virtual void CancelCurrentRequest() override;
+	virtual void CancelRequest() override;
 	virtual void SendMessageAsync(const FString& Message, const FString& ResponseFile) override;
 	virtual void RunDiagnostics(const FString& ReportOutFile) override;
 	virtual void CollectEnvironmentContext(const FString& ContextOutFile) override;
 	virtual void QueryStatus() override;
 	virtual void ResetSession() override;
+	virtual void SetSessionKey(const FString& SessionKey) override;
+	virtual FString GetSessionKey() const override;
 
 private:
 	/** 执行 Python 命令的辅助方法 */

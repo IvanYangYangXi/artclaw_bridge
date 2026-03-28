@@ -18,6 +18,41 @@ class SExpandableArea;
 class SEditableTextBox;
 class SWrapBox;
 
+// ==================================================================
+// Plan 模式数据模型 (任务 5.9)
+// ==================================================================
+
+/** Plan 步骤状态 */
+enum class EPlanStepStatus : uint8
+{
+	Pending,    // 待执行
+	Running,    // 执行中
+	Done,       // 已完成
+	Failed,     // 失败
+	Skipped,    // 已跳过/已删除
+};
+
+/** 单个步骤 */
+struct FPlanStep
+{
+	int32 Index = 0;
+	FString Title;
+	FString Description;
+	EPlanStepStatus Status = EPlanStepStatus::Pending;
+	FString Result;          // 执行结果摘要
+};
+
+/** 完整 Plan */
+struct FPlan
+{
+	FString PlanId;          // UUID
+	FString UserRequest;     // 原始用户请求
+	TArray<FPlanStep> Steps;
+	bool bIsExecuting = false;
+	bool bIsPaused = false;
+	int32 CurrentStepIndex = -1;
+};
+
 /**
  * SUEAgentDashboard
  * 一体化 Agent 面板：顶部状态信息 + 底部聊天区域 (阶段 2.1 合并优化)
@@ -87,6 +122,7 @@ private:
 	FReply OnViewLogsClicked();
 	FReply OnSendClicked();
 	FReply OnNewChatClicked();
+	FReply OnStopClicked();
 
 	// --- 聊天输入回调 ---
 	void OnInputTextChanged(const FText& NewText);
@@ -233,6 +269,55 @@ private:
 	/** 是否处于编辑模式 */
 	bool bQuickInputEditMode = false;
 
+	/** 当前会话名称标签 (任务 5.4) */
+	FString CurrentSessionLabel;
+
+	/** Token usage 跟踪 (任务 5.5) */
+	int32 LastTotalTokens = 0;
+	int32 ContextWindowSize = 200000;  // 默认 200K (claude-opus-4-6)
+
+	// --- 多会话管理 (任务 5.8) ---
+
+	/** 会话条目数据模型 */
+	struct FSessionEntry
+	{
+		FString SessionKey;       // bridge 格式: "xiaoyou/ue-editor:1711612345000"
+		FString SessionId;        // Gateway transcript 的 session id
+		FString Label;            // "对话 03-28 09:15"
+		FDateTime CreatedAt;
+		bool bIsActive = false;
+	};
+
+	/** 所有会话列表 */
+	TArray<FSessionEntry> SessionEntries;
+
+	/** 当前活跃会话的索引 */
+	int32 ActiveSessionIndex = -1;
+
+	/** 会话选择下拉菜单锚点 */
+	TSharedPtr<SMenuAnchor> SessionMenuAnchor;
+
+	/** 初始化首个会话条目 */
+	void InitFirstSession();
+
+	/** 会话下拉按钮点击 */
+	FReply OnSessionMenuClicked();
+
+	/** 构建会话下拉菜单内容 */
+	TSharedRef<SWidget> BuildSessionMenuContent();
+
+	/** 切换到指定会话 */
+	void OnSessionSelected(int32 Index);
+
+	/** 删除指定会话 */
+	void OnDeleteSession(int32 Index);
+
+	/** 从 Gateway transcript 加载会话历史 */
+	void LoadSessionHistory(const FString& SessionKey);
+
+	/** 获取当前活跃会话的标签文本 */
+	FText GetActiveSessionLabel() const;
+
 	// --- Skill 创建集成 (阶段 D — v2 对话式) ---
 
 	/** "Create Skill" 按钮回调: 在输入框填充引导文本 */
@@ -246,6 +331,74 @@ private:
 
 	/** 语言切换后重建整个 UI（刷新所有文本） */
 	void RebuildAfterLanguageChange();
+
+	// --- Plan 模式 (任务 5.9) ---
+
+	/** Plan 模式开关 */
+	bool bPlanMode = false;
+
+	/** 当前 Plan (TOptional 管理生命周期) */
+	TOptional<FPlan> CurrentPlan;
+
+	/** 最后一次 Plan 请求的用户原始输入 */
+	FString LastPlanRequest;
+
+	/** 切换 Plan 模式 */
+	FReply OnTogglePlanModeClicked();
+
+	/** 获取 Plan 模式按钮文本 */
+	FText GetPlanModeButtonText() const;
+
+	/** 尝试从 AI 回复中解析 Plan JSON */
+	void TryParsePlan(const FString& Response);
+
+	/** 在消息流中添加 Plan 展示卡片 */
+	void AddPlanMessage();
+
+	/** 执行 Plan 中的下一个 Pending 步骤 */
+	void ExecuteNextPlanStep();
+
+	/** "执行全部" 按钮回调 */
+	FReply OnExecutePlanClicked();
+
+	/** "暂停" 按钮回调 */
+	FReply OnPausePlanClicked();
+
+	/** "继续" 按钮回调 */
+	FReply OnResumePlanClicked();
+
+	/** "取消计划" 按钮回调 */
+	FReply OnCancelPlanClicked();
+
+	/** 删除指定步骤 (标记为 Skipped) */
+	FReply OnDeletePlanStep(int32 StepIndex);
+
+	// --- 文件操作确认弹窗 (阶段 5.6) ---
+
+	/** 确认请求轮询定时器 */
+	FTSTicker::FDelegateHandle ConfirmPollHandle;
+
+	/** 轮询 _confirm_request.json 并弹出确认对话框 */
+	void PollConfirmationRequests();
+
+	/** 显示自定义确认弹窗 (支持复选框) */
+	void ShowConfirmationDialog(const FString& RiskLevel,
+	                            const TArray<TSharedPtr<FJsonValue>>& Operations,
+	                            const FString& CodePreview);
+
+	// --- 静默模式 (阶段 5.7) ---
+
+	/** 当前静默模式状态 (从 config.json 同步) */
+	bool bSilentMode = false;
+
+	/** 读取 ~/.artclaw/config.json 中的 silent_mode 值 */
+	void LoadSilentModeFromConfig();
+
+	/** 更新 ~/.artclaw/config.json 中的 silent_mode 值 */
+	void SaveSilentModeToConfig(bool bNewSilentMode);
+
+	/** 静默模式切换按钮回调 */
+	FReply OnToggleSilentModeClicked();
 
 	static constexpr int32 MaxMessages = 500;
 };

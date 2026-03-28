@@ -353,6 +353,122 @@ def _enrich_with_briefing(message: str) -> str:
     return message
 
 
+def set_session_key(session_key: str):
+    """设置当前会话的 session key（用于会话切换）"""
+    global _bridge
+    if _bridge:
+        _bridge.set_session_key(session_key)
+
+
+def get_session_key() -> str:
+    """获取当前 session key"""
+    global _bridge
+    if _bridge:
+        return _bridge.get_session_key()
+    return ""
+
+
+def load_session_history(session_key: str) -> str:
+    """从 Gateway transcript 加载会话历史，返回 JSON 格式的消息列表。
+
+    session_key 是 bridge 格式 (如 "xiaoyou/ue-editor:1711612345000")。
+    sessions.json 中的 key 是 Gateway 格式 (如 "agent:xiaoyou:ue-editor:1711612345000")。
+    需要将 bridge key 转换为 Gateway key 进行查找。
+    """
+    import os
+    import json as _json
+
+    # 获取 agent_id（从 bridge 或默认）
+    agent_id = "xiaoyou"
+    if _bridge:
+        agent_id = _bridge.agent_id
+
+    # 构建 sessions.json 路径
+    sessions_file = os.path.expanduser(
+        f"~/.openclaw/agents/{agent_id}/sessions/sessions.json"
+    )
+    if not os.path.exists(sessions_file):
+        return "[]"
+
+    try:
+        with open(sessions_file, "r", encoding="utf-8") as f:
+            sessions = _json.load(f)
+    except Exception:
+        return "[]"
+
+    # bridge key 格式: "xiaoyou/ue-editor:1711612345000"
+    # Gateway key 格式: "agent:xiaoyou:ue-editor:1711612345000"
+    # 转换: 将 "/" 替换为 ":"，前加 "agent:"
+    gateway_key = "agent:" + session_key.replace("/", ":")
+
+    entry = sessions.get(gateway_key)
+
+    # Fallback: 如果精确匹配不到，遍历查找包含 session_key 后缀的条目
+    if not entry:
+        # 提取时间戳后缀用于模糊匹配
+        for k, v in sessions.items():
+            # 检查 key 是否以 session_key 的特征部分结尾
+            if session_key in k or k.endswith(session_key.split(":")[-1]):
+                entry = v
+                break
+
+    if not entry:
+        return "[]"
+
+    # 找到 transcript 文件路径
+    session_file = entry.get("sessionFile", "")
+    if not session_file:
+        session_id = entry.get("sessionId", "")
+        if not session_id:
+            return "[]"
+        sessions_dir = os.path.dirname(sessions_file)
+        session_file = os.path.join(sessions_dir, f"{session_id}.jsonl")
+
+    if not os.path.exists(session_file):
+        return "[]"
+
+    # 解析 JSONL transcript
+    messages = []
+    try:
+        with open(session_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = _json.loads(line)
+                    if obj.get("type") != "message":
+                        continue
+                    msg = obj.get("message", {})
+                    role = msg.get("role", "")
+                    if role not in ("user", "assistant"):
+                        continue  # 跳过 toolResult 等
+
+                    content = msg.get("content", "")
+                    text = ""
+                    if isinstance(content, list):
+                        text_parts = []
+                        for block in content:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                text_parts.append(block.get("text", ""))
+                        text = "".join(text_parts)
+                    elif isinstance(content, str):
+                        text = content
+
+                    if text:
+                        messages.append({
+                            "sender": role,
+                            "content": text,
+                            "timestamp": obj.get("timestamp", ""),
+                        })
+                except _json.JSONDecodeError:
+                    continue
+    except Exception:
+        return "[]"
+
+    return _json.dumps(messages, ensure_ascii=False)
+
+
 def send_chat(message: str) -> str:
     """同步发送消息 (C++ 调用入口)。"""
     global _bridge
@@ -453,6 +569,20 @@ def send_chat_async_to_file(message: str, output_file: str):
         except Exception:
             pass
 
+    def _on_usage_update(usage: dict):
+        """将 usage 写入 stream file 供 C++ 轮询"""
+        if _send_chat_async_to_file_current_id != request_id:
+            return
+        try:
+            line = json.dumps({
+                "type": "usage",
+                "usage": usage,
+            }, ensure_ascii=False)
+            with open(stream_file, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
+
     def _on_result(result: str):
         """最终结果回调 — 直接写文件（不走游戏线程调度，避免 tick 丢失导致卡死）"""
         if _send_chat_async_to_file_current_id != request_id:
@@ -475,12 +605,14 @@ def send_chat_async_to_file(message: str, output_file: str):
             _bridge.on_ai_message = None
             _bridge.on_tool_call = None
             _bridge.on_tool_result = None
+            _bridge.on_usage_update = None
 
     if _bridge:
         _bridge.on_ai_thinking = _on_thinking
         _bridge.on_ai_message = _on_delta
         _bridge.on_tool_call = _on_tool_call
         _bridge.on_tool_result = _on_tool_result
+        _bridge.on_usage_update = _on_usage_update
         enriched = _enrich_with_briefing(message)
 
         # 直接用 worker 线程调用 send_message，绕过 monkey-patched send_message_async
@@ -508,6 +640,17 @@ def get_last_response() -> str:
         builtins._openclaw_response_ready = False
         return getattr(builtins, '_openclaw_last_response', '')
     return ''
+
+
+def get_usage_info() -> str:
+    """返回 JSON 格式的 token usage 信息，供 C++ 解析"""
+    global _bridge
+    if not _bridge:
+        return "{}"
+    usage = _bridge.get_last_usage()
+    if not usage:
+        return "{}"
+    return json.dumps(usage, ensure_ascii=False)
 
 
 def connect(gateway_url: str = "", token: str = "") -> bool:

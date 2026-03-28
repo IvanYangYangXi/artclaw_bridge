@@ -2,6 +2,9 @@
 
 #include "OpenClawPlatformBridge.h"
 #include "IPythonScriptPlugin.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "HAL/FileManager.h"
 
 void FOpenClawPlatformBridge::ExecPython(const FString& Code) const
 {
@@ -54,6 +57,12 @@ void FOpenClawPlatformBridge::CancelCurrentRequest()
 	ExecPython(
 		TEXT("from openclaw_bridge import cancel_current_request; cancel_current_request()")
 	);
+}
+
+void FOpenClawPlatformBridge::CancelRequest()
+{
+	// CancelRequest 与 CancelCurrentRequest 等价，停止按钮调用此方法
+	CancelCurrentRequest();
 }
 
 void FOpenClawPlatformBridge::SendMessageAsync(const FString& Message, const FString& ResponseFile)
@@ -121,4 +130,40 @@ void FOpenClawPlatformBridge::ResetSession()
 		TEXT("    _ob._context_injected = False\n")
 		TEXT("except: pass")
 	);
+}
+
+void FOpenClawPlatformBridge::SetSessionKey(const FString& SessionKey)
+{
+	FString EscapedKey = SessionKey;
+	EscapedKey.ReplaceInline(TEXT("'"), TEXT("\\'"));
+
+	FString PythonCmd = FString::Printf(
+		TEXT("from openclaw_bridge import set_session_key; set_session_key('%s')"),
+		*EscapedKey
+	);
+	ExecPython(PythonCmd);
+}
+
+FString FOpenClawPlatformBridge::GetSessionKey() const
+{
+	// GetSessionKey 需要同步获取返回值。
+	// 通过临时文件中转（与其他同步查询一致）。
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString KeyFile = TempDir / TEXT("_session_key.txt");
+	IFileManager::Get().Delete(*KeyFile, false, false, true);
+
+	FString PythonCmd = FString::Printf(
+		TEXT("from openclaw_bridge import get_session_key\n")
+		TEXT("_key = get_session_key()\n")
+		TEXT("with open(r'%s', 'w', encoding='utf-8') as f:\n")
+		TEXT("    f.write(_key)\n"),
+		*KeyFile
+	);
+	ExecPython(PythonCmd);
+
+	FString Result;
+	FFileHelper::LoadFileToString(Result, *KeyFile);
+	IFileManager::Get().Delete(*KeyFile, false, false, true);
+	return Result.TrimStartAndEnd();
 }

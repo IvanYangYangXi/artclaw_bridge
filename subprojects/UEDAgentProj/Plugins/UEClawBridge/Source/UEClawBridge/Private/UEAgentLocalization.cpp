@@ -129,6 +129,28 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("CtrlEnterToSend"),    TEXT("Ctrl+Enter 发送"),           TEXT("Ctrl+Enter to Send"));
 
 	// ==================================================================
+	// 发送按钮等待态 / 停止按钮 / 会话标签 (阶段 5)
+	// ==================================================================
+	Reg(TEXT("SendBtnWaiting"),     TEXT("等待中..."),                 TEXT("Waiting..."));
+	Reg(TEXT("StopBtn"),            TEXT("停止"),                      TEXT("Stop"));
+	Reg(TEXT("StopTip"),            TEXT("停止 AI 回答"),              TEXT("Stop AI response"));
+	Reg(TEXT("AIStopped"),          TEXT("已停止 AI 回答"),            TEXT("AI response stopped"));
+	Reg(TEXT("SessionLabel"),       TEXT("对话"),                      TEXT("Chat"));
+	Reg(TEXT("ContextUsage"),       TEXT("上下文"),                    TEXT("Context"));
+
+	// ==================================================================
+	// 多会话管理 (任务 5.8)
+	// ==================================================================
+	Reg(TEXT("SessionMenuTip"),     TEXT("切换会话"),                  TEXT("Switch Session"));
+	Reg(TEXT("SessionDeleteTip"),   TEXT("删除会话"),                  TEXT("Delete Session"));
+	Reg(TEXT("SessionLoading"),     TEXT("加载中..."),                 TEXT("Loading..."));
+	Reg(TEXT("SessionEmpty"),       TEXT("无历史消息"),                TEXT("No history"));
+	Reg(TEXT("SessionDeleteConfirm"), TEXT("确定要删除这个会话吗?"),   TEXT("Delete this session?"));
+	Reg(TEXT("SessionSwitched"),    TEXT("已切换到会话: {0}"),         TEXT("Switched to session: {0}"));
+	Reg(TEXT("SessionDeleted"),     TEXT("会话已删除"),                TEXT("Session deleted"));
+	Reg(TEXT("SessionHistoryLoaded"), TEXT("已加载 {0} 条历史消息"),   TEXT("Loaded {0} history messages"));
+
+	// ==================================================================
 	// 语言切换
 	// ==================================================================
 	Reg(TEXT("LangToggleTip"),      TEXT("切换到 English"),            TEXT("Switch to 中文"));
@@ -241,6 +263,53 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("ManagePublishDesc"),   TEXT("将 {0} (v{1}) 发布到市集。选择版本号递增方式，填写变更说明后发布。"),
 	                                 TEXT("Publish {0} (v{1}) to marketplace. Choose version bump type and add changelog."));
 	Reg(TEXT("ManagePublishChangelogLabel"), TEXT("变更说明:"),         TEXT("Changelog:"));
+
+	// ==================================================================
+	// Plan 模式 (任务 5.9)
+	// ==================================================================
+	Reg(TEXT("PlanModeOn"),          TEXT("Plan: ON"),                  TEXT("Plan: ON"));
+	Reg(TEXT("PlanModeOff"),         TEXT("Plan: OFF"),                 TEXT("Plan: OFF"));
+	Reg(TEXT("PlanModeTip"),         TEXT("Plan 模式: AI 先制定计划再执行"), TEXT("Plan mode: AI creates a plan before executing"));
+	Reg(TEXT("PlanTitle"),           TEXT("执行计划"),                  TEXT("Execution Plan"));
+	Reg(TEXT("PlanStepPending"),     TEXT("--"),                        TEXT("--"));
+	Reg(TEXT("PlanStepRunning"),     TEXT(">>"),                        TEXT(">>"));
+	Reg(TEXT("PlanStepDone"),        TEXT("OK"),                        TEXT("OK"));
+	Reg(TEXT("PlanStepFailed"),      TEXT("!!"),                        TEXT("!!"));
+	Reg(TEXT("PlanStepSkipped"),     TEXT("跳"),                        TEXT("Skip"));
+	Reg(TEXT("PlanExecuteAll"),      TEXT("执行全部"),                  TEXT("Execute All"));
+	Reg(TEXT("PlanPause"),           TEXT("暂停"),                      TEXT("Pause"));
+	Reg(TEXT("PlanResume"),          TEXT("继续"),                      TEXT("Resume"));
+	Reg(TEXT("PlanCancel"),          TEXT("取消计划"),                  TEXT("Cancel"));
+	Reg(TEXT("PlanDeleteStep"),      TEXT("删除"),                      TEXT("Del"));
+	Reg(TEXT("PlanCompleted"),       TEXT("计划执行完毕"),              TEXT("Plan completed"));
+	Reg(TEXT("PlanPaused"),          TEXT("计划已暂停"),                TEXT("Plan paused"));
+	Reg(TEXT("PlanCancelled"),       TEXT("计划已取消"),                TEXT("Plan cancelled"));
+	Reg(TEXT("PlanStepFailedMsg"),   TEXT("步骤执行失败，已暂停"),      TEXT("Step failed, plan paused"));
+	Reg(TEXT("PlanParseFailed"),     TEXT("Plan 解析失败，已作为普通回复显示"), TEXT("Failed to parse plan, showing as normal reply"));
+	Reg(TEXT("PlanProgressFmt"),     TEXT("步完成"),                    TEXT("steps done"));
+	Reg(TEXT("PlanModeEnabled"),     TEXT("Plan 模式已开启"),           TEXT("Plan mode enabled"));
+	Reg(TEXT("PlanModeDisabled"),    TEXT("Plan 模式已关闭"),           TEXT("Plan mode disabled"));
+	Reg(TEXT("SlashPlan"),           TEXT("切换 Plan 模式"),            TEXT("Toggle Plan mode"));
+
+	// ==================================================================
+	// 文件操作确认弹窗 (阶段 5.6)
+	// ==================================================================
+	Reg(TEXT("ConfirmTitle"),           TEXT("操作确认"),                    TEXT("Confirm Operation"));
+	Reg(TEXT("ConfirmRiskHigh"),        TEXT("⚠ 高风险操作"),               TEXT("⚠ High Risk"));
+	Reg(TEXT("ConfirmRiskMedium"),      TEXT("中风险操作"),                  TEXT("Medium Risk"));
+	Reg(TEXT("ConfirmOperations"),      TEXT("将执行以下操作:"),             TEXT("The following operations will be performed:"));
+	Reg(TEXT("ConfirmCodePreview"),     TEXT("代码预览:"),                   TEXT("Code preview:"));
+	Reg(TEXT("ConfirmBatchWarning"),    TEXT("⚠ 包含循环批量操作!"),         TEXT("⚠ Contains batch loop operations!"));
+	Reg(TEXT("ConfirmApprove"),         TEXT("允许"),                        TEXT("Approve"));
+	Reg(TEXT("ConfirmDeny"),            TEXT("拒绝"),                        TEXT("Deny"));
+	Reg(TEXT("ConfirmSessionSilent"),   TEXT("本次会话不再提示中风险操作"),   TEXT("Don't ask again for medium risk operations this session"));
+
+	// ==================================================================
+	// 静默模式 (阶段 5.7)
+	// ==================================================================
+	Reg(TEXT("SilentModeOn"),           TEXT("静默: 开"),                    TEXT("Silent: On"));
+	Reg(TEXT("SilentModeOff"),          TEXT("静默: 关"),                    TEXT("Silent: Off"));
+	Reg(TEXT("SilentModeTip"),          TEXT("静默模式: 中风险操作自动通过"), TEXT("Silent mode: auto-approve medium risk operations"));
 }
 
 FText FUEAgentL10n::Get(const FString& Key)

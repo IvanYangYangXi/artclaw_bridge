@@ -33,6 +33,7 @@
 #include "Misc/FileHelper.h"
 #include "Dom/JsonValue.h"
 #include "Serialization/JsonWriter.h"
+#include "HAL/PlatformProcess.h"
 
 #define LOCTEXT_NAMESPACE "UEAgentDashboard"
 
@@ -57,6 +58,9 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 
 	// 创建平台通信桥接 (当前: OpenClaw)
 	PlatformBridge = MakeShared<FOpenClawPlatformBridge>();
+
+	// 初始化会话名称标签 (任务 5.4) + 首个会话条目 (任务 5.8)
+	InitFirstSession();
 
 	// 初始化 Slash 快捷命令
 	InitSlashCommands();
@@ -312,16 +316,42 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 						]
 					]
 
-					// 发送按钮 (底部对齐)
+					// 发送 / 停止 切换按钮 (底部对齐)
+					// bIsWaitingForResponse 时变为红色停止按钮
 					+ SHorizontalBox::Slot()
 					.AutoWidth()
 					.VAlign(VAlign_Bottom)
 					.Padding(0.0f, 0.0f, 0.0f, 1.0f)
 					[
 						SNew(SButton)
-						.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("SendBtn")); })
-						.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("SendTip")); })
-						.OnClicked(this, &SUEAgentDashboard::OnSendClicked)
+						.Text_Lambda([this]() -> FText {
+							if (bIsWaitingForResponse)
+							{
+								return FUEAgentL10n::Get(TEXT("StopBtn"));
+							}
+							return FUEAgentL10n::Get(TEXT("SendBtn"));
+						})
+						.ToolTipText_Lambda([this]() -> FText {
+							if (bIsWaitingForResponse)
+							{
+								return FUEAgentL10n::Get(TEXT("StopTip"));
+							}
+							return FUEAgentL10n::Get(TEXT("SendTip"));
+						})
+						.OnClicked_Lambda([this]() -> FReply {
+							if (bIsWaitingForResponse)
+							{
+								return OnStopClicked();
+							}
+							return OnSendClicked();
+						})
+						.ButtonColorAndOpacity_Lambda([this]() -> FLinearColor {
+							if (bIsWaitingForResponse)
+							{
+								return FLinearColor(0.8f, 0.2f, 0.2f); // 红色停止
+							}
+							return FLinearColor(1.0f, 1.0f, 1.0f); // 默认白色
+						})
 						.ContentPadding(FMargin(6.0f, 4.0f))
 					]
 				]
@@ -335,10 +365,31 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			[
 				SNew(SHorizontalBox)
 
+				// 会话选择下拉菜单 (任务 5.8)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SAssignNew(SessionMenuAnchor, SMenuAnchor)
+					.Placement(MenuPlacement_AboveAnchor)
+					.OnGetMenuContent_Lambda([this]() -> TSharedRef<SWidget>
+					{
+						return BuildSessionMenuContent();
+					})
+					[
+						SNew(SButton)
+						.Text_Lambda([this]() -> FText { return GetActiveSessionLabel(); })
+						.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("SessionMenuTip")); })
+						.OnClicked_Lambda([this]() -> FReply { return OnSessionMenuClicked(); })
+						.ContentPadding(FMargin(4.0f, 1.0f))
+					]
+				]
+
 				// /new 按钮 (小号紧凑)
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SNew(SButton)
 					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("NewChatBtn")); })
@@ -392,6 +443,52 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					.ContentPadding(FMargin(4.0f, 1.0f))
 				]
 
+				// 静默模式切换按钮 (阶段 5.7)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text_Lambda([this]() {
+						return bSilentMode
+							? FUEAgentL10n::Get(TEXT("SilentModeOn"))
+							: FUEAgentL10n::Get(TEXT("SilentModeOff"));
+					})
+					.ToolTipText_Lambda([]() {
+						return FUEAgentL10n::Get(TEXT("SilentModeTip"));
+					})
+					.OnClicked(this, &SUEAgentDashboard::OnToggleSilentModeClicked)
+					.ContentPadding(FMargin(4.0f, 1.0f))
+					.ButtonColorAndOpacity_Lambda([this]() -> FLinearColor {
+						return bSilentMode
+							? FLinearColor(0.2f, 0.6f, 0.2f) // 绿色 = 开
+							: FLinearColor(1.0f, 1.0f, 1.0f); // 默认
+					})
+				]
+
+				// Plan 模式切换按钮 (任务 5.9)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text_Lambda([this]() {
+						return GetPlanModeButtonText();
+					})
+					.ToolTipText_Lambda([]() {
+						return FUEAgentL10n::Get(TEXT("PlanModeTip"));
+					})
+					.OnClicked(this, &SUEAgentDashboard::OnTogglePlanModeClicked)
+					.ContentPadding(FMargin(4.0f, 1.0f))
+					.ButtonColorAndOpacity_Lambda([this]() -> FLinearColor {
+						return bPlanMode
+							? FLinearColor(0.3f, 0.5f, 0.9f) // 蓝色 = Plan 开
+							: FLinearColor(1.0f, 1.0f, 1.0f); // 默认
+					})
+				]
+
 				// 弹性间距
 				+ SHorizontalBox::Slot()
 				.FillWidth(1.0f)
@@ -431,6 +528,9 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	// 加载快捷输入配置并构建 UI
 	LoadQuickInputs();
 	RebuildQuickInputPanel();
+
+	// 加载静默模式配置 (阶段 5.7)
+	LoadSilentModeFromConfig();
 
 	// 欢迎消息
 	AddMessage(TEXT("assistant"), FUEAgentL10n::GetStr(TEXT("WelcomeMsg")));
@@ -509,6 +609,21 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			2.0f // 每 2 秒检查一次
 		);
 	}
+
+	// 阶段 5.6: 文件操作确认请求轮询 — 独立于 AI 响应轮询
+	// Python 侧在 MCP tool 执行线程中写入 _confirm_request.json 并等待响应
+	// C++ 侧在 Game Thread 定时检测并弹窗
+	{
+		auto Self = SharedThis(this);
+		ConfirmPollHandle = FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateLambda([Self](float) -> bool
+			{
+				Self->PollConfirmationRequests();
+				return true; // 持续轮询
+			}),
+			0.2f // 每 0.2 秒检查一次 (Python 侧 sleep(0.1) 精度)
+		);
+	}
 }
 
 SUEAgentDashboard::~SUEAgentDashboard()
@@ -518,6 +633,13 @@ SUEAgentDashboard::~SUEAgentDashboard()
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(BridgeStatusPollHandle);
 		BridgeStatusPollHandle.Reset();
+	}
+
+	// 停止确认弹窗轮询 (阶段 5.6)
+	if (ConfirmPollHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(ConfirmPollHandle);
+		ConfirmPollHandle.Reset();
 	}
 
 	if (CachedSubsystem.IsValid())
@@ -601,6 +723,35 @@ FText SUEAgentDashboard::GetStatusSummaryText() const
 	FString Summary = bCachedIsConnected
 		? FUEAgentL10n::GetStr(TEXT("ConnectedDot"))
 		: FUEAgentL10n::GetStr(TEXT("DisconnectedDot"));
+
+	// 显示上下文使用百分比 (任务 5.5)
+	if (LastTotalTokens > 0 && ContextWindowSize > 0)
+	{
+		int32 Pct = FMath::RoundToInt32(100.0f * LastTotalTokens / ContextWindowSize);
+		Pct = FMath::Clamp(Pct, 0, 100);
+
+		// 格式化 token 数为 K 单位
+		auto FormatK = [](int32 Tokens) -> FString
+		{
+			if (Tokens >= 1000)
+			{
+				return FString::Printf(TEXT("%dK"), FMath::RoundToInt32(Tokens / 1000.0f));
+			}
+			return FString::Printf(TEXT("%d"), Tokens);
+		};
+
+		Summary += FString::Printf(TEXT("  |  %s: %d%% (%s/%s)"),
+			*FUEAgentL10n::GetStr(TEXT("ContextUsage")),
+			Pct,
+			*FormatK(LastTotalTokens),
+			*FormatK(ContextWindowSize));
+	}
+
+	// 显示当前会话名称 (任务 5.4)
+	if (!CurrentSessionLabel.IsEmpty())
+	{
+		Summary += FString::Printf(TEXT("  |  %s"), *CurrentSessionLabel);
+	}
 
 	if (CachedSubsystem.IsValid())
 	{
@@ -698,6 +849,22 @@ FReply SUEAgentDashboard::OnSendClicked()
 	// 添加用户消息
 	AddMessage(TEXT("user"), InputText);
 
+	// --- Plan 模式: 拦截用户输入，先生成 Plan ---
+	if (bPlanMode && !CurrentPlan.IsSet())
+	{
+		LastPlanRequest = InputText;
+		FString PlanPrompt = FString::Printf(
+			TEXT("Please create a step-by-step plan for the following task.\n\n"
+				 "Output ONLY the plan in this exact JSON format, do not execute anything, do not add any other text:\n"
+				 "```json\n"
+				 "{\"plan\":{\"steps\":[{\"index\":1,\"title\":\"Step title\",\"description\":\"Step description\"}]}}\n"
+				 "```\n\n"
+				 "Task: %s"),
+			*InputText);
+		SendToOpenClaw(PlanPrompt);
+		return FReply::Handled();
+	}
+
 	// 通过 OpenClaw Python Bridge 转发给 AI
 	SendToOpenClaw(InputText);
 
@@ -706,16 +873,109 @@ FReply SUEAgentDashboard::OnSendClicked()
 
 FReply SUEAgentDashboard::OnNewChatClicked()
 {
-	// 1) 本地清屏
+	// 0) 取消正在执行的 Plan (任务 5.9)
+	if (CurrentPlan.IsSet())
+	{
+		if (CurrentPlan->bIsExecuting && bIsWaitingForResponse)
+		{
+			OnStopClicked();
+		}
+		CurrentPlan.Reset();
+	}
+
+	// 1) 保存当前活跃会话的 session key (任务 5.8)
+	if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
+	{
+		FString CurrentKey = PlatformBridge->GetSessionKey();
+		if (!CurrentKey.IsEmpty())
+		{
+			SessionEntries[ActiveSessionIndex].SessionKey = CurrentKey;
+		}
+		SessionEntries[ActiveSessionIndex].bIsActive = false;
+	}
+
+	// 2) 本地清屏
 	Messages.Empty();
 	RebuildMessageList();
 	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("NewChatStarted")));
 
-	// 2) 重置平台桥接的会话
+	// 3) 重置 token usage (任务 5.5)
+	LastTotalTokens = 0;
+
+	// 4) 重置平台桥接的会话
 	PlatformBridge->ResetSession();
 
-	// 3) 发送 /new 给 AI（重置远端会话），非静默——显示 AI 的回复
+	// 4b) 清除会话静默标记 (阶段 5.7)
+	{
+		FString SilentFlagFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_silent_session.flag");
+		IFileManager::Get().Delete(*SilentFlagFile, false, false, true);
+	}
+
+	// 5) 创建新会话条目 (任务 5.8)
+	{
+		FDateTime Now = FDateTime::Now();
+		CurrentSessionLabel = FString::Printf(TEXT("%s %02d-%02d %02d:%02d"),
+			*FUEAgentL10n::GetStr(TEXT("SessionLabel")),
+			Now.GetMonth(), Now.GetDay(), Now.GetHour(), Now.GetMinute());
+
+		FSessionEntry NewEntry;
+		NewEntry.Label = CurrentSessionLabel;
+		NewEntry.CreatedAt = Now;
+		NewEntry.bIsActive = true;
+		// SessionKey 会在首次发送消息后由 bridge 自动生成
+
+		SessionEntries.Add(MoveTemp(NewEntry));
+		ActiveSessionIndex = SessionEntries.Num() - 1;
+	}
+
+	// 6) 发送 /new 给 AI（重置远端会话），非静默——显示 AI 的回复
 	SendToOpenClaw(TEXT("/new"));
+
+	return FReply::Handled();
+}
+
+// ==================================================================
+// 停止 AI 回答 (任务 5.2)
+// ==================================================================
+
+FReply SUEAgentDashboard::OnStopClicked()
+{
+	if (!bIsWaitingForResponse)
+	{
+		return FReply::Handled();
+	}
+
+	// 1) 停止 poll timer
+	if (PollTimerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(PollTimerHandle);
+		PollTimerHandle.Reset();
+	}
+
+	// 2) 调用平台桥接取消请求
+	PlatformBridge->CancelRequest();
+
+	// 3) 重置等待状态
+	bIsWaitingForResponse = false;
+	bHasStreamingMessage = false;
+	StreamLinesRead = 0;
+
+	// 4) 移除 "Thinking..." 或流式消息
+	for (int32 i = Messages.Num() - 1; i >= 0; --i)
+	{
+		const FString& S = Messages[i].Sender;
+		if (Messages[i].Content == FUEAgentL10n::GetStr(TEXT("Thinking")) && S == TEXT("system"))
+		{
+			Messages.RemoveAt(i);
+		}
+		else if (S == TEXT("thinking") || S == TEXT("streaming"))
+		{
+			Messages.RemoveAt(i);
+		}
+	}
+
+	// 5) 添加系统消息并重建
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("AIStopped")));
 
 	return FReply::Handled();
 }
@@ -821,6 +1081,7 @@ void SUEAgentDashboard::InitSlashCommands()
 		MakeCmd(TEXT("/clear"),      TEXT("SlashClear"), true),
 		MakeCmd(TEXT("/cancel"),     TEXT("SlashCancel"), true),
 		MakeCmd(TEXT("/help"),       TEXT("SlashHelp"), true),
+		MakeCmd(TEXT("/plan"),       TEXT("SlashPlan"), true),
 
 		// --- AI 命令 (选中后发送给 AI Agent) ---
 		MakeCmd(TEXT("/new"),        TEXT("SlashNew"), false),
@@ -1036,6 +1297,7 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 		HelpText += FString::Printf(TEXT("    /clear       %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashClear")));
 		HelpText += FString::Printf(TEXT("    /cancel      %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashCancel")));
 		HelpText += FString::Printf(TEXT("    /help        %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashHelp")));
+		HelpText += FString::Printf(TEXT("    /plan        %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashPlan")));
 		HelpText += FUEAgentL10n::GetStr(TEXT("HelpSectionAI")) + TEXT("\n");
 		for (const auto& Cmd : AllSlashCommands)
 		{
@@ -1046,6 +1308,46 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 			HelpText += FString::Printf(TEXT("    %-12s %s\n"), *Cmd->Command, *Cmd->Description);
 		}
 		AddMessage(TEXT("system"), HelpText);
+	}
+	else if (Command == TEXT("/plan"))
+	{
+		if (Args.IsEmpty())
+		{
+			// /plan (无参数) → 切换 Plan 模式开关
+			bPlanMode = !bPlanMode;
+			if (!bPlanMode)
+			{
+				// 关闭 Plan 模式时，如果有活跃 Plan 则取消
+				if (CurrentPlan.IsSet())
+				{
+					if (CurrentPlan->bIsExecuting && bIsWaitingForResponse)
+					{
+						OnStopClicked();
+					}
+					CurrentPlan.Reset();
+				}
+			}
+			AddMessage(TEXT("system"),
+				bPlanMode
+					? FUEAgentL10n::GetStr(TEXT("PlanModeEnabled"))
+					: FUEAgentL10n::GetStr(TEXT("PlanModeDisabled")));
+		}
+		else
+		{
+			// /plan <任务描述> → 开启 Plan 模式并直接发送
+			bPlanMode = true;
+			LastPlanRequest = Args;
+			AddMessage(TEXT("user"), Args);
+			FString PlanPrompt = FString::Printf(
+				TEXT("Please create a step-by-step plan for the following task.\n\n"
+					 "Output ONLY the plan in this exact JSON format, do not execute anything, do not add any other text:\n"
+					 "```json\n"
+					 "{\"plan\":{\"steps\":[{\"index\":1,\"title\":\"Step title\",\"description\":\"Step description\"}]}}\n"
+					 "```\n\n"
+					 "Task: %s"),
+				*Args);
+			SendToOpenClaw(PlanPrompt);
+		}
 	}
 	// --- AI 命令 (选中后将命令文字直接作为消息发送给 AI Agent) ---
 	else
@@ -1290,6 +1592,197 @@ void SUEAgentDashboard::RebuildMessageList()
 			continue;
 		}
 
+		// --- Plan 卡片消息 (任务 5.9) ---
+		if (Msg.Sender == TEXT("plan") && CurrentPlan.IsSet())
+		{
+			// 计算完成数
+			int32 DoneCount = 0;
+			int32 TotalCount = CurrentPlan->Steps.Num();
+			for (const auto& Step : CurrentPlan->Steps)
+			{
+				if (Step.Status == EPlanStepStatus::Done)
+				{
+					DoneCount++;
+				}
+			}
+
+			// 进度文本
+			FString ProgressStr = FString::Printf(TEXT("%s (%d/%d %s)"),
+				*FUEAgentL10n::GetStr(TEXT("PlanTitle")),
+				DoneCount, TotalCount,
+				*FUEAgentL10n::GetStr(TEXT("PlanProgressFmt")));
+
+			// 构建步骤列表
+			TSharedRef<SVerticalBox> StepsBox = SNew(SVerticalBox);
+
+			// 标题行
+			StepsBox->AddSlot()
+			.AutoHeight()
+			.Padding(4.0f, 4.0f, 4.0f, 6.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(ProgressStr))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.85f, 0.85f, 0.85f)))
+			];
+
+			// 步骤列表
+			for (int32 Si = 0; Si < CurrentPlan->Steps.Num(); Si++)
+			{
+				const FPlanStep& Step = CurrentPlan->Steps[Si];
+				const int32 CapturedStepIndex = Si;
+
+				// 状态标签和颜色
+				FString StatusLabel;
+				FLinearColor StatusColor;
+				switch (Step.Status)
+				{
+				case EPlanStepStatus::Pending:
+					StatusLabel = FString::Printf(TEXT("[%s]"), *FUEAgentL10n::GetStr(TEXT("PlanStepPending")));
+					StatusColor = FLinearColor(0.5f, 0.5f, 0.5f);
+					break;
+				case EPlanStepStatus::Running:
+					StatusLabel = FString::Printf(TEXT("[%s]"), *FUEAgentL10n::GetStr(TEXT("PlanStepRunning")));
+					StatusColor = FLinearColor(0.3f, 0.6f, 1.0f);
+					break;
+				case EPlanStepStatus::Done:
+					StatusLabel = FString::Printf(TEXT("[%s]"), *FUEAgentL10n::GetStr(TEXT("PlanStepDone")));
+					StatusColor = FLinearColor(0.3f, 0.85f, 0.3f);
+					break;
+				case EPlanStepStatus::Failed:
+					StatusLabel = FString::Printf(TEXT("[%s]"), *FUEAgentL10n::GetStr(TEXT("PlanStepFailed")));
+					StatusColor = FLinearColor(0.9f, 0.3f, 0.3f);
+					break;
+				case EPlanStepStatus::Skipped:
+					StatusLabel = FString::Printf(TEXT("[%s]"), *FUEAgentL10n::GetStr(TEXT("PlanStepSkipped")));
+					StatusColor = FLinearColor(0.45f, 0.45f, 0.45f);
+					break;
+				}
+
+				FString StepText = FString::Printf(TEXT("%s %d. %s"), *StatusLabel, Step.Index, *Step.Title);
+
+				TSharedRef<SHorizontalBox> StepRow = SNew(SHorizontalBox)
+
+					// 状态 + 步骤标题
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(FText::FromString(StepText))
+						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+						.ColorAndOpacity(FSlateColor(StatusColor))
+						.AutoWrapText(true)
+					];
+
+				// 删除按钮 (仅 Pending 状态显示)
+				if (Step.Status == EPlanStepStatus::Pending)
+				{
+					StepRow->AddSlot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(FUEAgentL10n::Get(TEXT("PlanDeleteStep")))
+						.OnClicked_Lambda([this, CapturedStepIndex]() -> FReply
+						{
+							return OnDeletePlanStep(CapturedStepIndex);
+						})
+						.ContentPadding(FMargin(3.0f, 1.0f))
+						.ButtonColorAndOpacity(FLinearColor(0.7f, 0.3f, 0.3f))
+					];
+				}
+
+				StepsBox->AddSlot()
+				.AutoHeight()
+				.Padding(8.0f, 1.0f, 4.0f, 1.0f)
+				[
+					StepRow
+				];
+			}
+
+			// 底部操作按钮
+			TSharedRef<SHorizontalBox> ActionRow = SNew(SHorizontalBox);
+
+			if (!CurrentPlan->bIsExecuting)
+			{
+				// "执行全部" 按钮 (Plan 未开始执行或已暂停时显示)
+				if (CurrentPlan->bIsPaused)
+				{
+					ActionRow->AddSlot()
+					.AutoWidth()
+					.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(FUEAgentL10n::Get(TEXT("PlanResume")))
+						.OnClicked(this, &SUEAgentDashboard::OnResumePlanClicked)
+						.ContentPadding(FMargin(8.0f, 3.0f))
+						.ButtonColorAndOpacity(FLinearColor(0.3f, 0.7f, 0.3f))
+					];
+				}
+				else
+				{
+					ActionRow->AddSlot()
+					.AutoWidth()
+					.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(FUEAgentL10n::Get(TEXT("PlanExecuteAll")))
+						.OnClicked(this, &SUEAgentDashboard::OnExecutePlanClicked)
+						.ContentPadding(FMargin(8.0f, 3.0f))
+						.ButtonColorAndOpacity(FLinearColor(0.3f, 0.7f, 0.3f))
+					];
+				}
+			}
+			else
+			{
+				// "暂停" 按钮 (执行中时显示)
+				ActionRow->AddSlot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(FUEAgentL10n::Get(TEXT("PlanPause")))
+					.OnClicked(this, &SUEAgentDashboard::OnPausePlanClicked)
+					.ContentPadding(FMargin(8.0f, 3.0f))
+					.ButtonColorAndOpacity(FLinearColor(0.8f, 0.6f, 0.2f))
+				];
+			}
+
+			// "取消计划" 按钮
+			ActionRow->AddSlot()
+			.AutoWidth()
+			[
+				SNew(SButton)
+				.Text(FUEAgentL10n::Get(TEXT("PlanCancel")))
+				.OnClicked(this, &SUEAgentDashboard::OnCancelPlanClicked)
+				.ContentPadding(FMargin(8.0f, 3.0f))
+				.ButtonColorAndOpacity(FLinearColor(0.7f, 0.3f, 0.3f))
+			];
+
+			StepsBox->AddSlot()
+			.AutoHeight()
+			.Padding(8.0f, 8.0f, 4.0f, 4.0f)
+			[
+				ActionRow
+			];
+
+			// 整个 Plan 卡片
+			MessageScrollBox->AddSlot()
+			.Padding(6.0f, 4.0f)
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+				.Padding(FMargin(4.0f))
+				[
+					StepsBox
+				]
+			];
+
+			continue;
+		}
+
 		// --- 常规消息 ---
 		FString SenderLabel;
 		if (Msg.Sender == TEXT("user"))
@@ -1353,6 +1846,22 @@ void SUEAgentDashboard::RebuildMessageList()
 	}
 
 	MessageScrollBox->ScrollToEnd();
+
+	// 任务 5.3: 延迟一帧再次滚动，确保 Layout 计算完成后滚到底
+	FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([WeakThis = TWeakPtr<SUEAgentDashboard>(SharedThis(this))](float) -> bool
+		{
+			if (auto Pinned = WeakThis.Pin())
+			{
+				if (Pinned->MessageScrollBox.IsValid())
+				{
+					Pinned->MessageScrollBox->ScrollToEnd();
+				}
+			}
+			return false; // 只执行一次
+		}),
+		0.0f // 下一帧立即执行
+	);
 }
 
 // ==================================================================
@@ -1669,6 +2178,19 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 									Self->AddToolResultMessage(ToolName, ToolId, Content, bIsError);
 								}
 							}
+							else if (EventType == TEXT("usage"))
+							{
+								// 解析 token usage 信息 (任务 5.5)
+								const TSharedPtr<FJsonObject>* UsageObj = nullptr;
+								if (JsonObj->TryGetObjectField(TEXT("usage"), UsageObj) && UsageObj)
+								{
+									int32 TotalTokens = 0;
+									if ((*UsageObj)->TryGetNumberField(TEXT("totalTokens"), TotalTokens) && TotalTokens > 0)
+									{
+										Self->LastTotalTokens = TotalTokens;
+									}
+								}
+							}
 						}
 					}
 					Self->StreamLinesRead = Lines.Num();
@@ -1835,6 +2357,49 @@ void SUEAgentDashboard::HandlePythonResponse(const FString& Response)
 	{
 		AddMessage(TEXT("system"), Response);
 		return;
+	}
+
+	// --- Plan 模式: 区分 Plan 生成回复 vs Plan 步骤执行回复 ---
+	if (bPlanMode)
+	{
+		// 状态1: 正在生成 Plan (bPlanMode=true, !CurrentPlan.IsSet())
+		if (!CurrentPlan.IsSet())
+		{
+			TryParsePlan(Response);
+			return;
+		}
+
+		// 状态2: 正在执行 Plan 步骤
+		if (CurrentPlan.IsSet() && CurrentPlan->bIsExecuting)
+		{
+			int32 StepIdx = CurrentPlan->CurrentStepIndex;
+			if (StepIdx >= 0 && StepIdx < CurrentPlan->Steps.Num())
+			{
+				// 显示 AI 回复
+				AddMessage(TEXT("assistant"), Response);
+
+				// 简单错误检测 — 只匹配明确的错误标记
+				if (Response.Contains(TEXT("[Error]")) || Response.Contains(TEXT("[ERROR]")))
+				{
+					CurrentPlan->Steps[StepIdx].Status = EPlanStepStatus::Failed;
+					CurrentPlan->Steps[StepIdx].Result = Response.Left(200);
+					CurrentPlan->bIsPaused = true;
+					CurrentPlan->bIsExecuting = false;
+					AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("PlanStepFailedMsg")));
+					AddPlanMessage();
+				}
+				else
+				{
+					// 当前步骤完成
+					CurrentPlan->Steps[StepIdx].Status = EPlanStepStatus::Done;
+					CurrentPlan->Steps[StepIdx].Result = Response.Left(200);
+
+					// 继续下一步 (ExecuteNextPlanStep 会调用 AddPlanMessage)
+					ExecuteNextPlanStep();
+				}
+			}
+			return;
+		}
 	}
 
 	// 显示 AI 回复
@@ -2351,10 +2916,654 @@ FSlateColor SUEAgentDashboard::GetSenderColor(const FString& Sender) const
 		// 红色，工具执行报错
 		return FSlateColor(FLinearColor(0.9f, 0.3f, 0.3f));
 	}
+	else if (Sender == TEXT("plan"))
+	{
+		// 蓝色，Plan 卡片
+		return FSlateColor(FLinearColor(0.4f, 0.6f, 1.0f));
+	}
 	else
 	{
 		return FSlateColor(FLinearColor(0.7f, 0.7f, 0.7f));
 	}
+}
+
+// ==================================================================
+// 多会话管理 (任务 5.8)
+// ==================================================================
+
+void SUEAgentDashboard::InitFirstSession()
+{
+	FDateTime Now = FDateTime::Now();
+	CurrentSessionLabel = FString::Printf(TEXT("%s %02d-%02d %02d:%02d"),
+		*FUEAgentL10n::GetStr(TEXT("SessionLabel")),
+		Now.GetMonth(), Now.GetDay(), Now.GetHour(), Now.GetMinute());
+
+	FSessionEntry FirstEntry;
+	FirstEntry.Label = CurrentSessionLabel;
+	FirstEntry.CreatedAt = Now;
+	FirstEntry.bIsActive = true;
+
+	SessionEntries.Add(MoveTemp(FirstEntry));
+	ActiveSessionIndex = 0;
+}
+
+FReply SUEAgentDashboard::OnSessionMenuClicked()
+{
+	if (SessionMenuAnchor.IsValid())
+	{
+		SessionMenuAnchor->SetIsOpen(!SessionMenuAnchor->IsOpen());
+	}
+	return FReply::Handled();
+}
+
+TSharedRef<SWidget> SUEAgentDashboard::BuildSessionMenuContent()
+{
+	// 在打开菜单前，更新当前活跃会话的 session key
+	if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
+	{
+		FString CurrentKey = PlatformBridge->GetSessionKey();
+		if (!CurrentKey.IsEmpty())
+		{
+			SessionEntries[ActiveSessionIndex].SessionKey = CurrentKey;
+		}
+	}
+
+	TSharedRef<SVerticalBox> MenuBox = SNew(SVerticalBox);
+
+	for (int32 i = SessionEntries.Num() - 1; i >= 0; --i)
+	{
+		const FSessionEntry& Entry = SessionEntries[i];
+		const int32 CapturedIndex = i;
+		bool bActive = (i == ActiveSessionIndex);
+
+		MenuBox->AddSlot()
+		.AutoHeight()
+		.Padding(2.0f, 1.0f)
+		[
+			SNew(SHorizontalBox)
+
+			// 会话标签
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+				.ButtonStyle(FCoreStyle::Get(), "NoBorder")
+				.ContentPadding(FMargin(6.0f, 3.0f))
+				.OnClicked_Lambda([this, CapturedIndex]() -> FReply
+				{
+					OnSessionSelected(CapturedIndex);
+					if (SessionMenuAnchor.IsValid())
+					{
+						SessionMenuAnchor->SetIsOpen(false);
+					}
+					return FReply::Handled();
+				})
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(Entry.Label))
+					.Font(bActive
+						? FCoreStyle::GetDefaultFontStyle("Bold", 10)
+						: FCoreStyle::GetDefaultFontStyle("Regular", 10))
+					.ColorAndOpacity(bActive
+						? FSlateColor(FLinearColor(0.3f, 0.8f, 1.0f))
+						: FSlateColor(FLinearColor(0.8f, 0.8f, 0.8f)))
+				]
+			]
+
+			// 删除按钮 (小 X，不对当前活跃的唯一会话显示)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(4.0f, 0.0f, 2.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Visibility(SessionEntries.Num() > 1 ? EVisibility::Visible : EVisibility::Collapsed)
+				.ButtonStyle(FCoreStyle::Get(), "NoBorder")
+				.ContentPadding(FMargin(3.0f, 1.0f))
+				.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("SessionDeleteTip")); })
+				.OnClicked_Lambda([this, CapturedIndex]() -> FReply
+				{
+					OnDeleteSession(CapturedIndex);
+					if (SessionMenuAnchor.IsValid())
+					{
+						SessionMenuAnchor->SetIsOpen(false);
+					}
+					return FReply::Handled();
+				})
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(TEXT("x")))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+					.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.4f, 0.4f)))
+				]
+			]
+		];
+	}
+
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Menu.Background"))
+		.Padding(4.0f)
+		[
+			SNew(SBox)
+			.MaxDesiredHeight(300.0f)
+			.MinDesiredWidth(200.0f)
+			[
+				MenuBox
+			]
+		];
+}
+
+void SUEAgentDashboard::OnSessionSelected(int32 Index)
+{
+	if (!SessionEntries.IsValidIndex(Index))
+	{
+		return;
+	}
+
+	// 已经是当前会话，无需切换
+	if (Index == ActiveSessionIndex)
+	{
+		return;
+	}
+
+	// 1) 保存当前活跃会话的 session key
+	if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
+	{
+		FString CurrentKey = PlatformBridge->GetSessionKey();
+		if (!CurrentKey.IsEmpty())
+		{
+			SessionEntries[ActiveSessionIndex].SessionKey = CurrentKey;
+		}
+		SessionEntries[ActiveSessionIndex].bIsActive = false;
+	}
+
+	// 2) 设置新活跃会话
+	ActiveSessionIndex = Index;
+	SessionEntries[Index].bIsActive = true;
+	CurrentSessionLabel = SessionEntries[Index].Label;
+
+	// 3) 清空当前消息列表
+	Messages.Empty();
+	RebuildMessageList();
+
+	// 4) 如果目标会话有 session key，加载历史并切换 bridge
+	if (!SessionEntries[Index].SessionKey.IsEmpty())
+	{
+		// 切换 bridge 的 session key
+		PlatformBridge->SetSessionKey(SessionEntries[Index].SessionKey);
+
+		// 加载历史消息
+		LoadSessionHistory(SessionEntries[Index].SessionKey);
+	}
+	else
+	{
+		// 新建的但未发过消息的会话，重置 bridge session
+		PlatformBridge->ResetSession();
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("NewChatStarted")));
+	}
+
+	// 5) 重置 token usage
+	LastTotalTokens = 0;
+
+	AddMessage(TEXT("system"),
+		FString::Printf(TEXT("%s"),
+			*FString::Format(
+				*FUEAgentL10n::GetStr(TEXT("SessionSwitched")),
+				{ FStringFormatArg(CurrentSessionLabel) })));
+}
+
+void SUEAgentDashboard::OnDeleteSession(int32 Index)
+{
+	if (!SessionEntries.IsValidIndex(Index))
+	{
+		return;
+	}
+
+	// 确认删除
+	EAppReturnType::Type Result = FMessageDialog::Open(
+		EAppMsgType::YesNo,
+		FUEAgentL10n::Get(TEXT("SessionDeleteConfirm")));
+
+	if (Result != EAppReturnType::Yes)
+	{
+		return;
+	}
+
+	bool bDeletingActive = (Index == ActiveSessionIndex);
+
+	SessionEntries.RemoveAt(Index);
+
+	// 修正 ActiveSessionIndex
+	if (bDeletingActive)
+	{
+		// 删的是当前活跃会话
+		if (SessionEntries.Num() == 0)
+		{
+			// 没有会话了，创建一个新的
+			InitFirstSession();
+			Messages.Empty();
+			RebuildMessageList();
+			PlatformBridge->ResetSession();
+			AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("NewChatStarted")));
+		}
+		else
+		{
+			// 切到最新的会话
+			int32 NewIndex = SessionEntries.Num() - 1;
+			ActiveSessionIndex = -1; // 临时设为 -1，OnSessionSelected 会设置
+			OnSessionSelected(NewIndex);
+		}
+	}
+	else
+	{
+		// 删的不是当前会话，只需修正索引
+		if (Index < ActiveSessionIndex)
+		{
+			ActiveSessionIndex--;
+		}
+	}
+
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("SessionDeleted")));
+}
+
+void SUEAgentDashboard::LoadSessionHistory(const FString& SessionKey)
+{
+	// 转义 session key 中的特殊字符（先转义反斜杠，再转义引号）
+	FString EscapedKey = SessionKey;
+	EscapedKey.ReplaceInline(TEXT("\\"), TEXT("\\\\"));
+	EscapedKey.ReplaceInline(TEXT("'"), TEXT("\\'"));
+
+	// 调用 Python 函数加载历史，结果写入临时文件
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString HistoryFile = TempDir / TEXT("_session_history.json");
+	IFileManager::Get().Delete(*HistoryFile, false, false, true);
+
+	FString PythonCmd = FString::Printf(
+		TEXT("from openclaw_bridge import load_session_history\n")
+		TEXT("_hist = load_session_history('%s')\n")
+		TEXT("with open(r'%s', 'w', encoding='utf-8') as f:\n")
+		TEXT("    f.write(_hist)\n"),
+		*EscapedKey, *HistoryFile
+	);
+	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+
+	// 读取历史文件并解析 JSON
+	FString HistoryContent;
+	TArray<uint8> RawBytes;
+	if (!FFileHelper::LoadFileToArray(RawBytes, *HistoryFile))
+	{
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("SessionEmpty")));
+		return;
+	}
+
+	FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
+	HistoryContent = FString(Converter.Length(), Converter.Get());
+	IFileManager::Get().Delete(*HistoryFile, false, false, true);
+
+	// 解析 JSON 数组
+	TArray<TSharedPtr<FJsonValue>> JsonArray;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HistoryContent);
+	if (!FJsonSerializer::Deserialize(Reader, JsonArray))
+	{
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("SessionEmpty")));
+		return;
+	}
+
+	if (JsonArray.Num() == 0)
+	{
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("SessionEmpty")));
+		return;
+	}
+
+	// 将历史消息添加到 Messages
+	for (const auto& Item : JsonArray)
+	{
+		const TSharedPtr<FJsonObject>* MsgObj = nullptr;
+		if (!Item->TryGetObject(MsgObj) || !(*MsgObj).IsValid())
+		{
+			continue;
+		}
+
+		FString Sender = (*MsgObj)->GetStringField(TEXT("sender"));
+		FString Content = (*MsgObj)->GetStringField(TEXT("content"));
+		FString TimestampStr = (*MsgObj)->GetStringField(TEXT("timestamp"));
+
+		if (Content.IsEmpty())
+		{
+			continue;
+		}
+
+		// 转换 sender: "user" / "assistant"
+		FChatMessage Msg;
+		Msg.Sender = Sender;
+		Msg.Content = Content;
+		Msg.Timestamp = FDateTime::Now(); // 简化处理，不解析 ISO 时间戳
+
+		// 尝试解析 ISO 8601 时间戳
+		if (!TimestampStr.IsEmpty())
+		{
+			FDateTime ParsedTime;
+			if (FDateTime::ParseIso8601(*TimestampStr, ParsedTime))
+			{
+				Msg.Timestamp = ParsedTime;
+			}
+		}
+
+		Messages.Add(MoveTemp(Msg));
+	}
+
+	RebuildMessageList();
+
+	// 显示加载结果
+	FString LoadedMsg = FString::Format(
+		*FUEAgentL10n::GetStr(TEXT("SessionHistoryLoaded")),
+		{ FStringFormatArg(JsonArray.Num()) });
+	AddMessage(TEXT("system"), LoadedMsg);
+}
+
+FText SUEAgentDashboard::GetActiveSessionLabel() const
+{
+	if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
+	{
+		return FText::FromString(
+			FString::Printf(TEXT("\u25BC %s"), *SessionEntries[ActiveSessionIndex].Label));
+	}
+	return FText::FromString(TEXT("\u25BC ---"));
+}
+
+// ==================================================================
+// Plan 模式 (任务 5.9)
+// ==================================================================
+
+FReply SUEAgentDashboard::OnTogglePlanModeClicked()
+{
+	bPlanMode = !bPlanMode;
+	if (!bPlanMode)
+	{
+		// 关闭 Plan 模式时，如果有活跃 Plan 则取消
+		if (CurrentPlan.IsSet())
+		{
+			if (CurrentPlan->bIsExecuting && bIsWaitingForResponse)
+			{
+				OnStopClicked();
+			}
+			CurrentPlan.Reset();
+		}
+	}
+	AddMessage(TEXT("system"),
+		bPlanMode
+			? FUEAgentL10n::GetStr(TEXT("PlanModeEnabled"))
+			: FUEAgentL10n::GetStr(TEXT("PlanModeDisabled")));
+	return FReply::Handled();
+}
+
+FText SUEAgentDashboard::GetPlanModeButtonText() const
+{
+	return bPlanMode
+		? FUEAgentL10n::Get(TEXT("PlanModeOn"))
+		: FUEAgentL10n::Get(TEXT("PlanModeOff"));
+}
+
+void SUEAgentDashboard::TryParsePlan(const FString& Response)
+{
+	FString JsonStr;
+
+	// 策略1: 匹配 ```json ... ``` code block
+	int32 CodeStart = Response.Find(TEXT("```json"));
+	if (CodeStart != INDEX_NONE)
+	{
+		int32 ContentStart = CodeStart + 7; // skip ```json
+		int32 CodeEnd = Response.Find(TEXT("```"), ESearchCase::IgnoreCase, ESearchDir::FromStart, ContentStart);
+		if (CodeEnd != INDEX_NONE)
+		{
+			JsonStr = Response.Mid(ContentStart, CodeEnd - ContentStart).TrimStartAndEnd();
+		}
+	}
+
+	// 策略2: 匹配 {"plan" ...}
+	if (JsonStr.IsEmpty())
+	{
+		int32 JsonStart = Response.Find(TEXT("{\"plan\""));
+		if (JsonStart != INDEX_NONE)
+		{
+			// 从 {"plan" 开始找到最后一个 }
+			int32 JsonEnd = Response.Find(TEXT("}"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+			if (JsonEnd != INDEX_NONE)
+			{
+				JsonStr = Response.Mid(JsonStart, JsonEnd - JsonStart + 1);
+			}
+		}
+	}
+
+	// 策略3: 解析失败，回退为普通回复
+	if (JsonStr.IsEmpty())
+	{
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("PlanParseFailed")));
+		AddMessage(TEXT("assistant"), Response);
+		return;
+	}
+
+	// 解析 JSON
+	TSharedPtr<FJsonObject> RootObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
+	if (!FJsonSerializer::Deserialize(Reader, RootObj) || !RootObj.IsValid())
+	{
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("PlanParseFailed")));
+		AddMessage(TEXT("assistant"), Response);
+		return;
+	}
+
+	const TSharedPtr<FJsonObject>* PlanObj = nullptr;
+	if (!RootObj->TryGetObjectField(TEXT("plan"), PlanObj) || !PlanObj)
+	{
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("PlanParseFailed")));
+		AddMessage(TEXT("assistant"), Response);
+		return;
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* StepsArray = nullptr;
+	if (!(*PlanObj)->TryGetArrayField(TEXT("steps"), StepsArray) || !StepsArray)
+	{
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("PlanParseFailed")));
+		AddMessage(TEXT("assistant"), Response);
+		return;
+	}
+
+	// 构建 Plan
+	FPlan NewPlan;
+	NewPlan.PlanId = FGuid::NewGuid().ToString();
+	NewPlan.UserRequest = LastPlanRequest;
+
+	for (const auto& StepVal : *StepsArray)
+	{
+		const TSharedPtr<FJsonObject>* StepObj = nullptr;
+		if (StepVal->TryGetObject(StepObj) && StepObj)
+		{
+			FPlanStep Step;
+			Step.Index = (*StepObj)->GetIntegerField(TEXT("index"));
+			Step.Title = (*StepObj)->GetStringField(TEXT("title"));
+			Step.Description = (*StepObj)->GetStringField(TEXT("description"));
+			NewPlan.Steps.Add(MoveTemp(Step));
+		}
+	}
+
+	if (NewPlan.Steps.Num() == 0)
+	{
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("PlanParseFailed")));
+		AddMessage(TEXT("assistant"), Response);
+		return;
+	}
+
+	CurrentPlan = MoveTemp(NewPlan);
+	AddPlanMessage();
+}
+
+void SUEAgentDashboard::AddPlanMessage()
+{
+	if (!CurrentPlan.IsSet())
+	{
+		return;
+	}
+
+	// 移除之前的 plan 消息 (如果有) — 每次状态变化后重新渲染
+	for (int32 i = Messages.Num() - 1; i >= 0; --i)
+	{
+		if (Messages[i].Sender == TEXT("plan"))
+		{
+			Messages.RemoveAt(i);
+		}
+	}
+
+	FChatMessage PlanMsg;
+	PlanMsg.Sender = TEXT("plan");
+	PlanMsg.Content = TEXT("plan_display");
+	PlanMsg.Timestamp = FDateTime::Now();
+	Messages.Add(MoveTemp(PlanMsg));
+	RebuildMessageList();
+}
+
+void SUEAgentDashboard::ExecuteNextPlanStep()
+{
+	if (!CurrentPlan.IsSet() || CurrentPlan->bIsPaused)
+	{
+		return;
+	}
+
+	// 找下一个 Pending 步骤
+	int32 NextIndex = -1;
+	for (int32 i = 0; i < CurrentPlan->Steps.Num(); i++)
+	{
+		if (CurrentPlan->Steps[i].Status == EPlanStepStatus::Pending)
+		{
+			NextIndex = i;
+			break;
+		}
+	}
+
+	if (NextIndex == -1)
+	{
+		// 所有步骤完成
+		CurrentPlan->bIsExecuting = false;
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("PlanCompleted")));
+		RebuildMessageList();
+		return;
+	}
+
+	CurrentPlan->CurrentStepIndex = NextIndex;
+	CurrentPlan->Steps[NextIndex].Status = EPlanStepStatus::Running;
+
+	// 更新 Plan UI 卡片
+	AddPlanMessage();
+
+	// 发送步骤给 AI
+	FString StepPrompt = FString::Printf(
+		TEXT("Please execute the following step (step %d of %d):\n\n"
+			 "Step %d: %s\n%s"),
+		NextIndex + 1,
+		CurrentPlan->Steps.Num(),
+		CurrentPlan->Steps[NextIndex].Index,
+		*CurrentPlan->Steps[NextIndex].Title,
+		*CurrentPlan->Steps[NextIndex].Description);
+
+	SendToOpenClaw(StepPrompt);
+}
+
+FReply SUEAgentDashboard::OnExecutePlanClicked()
+{
+	if (!CurrentPlan.IsSet() || CurrentPlan->bIsExecuting)
+	{
+		return FReply::Handled();
+	}
+
+	CurrentPlan->bIsExecuting = true;
+	CurrentPlan->bIsPaused = false;
+	ExecuteNextPlanStep();
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnPausePlanClicked()
+{
+	if (!CurrentPlan.IsSet() || !CurrentPlan->bIsExecuting)
+	{
+		return FReply::Handled();
+	}
+
+	CurrentPlan->bIsPaused = true;
+	CurrentPlan->bIsExecuting = false;
+
+	// 停止当前 AI 请求
+	if (bIsWaitingForResponse)
+	{
+		OnStopClicked();
+	}
+
+	// 当前运行中的步骤标记回 Pending（可重试）
+	if (CurrentPlan->CurrentStepIndex >= 0 &&
+		CurrentPlan->CurrentStepIndex < CurrentPlan->Steps.Num() &&
+		CurrentPlan->Steps[CurrentPlan->CurrentStepIndex].Status == EPlanStepStatus::Running)
+	{
+		CurrentPlan->Steps[CurrentPlan->CurrentStepIndex].Status = EPlanStepStatus::Pending;
+	}
+
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("PlanPaused")));
+	AddPlanMessage();
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnResumePlanClicked()
+{
+	if (!CurrentPlan.IsSet() || !CurrentPlan->bIsPaused)
+	{
+		return FReply::Handled();
+	}
+
+	CurrentPlan->bIsPaused = false;
+	CurrentPlan->bIsExecuting = true;
+	ExecuteNextPlanStep();
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnCancelPlanClicked()
+{
+	if (!CurrentPlan.IsSet())
+	{
+		return FReply::Handled();
+	}
+
+	if (CurrentPlan->bIsExecuting && bIsWaitingForResponse)
+	{
+		OnStopClicked();
+	}
+
+	CurrentPlan.Reset();
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("PlanCancelled")));
+	RebuildMessageList();
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnDeletePlanStep(int32 StepIndex)
+{
+	if (!CurrentPlan.IsSet())
+	{
+		return FReply::Handled();
+	}
+
+	if (StepIndex < 0 || StepIndex >= CurrentPlan->Steps.Num())
+	{
+		return FReply::Handled();
+	}
+
+	// 只能删除 Pending 状态的步骤
+	if (CurrentPlan->Steps[StepIndex].Status != EPlanStepStatus::Pending)
+	{
+		return FReply::Handled();
+	}
+
+	CurrentPlan->Steps[StepIndex].Status = EPlanStepStatus::Skipped;
+	AddPlanMessage();
+	return FReply::Handled();
 }
 
 // ==================================================================
@@ -2421,6 +3630,363 @@ void SUEAgentDashboard::RebuildAfterLanguageChange()
 
 	// 输入框 hint text 会自动通过 lambda/binding 刷新
 	// 按钮文本通过 Text_Lambda 自动刷新
+}
+
+// ==================================================================
+// 文件操作确认弹窗 (阶段 5.6)
+// ==================================================================
+
+void SUEAgentDashboard::PollConfirmationRequests()
+{
+	FString ConfirmRequestFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_confirm_request.json");
+	if (!FPaths::FileExists(ConfirmRequestFile))
+	{
+		return;
+	}
+
+	// 读取请求 JSON (UTF-8)
+	FString RequestJson;
+	TArray<uint8> RawBytes;
+	if (!FFileHelper::LoadFileToArray(RawBytes, *ConfirmRequestFile))
+	{
+		return;
+	}
+	FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
+	RequestJson = FString(Converter.Length(), Converter.Get());
+
+	// 解析 JSON
+	TSharedPtr<FJsonObject> JsonObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(RequestJson);
+	if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
+	{
+		return;
+	}
+
+	FString RiskLevel = JsonObj->GetStringField(TEXT("risk"));
+	FString CodePreview = JsonObj->GetStringField(TEXT("code_preview"));
+	const TArray<TSharedPtr<FJsonValue>>* OperationsArray = nullptr;
+	JsonObj->TryGetArrayField(TEXT("operations"), OperationsArray);
+
+	TArray<TSharedPtr<FJsonValue>> Operations;
+	if (OperationsArray)
+	{
+		Operations = *OperationsArray;
+	}
+
+	// 显示确认弹窗
+	ShowConfirmationDialog(RiskLevel, Operations, CodePreview);
+}
+
+void SUEAgentDashboard::ShowConfirmationDialog(
+	const FString& RiskLevel,
+	const TArray<TSharedPtr<FJsonValue>>& Operations,
+	const FString& CodePreview)
+{
+	bool bIsHighRisk = (RiskLevel == TEXT("high"));
+
+	// 构建操作列表文本
+	FString OpsText;
+	bool bHasBatch = false;
+	for (const auto& OpVal : Operations)
+	{
+		const TSharedPtr<FJsonObject>* OpObj = nullptr;
+		if (OpVal->TryGetObject(OpObj) && (*OpObj).IsValid())
+		{
+			FString OpName = (*OpObj)->GetStringField(TEXT("op"));
+			FString CallName = (*OpObj)->GetStringField(TEXT("call"));
+			int32 Line = (*OpObj)->GetIntegerField(TEXT("line"));
+			bool bInLoop = false;
+			(*OpObj)->TryGetBoolField(TEXT("in_loop"), bInLoop);
+
+			OpsText += FString::Printf(TEXT("  • L%d: %s  (%s)"), Line, *CallName, *OpName);
+			if (bInLoop)
+			{
+				OpsText += TEXT("  [LOOP]");
+				bHasBatch = true;
+			}
+			OpsText += TEXT("\n");
+		}
+	}
+
+	// 构建自定义弹窗 (SWindow + SVerticalBox)
+	// 支持复选框 "本次会话不再提示中风险操作"
+	TSharedRef<SWindow> ConfirmWindow = SNew(SWindow)
+		.Title(FUEAgentL10n::Get(TEXT("ConfirmTitle")))
+		.ClientSize(FVector2D(480, 360))
+		.SupportsMinimize(false)
+		.SupportsMaximize(false)
+		.SizingRule(ESizingRule::FixedSize)
+		.IsTopmostWindow(true);
+
+	TSharedPtr<SCheckBox> SessionSilentCheckBox;
+	bool bUserApproved = false;
+
+	ConfirmWindow->SetContent(
+		SNew(SVerticalBox)
+
+		// 风险等级标题
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 12.0f, 12.0f, 4.0f)
+		[
+			SNew(STextBlock)
+			.Text(bIsHighRisk
+				? FUEAgentL10n::Get(TEXT("ConfirmRiskHigh"))
+				: FUEAgentL10n::Get(TEXT("ConfirmRiskMedium")))
+			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+			.ColorAndOpacity(bIsHighRisk
+				? FSlateColor(FLinearColor(0.9f, 0.2f, 0.2f))
+				: FSlateColor(FLinearColor(0.9f, 0.7f, 0.2f)))
+		]
+
+		// 批量操作警告
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 2.0f, 12.0f, 4.0f)
+		[
+			SNew(STextBlock)
+			.Text(FUEAgentL10n::Get(TEXT("ConfirmBatchWarning")))
+			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+			.ColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.3f, 0.3f)))
+			.Visibility(bHasBatch ? EVisibility::Visible : EVisibility::Collapsed)
+		]
+
+		// "将执行以下操作:"
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 4.0f, 12.0f, 2.0f)
+		[
+			SNew(STextBlock)
+			.Text(FUEAgentL10n::Get(TEXT("ConfirmOperations")))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+		]
+
+		// 操作列表
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 0.0f, 12.0f, 8.0f)
+		[
+			SNew(SMultiLineEditableText)
+			.Text(FText::FromString(OpsText))
+			.Font(FCoreStyle::GetDefaultFontStyle("Mono", 9))
+			.AutoWrapText(true)
+			.IsReadOnly(true)
+			.AllowContextMenu(true)
+		]
+
+		// "代码预览:"
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 0.0f, 12.0f, 2.0f)
+		[
+			SNew(STextBlock)
+			.Text(FUEAgentL10n::Get(TEXT("ConfirmCodePreview")))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+		]
+
+		// 代码预览内容
+		+ SVerticalBox::Slot()
+		.FillHeight(1.0f)
+		.Padding(12.0f, 0.0f, 12.0f, 8.0f)
+		[
+			SNew(SScrollBox)
+			+ SScrollBox::Slot()
+			[
+				SNew(SMultiLineEditableText)
+				.Text(FText::FromString(CodePreview.Left(500)))
+				.Font(FCoreStyle::GetDefaultFontStyle("Mono", 8))
+				.AutoWrapText(true)
+				.IsReadOnly(true)
+				.AllowContextMenu(true)
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+			]
+		]
+
+		// 复选框: 本次会话不再提示 (仅非高风险时显示)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 0.0f, 12.0f, 8.0f)
+		[
+			SNew(SHorizontalBox)
+			.Visibility(!bIsHighRisk ? EVisibility::Visible : EVisibility::Collapsed)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+			[
+				SAssignNew(SessionSilentCheckBox, SCheckBox)
+			]
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(STextBlock)
+				.Text(FUEAgentL10n::Get(TEXT("ConfirmSessionSilent")))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
+			]
+		]
+
+		// 按钮行
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(12.0f, 0.0f, 12.0f, 12.0f)
+		.HAlign(HAlign_Right)
+		[
+			SNew(SHorizontalBox)
+
+			// 允许 按钮
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(FUEAgentL10n::Get(TEXT("ConfirmApprove")))
+				.ContentPadding(FMargin(16.0f, 6.0f))
+				.OnClicked_Lambda([&bUserApproved, ConfirmWindow]() -> FReply
+				{
+					bUserApproved = true;
+					ConfirmWindow->RequestDestroyWindow();
+					return FReply::Handled();
+				})
+			]
+
+			// 拒绝 按钮
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SButton)
+				.Text(FUEAgentL10n::Get(TEXT("ConfirmDeny")))
+				.ContentPadding(FMargin(16.0f, 6.0f))
+				.ButtonColorAndOpacity(FLinearColor(0.8f, 0.2f, 0.2f))
+				.OnClicked_Lambda([&bUserApproved, ConfirmWindow]() -> FReply
+				{
+					bUserApproved = false;
+					ConfirmWindow->RequestDestroyWindow();
+					return FReply::Handled();
+				})
+			]
+		]
+	);
+
+	// 模态弹窗 — 阻塞直到用户选择
+	FSlateApplication::Get().AddModalWindow(ConfirmWindow, FSlateApplication::Get().GetActiveTopLevelWindow());
+
+	// 检查复选框状态 (会话静默)
+	bool bSessionSilent = false;
+	if (SessionSilentCheckBox.IsValid() && SessionSilentCheckBox->IsChecked())
+	{
+		bSessionSilent = true;
+		// 写入会话静默标记文件 (Python 侧读取)
+		FString SilentFlagFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_silent_session.flag");
+		FFileHelper::SaveStringToFile(TEXT("1"), *SilentFlagFile);
+	}
+
+	// 写入确认结果
+	FString ResponseFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_confirm_response.json");
+	FString ResponseJson;
+	if (bSessionSilent)
+	{
+		ResponseJson = bUserApproved
+			? TEXT("{\"approved\":true,\"session_silent\":true}")
+			: TEXT("{\"approved\":false,\"session_silent\":false}");
+	}
+	else
+	{
+		ResponseJson = bUserApproved
+			? TEXT("{\"approved\":true}")
+			: TEXT("{\"approved\":false}");
+	}
+	FFileHelper::SaveStringToFile(ResponseJson, *ResponseFile,
+		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+}
+
+// ==================================================================
+// 静默模式 (阶段 5.7)
+// ==================================================================
+
+void SUEAgentDashboard::LoadSilentModeFromConfig()
+{
+	FString Home = FPlatformProcess::UserHomeDir();
+	FString ConfigPath = Home / TEXT(".artclaw/config.json");
+	if (!FPaths::FileExists(ConfigPath))
+	{
+		bSilentMode = false;
+		return;
+	}
+
+	FString Content;
+	if (!FFileHelper::LoadFileToString(Content, *ConfigPath))
+	{
+		bSilentMode = false;
+		return;
+	}
+
+	TSharedPtr<FJsonObject> JsonObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Content);
+	if (FJsonSerializer::Deserialize(Reader, JsonObj) && JsonObj.IsValid())
+	{
+		JsonObj->TryGetBoolField(TEXT("silent_mode"), bSilentMode);
+	}
+}
+
+void SUEAgentDashboard::SaveSilentModeToConfig(bool bNewSilentMode)
+{
+	FString Home = FPlatformProcess::UserHomeDir();
+	FString ConfigPath = Home / TEXT(".artclaw/config.json");
+
+	// 读取现有配置
+	TSharedPtr<FJsonObject> JsonObj;
+	if (FPaths::FileExists(ConfigPath))
+	{
+		FString Content;
+		if (FFileHelper::LoadFileToString(Content, *ConfigPath))
+		{
+			TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Content);
+			FJsonSerializer::Deserialize(Reader, JsonObj);
+		}
+	}
+
+	if (!JsonObj.IsValid())
+	{
+		JsonObj = MakeShared<FJsonObject>();
+	}
+
+	// 更新 silent_mode 字段
+	JsonObj->SetBoolField(TEXT("silent_mode"), bNewSilentMode);
+
+	// 确保 silent_mode_level 存在
+	if (!JsonObj->HasField(TEXT("silent_mode_level")))
+	{
+		JsonObj->SetStringField(TEXT("silent_mode_level"), TEXT("medium"));
+	}
+
+	// 写回文件
+	FString OutputStr;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputStr);
+	FJsonSerializer::Serialize(JsonObj.ToSharedRef(), Writer);
+
+	// 确保目录存在
+	FString Dir = FPaths::GetPath(ConfigPath);
+	IFileManager::Get().MakeDirectory(*Dir, true);
+
+	FFileHelper::SaveStringToFile(OutputStr, *ConfigPath,
+		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+}
+
+FReply SUEAgentDashboard::OnToggleSilentModeClicked()
+{
+	bSilentMode = !bSilentMode;
+	SaveSilentModeToConfig(bSilentMode);
+
+	// 如果关闭静默模式，同时清除会话静默标记
+	if (!bSilentMode)
+	{
+		FString SilentFlagFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_silent_session.flag");
+		IFileManager::Get().Delete(*SilentFlagFile, false, false, true);
+	}
+
+	return FReply::Handled();
 }
 
 #undef LOCTEXT_NAMESPACE

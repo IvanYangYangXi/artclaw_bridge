@@ -18,6 +18,7 @@ universal_proxy.py - 万能执行器 (Universal Proxy)
   - 核心机制 §3: 安全可逆执行，原子化操作
 """
 
+import os
 import sys
 import time
 import traceback
@@ -28,7 +29,7 @@ from typing import Any, Optional
 import unreal
 
 from init_unreal import UELogger
-from tools.static_guard import StaticGuard, RiskLevel, ScanResult
+from tools.static_guard import StaticGuard, RiskLevel, ScanResult, detect_file_operations
 
 
 # ============================================================================
@@ -36,6 +37,137 @@ from tools.static_guard import StaticGuard, RiskLevel, ScanResult
 # ============================================================================
 
 _execution_counter = 0
+
+
+# ============================================================================
+# 1b. 文件操作确认机制 (阶段 5.6 / 5.7)
+# ============================================================================
+
+# 会话级静默标记 (阶段 5.7)
+_session_silent_mode = False
+
+
+def _load_artclaw_config() -> dict:
+    """加载 ~/.artclaw/config.json 配置"""
+    try:
+        home = os.path.expanduser("~")
+        config_path = os.path.join(home, ".artclaw", "config.json")
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def _check_session_silent_flag() -> bool:
+    """检查临时会话静默标记文件 (C++ 弹窗复选框写入)"""
+    try:
+        flag_file = os.path.join(
+            unreal.Paths.project_saved_dir(), "UEAgent", "_silent_session.flag")
+        return os.path.exists(flag_file)
+    except Exception:
+        return False
+
+
+def _request_file_confirmation(operations: list, risk_level: str, code_preview: str) -> bool:
+    """
+    请求用户确认文件操作 (阶段 5.6)。
+
+    通过文件通信机制与 C++ 弹窗交互:
+    1. 写入 _confirm_request.json
+    2. 等待 C++ 写入 _confirm_response.json
+    3. 读取并返回结果
+
+    阶段 5.7: 静默模式检查
+    """
+    global _session_silent_mode
+
+    # --- 阶段 5.7: 静默模式检查 ---
+    config = _load_artclaw_config()
+    silent_mode = config.get("silent_mode", False)
+    silent_level = config.get("silent_mode_level", "medium")
+
+    if silent_mode:
+        if silent_level == "all":
+            UELogger.info(f"[FileOp] Silent mode (all): auto-approved {risk_level} operation")
+            return True
+        if silent_level == "medium" and risk_level == "medium":
+            UELogger.info(f"[FileOp] Silent mode (medium): auto-approved medium risk operation")
+            return True
+
+    # 临时会话静默 (弹窗复选框 或 Python 内存标记)
+    # 注意: C++ 侧 /new 会删除 _silent_session.flag，此处重新验证
+    if _session_silent_mode:
+        if _check_session_silent_flag():
+            if risk_level == "medium":
+                UELogger.info(f"[FileOp] Session silent: auto-approved medium risk operation")
+                return True
+        else:
+            # flag 文件已被删除 (新会话)，重置内存标记
+            _session_silent_mode = False
+    elif _check_session_silent_flag():
+        _session_silent_mode = True
+        if risk_level == "medium":
+            UELogger.info(f"[FileOp] Session silent (flag): auto-approved medium risk operation")
+            return True
+
+    # --- 正常弹窗确认流程 ---
+    try:
+        confirm_dir = os.path.join(unreal.Paths.project_saved_dir(), "UEAgent")
+        os.makedirs(confirm_dir, exist_ok=True)
+        request_file = os.path.join(confirm_dir, "_confirm_request.json")
+        response_file = os.path.join(confirm_dir, "_confirm_response.json")
+
+        # 清理旧的响应文件
+        if os.path.exists(response_file):
+            os.remove(response_file)
+
+        # 写入确认请求
+        request_data = {
+            "type": "confirm",
+            "risk": risk_level,
+            "operations": operations,
+            "code_preview": code_preview[:500],
+            "timestamp": time.time()
+        }
+        with open(request_file, 'w', encoding='utf-8') as f:
+            json.dump(request_data, f, ensure_ascii=False, indent=2)
+
+        UELogger.info(f"[FileOp] Confirmation requested: {risk_level} risk, {len(operations)} ops")
+
+        # 等待 C++ 侧写入响应 (最多 60 秒)
+        for _ in range(600):
+            if os.path.exists(response_file):
+                try:
+                    with open(response_file, 'r', encoding='utf-8') as f:
+                        response = json.load(f)
+                    os.remove(response_file)
+                    if os.path.exists(request_file):
+                        os.remove(request_file)
+
+                    approved = response.get("approved", False)
+
+                    # 检查是否设置了会话静默标记
+                    if response.get("session_silent", False):
+                        _session_silent_mode = True
+                        UELogger.info("[FileOp] Session silent mode activated via dialog checkbox")
+
+                    UELogger.info(f"[FileOp] User {'APPROVED' if approved else 'REJECTED'} {risk_level} operation")
+                    return approved
+                except (json.JSONDecodeError, IOError):
+                    pass  # 文件可能还在写入
+            time.sleep(0.1)
+
+        # 超时 = 拒绝
+        UELogger.warning("[FileOp] Confirmation timeout (60s) — operation rejected")
+        if os.path.exists(request_file):
+            os.remove(request_file)
+        return False
+
+    except Exception as e:
+        UELogger.error(f"[FileOp] Confirmation mechanism error: {e}")
+        return False
 
 
 # ============================================================================
@@ -234,6 +366,28 @@ def run_ue_python(arguments: dict) -> str:
                 })
     except ImportError:
         pass  # risk_confirmation 模块可能尚未加载
+
+    # --- 阶段 5.6: 文件操作弹窗确认 ---
+    file_op_risk = detect_file_operations(code)
+    if file_op_risk.needs_confirmation:
+        UELogger.info(f"[Exec #{exec_id}] File operation detected: {file_op_risk.risk_level} risk, "
+                      f"{len(file_op_risk.operations)} ops, batch={file_op_risk.is_batch}")
+        confirmed = _request_file_confirmation(
+            operations=file_op_risk.operations,
+            risk_level=file_op_risk.risk_level,
+            code_preview=file_op_risk.code_preview or code[:500],
+        )
+        if not confirmed:
+            UELogger.info(f"[Exec #{exec_id}] REJECTED file operation (risk: {file_op_risk.risk_level})")
+            return json.dumps({
+                "success": False,
+                "exec_id": exec_id,
+                "error": f"File operation rejected by user (risk: {file_op_risk.risk_level})",
+                "file_operations": file_op_risk.operations,
+                "output": "",
+                "result": None,
+                "execution_time": 0,
+            })
 
     # --- 准备执行环境 ---
     exec_globals = {"__builtins__": __builtins__}

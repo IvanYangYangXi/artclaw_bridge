@@ -34,6 +34,9 @@ public:
 	/** 取消当前正在进行的 AI 请求 */
 	virtual void CancelCurrentRequest() = 0;
 
+	/** 取消当前请求 (停止按钮调用，与 CancelCurrentRequest 等价) */
+	virtual void CancelRequest() = 0;
+
 	/**
 	 * 异步发送消息给 AI。
 	 * 平台实现将 AI 响应写入 ResponseFile，流式内容写入 StreamFile。
@@ -70,4 +73,16 @@ public:
 	 * 重置会话 (例如清除 session key)。
 	 */
 	virtual void ResetSession() = 0;
+
+	/**
+	 * 设置当前会话 key（用于会话切换）。
+	 * @param SessionKey  新的 session key
+	 */
+	virtual void SetSessionKey(const FString& SessionKey) = 0;
+
+	/**
+	 * 获取当前会话 key。
+	 * @return 当前活跃的 session key
+	 */
+	virtual FString GetSessionKey() const = 0;
 };

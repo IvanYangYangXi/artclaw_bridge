@@ -95,6 +95,10 @@ class OpenClawBridge:
         self.on_tool_call: Optional[Callable[[str, str, dict], None]] = None
         # 回调: 收到工具结果时 (tool_name, tool_id, content_text, is_error)
         self.on_tool_result: Optional[Callable[[str, str, str, bool], None]] = None
+        # 回调: 收到 token usage 更新时 (usage_dict)
+        self.on_usage_update: Optional[Callable[[dict], None]] = None
+        # 最新的 token usage 数据
+        self._last_usage: Optional[dict] = None
         # 当前活跃的 chat runId
         self._active_run_id: Optional[str] = None
         # 取消信号
@@ -194,6 +198,19 @@ class OpenClawBridge:
         """重置会话: 清空 session key，下次发消息时自动创建新 session。"""
         self._session_key = None
         self._log.info("OpenClaw Bridge: session reset")
+
+    def set_session_key(self, session_key: str):
+        """手动设置 session key（用于会话切换）"""
+        self._session_key = session_key
+        self._log.info(f"OpenClaw Bridge: session key set to {session_key}")
+
+    def get_session_key(self) -> str:
+        """获取当前 session key"""
+        return self._session_key or ""
+
+    def get_last_usage(self) -> dict:
+        """返回最近一次 AI 回复的 token usage 信息"""
+        return self._last_usage or {}
 
     async def _async_reset_session(self, session_key: str):
         """向 Gateway 发送 /new 重置指定 session（不走流式回调）。"""
@@ -444,6 +461,16 @@ class OpenClawBridge:
         text = ""
         thinking_text = ""
         if isinstance(message, dict):
+            # 提取 token usage 信息
+            usage = message.get("usage")
+            if usage and isinstance(usage, dict):
+                self._last_usage = usage
+                if self.on_usage_update:
+                    try:
+                        self.on_usage_update(usage)
+                    except Exception:
+                        pass
+
             content = message.get("content", "")
             if isinstance(content, list):
                 text_parts = []
