@@ -345,13 +345,13 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 							}
 							return OnSendClicked();
 						})
-						.ButtonColorAndOpacity_Lambda([this]() -> FLinearColor {
+						.ButtonColorAndOpacity(TAttribute<FLinearColor>::CreateLambda([this]() -> FLinearColor {
 							if (bIsWaitingForResponse)
 							{
 								return FLinearColor(0.8f, 0.2f, 0.2f); // 红色停止
 							}
 							return FLinearColor(1.0f, 1.0f, 1.0f); // 默认白色
-						})
+						}))
 						.ContentPadding(FMargin(6.0f, 4.0f))
 					]
 				]
@@ -460,11 +460,11 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					})
 					.OnClicked(this, &SUEAgentDashboard::OnToggleSilentModeClicked)
 					.ContentPadding(FMargin(4.0f, 1.0f))
-					.ButtonColorAndOpacity_Lambda([this]() -> FLinearColor {
+					.ButtonColorAndOpacity(TAttribute<FLinearColor>::CreateLambda([this]() -> FLinearColor {
 						return bSilentMode
 							? FLinearColor(0.2f, 0.6f, 0.2f) // 绿色 = 开
 							: FLinearColor(1.0f, 1.0f, 1.0f); // 默认
-					})
+					}))
 				]
 
 				// Plan 模式切换按钮 (任务 5.9)
@@ -482,11 +482,11 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					})
 					.OnClicked(this, &SUEAgentDashboard::OnTogglePlanModeClicked)
 					.ContentPadding(FMargin(4.0f, 1.0f))
-					.ButtonColorAndOpacity_Lambda([this]() -> FLinearColor {
+					.ButtonColorAndOpacity(TAttribute<FLinearColor>::CreateLambda([this]() -> FLinearColor {
 						return bPlanMode
 							? FLinearColor(0.3f, 0.5f, 0.9f) // 蓝色 = Plan 开
 							: FLinearColor(1.0f, 1.0f, 1.0f); // 默认
-					})
+					}))
 				]
 
 				// 弹性间距
