@@ -388,17 +388,23 @@ private:
 
 	// --- 静默模式 (阶段 5.7) ---
 
-	/** 当前静默模式状态 (从 config.json 同步) */
-	bool bSilentMode = false;
+	/** 中风险静默 (从 config.json 同步) */
+	bool bSilentMedium = false;
 
-	/** 读取 ~/.artclaw/config.json 中的 silent_mode 值 */
+	/** 高风险静默 (从 config.json 同步) */
+	bool bSilentHigh = false;
+
+	/** 读取 ~/.artclaw/config.json 中的静默模式配置 */
 	void LoadSilentModeFromConfig();
 
-	/** 更新 ~/.artclaw/config.json 中的 silent_mode 值 */
-	void SaveSilentModeToConfig(bool bNewSilentMode);
+	/** 更新 ~/.artclaw/config.json 中的静默模式配置 */
+	void SaveSilentModeToConfig();
 
-	/** 静默模式切换按钮回调 */
-	FReply OnToggleSilentModeClicked();
+	/** 中风险静默切换按钮回调 */
+	FReply OnToggleSilentMediumClicked();
+
+	/** 高风险静默切换按钮回调 */
+	FReply OnToggleSilentHighClicked();
 
 	static constexpr int32 MaxMessages = 500;
 };

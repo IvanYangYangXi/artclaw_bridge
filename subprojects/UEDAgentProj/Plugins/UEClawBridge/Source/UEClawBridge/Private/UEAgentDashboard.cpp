@@ -444,6 +444,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				]
 
 				// 静默模式切换按钮 (阶段 5.7)
+				// 中风险静默按钮
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
@@ -451,19 +452,43 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				[
 					SNew(SButton)
 					.Text_Lambda([this]() {
-						return bSilentMode
-							? FUEAgentL10n::Get(TEXT("SilentModeOn"))
-							: FUEAgentL10n::Get(TEXT("SilentModeOff"));
+						return bSilentMedium
+							? FUEAgentL10n::Get(TEXT("SilentMediumOn"))
+							: FUEAgentL10n::Get(TEXT("SilentMediumOff"));
 					})
 					.ToolTipText_Lambda([]() {
-						return FUEAgentL10n::Get(TEXT("SilentModeTip"));
+						return FUEAgentL10n::Get(TEXT("SilentMediumTip"));
 					})
-					.OnClicked(this, &SUEAgentDashboard::OnToggleSilentModeClicked)
+					.OnClicked(this, &SUEAgentDashboard::OnToggleSilentMediumClicked)
 					.ContentPadding(FMargin(4.0f, 1.0f))
 					.ButtonColorAndOpacity(TAttribute<FLinearColor>::CreateLambda([this]() -> FLinearColor {
-						return bSilentMode
-							? FLinearColor(0.2f, 0.6f, 0.2f) // 绿色 = 开
-							: FLinearColor(1.0f, 1.0f, 1.0f); // 默认
+						return bSilentMedium
+							? FLinearColor(0.2f, 0.6f, 0.2f)
+							: FLinearColor(1.0f, 1.0f, 1.0f);
+					}))
+				]
+
+				// 高风险静默按钮
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text_Lambda([this]() {
+						return bSilentHigh
+							? FUEAgentL10n::Get(TEXT("SilentHighOn"))
+							: FUEAgentL10n::Get(TEXT("SilentHighOff"));
+					})
+					.ToolTipText_Lambda([]() {
+						return FUEAgentL10n::Get(TEXT("SilentHighTip"));
+					})
+					.OnClicked(this, &SUEAgentDashboard::OnToggleSilentHighClicked)
+					.ContentPadding(FMargin(4.0f, 1.0f))
+					.ButtonColorAndOpacity(TAttribute<FLinearColor>::CreateLambda([this]() -> FLinearColor {
+						return bSilentHigh
+							? FLinearColor(0.8f, 0.3f, 0.3f)
+							: FLinearColor(1.0f, 1.0f, 1.0f);
 					}))
 				]
 
@@ -3911,14 +3936,16 @@ void SUEAgentDashboard::LoadSilentModeFromConfig()
 	FString ConfigPath = Home / TEXT(".artclaw/config.json");
 	if (!FPaths::FileExists(ConfigPath))
 	{
-		bSilentMode = false;
+		bSilentMedium = false;
+		bSilentHigh = false;
 		return;
 	}
 
 	FString Content;
 	if (!FFileHelper::LoadFileToString(Content, *ConfigPath))
 	{
-		bSilentMode = false;
+		bSilentMedium = false;
+		bSilentHigh = false;
 		return;
 	}
 
@@ -3926,11 +3953,12 @@ void SUEAgentDashboard::LoadSilentModeFromConfig()
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Content);
 	if (FJsonSerializer::Deserialize(Reader, JsonObj) && JsonObj.IsValid())
 	{
-		JsonObj->TryGetBoolField(TEXT("silent_mode"), bSilentMode);
+		JsonObj->TryGetBoolField(TEXT("silent_mode_medium"), bSilentMedium);
+		JsonObj->TryGetBoolField(TEXT("silent_mode_high"), bSilentHigh);
 	}
 }
 
-void SUEAgentDashboard::SaveSilentModeToConfig(bool bNewSilentMode)
+void SUEAgentDashboard::SaveSilentModeToConfig()
 {
 	FString Home = FPlatformProcess::UserHomeDir();
 	FString ConfigPath = Home / TEXT(".artclaw/config.json");
@@ -3952,14 +3980,13 @@ void SUEAgentDashboard::SaveSilentModeToConfig(bool bNewSilentMode)
 		JsonObj = MakeShared<FJsonObject>();
 	}
 
-	// 更新 silent_mode 字段
-	JsonObj->SetBoolField(TEXT("silent_mode"), bNewSilentMode);
+	// 更新静默模式字段 (中/高分开)
+	JsonObj->SetBoolField(TEXT("silent_mode_medium"), bSilentMedium);
+	JsonObj->SetBoolField(TEXT("silent_mode_high"), bSilentHigh);
 
-	// 确保 silent_mode_level 存在
-	if (!JsonObj->HasField(TEXT("silent_mode_level")))
-	{
-		JsonObj->SetStringField(TEXT("silent_mode_level"), TEXT("medium"));
-	}
+	// 清理旧字段
+	JsonObj->RemoveField(TEXT("silent_mode"));
+	JsonObj->RemoveField(TEXT("silent_mode_level"));
 
 	// 写回文件
 	FString OutputStr;
@@ -3974,18 +4001,24 @@ void SUEAgentDashboard::SaveSilentModeToConfig(bool bNewSilentMode)
 		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 }
 
-FReply SUEAgentDashboard::OnToggleSilentModeClicked()
+FReply SUEAgentDashboard::OnToggleSilentMediumClicked()
 {
-	bSilentMode = !bSilentMode;
-	SaveSilentModeToConfig(bSilentMode);
+	bSilentMedium = !bSilentMedium;
+	SaveSilentModeToConfig();
 
-	// 如果关闭静默模式，同时清除会话静默标记
-	if (!bSilentMode)
+	if (!bSilentMedium)
 	{
 		FString SilentFlagFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_silent_session.flag");
 		IFileManager::Get().Delete(*SilentFlagFile, false, false, true);
 	}
 
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnToggleSilentHighClicked()
+{
+	bSilentHigh = !bSilentHigh;
+	SaveSilentModeToConfig();
 	return FReply::Handled();
 }
 

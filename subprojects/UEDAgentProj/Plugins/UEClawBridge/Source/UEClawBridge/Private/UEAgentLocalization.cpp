@@ -305,11 +305,14 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("ConfirmSessionSilent"),   TEXT("本次会话不再提示中风险操作"),   TEXT("Don't ask again for medium risk operations this session"));
 
 	// ==================================================================
-	// 静默模式 (阶段 5.7)
+	// 静默模式 (阶段 5.7) — 中/高风险分开控制
 	// ==================================================================
-	Reg(TEXT("SilentModeOn"),           TEXT("静默: 开"),                    TEXT("Silent: On"));
-	Reg(TEXT("SilentModeOff"),          TEXT("静默: 关"),                    TEXT("Silent: Off"));
-	Reg(TEXT("SilentModeTip"),          TEXT("静默模式: 中风险操作自动通过"), TEXT("Silent mode: auto-approve medium risk operations"));
+	Reg(TEXT("SilentMediumOn"),         TEXT("中风险静默: 开"),              TEXT("Med Silent: On"));
+	Reg(TEXT("SilentMediumOff"),        TEXT("中风险静默: 关"),              TEXT("Med Silent: Off"));
+	Reg(TEXT("SilentMediumTip"),        TEXT("中风险静默: 文件修改/移动操作自动通过"), TEXT("Medium risk silent: auto-approve file modify/move operations"));
+	Reg(TEXT("SilentHighOn"),           TEXT("高风险静默: 开"),              TEXT("High Silent: On"));
+	Reg(TEXT("SilentHighOff"),          TEXT("高风险静默: 关"),              TEXT("High Silent: Off"));
+	Reg(TEXT("SilentHighTip"),          TEXT("高风险静默: 文件删除/批量操作自动通过"), TEXT("High risk silent: auto-approve file delete/batch operations"));
 }
 
 FText FUEAgentL10n::Get(const FString& Key)

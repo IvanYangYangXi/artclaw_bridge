@@ -83,18 +83,18 @@ def _request_file_confirmation(operations: list, risk_level: str, code_preview: 
     """
     global _session_silent_mode
 
-    # --- 阶段 5.7: 静默模式检查 ---
+    # --- 阶段 5.7: 静默模式检查 (中/高风险分开控制) ---
     config = _load_artclaw_config()
-    silent_mode = config.get("silent_mode", False)
-    silent_level = config.get("silent_mode_level", "medium")
+    silent_medium = config.get("silent_mode_medium", False)
+    silent_high = config.get("silent_mode_high", False)
 
-    if silent_mode:
-        if silent_level == "all":
-            UELogger.info(f"[FileOp] Silent mode (all): auto-approved {risk_level} operation")
-            return True
-        if silent_level == "medium" and risk_level == "medium":
-            UELogger.info(f"[FileOp] Silent mode (medium): auto-approved medium risk operation")
-            return True
+    # 全局静默: 按风险等级独立判断
+    if risk_level == "medium" and silent_medium:
+        UELogger.info(f"[FileOp] Silent mode: auto-approved medium risk operation")
+        return True
+    if risk_level == "high" and silent_high:
+        UELogger.info(f"[FileOp] Silent mode: auto-approved high risk operation")
+        return True
 
     # 临时会话静默 (弹窗复选框 或 Python 内存标记)
     # 注意: C++ 侧 /new 会删除 _silent_session.flag，此处重新验证
