@@ -1,6 +1,7 @@
 // Copyright ArtClaw Project. All Rights Reserved.
 
 #include "OpenClawPlatformBridge.h"
+#include "CoreMinimal.h"
 #include "IPythonScriptPlugin.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"

@@ -209,7 +209,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					SNew(STextBlock)
 					.Text(this, &SUEAgentDashboard::GetStatusSummaryText)
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-					.ColorAndOpacity(this, &SUEAgentDashboard::GetConnectionStatusColor)
+					.ColorAndOpacity_Lambda([this]() { return GetConnectionStatusColor(); })
 				]
 			]
 			.BodyContent()
@@ -345,12 +345,12 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 							}
 							return OnSendClicked();
 						})
-						.ButtonColorAndOpacity(TAttribute<FLinearColor>::CreateLambda([this]() -> FLinearColor {
+						.ButtonColorAndOpacity(TAttribute<FSlateColor>::CreateLambda([this]() -> FSlateColor {
 							if (bIsWaitingForResponse)
 							{
-								return FLinearColor(0.8f, 0.2f, 0.2f); // 红色停止
+								return FSlateColor(FLinearColor(0.8f, 0.2f, 0.2f)); // 红色停止
 							}
-							return FLinearColor(1.0f, 1.0f, 1.0f); // 默认白色
+							return FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f)); // 默认白色
 						}))
 						.ContentPadding(FMargin(6.0f, 4.0f))
 					]
@@ -451,7 +451,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SNew(SButton)
-					.Text_Lambda([this]() {
+					.Text_Lambda([this]() -> FText {
 						return bSilentMedium
 							? FUEAgentL10n::Get(TEXT("SilentMediumOn"))
 							: FUEAgentL10n::Get(TEXT("SilentMediumOff"));
@@ -461,10 +461,10 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					})
 					.OnClicked(this, &SUEAgentDashboard::OnToggleSilentMediumClicked)
 					.ContentPadding(FMargin(4.0f, 1.0f))
-					.ButtonColorAndOpacity(TAttribute<FLinearColor>::CreateLambda([this]() -> FLinearColor {
+					.ButtonColorAndOpacity(TAttribute<FSlateColor>::CreateLambda([this]() -> FSlateColor {
 						return bSilentMedium
-							? FLinearColor(0.2f, 0.6f, 0.2f)
-							: FLinearColor(1.0f, 1.0f, 1.0f);
+							? FSlateColor(FLinearColor(0.2f, 0.6f, 0.2f))
+							: FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f));
 					}))
 				]
 
@@ -475,7 +475,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SNew(SButton)
-					.Text_Lambda([this]() {
+					.Text_Lambda([this]() -> FText {
 						return bSilentHigh
 							? FUEAgentL10n::Get(TEXT("SilentHighOn"))
 							: FUEAgentL10n::Get(TEXT("SilentHighOff"));
@@ -485,10 +485,10 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					})
 					.OnClicked(this, &SUEAgentDashboard::OnToggleSilentHighClicked)
 					.ContentPadding(FMargin(4.0f, 1.0f))
-					.ButtonColorAndOpacity(TAttribute<FLinearColor>::CreateLambda([this]() -> FLinearColor {
+					.ButtonColorAndOpacity(TAttribute<FSlateColor>::CreateLambda([this]() -> FSlateColor {
 						return bSilentHigh
-							? FLinearColor(0.8f, 0.3f, 0.3f)
-							: FLinearColor(1.0f, 1.0f, 1.0f);
+							? FSlateColor(FLinearColor(0.8f, 0.3f, 0.3f))
+							: FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f));
 					}))
 				]
 
@@ -499,7 +499,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SNew(SButton)
-					.Text_Lambda([this]() {
+					.Text_Lambda([this]() -> FText {
 						return GetPlanModeButtonText();
 					})
 					.ToolTipText_Lambda([]() {
@@ -507,10 +507,10 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					})
 					.OnClicked(this, &SUEAgentDashboard::OnTogglePlanModeClicked)
 					.ContentPadding(FMargin(4.0f, 1.0f))
-					.ButtonColorAndOpacity(TAttribute<FLinearColor>::CreateLambda([this]() -> FLinearColor {
+					.ButtonColorAndOpacity(TAttribute<FSlateColor>::CreateLambda([this]() -> FSlateColor {
 						return bPlanMode
-							? FLinearColor(0.3f, 0.5f, 0.9f) // 蓝色 = Plan 开
-							: FLinearColor(1.0f, 1.0f, 1.0f); // 默认
+							? FSlateColor(FLinearColor(0.3f, 0.5f, 0.9f)) // 蓝色 = Plan 开
+							: FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f)); // 默认
 					}))
 				]
 
@@ -1579,15 +1579,13 @@ void SUEAgentDashboard::RebuildMessageList()
 						.AutoHeight()
 						.Padding(20.0f, 2.0f, 0.0f, 2.0f)
 						[
-							SNew(SMultiLineEditableText)
+							SNew(STextBlock)
 							.Text(FText::FromString(
 								Msg.ToolArguments.IsEmpty()
 									? TEXT("(no arguments)")
 									: Msg.ToolArguments))
 							.Font(FCoreStyle::GetDefaultFontStyle("Mono", 8))
 							.AutoWrapText(true)
-							.IsReadOnly(true)
-							.AllowContextMenu(true)
 							.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
 						]
 
@@ -1599,12 +1597,10 @@ void SUEAgentDashboard::RebuildMessageList()
 							SNew(SBox)
 							.Visibility(bHasResult ? EVisibility::Visible : EVisibility::Collapsed)
 							[
-								SNew(SMultiLineEditableText)
+								SNew(STextBlock)
 								.Text(FText::FromString(Msg.ToolResult.Left(1000)))
 								.Font(FCoreStyle::GetDefaultFontStyle("Mono", 8))
 								.AutoWrapText(true)
-								.IsReadOnly(true)
-								.AllowContextMenu(true)
 								.ColorAndOpacity(bIsError
 									? FSlateColor(FLinearColor(0.9f, 0.4f, 0.4f))
 									: FSlateColor(FLinearColor(0.5f, 0.7f, 0.5f)))
@@ -3817,12 +3813,10 @@ void SUEAgentDashboard::ShowConfirmationDialog(
 			SNew(SScrollBox)
 			+ SScrollBox::Slot()
 			[
-				SNew(SMultiLineEditableText)
+				SNew(STextBlock)
 				.Text(FText::FromString(CodePreview.Left(500)))
 				.Font(FCoreStyle::GetDefaultFontStyle("Mono", 8))
 				.AutoWrapText(true)
-				.IsReadOnly(true)
-				.AllowContextMenu(true)
 				.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
 			]
 		]
