@@ -3616,7 +3616,7 @@ FReply SUEAgentDashboard::OnManageClicked()
 	// 打开管理面板为独立窗口
 	TSharedRef<SWindow> ManageWindow = SNew(SWindow)
 		.Title(FUEAgentL10n::Get(TEXT("ManageWindowTitle")))
-		.ClientSize(FVector2D(520.0f, 480.0f))
+		.ClientSize(FVector2D(720.0f, 520.0f))
 		.SupportsMinimize(false)
 		.SupportsMaximize(false)
 		[

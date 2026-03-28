@@ -204,8 +204,8 @@ void SUEAgentSkillTab::ParseSkillList(const FString& JsonStr)
 		else
 			E->InstallStatus = EInstallStatus::Full;
 
-		// 源码版本（可更新时有值）
-		E->SourcePath = Obj->GetStringField(TEXT("source_version"));
+		// 源码版本（可更新时有值）- 使用 TryGetStringField 避免字段不存在时崩溃
+		Obj->TryGetStringField(TEXT("source_version"), E->SourcePath);
 
 		AllSkills.Add(E);
 	}
