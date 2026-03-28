@@ -321,9 +321,10 @@ def _enrich_with_briefing(message: str) -> str:
             "约束规则:\n"
             "1. 所有操作默认使用 mcp_ue-editor-agent_ 前缀的工具\n"
             "2. 获取编辑器上下文请用 mcp_ue-editor-agent_run_ue_python 的 get_context=true\n"
-            "3. 禁止调用其他软件的工具（mcp_maya-primary_、mcp_max-primary_），"
-            "除非用户明确要求操作其他软件\n"
-            "4. 如需操作其他软件，对应前缀: mcp_maya-primary_（Maya）、mcp_max-primary_（Max）"
+            "3. 仅在当前软件内操作时，不要调用其他软件的工具\n"
+            "4. 当任务涉及其他软件时（如从 Maya 导出模型到 UE、查看 Max 场景等），"
+            "应主动使用对应软件的工具完成跨软件协作\n"
+            "5. 其他软件工具前缀: mcp_maya-primary_（Maya）、mcp_max-primary_（Max）"
         )
         _context_injected = True
 

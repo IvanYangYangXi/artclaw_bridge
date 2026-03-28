@@ -238,8 +238,10 @@ class DCCBridgeManager:
                         f"约束规则:\n"
                         f"1. 所有操作默认使用 {my_prefix} 前缀的工具\n"
                         f"2. 获取编辑器上下文请用 {my_prefix}run_python 的 get_context=true\n"
-                        f"3. 禁止调用其他软件的工具，除非用户明确要求操作其他软件\n"
-                        f"4. 如需操作其他软件，对应前缀: {other_tools}"
+                        f"3. 仅在当前软件内操作时，不要调用其他软件的工具\n"
+                        f"4. 当任务涉及其他软件时（如导入导出、跨软件查看等），"
+                        f"应主动使用对应软件的工具完成跨软件协作\n"
+                        f"5. 其他软件工具前缀: {other_tools}"
                     )
                     self._context_injected = True
             except Exception:
