@@ -11,7 +11,7 @@
 class IAgentPlatformBridge;
 class UUEAgentSubsystem;
 class SScrollBox;
-class SMultiLineEditableTextBox;
+#include "Widgets/Input/SMultiLineEditableTextBox.h"
 class SMenuAnchor;
 class SCheckBox;
 class SExpandableArea;

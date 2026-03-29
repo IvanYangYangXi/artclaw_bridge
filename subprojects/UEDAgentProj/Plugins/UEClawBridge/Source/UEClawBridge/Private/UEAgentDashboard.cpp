@@ -8,15 +8,16 @@
 #include "OpenClawPlatformBridge.h"
 #include "Editor.h"
 
-// 模块化拆分 - 包含各功能模块
-#include "UEAgentDashboard_StatusBar.cpp"
-#include "UEAgentDashboard_Chat.cpp"
-#include "UEAgentDashboard_OpenClawBridge.cpp"
-#include "UEAgentDashboard_QuickInput.cpp"
-#include "UEAgentDashboard_Session.cpp"
-#include "UEAgentDashboard_Plan.cpp"
-#include "UEAgentDashboard_System.cpp"
-#include "UEAgentDashboard_Main.cpp"
+// 模块化拆分 - 包含各功能模块 (使用 _impl.h 后缀避免被 UE 编译系统当作独立编译单元)
+#include "UEAgentDashboard_StatusBar_impl.h"
+#include "UEAgentDashboard_Chat_impl.h"
+#include "UEAgentDashboard_MessageList_impl.h"
+#include "UEAgentDashboard_OpenClawBridge_impl.h"
+#include "UEAgentDashboard_QuickInput_impl.h"
+#include "UEAgentDashboard_Session_impl.h"
+#include "UEAgentDashboard_Plan_impl.h"
+#include "UEAgentDashboard_System_impl.h"
+#include "UEAgentDashboard_Main_impl.h"
 
 #define LOCTEXT_NAMESPACE "UEAgentDashboard"
 

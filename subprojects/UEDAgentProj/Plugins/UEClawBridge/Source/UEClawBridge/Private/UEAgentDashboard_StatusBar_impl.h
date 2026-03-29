@@ -28,6 +28,7 @@
 #include "Misc/FileHelper.h"
 #include "Dom/JsonValue.h"
 #include "Serialization/JsonWriter.h"
+#include "HAL/PlatformProcess.h"
 
 #define LOCTEXT_NAMESPACE "UEAgentDashboard"
 
@@ -81,9 +82,9 @@ FText SUEAgentDashboard::GetStatsText() const
 		Connections = CachedSubsystem->GetClientCount();
 	}
 	FString FormatStr = FUEAgentL10n::GetStr(TEXT("StatsFormat"));
-	FStringFormatOrderedArguments Args;
-	Args.Add(Connections);
-	Args.Add(Messages.Num());
+	TArray<FStringFormatArg> Args;
+	Args.Add(FStringFormatArg(Connections));
+	Args.Add(FStringFormatArg(Messages.Num()));
 	return FText::FromString(FString::Format(*FormatStr, Args));
 }
 
@@ -102,9 +103,9 @@ FText SUEAgentDashboard::GetStatusSummaryText() const
 		// 格式化 token 数为 K 单位
 		auto FormatK = [](int32 Tokens) -> FString
 		{
-			if (Tokens >= 1'000)
+			if (Tokens >= 1000)
 			{
-				return FString::Printf(TEXT("%dK"), FMath::RoundToInt32(Tokens / 1'000.0f));
+				return FString::Printf(TEXT("%dK"), FMath::RoundToInt32(Tokens / 1000.0f));
 			}
 			return FString::Printf(TEXT("%d"), Tokens);
 		};

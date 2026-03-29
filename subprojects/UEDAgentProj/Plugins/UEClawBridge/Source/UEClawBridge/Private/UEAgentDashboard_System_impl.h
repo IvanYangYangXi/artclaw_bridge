@@ -6,6 +6,7 @@
 #include "UEAgentManagePanel.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
@@ -27,7 +28,7 @@ FReply SUEAgentDashboard::OnCreateSkillClicked()
 	{
 		FString GuideText = TEXT("I want to create a new skill that can help me with UE editor tasks. Please guide me through the process.");
 		InputTextBox->SetText(FText::FromString(GuideText));
-		InputTextBox->SetFocus();
+		FSlateApplication::Get().SetKeyboardFocus(InputTextBox);
 	}
 	return FReply::Handled();
 }

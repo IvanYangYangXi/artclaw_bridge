@@ -2,7 +2,7 @@
 
 #include "UEAgentDashboard.h"
 #include "UEAgentLocalization.h"
-#include "Widgets/Input/SButton. h"
+#include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"

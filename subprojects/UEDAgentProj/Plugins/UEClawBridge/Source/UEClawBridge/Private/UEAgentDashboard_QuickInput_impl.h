@@ -6,9 +6,11 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Layout/SWrapBox.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
+#include "Dom/JsonValue.h"
 #include "Misc/FileHelper.h"
 
 #define LOCTEXT_NAMESPACE "UEAgentDashboard"
@@ -82,7 +84,7 @@ void SUEAgentDashboard::SaveQuickInputs()
 		InputObj->SetStringField(TEXT("id"), Input.Id);
 		InputObj->SetStringField(TEXT("name"), Input.Name);
 		InputObj->SetStringField(TEXT("content"), Input.Content);
-		InputsArray.Add(MakeShared<FJsonValue>(InputObj));
+		InputsArray.Add(MakeShared<FJsonValueObject>(InputObj));
 	}
 
 	RootObj->SetArrayField(TEXT("quickInputs"), InputsArray);
@@ -134,7 +136,7 @@ FReply SUEAgentDashboard::OnQuickInputClicked(int32 Index)
 
 	FString Content = QuickInputs[Index].Content;
 	InputTextBox->SetText(FText::FromString(Content));
-	InputTextBox->SetFocus();
+	FSlateApplication::Get().SetKeyboardFocus(InputTextBox);
 
 	return FReply::Handled();
 }

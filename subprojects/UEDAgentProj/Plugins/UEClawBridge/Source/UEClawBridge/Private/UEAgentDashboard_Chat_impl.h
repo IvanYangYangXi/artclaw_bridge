@@ -9,6 +9,7 @@
 #include "Editor.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Text/SMultiLineEditableText.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Input/SMenuAnchor.h"
@@ -403,7 +404,7 @@ void SUEAgentDashboard::OnSlashCommandSelected(FSlashCommandPtr Item, ESelectInf
 		FString FullInput = InputTextBox->GetText().ToString();
 		if (FullInput.StartsWith(Cmd))
 		{
-			InputArgs = FullInput.Mid(Cmd.Len()).TrimStartAndTrimEnd();
+			InputArgs = FullInput.Mid(Cmd.Len()).TrimStartAndEnd();
 		}
 	}
 
@@ -675,33 +676,4 @@ FReply SUEAgentDashboard::OnToggleToolCollapse(int32 MessageIndex)
 		RebuildMessageList();
 	}
 	return FReply::Handled();
-}
-
-FSlateColor SUEAgentDashboard::GetSenderColor(const FString& Sender) const
-{
-	if (Sender == TEXT("user"))
-	{
-		return FSlateColor(FLinearColor(0.85f, 0.85f, 0.85f)); // 白色
-	}
-	if (Sender == TEXT("assistant"))
-	{
-		return FSlateColor(FLinearColor(0.4f, 0.75f, 1.0f)); // 蓝色
-	}
-	if (Sender == TEXT("system"))
-	{
-		return FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)); // 灰色
-	}
-	if (Sender == TEXT("tool_call"))
-	{
-		return FSlateColor(FLinearColor(0.9f, 0.8f, 0.4f)); // 黄色
-	}
-	if (Sender == TEXT("tool_result") || Sender == TEXT("tool_error"))
-	{
-		return FSlateColor(FLinearColor(0.5f, 0.8f, 0.5f)); // 绿色
-	}
-	if (Sender == TEXT("thinking") || Sender == TEXT("streaming"))
-	{
-		return FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)); // 灰色
-	}
-	return FSlateColor(FLinearColor::White);
 }
