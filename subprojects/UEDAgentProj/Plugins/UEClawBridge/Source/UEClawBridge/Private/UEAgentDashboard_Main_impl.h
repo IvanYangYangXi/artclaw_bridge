@@ -218,14 +218,13 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		SNew(SSeparator)
 	];
 
-	// --- 快捷输入栏（位于消息列表下方、工具栏上方）---
+	// --- 快捷输入栏（可折叠，位于消息列表下方、工具栏上方）---
 	MainVBox->AddSlot()
 	.AutoHeight()
 	.Padding(6.0f, 4.0f)
 	[
-		SNew(SVerticalBox)
-		+ SVerticalBox::Slot()
-		.AutoHeight()
+		SAssignNew(QuickInputExpandableArea, SExpandableArea)
+		.HeaderContent()
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -253,12 +252,16 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				.ContentPadding(FMargin(6.0f, 2.0f))
 			]
 		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+		.BodyContent()
 		[
-			SAssignNew(QuickInputWrapBox, SWrapBox)
+			SNew(SBorder)
+			.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
+			.Padding(FMargin(0.0f, 4.0f, 0.0f, 0.0f))
+			[
+				SAssignNew(QuickInputWrapBox, SWrapBox)
+			]
 		]
+		.InitiallyCollapsed(true)
 	];
 
 	// --- 分隔线 ---
@@ -304,17 +307,27 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		.VAlign(VAlign_Center)
 		[
 			SNew(SButton)
+			.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ManageBtn")); })
+			.OnClicked(this, &SUEAgentDashboard::OnManageClicked)
+			.ToolTipText(FUEAgentL10n::Get(TEXT("ManageTip")))
+			.ContentPadding(FMargin(6.0f, 2.0f))
+		]
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		[
+			SNew(SSpacer)
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(SButton)
 			.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("StopBtn")); })
 			.OnClicked(this, &SUEAgentDashboard::OnStopClicked)
 			.ToolTipText(FUEAgentL10n::Get(TEXT("StopTip")))
 			.IsEnabled_Lambda([this]() { return bIsWaitingForResponse; })
 			.ContentPadding(FMargin(6.0f, 2.0f))
 			.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.3f, 0.3f)))
-		]
-		+ SHorizontalBox::Slot()
-		.FillWidth(1.0f)
-		[
-			SNew(SSpacer)
 		]
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
