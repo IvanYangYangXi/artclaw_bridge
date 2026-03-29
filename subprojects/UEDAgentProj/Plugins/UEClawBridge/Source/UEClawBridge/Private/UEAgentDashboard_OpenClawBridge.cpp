@@ -1,0 +1,433 @@
+// Copyright ArtClaw Project. All Rights Reserved. OpenClaw桥接模块 - 连接管理、环境上下文发送、流式响应处理
+
+#include "UEAgentDashboard.h"
+#include "UEAgentSubsystem.h"
+#include "UEAgentLocalization.h"
+#include "IAgentPlatformBridge.h"
+#include "OpenClawPlatformBridge.h"
+#include "IPythonScriptPlugin.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+#include "Dom/JsonObject.h"
+#include "Misc/FileHelper.h"
+#include "Dom/JsonValue.h"
+#include "Serialization/JsonWriter.h"
+#include "HAL/PlatformProcess.h"
+
+#define LOCTEXT_NAMESPACE "UEAgentDashboard"
+
+// ==================================================================
+// OpenClaw Bridge 连接管理
+// ==================================================================
+
+void SUEAgentDashboard::ConnectOpenClawBridge()
+{
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("Connecting")));
+
+	// 通过平台桥接连接
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString StatusFile = TempDir / TEXT("_connect_status.txt");
+	IFileManager::Get().Delete(*StatusFile, false, false, true);
+
+	PlatformBridge->Connect(StatusFile);
+
+	// 轮询连接结果
+	auto Self = SharedThis(this);
+	FString CapturedFile = StatusFile;
+	FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([Self, CapturedFile](float) -> bool
+		{
+			if (!FPaths::FileExists(CapturedFile))
+			{
+				return true;
+			}
+
+			FString Status;
+			FFileHelper::LoadFileToString(Status, *CapturedFile);
+			IFileManager::Get().Delete(*CapturedFile, false, false, true);
+			Status.TrimStartAndEndInline();
+
+			if (Status == TEXT("ok"))
+			{
+				// 立即更新 Subsystem 状态（不等 _bridge_status.json 轮询）
+				if (Self->CachedSubsystem.IsValid())
+				{
+					Self->CachedSubsystem->SetConnectionStatus(true);
+				}
+
+				// 防止旧的 _bridge_status.json 轮询覆盖刚设置的 connected 状态：
+				// 设置宽限期，在此期间轮询跳过状态更新
+				Self->ConnectGraceUntil = FPlatformTime::Seconds() + 5.0;
+
+				Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ConnectOK")));
+
+				// 环境上下文延迟到 mcp_ready=true 时发送（见 BridgeStatusPoll）
+				Self->bEnvContextPending = true;
+			}
+			else
+			{
+				// 连接失败也要确保状态为 disconnected
+				if (Self->CachedSubsystem.IsValid())
+				{
+					Self->CachedSubsystem->SetConnectionStatus(false);
+				}
+
+				Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ConnectFail")));
+			}
+			return false;
+		}),
+		0.5f
+	);
+}
+
+void SUEAgentDashboard::DisconnectOpenClawBridge()
+{
+	PlatformBridge->Disconnect();
+
+	bEnvContextPending = false;
+	ConnectGraceUntil = 0.0;
+
+	// 立即更新 Subsystem 状态（不等 _bridge_status.json 轮询）
+	if (CachedSubsystem.IsValid())
+	{
+		CachedSubsystem->SetConnectionStatus(false);
+	}
+
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("BridgeDisconnected")));
+}
+
+void SUEAgentDashboard::RunDiagnoseConnection()
+{
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("RunningHealthCheck")));
+
+	// 诊断结果写入临时文件，然后轮询读取
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString DiagFile = TempDir / TEXT("_diagnose_result.txt");
+
+	// 清除上次结果
+	IFileManager::Get().Delete(*DiagFile, false, false, true);
+
+	// 优先使用完整 Health Check，fallback 到平台桥接诊断
+	// 强制 reload 确保使用最新代码
+	FString PythonCmd = FString::Printf(
+		TEXT("import importlib\n"
+			 "try:\n"
+			 "    import health_check\n"
+			 "    importlib.reload(health_check)\n"
+			 "    result = health_check.run_health_check()\n"
+			 "    with open(r'%s', 'w', encoding='utf-8') as f:\n"
+			 "        f.write(result)\n"
+			 "except ImportError:\n"
+			 "    pass\n"),
+		*DiagFile);
+	IPythonScriptPlugin::Get()->ExecPythonCommand(*PythonCmd);
+
+	// 如果 health_check 没有生成文件，走平台桥接诊断
+	if (!FPaths::FileExists(DiagFile))
+	{
+		PlatformBridge->RunDiagnostics(DiagFile);
+	}
+
+	// 轮询诊断结果文件
+	auto Self = SharedThis(this);
+	FString CapturedFile = DiagFile;
+	FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([Self, CapturedFile](float) -> bool
+		{
+			if (!FPaths::FileExists(CapturedFile))
+			{
+				return true; // 继续等待
+			}
+
+			FString Content;
+			TArray<uint8> DiagBytes;
+			if (FFileHelper::LoadFileToArray(DiagBytes, *CapturedFile))
+			{
+				FUTF8ToTCHAR DiagConverter(reinterpret_cast<const ANSICHAR*>(DiagBytes.GetData()), DiagBytes.Num());
+				Content = FString(DiagConverter.Length(), DiagConverter.Get());
+				IFileManager::Get().Delete(*CapturedFile, false, false, true);
+				Self->AddMessage(TEXT("system"), Content);
+			}
+			return false;
+		}),
+		0.5f
+	);
+}
+
+// ==================================================================
+// 连接成功后发送环境上下文
+// ==================================================================
+
+void SUEAgentDashboard::SendEnvironmentContext()
+{
+	// 收集静态环境信息并通过 Python 发送给 AI
+	// 这些信息在会话期间不会变化，帮助 AI 了解当前工作环境
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString ContextFile = TempDir / TEXT("_env_context.txt");
+	IFileManager::Get().Delete(*ContextFile, false, false, true);
+
+	PlatformBridge->CollectEnvironmentContext(ContextFile);
+
+	// 轮询等待 context 文件生成，然后作为消息发送给 AI
+	auto Self = SharedThis(this);
+	FString CapturedFile = ContextFile;
+	FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([Self, CapturedFile](float) -> bool
+		{
+			if (!FPaths::FileExists(CapturedFile))
+			{
+				return true; // 继续等待
+			}
+
+			FString ContextMsg;
+			TArray<uint8> RawBytes;
+			if (FFileHelper::LoadFileToArray(RawBytes, *CapturedFile))
+			{
+				FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
+				ContextMsg = FString(Converter.Length(), Converter.Get());
+			}
+			IFileManager::Get().Delete(*CapturedFile, false, false, true);
+
+			if (!ContextMsg.IsEmpty())
+			{
+				// 作为系统消息发送给 AI (非静默，AI 的回复会显示在面板)
+				Self->SendToOpenClaw(ContextMsg);
+			}
+			return false;
+		}),
+		0.5f
+	);
+}
+
+// ==================================================================
+// OpenClaw Gateway 通信 (阶段 3) — 通过 Python Bridge
+// ==================================================================
+
+void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
+{
+	// 如果上一个请求还在进行，先取消它（停止旧的轮询定时器）
+	if (bIsWaitingForResponse)
+	{
+		// 停止旧的 poll timer
+		if (PollTimerHandle.IsValid())
+		{
+			FTSTicker::GetCoreTicker().RemoveTicker(PollTimerHandle);
+			PollTimerHandle.Reset();
+		}
+	}
+
+	bIsWaitingForResponse = true;
+	StreamLinesRead = 0;
+	bHasStreamingMessage = false;
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("Thinking")));
+
+	// 转义消息中的引号和特殊字符，安全嵌入 Python 字符串
+	FString EscapedMsg = UserMessage;
+	EscapedMsg.ReplaceInline(TEXT("\\"), TEXT("\\\\"));
+	EscapedMsg.ReplaceInline(TEXT("'"), TEXT("\\'"));
+	EscapedMsg.ReplaceInline(TEXT("\n"), TEXT("\\n"));
+	EscapedMsg.ReplaceInline(TEXT("\r"), TEXT(""));
+
+	// 临时文件路径 — Python 写入响应，C++ 读取
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString ResponseFile = TempDir / TEXT("_openclaw_response.txt");
+	FString StreamFile = TempDir / TEXT("_openclaw_response_stream.jsonl");
+
+	// 清除上次响应文件
+	IFileManager::Get().Delete(*ResponseFile, false, false, true);
+	IFileManager::Get().Delete(*StreamFile, false, false, true);
+
+	// 通过平台桥接异步发送
+	PlatformBridge->SendMessageAsync(EscapedMsg, ResponseFile);
+
+	// 启动定时器轮询临时文件
+	auto Self = SharedThis(this);
+	FString CapturedResponseFile = ResponseFile;
+	FString CapturedStreamFile = StreamFile;
+	PollTimerHandle = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([Self, CapturedResponseFile, CapturedStreamFile](float DeltaTime) -> bool
+		{
+			if (!Self->bIsWaitingForResponse)
+			{
+				return false;
+			}
+
+			// --- 流式文件轮询: 读取新增行并实时显示 ---
+			if (FPaths::FileExists(CapturedStreamFile))
+			{
+				// 用 UTF-8 读取流式文件（Python 以 UTF-8 写入）
+				FString StreamContent;
+				TArray<uint8> RawBytes;
+				if (FFileHelper::LoadFileToArray(RawBytes, *CapturedStreamFile))
+				{
+					// 手动从 UTF-8 转换为 FString
+					FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
+					StreamContent = FString(Converter.Length(), Converter.Get());
+					TArray<FString> Lines;
+					StreamContent.ParseIntoArrayLines(Lines);
+
+					// 只处理新增的行
+					for (int32 i = Self->StreamLinesRead; i < Lines.Num(); i++)
+					{
+						const FString& Line = Lines[i];
+						if (Line.IsEmpty()) continue;
+
+						// 使用 UE JSON 解析器，比手工字符串操作更可靠
+						TSharedPtr<FJsonObject> JsonObj;
+						TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Line);
+						if (FJsonSerializer::Deserialize(Reader, JsonObj) && JsonObj.IsValid())
+						{
+							FString EventType = JsonObj->GetStringField(TEXT("type"));
+
+							if (EventType == TEXT("thinking"))
+							{
+								FString EventText = JsonObj->GetStringField(TEXT("text"));
+								if (!EventText.IsEmpty())
+								{
+									Self->UpdateStreamingMessage(TEXT("thinking"), EventText);
+								}
+							}
+							else if (EventType == TEXT("delta"))
+							{
+								FString EventText = JsonObj->GetStringField(TEXT("text"));
+								if (!EventText.IsEmpty())
+								{
+									Self->UpdateStreamingMessage(TEXT("assistant"), EventText);
+								}
+							}
+							else if (EventType == TEXT("tool_call"))
+							{
+								FString ToolName = JsonObj->GetStringField(TEXT("tool_name"));
+								FString ToolId = JsonObj->GetStringField(TEXT("tool_id"));
+
+								// 序列化 arguments 对象为字符串
+								FString ArgsStr;
+								const TSharedPtr<FJsonObject>* ArgsObj = nullptr;
+								if (JsonObj->TryGetObjectField(TEXT("arguments"), ArgsObj) && ArgsObj)
+								{
+									TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ArgsStr);
+									FJsonSerializer::Serialize(ArgsObj->ToSharedRef(), Writer);
+								}
+
+								if (!ToolName.IsEmpty())
+								{
+									Self->AddToolCallMessage(ToolName, ToolId, ArgsStr);
+								}
+							}
+							else if (EventType == TEXT("tool_result"))
+							{
+								FString ToolName = JsonObj->GetStringField(TEXT("tool_name"));
+								FString ToolId = JsonObj->GetStringField(TEXT("tool_id"));
+								FString Content = JsonObj->GetStringField(TEXT("content"));
+								bool bIsError = JsonObj->GetBoolField(TEXT("is_error"));
+
+								if (!ToolName.IsEmpty())
+								{
+									Self->AddToolResultMessage(ToolName, ToolId, Content, bIsError);
+								}
+							}
+							else if (EventType == TEXT("usage"))
+							{
+								// 解析 token usage 信息 (任务 5.5)
+								const TSharedPtr<FJsonObject>* UsageObj = nullptr;
+								if (JsonObj->TryGetObjectField(TEXT("usage"), UsageObj) && UsageObj)
+								{
+									int32 TotalTokens = 0;
+									if ((*UsageObj)->TryGetNumberField(TEXT("totalTokens"), TotalTokens) && TotalTokens > 0)
+									{
+										Self->LastTotalTokens = TotalTokens;
+									}
+								}
+							}
+						}
+					}
+					Self->StreamLinesRead = Lines.Num();
+				}
+			}
+
+			// --- 最终响应文件轮询 ---
+			if (!FPaths::FileExists(CapturedResponseFile))
+			{
+				return true; // 继续等待
+			}
+
+			// 读取响应（UTF-8）
+			FString ResponseContent;
+			TArray<uint8> RespBytes;
+			if (FFileHelper::LoadFileToArray(RespBytes, *CapturedResponseFile))
+			{
+				FUTF8ToTCHAR RespConverter(reinterpret_cast<const ANSICHAR*>(RespBytes.GetData()), RespBytes.Num());
+				ResponseContent = FString(RespConverter.Length(), RespConverter.Get());
+
+				// 删除临时文件
+				IFileManager::Get().Delete(*CapturedResponseFile, false, false, true);
+				IFileManager::Get().Delete(*CapturedStreamFile, false, false, true);
+
+				// 处理响应
+				Self->HandlePythonResponse(ResponseContent);
+			}
+
+			return false; // 停止轮询
+		}),
+		0.25f // 每 0.25 秒检查一次（流式需要更快）
+	);
+}
+
+void SUEAgentDashboard::UpdateStreamingMessage(const FString& Sender, const FString& Content)
+{
+	if (Content.IsEmpty()) return;
+
+	// 流式消息统一用 "streaming" 标识，以区分最终回复的颜色
+	FString StreamSender = (Sender == TEXT("thinking")) ? TEXT("thinking") : TEXT("streaming");
+
+	if (!bHasStreamingMessage)
+	{
+		// 替换 "Thinking..." 消息 — 从末尾往前查找（跳过 tool 消息）
+		for (int32 i = Messages.Num() - 1; i >= 0; --i)
+		{
+			if (Messages[i].Content == FUEAgentL10n::GetStr(TEXT("Thinking"))
+				&& Messages[i].Sender == TEXT("system"))
+			{
+				Messages.RemoveAt(i);
+				break;
+			}
+			// 只跳过 tool 消息，遇到其他类型就停止
+			if (Messages[i].Sender != TEXT("tool_call")
+				&& Messages[i].Sender != TEXT("tool_result"))
+			{
+				break;
+			}
+		}
+
+		bHasStreamingMessage = true;
+	}
+
+	// 查找末尾的流式消息并追加内容
+	for (int32 i = Messages.Num() - 1; i >= 0; --i)
+	{
+		if (Messages[i].Sender == StreamSender)
+		{
+			Messages[i].Content += Content;
+			RebuildMessageList();
+			return;
+		}
+		// 遇到其他非 tool 消息，停止查找
+		if (Messages[i].Sender != TEXT("tool_call")
+			&& Messages[i].Sender != TEXT("tool_result"))
+		{
+			break;
+		}
+	}
+
+	// 没有找到现有流式消息，创建新消息
+	FChatMessage Msg;
+	Msg.Sender = StreamSender;
+	Msg.Content = Content;
+	Msg.Timestamp = FDateTime::Now();
+	Messages.Add(MoveTemp(Msg));
+	RebuildMessageList();
+}
