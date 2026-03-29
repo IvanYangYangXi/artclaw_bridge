@@ -17,6 +17,7 @@
 #include "UEAgentDashboard_Session_impl.h"
 #include "UEAgentDashboard_Plan_impl.h"
 #include "UEAgentDashboard_System_impl.h"
+#include "UEAgentDashboard_Settings_impl.h"
 #include "UEAgentDashboard_Main_impl.h"
 
 #define LOCTEXT_NAMESPACE "UEAgentDashboard"

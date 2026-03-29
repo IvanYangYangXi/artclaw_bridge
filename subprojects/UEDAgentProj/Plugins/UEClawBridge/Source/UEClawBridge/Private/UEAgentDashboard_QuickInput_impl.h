@@ -1,12 +1,18 @@
 // Copyright ArtClaw Project. All Rights Reserved.
-// 快捷输入面板模块 - 快捷短语管理、增删改查
+// 快捷输入面板模块 - 快捷短语管理、增删改查、模态对话框
 
 #include "UEAgentDashboard.h"
 #include "UEAgentLocalization.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Layout/SWrapBox.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Text/STextBlock.h"
+#include "Widgets/Layout/SSpacer.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Widgets/SWindow.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
@@ -24,7 +30,6 @@ void SUEAgentDashboard::LoadQuickInputs()
 	FString ConfigPath = GetQuickInputConfigPath();
 	if (!FPaths::FileExists(ConfigPath))
 	{
-		// 默认快捷输入
 		QuickInputs.Empty();
 		return;
 	}
@@ -115,14 +120,45 @@ void SUEAgentDashboard::RebuildQuickInputPanel()
 		const FQuickInput& Input = QuickInputs[i];
 		const int32 CapturedIndex = i;
 
+		// 每个快捷输入: [按钮名称] [e编辑] [x删除]
 		QuickInputWrapBox->AddSlot()
-		.Padding(4.0f)
+		.Padding(2.0f)
 		[
-			SNew(SButton)
-			.Text(FText::FromString(Input.Name))
-			.OnClicked_Lambda([this, CapturedIndex]() -> FReply { return OnQuickInputClicked(CapturedIndex); })
-			.ToolTipText(FText::FromString(Input.Content))
-			.ContentPadding(FMargin(8.0f, 4.0f))
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+				.Text(FText::FromString(Input.Name))
+				.OnClicked_Lambda([this, CapturedIndex]() -> FReply { return OnQuickInputClicked(CapturedIndex); })
+				.ToolTipText(FText::FromString(Input.Content))
+				.ContentPadding(FMargin(8.0f, 3.0f))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(2.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("EditQuickInputBtn")); })
+				.OnClicked_Lambda([this, CapturedIndex]() -> FReply { return OnEditQuickInputClicked(CapturedIndex); })
+				.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("EditQuickInputTip")); })
+				.ContentPadding(FMargin(3.0f, 3.0f))
+				.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.35f, 0.45f)))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(1.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("DeleteQuickInputBtn")); })
+				.OnClicked_Lambda([this, CapturedIndex]() -> FReply { return OnDeleteQuickInputClicked(CapturedIndex); })
+				.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("DeleteQuickInputTip")); })
+				.ContentPadding(FMargin(3.0f, 3.0f))
+				.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.45f, 0.25f, 0.25f)))
+			]
 		];
 	}
 }
@@ -143,15 +179,224 @@ FReply SUEAgentDashboard::OnQuickInputClicked(int32 Index)
 
 FReply SUEAgentDashboard::OnAddQuickInputClicked()
 {
-	FGuid NewId = FGuid::NewGuid();
-	FQuickInput NewInput;
-	NewInput.Id = NewId.ToString();
-	NewInput.Name = TEXT("New");
-	NewInput.Content = TEXT("");
-	QuickInputs.Add(MoveTemp(NewInput));
+	// 弹出模态对话框，新建快捷输入
+	QuickInputEditIndex = -1; // -1 表示新建
+
+	FString DefaultName = TEXT("New Command");
+	FString DefaultContent = TEXT("");
+
+	auto Self = SharedThis(this);
+
+	QuickInputEditWindow = SNew(SWindow)
+		.Title(FUEAgentL10n::Get(TEXT("EditQuickInputTitle")))
+		.ClientSize(FVector2D(400.0f, 250.0f))
+		.SupportsMinimize(false)
+		.SupportsMaximize(false)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(12.0f)
+			[
+				SNew(STextBlock)
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("QINameLabel")); })
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(12.0f, 0.0f, 12.0f, 8.0f)
+			[
+				SAssignNew(QuickInputEditNameBox, SEditableTextBox)
+				.Text(FText::FromString(DefaultName))
+				.SelectAllTextWhenFocused(true)
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(12.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("QIContentLabel")); })
+			]
+			+ SVerticalBox::Slot()
+			.FillHeight(1.0f)
+			.Padding(12.0f, 4.0f, 12.0f, 8.0f)
+			[
+				SAssignNew(QuickInputEditContentBox, SMultiLineEditableTextBox)
+				.Text(FText::FromString(DefaultContent))
+				.AutoWrapText(true)
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Right)
+			.Padding(12.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("QICancelBtn")); })
+					.OnClicked_Lambda([Self]() -> FReply { return Self->OnQuickInputEditCancelClicked(); })
+					.ContentPadding(FMargin(12.0f, 4.0f))
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("QISaveBtn")); })
+					.OnClicked_Lambda([Self]() -> FReply { return Self->OnQuickInputEditSaveClicked(); })
+					.ContentPadding(FMargin(12.0f, 4.0f))
+					.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.15f, 0.45f, 0.75f)))
+				]
+			]
+		];
+
+	if (QuickInputEditWindow.IsValid())
+	{
+		FSlateApplication::Get().AddWindow(QuickInputEditWindow.ToSharedRef());
+	}
+
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnEditQuickInputClicked(int32 Index)
+{
+	if (!QuickInputs.IsValidIndex(Index))
+	{
+		return FReply::Handled();
+	}
+
+	// 弹出模态对话框，编辑现有快捷输入
+	QuickInputEditIndex = Index;
+
+	const FQuickInput& Input = QuickInputs[Index];
+	auto Self = SharedThis(this);
+
+	QuickInputEditWindow = SNew(SWindow)
+		.Title(FUEAgentL10n::Get(TEXT("EditQuickInputTitle")))
+		.ClientSize(FVector2D(400.0f, 250.0f))
+		.SupportsMinimize(false)
+		.SupportsMaximize(false)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(12.0f)
+			[
+				SNew(STextBlock)
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("QINameLabel")); })
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(12.0f, 0.0f, 12.0f, 8.0f)
+			[
+				SAssignNew(QuickInputEditNameBox, SEditableTextBox)
+				.Text(FText::FromString(Input.Name))
+				.SelectAllTextWhenFocused(true)
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(12.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("QIContentLabel")); })
+			]
+			+ SVerticalBox::Slot()
+			.FillHeight(1.0f)
+			.Padding(12.0f, 4.0f, 12.0f, 8.0f)
+			[
+				SAssignNew(QuickInputEditContentBox, SMultiLineEditableTextBox)
+				.Text(FText::FromString(Input.Content))
+				.AutoWrapText(true)
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Right)
+			.Padding(12.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("QICancelBtn")); })
+					.OnClicked_Lambda([Self]() -> FReply { return Self->OnQuickInputEditCancelClicked(); })
+					.ContentPadding(FMargin(12.0f, 4.0f))
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("QISaveBtn")); })
+					.OnClicked_Lambda([Self]() -> FReply { return Self->OnQuickInputEditSaveClicked(); })
+					.ContentPadding(FMargin(12.0f, 4.0f))
+					.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.15f, 0.45f, 0.75f)))
+				]
+			]
+		];
+
+	if (QuickInputEditWindow.IsValid())
+	{
+		FSlateApplication::Get().AddWindow(QuickInputEditWindow.ToSharedRef());
+	}
+
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnQuickInputEditSaveClicked()
+{
+	if (!QuickInputEditNameBox.IsValid() || !QuickInputEditContentBox.IsValid())
+	{
+		return FReply::Handled();
+	}
+
+	FString Name = QuickInputEditNameBox->GetText().ToString().TrimStartAndEnd();
+	FString Content = QuickInputEditContentBox->GetText().ToString();
+
+	if (Name.IsEmpty())
+	{
+		Name = TEXT("Unnamed");
+	}
+
+	if (QuickInputEditIndex < 0)
+	{
+		// 新增
+		FGuid NewId = FGuid::NewGuid();
+		FQuickInput NewInput;
+		NewInput.Id = NewId.ToString();
+		NewInput.Name = Name;
+		NewInput.Content = Content;
+		QuickInputs.Add(MoveTemp(NewInput));
+	}
+	else if (QuickInputs.IsValidIndex(QuickInputEditIndex))
+	{
+		// 编辑
+		QuickInputs[QuickInputEditIndex].Name = Name;
+		QuickInputs[QuickInputEditIndex].Content = Content;
+	}
 
 	SaveQuickInputs();
 	RebuildQuickInputPanel();
+
+	// 关闭对话框
+	if (QuickInputEditWindow.IsValid())
+	{
+		QuickInputEditWindow->RequestDestroyWindow();
+		QuickInputEditWindow.Reset();
+	}
+
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnQuickInputEditCancelClicked()
+{
+	// 关闭对话框
+	if (QuickInputEditWindow.IsValid())
+	{
+		QuickInputEditWindow->RequestDestroyWindow();
+		QuickInputEditWindow.Reset();
+	}
 
 	return FReply::Handled();
 }
@@ -167,12 +412,6 @@ FReply SUEAgentDashboard::OnDeleteQuickInputClicked(int32 Index)
 	SaveQuickInputs();
 	RebuildQuickInputPanel();
 
-	return FReply::Handled();
-}
-
-FReply SUEAgentDashboard::OnEditQuickInputClicked(int32 Index)
-{
-	// 编辑功能实现
 	return FReply::Handled();
 }
 

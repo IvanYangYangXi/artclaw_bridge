@@ -200,8 +200,8 @@ void FUEAgentL10n::Initialize()
 	// ==================================================================
 	// 管理面板 (Phase 2-3)
 	// ==================================================================
-	Reg(TEXT("ManageBtn"),           TEXT("管理"),                      TEXT("Manage"));
-	Reg(TEXT("ManageTip"),           TEXT("打开 Skill/MCP 管理面板"),   TEXT("Open Skill/MCP management panel"));
+	Reg(TEXT("ManageBtn"),           TEXT("Skills"),                     TEXT("Skills"));
+	Reg(TEXT("ManageTip"),           TEXT("打开 Skill 与 MCP 管理面板"), TEXT("Open Skill & MCP management panel"));
 	Reg(TEXT("ManageWindowTitle"),   TEXT("Skill 与 MCP 管理"),         TEXT("Skill & MCP Management"));
 	Reg(TEXT("ManageTabSkill"),      TEXT("Skill"),                     TEXT("Skills"));
 	Reg(TEXT("ManageTabMcp"),        TEXT("MCP"),                       TEXT("MCP"));
@@ -313,6 +313,19 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("SilentHighOn"),           TEXT("高风险静默: 开"),              TEXT("High Silent: On"));
 	Reg(TEXT("SilentHighOff"),          TEXT("高风险静默: 关"),              TEXT("High Silent: Off"));
 	Reg(TEXT("SilentHighTip"),          TEXT("高风险静默: 文件删除/批量操作自动通过"), TEXT("High risk silent: auto-approve file delete/batch operations"));
+
+	// ==================================================================
+	// 设置面板
+	// ==================================================================
+	Reg(TEXT("SettingsBtn"),            TEXT("设置"),                      TEXT("Settings"));
+	Reg(TEXT("SettingsTip"),            TEXT("打开设置面板"),               TEXT("Open settings panel"));
+	Reg(TEXT("SettingsTitle"),          TEXT("设置"),                      TEXT("Settings"));
+	Reg(TEXT("SettingsLanguage"),       TEXT("语言 / Language"),           TEXT("Language"));
+	Reg(TEXT("SettingsSendMode"),       TEXT("发送模式"),                   TEXT("Send Mode"));
+	Reg(TEXT("SettingsSilentMode"),     TEXT("静默模式"),                   TEXT("Silent Mode"));
+	Reg(TEXT("SettingsPlanMode"),       TEXT("Plan 模式"),                  TEXT("Plan Mode"));
+	Reg(TEXT("SettingsSkillsManage"),   TEXT("Skills 管理"),                TEXT("Skills Management"));
+	Reg(TEXT("SettingsCloseBtn"),       TEXT("关闭"),                      TEXT("Close"));
 }
 
 FText FUEAgentL10n::Get(const FString& Key)
@@ -357,9 +370,10 @@ void FUEAgentL10n::ToggleLanguage()
 
 FText FUEAgentL10n::GetLanguageDisplayName()
 {
+	// 显示目标语言名：当前中文则显示"English"（表示可切换到英文），反之亦然
 	return (CurrentLanguage == EUEAgentLanguage::Chinese)
-		? FText::FromString(TEXT("中文"))
-		: FText::FromString(TEXT("English"));
+		? FText::FromString(TEXT("English"))
+		: FText::FromString(TEXT("中文"));
 }
 
 // ==================================================================

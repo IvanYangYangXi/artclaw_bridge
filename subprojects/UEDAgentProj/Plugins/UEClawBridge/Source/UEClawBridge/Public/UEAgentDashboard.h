@@ -269,6 +269,24 @@ private:
 	/** 是否处于编辑模式 */
 	bool bQuickInputEditMode = false;
 
+	/** 快捷输入编辑对话框窗口 */
+	TSharedPtr<SWindow> QuickInputEditWindow;
+
+	/** 编辑对话框中的名称输入框 */
+	TSharedPtr<SEditableTextBox> QuickInputEditNameBox;
+
+	/** 编辑对话框中的内容输入框 */
+	TSharedPtr<SMultiLineEditableTextBox> QuickInputEditContentBox;
+
+	/** 当前编辑的快捷输入索引 (-1 表示新增) */
+	int32 QuickInputEditIndex = -1;
+
+	/** 关闭快捷输入编辑对话框并保存 */
+	FReply OnQuickInputEditSaveClicked();
+
+	/** 关闭快捷输入编辑对话框并取消 */
+	FReply OnQuickInputEditCancelClicked();
+
 	/** 当前会话名称标签 (任务 5.4) */
 	FString CurrentSessionLabel;
 
@@ -405,6 +423,14 @@ private:
 
 	/** 高风险静默切换按钮回调 */
 	FReply OnToggleSilentHighClicked();
+
+	// --- 设置面板 ---
+
+	/** 设置弹窗回调: 打开设置 SWindow */
+	FReply OnSettingsClicked();
+
+	/** 设置面板窗口 */
+	TSharedPtr<SWindow> SettingsWindow;
 
 	static constexpr int32 MaxMessages = 500;
 };

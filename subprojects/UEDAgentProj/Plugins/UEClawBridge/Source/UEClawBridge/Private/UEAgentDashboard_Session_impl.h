@@ -48,26 +48,7 @@ TSharedRef<SWidget> SUEAgentDashboard::BuildSessionMenuContent()
 {
 	TSharedRef<SVerticalBox> MenuContent = SNew(SVerticalBox);
 
-	// 新建会话按钮
-	MenuContent->AddSlot()
-	.AutoHeight()
-	.Padding(4.0f)
-	[
-		SNew(SButton)
-		.Text(FUEAgentL10n::Get(TEXT("NewSessionBtn")))
-		.OnClicked(this, &SUEAgentDashboard::OnNewChatClicked)
-		.ContentPadding(FMargin(8.0f, 4.0f))
-	];
-
-	// 分隔线
-	MenuContent->AddSlot()
-	.AutoHeight()
-	.Padding(0.0f, 4.0f)
-	[
-		SNew(SSeparator)
-	];
-
-	// 会话列表
+	// 会话列表（不含新建按钮，新建通过工具栏的 "+ 新会话" 按钮）
 	for (int32 i = 0; i < SessionEntries.Num(); ++i)
 	{
 		const FSessionEntry& Entry = SessionEntries[i];
