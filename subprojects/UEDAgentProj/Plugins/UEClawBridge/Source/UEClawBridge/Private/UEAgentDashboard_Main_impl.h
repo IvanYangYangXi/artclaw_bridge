@@ -65,10 +65,6 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	// 初始化 Slash 快捷命令
 	InitSlashCommands();
 
-	// 加载快捷输入配置并构建 UI
-	LoadQuickInputs();
-	RebuildQuickInputPanel();
-
 	// 加载静默模式配置 (阶段 5.7)
 	LoadSilentModeFromConfig();
 
@@ -407,6 +403,10 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	[
 		MainVBox.ToSharedRef()
 	];
+
+	// 加载快捷输入配置并构建 UI（必须在 QuickInputWrapBox 赋值之后）
+	LoadQuickInputs();
+	RebuildQuickInputPanel();
 
 	// 欢迎消息
 	AddMessage(TEXT("assistant"), FUEAgentL10n::GetStr(TEXT("WelcomeMsg")));
