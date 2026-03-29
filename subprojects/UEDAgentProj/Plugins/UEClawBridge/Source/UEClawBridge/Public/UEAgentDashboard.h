@@ -11,6 +11,7 @@
 class IAgentPlatformBridge;
 class UUEAgentSubsystem;
 class SScrollBox;
+class SUEAgentManagePanel;
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 class SMenuAnchor;
 class SCheckBox;
@@ -431,6 +432,14 @@ private:
 
 	/** 设置面板窗口 */
 	TSharedPtr<SWindow> SettingsWindow;
+
+	// --- Skills 管理面板 ---
+
+	/** 管理面板窗口 */
+	TSharedPtr<SWindow> ManageWindow;
+
+	/** 管理面板 Widget 引用 */
+	TSharedPtr<SUEAgentManagePanel> ManagePanelWidget;
 
 	static constexpr int32 MaxMessages = 500;
 };

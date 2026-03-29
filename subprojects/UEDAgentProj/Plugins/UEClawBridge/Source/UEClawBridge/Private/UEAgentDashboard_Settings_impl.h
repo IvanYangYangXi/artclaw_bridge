@@ -239,11 +239,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 			[
 				SNew(SButton)
 				.Text(FUEAgentL10n::Get(TEXT("SettingsSkillsManage")))
-				.OnClicked_Lambda([]()
-				{
-					FGlobalTabmanager::Get()->TryInvokeTab(FName("UEAgentManagePanel"));
-					return FReply::Handled();
-				})
+				.OnClicked(this, &SUEAgentDashboard::OnManageClicked)
 				.ToolTipText(FUEAgentL10n::Get(TEXT("ManageTip")))
 				.ContentPadding(FMargin(8.0f, 4.0f))
 			]

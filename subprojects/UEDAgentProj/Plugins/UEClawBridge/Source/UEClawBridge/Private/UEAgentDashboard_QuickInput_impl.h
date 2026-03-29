@@ -35,25 +35,37 @@ void SUEAgentDashboard::LoadQuickInputs()
 	}
 
 	FString JsonContent;
-	TArray<uint8> RawBytes;
-	if (!FFileHelper::LoadFileToArray(RawBytes, *ConfigPath))
+	if (!FFileHelper::LoadFileToString(JsonContent, *ConfigPath))
 	{
-		return;
+		// FFileHelper 失败时，尝试原始字节方式读取
+		TArray<uint8> RawBytes;
+		if (!FFileHelper::LoadFileToArray(RawBytes, *ConfigPath))
+		{
+			QuickInputs.Empty();
+			return;
+		}
+		// 跳过 UTF-8 BOM (EF BB BF)
+		int32 Offset = 0;
+		if (RawBytes.Num() >= 3 && RawBytes[0] == 0xEF && RawBytes[1] == 0xBB && RawBytes[2] == 0xBF)
+		{
+			Offset = 3;
+		}
+		FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData() + Offset), RawBytes.Num() - Offset);
+		JsonContent = FString(Converter.Length(), Converter.Get());
 	}
-
-	FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
-	JsonContent = FString(Converter.Length(), Converter.Get());
 
 	TSharedPtr<FJsonObject> JsonObj;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
 	if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
 	{
+		QuickInputs.Empty();
 		return;
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* InputsArray = nullptr;
 	if (!JsonObj->TryGetArrayField(TEXT("quickInputs"), InputsArray) || !InputsArray)
 	{
+		QuickInputs.Empty();
 		return;
 	}
 
@@ -72,6 +84,9 @@ void SUEAgentDashboard::LoadQuickInputs()
 		Input.Content = (*InputObj)->GetStringField(TEXT("content"));
 		QuickInputs.Add(MoveTemp(Input));
 	}
+
+	// 加载成功后立即重新保存，确保文件编码为 UTF-8 (无 BOM)
+	SaveQuickInputs();
 }
 
 void SUEAgentDashboard::SaveQuickInputs()
@@ -98,7 +113,7 @@ void SUEAgentDashboard::SaveQuickInputs()
 	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonStr);
 	FJsonSerializer::Serialize(RootObj.ToSharedRef(), Writer);
 
-	FFileHelper::SaveStringToFile(JsonStr, *ConfigPath);
+	FFileHelper::SaveStringToFile(JsonStr, *ConfigPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 }
 
 FString SUEAgentDashboard::GetQuickInputConfigPath() const

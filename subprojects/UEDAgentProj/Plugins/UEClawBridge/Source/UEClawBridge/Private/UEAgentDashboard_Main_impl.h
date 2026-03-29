@@ -519,6 +519,14 @@ SUEAgentDashboard::~SUEAgentDashboard()
 	{
 		CachedSubsystem->OnConnectionStatusChangedNative.RemoveAll(this);
 	}
+
+	// 关闭管理面板窗口，防止 Dashboard 销毁后窗口仍引用无效 Widget
+	if (ManageWindow.IsValid())
+	{
+		ManageWindow->RequestDestroyWindow();
+		ManageWindow.Reset();
+		ManagePanelWidget.Reset();
+	}
 }
 
 // ==================================================================

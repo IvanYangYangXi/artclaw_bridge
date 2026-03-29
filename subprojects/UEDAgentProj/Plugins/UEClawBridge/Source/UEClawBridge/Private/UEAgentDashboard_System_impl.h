@@ -6,7 +6,10 @@
 #include "UEAgentManagePanel.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Widgets/SWindow.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
@@ -35,8 +38,28 @@ FReply SUEAgentDashboard::OnCreateSkillClicked()
 
 FReply SUEAgentDashboard::OnManageClicked()
 {
-	// 打开 Skill/ MCP 管理窗口
-	FGlobalTabmanager::Get()->TryInvokeTab(FName("UEAgentManagePanel"));
+	// 打开 Skill/MCP 管理独立窗口
+	if (ManageWindow.IsValid())
+	{
+		ManageWindow->BringToFront();
+		return FReply::Handled();
+	}
+
+	ManageWindow = SNew(SWindow)
+		.Title(FUEAgentL10n::Get(TEXT("ManageWindowTitle")))
+		.ClientSize(FVector2D(600.0f, 500.0f))
+		.SupportsMinimize(false)
+		.SupportsMaximize(false)
+		[
+			SNew(SBorder)
+			.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
+			.Padding(0.0f)
+			[
+				SAssignNew(ManagePanelWidget, SUEAgentManagePanel)
+			]
+		];
+
+	FSlateApplication::Get().AddWindow(ManageWindow.ToSharedRef());
 	return FReply::Handled();
 }
 
