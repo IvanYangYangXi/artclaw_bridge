@@ -141,19 +141,27 @@ def copy_shared_modules(dst_dir: str):
 
 
 def copy_platform_bridge(platform_type: str, dst_dir: str):
-    """将平台特定 bridge 文件复制到目标目录"""
+    """将平台特定 bridge 文件复制到目标目录（openclaw 额外复制 chat/diagnose 模块）"""
     pcfg = PLATFORM_CONFIGS.get(platform_type)
     if not pcfg:
         cprint("警告", f"未知平台: {platform_type}，跳过 bridge 文件复制", "yellow")
         return
-    bridge_file = pcfg["bridge_file"]
-    src = get_platform_src(platform_type) / bridge_file
-    if src.exists():
-        os.makedirs(dst_dir, exist_ok=True)
-        shutil.copy2(str(src), os.path.join(dst_dir, bridge_file))
-        cprint("OK", f"平台 bridge 已复制: {bridge_file}", "green")
-    else:
-        cprint("警告", f"平台 bridge 文件不存在: {src}", "yellow")
+    os.makedirs(dst_dir, exist_ok=True)
+    platform_src = get_platform_src(platform_type)
+
+    # 主 bridge 文件
+    files_to_copy = [pcfg["bridge_file"]]
+    # openclaw 平台额外携带独立模块
+    if platform_type == "openclaw":
+        files_to_copy += ["openclaw_chat.py", "openclaw_diagnose.py"]
+
+    for fname in files_to_copy:
+        src = platform_src / fname
+        if src.exists():
+            shutil.copy2(str(src), os.path.join(dst_dir, fname))
+            cprint("OK", f"平台 bridge 已复制: {fname}", "green")
+        else:
+            cprint("警告", f"平台 bridge 文件不存在: {src}", "yellow")
 
 
 def write_artclaw_config(platform_type: str):

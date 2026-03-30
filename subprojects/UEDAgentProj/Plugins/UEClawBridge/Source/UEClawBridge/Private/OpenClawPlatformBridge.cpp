@@ -14,7 +14,6 @@ void FOpenClawPlatformBridge::ExecPython(const FString& Code) const
 
 void FOpenClawPlatformBridge::Connect(const FString& StatusOutFile)
 {
-	// 检测 MCP Server 就绪
 	ExecPython(
 		TEXT("import socket\n")
 		TEXT("def _check_mcp_ready():\n")
@@ -30,10 +29,9 @@ void FOpenClawPlatformBridge::Connect(const FString& StatusOutFile)
 		TEXT("_check_mcp_ready()\n")
 	);
 
-	// 连接 OpenClaw Bridge + 写入状态文件
 	FString PythonCmd = FString::Printf(
 		TEXT("import time\n")
-		TEXT("from openclaw_bridge import connect, is_connected\n")
+		TEXT("from openclaw_chat import connect, is_connected\n")
 		TEXT("connect()\n")
 		TEXT("time.sleep(1.5)\n")
 		TEXT("status = 'ok' if is_connected() else 'fail'\n")
@@ -47,7 +45,7 @@ void FOpenClawPlatformBridge::Connect(const FString& StatusOutFile)
 void FOpenClawPlatformBridge::Disconnect()
 {
 	ExecPython(
-		TEXT("from openclaw_bridge import shutdown\n")
+		TEXT("from openclaw_chat import shutdown\n")
 		TEXT("shutdown()\n")
 		TEXT("print('[LogUEAgent] OpenClaw Bridge disconnected')\n")
 	);
@@ -56,20 +54,19 @@ void FOpenClawPlatformBridge::Disconnect()
 void FOpenClawPlatformBridge::CancelCurrentRequest()
 {
 	ExecPython(
-		TEXT("from openclaw_bridge import cancel_current_request; cancel_current_request()")
+		TEXT("from openclaw_chat import cancel_current_request; cancel_current_request()")
 	);
 }
 
 void FOpenClawPlatformBridge::CancelRequest()
 {
-	// CancelRequest 与 CancelCurrentRequest 等价，停止按钮调用此方法
 	CancelCurrentRequest();
 }
 
 void FOpenClawPlatformBridge::SendMessageAsync(const FString& Message, const FString& ResponseFile)
 {
 	FString PythonCmd = FString::Printf(
-		TEXT("from openclaw_bridge import send_chat_async_to_file; send_chat_async_to_file('%s', r'%s')"),
+		TEXT("from openclaw_chat import send_chat_async_to_file; send_chat_async_to_file('%s', r'%s')"),
 		*Message, *ResponseFile
 	);
 	ExecPython(PythonCmd);
@@ -79,7 +76,7 @@ void FOpenClawPlatformBridge::RunDiagnostics(const FString& ReportOutFile)
 {
 	FString PythonCmd = FString::Printf(
 		TEXT("try:\n")
-		TEXT("    from openclaw_bridge import diagnose_connection\n")
+		TEXT("    from openclaw_chat import diagnose_connection\n")
 		TEXT("    _report = diagnose_connection()\n")
 		TEXT("    with open(r'%s', 'w', encoding='utf-8') as _f:\n")
 		TEXT("        _f.write(_report)\n")
@@ -94,7 +91,7 @@ void FOpenClawPlatformBridge::RunDiagnostics(const FString& ReportOutFile)
 void FOpenClawPlatformBridge::CollectEnvironmentContext(const FString& ContextOutFile)
 {
 	FString PythonCmd = FString::Printf(
-		TEXT("from openclaw_bridge import _collect_and_save_context\n")
+		TEXT("from openclaw_chat import _collect_and_save_context\n")
 		TEXT("_collect_and_save_context(r'%s')\n"),
 		*ContextOutFile
 	);
@@ -113,7 +110,7 @@ void FOpenClawPlatformBridge::QueryStatus()
 		TEXT("    mcp_ok = True\n")
 		TEXT("except: pass\n")
 		TEXT("finally: _s.close()\n")
-		TEXT("from openclaw_bridge import is_connected as _oc_connected\n")
+		TEXT("from openclaw_chat import is_connected as _oc_connected\n")
 		TEXT("oc_ok = _oc_connected()\n")
 		TEXT("_mcp_s = 'OK' if mcp_ok else 'DOWN'\n")
 		TEXT("_oc_s = 'Connected' if oc_ok else 'Disconnected'\n")
@@ -125,10 +122,9 @@ void FOpenClawPlatformBridge::ResetSession()
 {
 	ExecPython(
 		TEXT("try:\n")
-		TEXT("    from openclaw_bridge import _bridge\n")
-		TEXT("    import openclaw_bridge as _ob\n")
-		TEXT("    if _bridge: _bridge.reset_session()\n")
-		TEXT("    _ob._context_injected = False\n")
+		TEXT("    from openclaw_chat import reset_session\n")
+		TEXT("    import openclaw_chat as _oc\n")
+		TEXT("    reset_session()\n")
 		TEXT("except: pass")
 	);
 }
@@ -139,7 +135,7 @@ void FOpenClawPlatformBridge::SetSessionKey(const FString& SessionKey)
 	EscapedKey.ReplaceInline(TEXT("'"), TEXT("\\'"));
 
 	FString PythonCmd = FString::Printf(
-		TEXT("from openclaw_bridge import set_session_key; set_session_key('%s')"),
+		TEXT("from openclaw_chat import set_session_key; set_session_key('%s')"),
 		*EscapedKey
 	);
 	ExecPython(PythonCmd);
@@ -147,15 +143,13 @@ void FOpenClawPlatformBridge::SetSessionKey(const FString& SessionKey)
 
 FString FOpenClawPlatformBridge::GetSessionKey() const
 {
-	// GetSessionKey 需要同步获取返回值。
-	// 通过临时文件中转（与其他同步查询一致）。
 	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString KeyFile = TempDir / TEXT("_session_key.txt");
 	IFileManager::Get().Delete(*KeyFile, false, false, true);
 
 	FString PythonCmd = FString::Printf(
-		TEXT("from openclaw_bridge import get_session_key\n")
+		TEXT("from openclaw_chat import get_session_key\n")
 		TEXT("_key = get_session_key()\n")
 		TEXT("with open(r'%s', 'w', encoding='utf-8') as f:\n")
 		TEXT("    f.write(_key)\n"),
