@@ -49,8 +49,8 @@ def _get_project_root() -> Optional[Path]:
 
 
 def _get_runtime_skills_dir() -> Path:
-    """获取 UE 运行时 Skills 目录"""
-    return Path(__file__).parent / "Skills"
+    """获取运行时 Skills 目录（统一使用平台已安装目录）"""
+    return _get_openclaw_skills_dir()
 
 
 def _get_openclaw_skills_dir() -> Path:
@@ -123,38 +123,62 @@ def _scan_source_skills(project_root: Path) -> Dict[str, dict]:
 
 def _scan_runtime_skills() -> Dict[str, dict]:
     """
-    扫描运行时已安装的 Skill（代码包）。
+    扫描运行时已安装的 Skill。
+    支持两种结构:
+      1. 扁平: skills_dir/skill_name/ (install.py 安装的)
+      2. 分层: skills_dir/layer/skill_name/ (旧版兼容)
     返回: {skill_name: {layer, path, version}}
     """
     skills = {}
     runtime_dir = _get_runtime_skills_dir()
 
-    for layer in ("official", "marketplace", "user", "custom"):
-        layer_dir = runtime_dir / layer
-        if not layer_dir.is_dir():
+    if not runtime_dir.is_dir():
+        return skills
+
+    LAYER_NAMES = {"official", "marketplace", "user", "custom"}
+
+    for entry in sorted(runtime_dir.iterdir()):
+        if not entry.is_dir() or entry.name.startswith("."):
             continue
 
-        for skill_dir in sorted(layer_dir.iterdir()):
-            if not skill_dir.is_dir() or skill_dir.name.startswith("."):
-                continue
-
-            version = ""
-            manifest_path = skill_dir / "manifest.json"
-            if manifest_path.exists():
-                try:
-                    m = json.loads(manifest_path.read_text(encoding="utf-8"))
-                    version = m.get("version", "")
-                except Exception:
-                    pass
-
-            skills[skill_dir.name] = {
-                "name": skill_dir.name,
-                "layer": layer,
-                "path": str(skill_dir),
-                "version": version,
-            }
+        if entry.name in LAYER_NAMES:
+            # 分层目录: 扫描其下的 Skill 包（旧版兼容）
+            for skill_dir in sorted(entry.iterdir()):
+                if not skill_dir.is_dir() or skill_dir.name.startswith("."):
+                    continue
+                if skill_dir.name in skills:
+                    continue  # 扁平优先
+                _add_skill_entry(skills, skill_dir, entry.name)
+        else:
+            # 扁平目录: 直接是 Skill 包
+            _add_skill_entry(skills, entry, "installed")
 
     return skills
+
+
+def _add_skill_entry(skills: dict, skill_dir: Path, layer: str) -> None:
+    """解析一个 Skill 目录并加入结果字典"""
+    # 必须有 SKILL.md 或 manifest.json 或 __init__.py
+    has_manifest = (skill_dir / "manifest.json").exists()
+    has_skill_md = (skill_dir / "SKILL.md").exists()
+    has_init = (skill_dir / "__init__.py").exists()
+    if not (has_manifest or has_skill_md or has_init):
+        return
+
+    version = ""
+    if has_manifest:
+        try:
+            m = json.loads((skill_dir / "manifest.json").read_text(encoding="utf-8"))
+            version = m.get("version", "")
+        except Exception:
+            pass
+
+    skills[skill_dir.name] = {
+        "name": skill_dir.name,
+        "layer": layer,
+        "path": str(skill_dir),
+        "version": version,
+    }
 
 
 # ============================================================================
@@ -228,11 +252,10 @@ def compare_source_vs_runtime() -> dict:
 
 def install_skill(skill_name: str) -> dict:
     """
-    从项目源码安装一个 Skill 到运行时。
+    从项目源码安装一个 Skill 到已安装目录。
 
-    1. 复制代码包到运行时 Skills/{layer}/
-    2. 复制 SKILL.md 到平台已安装 Skills 目录
-    3. 通知 skill_hub 热重载
+    1. 整个 Skill 目录复制到平台已安装目录（代码 + SKILL.md + references 等）
+    2. 通知 skill_hub 热重载
 
     返回: {"ok": bool, "message": str}
     """
@@ -248,23 +271,18 @@ def install_skill(skill_name: str) -> dict:
     src_path = Path(info["path"])
     layer = info["layer"]
 
-    # 目标：运行时目录
-    runtime_dir = _get_runtime_skills_dir() / layer / skill_name
-    runtime_dir.parent.mkdir(parents=True, exist_ok=True)
+    # 目标：平台已安装目录（统一目录）
+    installed_dir = _get_openclaw_skills_dir() / skill_name
+    installed_dir.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        # 复制代码包
-        if runtime_dir.exists():
-            shutil.rmtree(runtime_dir)
-        shutil.copytree(src_path, runtime_dir)
-        UELogger.info(f"Skill installed: {skill_name} → {runtime_dir}")
-
-        # 复制 SKILL.md 到平台已安装 Skills 目录
-        skill_md = src_path / "SKILL.md"
-        if skill_md.exists():
-            oc_dir = _get_openclaw_skills_dir() / skill_name
-            oc_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(skill_md, oc_dir / "SKILL.md")
+        if installed_dir.exists():
+            shutil.rmtree(installed_dir)
+        shutil.copytree(
+            src_path, installed_dir,
+            ignore=shutil.ignore_patterns("__pycache__"),
+        )
+        UELogger.info(f"Skill installed: {skill_name} → {installed_dir}")
 
         # 通知 skill_hub 重新扫描
         _notify_skill_hub()
@@ -307,23 +325,13 @@ def uninstall_skill(skill_name: str) -> dict:
 
     返回: {"ok": bool, "message": str}
     """
-    runtime = _scan_runtime_skills()
-    if skill_name not in runtime:
-        return {"ok": False, "message": f"运行时找不到: {skill_name}"}
-
-    info = runtime[skill_name]
-    runtime_path = Path(info["path"])
+    installed_dir = _get_openclaw_skills_dir() / skill_name
+    if not installed_dir.exists():
+        return {"ok": False, "message": f"已安装目录中找不到: {skill_name}"}
 
     try:
-        # 删除运行时
-        if runtime_path.exists():
-            shutil.rmtree(runtime_path)
-            UELogger.info(f"Skill uninstalled: {skill_name}")
-
-        # 删除 openclaw skills
-        oc_path = _get_openclaw_skills_dir() / skill_name
-        if oc_path.exists():
-            shutil.rmtree(oc_path)
+        shutil.rmtree(installed_dir)
+        UELogger.info(f"Skill uninstalled: {skill_name}")
 
         _notify_skill_hub()
 

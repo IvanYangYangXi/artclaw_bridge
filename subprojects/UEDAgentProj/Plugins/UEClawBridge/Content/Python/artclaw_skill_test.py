@@ -473,8 +473,8 @@ def main():
         else:
             # 尝试常见位置
             candidates = [
+                Path.home() / ".openclaw" / "skills",
                 Path(__file__).parent / "Skills",
-                Path(__file__).parent.parent / "Skills",
                 Path.cwd() / "Skills",
             ]
             skills_dir = None

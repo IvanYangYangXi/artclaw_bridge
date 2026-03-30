@@ -61,11 +61,35 @@ class SkillRuntime:
         self._skills: Dict[str, SkillManifest] = {}
         self._disabled: set = set()
 
-        # skills 目录
+        # skills 目录：配置驱动，统一使用平台已安装目录
         if skills_base_dir:
             self._skills_dir = Path(skills_base_dir)
         else:
-            self._skills_dir = Path(__file__).parent.parent / "skills"
+            self._skills_dir = self._resolve_skills_dir()
+
+    @staticmethod
+    def _resolve_skills_dir() -> Path:
+        """
+        从 ~/.artclaw/config.json 读取已安装 Skill 目录。
+        回退到平台默认值，最终回退到 ~/.openclaw/skills。
+        """
+        config_path = Path.home() / ".artclaw" / "config.json"
+        if config_path.exists():
+            try:
+                cfg = json.loads(config_path.read_text(encoding="utf-8"))
+                installed = cfg.get("skills", {}).get("installed_path", "")
+                if installed:
+                    return Path(os.path.expanduser(installed))
+                platform_type = cfg.get("platform", {}).get("type", "openclaw")
+                defaults = {
+                    "openclaw": "~/.openclaw/skills",
+                    "workbuddy": "~/.workbuddy/skills",
+                    "claude": "~/.claude/skills",
+                }
+                return Path(os.path.expanduser(defaults.get(platform_type, "~/.openclaw/skills")))
+            except Exception:
+                pass
+        return Path(os.path.expanduser("~/.openclaw/skills"))
 
     def scan_and_register(self) -> int:
         """扫描并注册所有 Skill，返回注册数量"""

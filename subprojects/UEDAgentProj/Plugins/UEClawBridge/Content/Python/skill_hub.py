@@ -340,33 +340,14 @@ class SkillHub:
         self._current_software = "unreal_engine"
         self._current_version = self._detect_ue_version()
 
-        # MCP Tool 排除列表：这些工具函数保留在代码中（可通过 run_ue_python 调用），
-        # 但不暴露为 MCP Tool（减少 AI 工具选择噪音）
-        self._excluded_tools: Set[str] = {
-            # scene_ops.py — 写操作由 run_ue_python 替代
-            "spawn_actor",
-            "delete_actors",
-            "set_actor_transform",
-            "rename_actor",
-            "duplicate_actors",
-            # asset_ops.py
-            "does_asset_exist",
-            # material_ops.py — 写操作由 run_ue_python 替代
-            "set_actor_material",
-            "create_material_instance",
-            # level_ops.py — 写操作由 run_ue_python 替代
-            "save_current_level",
-            "save_all_dirty_packages",
-            "open_level",
-            "set_viewport_camera",
-        }
+        # MCP Tool 排除列表（v2.6 遗留，保留用于过滤旧装饰器声明）
+        self._excluded_tools: Set[str] = set()
 
-        # 确定 Skills 目录
+        # 确定 Skills 目录：配置驱动，统一使用平台已安装目录
         if skills_dir:
             self._skills_dir = Path(skills_dir)
         else:
-            plugin_python_dir = Path(__file__).parent
-            self._skills_dir = plugin_python_dir / "Skills"
+            self._skills_dir = self._resolve_skills_dir()
 
         # 确保分层目录存在
         self._ensure_layer_dirs()
@@ -394,6 +375,31 @@ class SkillHub:
             return str(version)
         except Exception:
             return "5.4"  # fallback
+
+    @staticmethod
+    def _resolve_skills_dir() -> Path:
+        """
+        从 ~/.artclaw/config.json 读取已安装 Skill 目录。
+        回退到平台默认值，最终回退到 ~/.openclaw/skills。
+        """
+        import json as _json
+        config_path = Path.home() / ".artclaw" / "config.json"
+        if config_path.exists():
+            try:
+                cfg = _json.loads(config_path.read_text(encoding="utf-8"))
+                installed = cfg.get("skills", {}).get("installed_path", "")
+                if installed:
+                    return Path(os.path.expanduser(installed))
+                platform_type = cfg.get("platform", {}).get("type", "openclaw")
+                defaults = {
+                    "openclaw": "~/.openclaw/skills",
+                    "workbuddy": "~/.workbuddy/skills",
+                    "claude": "~/.claude/skills",
+                }
+                return Path(os.path.expanduser(defaults.get(platform_type, "~/.openclaw/skills")))
+            except Exception:
+                pass
+        return Path(os.path.expanduser("~/.openclaw/skills"))
 
     def _ensure_layer_dirs(self) -> None:
         """确保分层目录存在，并迁移旧目录名"""
@@ -440,14 +446,14 @@ class SkillHub:
         Returns:
             注册的 Skill 数量
         """
-        UELogger.info(f"SkillHub: scanning layers in {self._skills_dir}")
+        UELogger.info(f"SkillHub: scanning skills in {self._skills_dir}")
 
         # 清空之前的状态
         _DECORATED_SKILLS.clear()
         self._all_manifests.clear()
         self._manifests.clear()
 
-        # 阶段 1: 按层级扫描所有 manifest
+        # 阶段 1a: 按层级扫描 (兼容旧分层目录结构)
         for layer_dir_name in LAYER_ORDER:
             layer_path = self._skills_dir / layer_dir_name
             layer_id = LAYER_DIRS[layer_dir_name]
@@ -457,8 +463,8 @@ class SkillHub:
 
             self._scan_layer(layer_path, layer_id)
 
-        # 也扫描 Skills/ 根目录中的 .py 文件 (向后兼容)
-        self._scan_legacy_files()
+        # 阶段 1b: 扁平扫描 (install.py 安装的扁平目录结构)
+        self._scan_flat_skills()
 
         UELogger.info(
             f"SkillHub: discovered {len(self._all_manifests)} skill(s) across layers"
@@ -557,6 +563,35 @@ class SkillHub:
                         or (sub_entry / "SKILL.md").exists()
                     ):
                         self._parse_and_collect(sub_entry, layer_id)
+
+    def _scan_flat_skills(self) -> None:
+        """
+        扫描 Skills 目录下直接存在的 Skill 包（扁平结构）。
+        install.py 安装后的目录: skills_dir/skill_name/ (无层级子目录)
+        跳过已知层级目录和 DCC 子目录名。
+        """
+        if not self._skills_dir.is_dir():
+            return
+
+        SKIP_DIRS = set(LAYER_DIRS.keys()) | set(_LEGACY_LAYER_MAP.keys()) | {
+            "universal", "unreal", "maya", "max", "templates",
+        }
+        # 已收集的 Skill 名
+        seen_names = {m.name for m in self._all_manifests}
+
+        for entry in sorted(self._skills_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            if entry.name.startswith("_") or entry.name.startswith("."):
+                continue
+            if entry.name in SKIP_DIRS:
+                continue
+
+            has_manifest = (entry / "manifest.json").exists()
+            has_skill_md = (entry / "SKILL.md").exists()
+
+            if (has_manifest or has_skill_md) and entry.name not in seen_names:
+                self._parse_and_collect(entry, "installed")
 
     def _parse_and_collect(self, skill_dir: Path, layer_id: str) -> None:
         """解析一个 Skill 目录的 manifest 并收集。
@@ -658,29 +693,6 @@ class SkillHub:
         )
         return manifest
 
-    def _scan_legacy_files(self) -> None:
-        """
-        向后兼容: 扫描 Skills/ 根目录中的独立 .py 文件。
-
-        这些文件没有 manifest.json，使用 @ue_tool 装饰器声明。
-        """
-        for py_file in sorted(self._skills_dir.glob("*.py")):
-            if py_file.name == "__init__.py" or "__pycache__" in str(py_file):
-                continue
-
-            # 加载模块以发现装饰器声明的 Skill
-            try:
-                self._load_skill_module(py_file)
-            except Exception as e:
-                UELogger.mcp_error(f"Failed to load legacy skill {py_file.name}: {e}")
-
-        # 收集装饰器注册的 Skill 作为 custom 层级
-        for tool_name, info in _DECORATED_SKILLS.items():
-            if tool_name in self._registered_skills:
-                continue
-            if tool_name in self._excluded_tools:
-                continue
-            self._register_skill_to_mcp(tool_name, info)
     def _load_and_register_skill(self, manifest: SkillManifest) -> None:
         """
         加载一个 Skill 的 Python 模块并注册所有 Tool 到 MCP。
@@ -1070,21 +1082,6 @@ class SkillHub:
     # ------------------------------------------------------------------
     # 内部方法
     # ------------------------------------------------------------------
-
-    def _load_skill_module(self, py_file: Path) -> None:
-        """加载一个 Skill Python 文件为模块"""
-        module_name = f"ue_skill_{py_file.stem}"
-
-        spec = importlib.util.spec_from_file_location(module_name, str(py_file))
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Cannot create module spec for {py_file}")
-
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-
-        self._loaded_modules[module_name] = module
-        UELogger.info(f"  Loaded skill module: {py_file.name}")
 
     def _register_skill_to_mcp(self, skill_name: str, info: dict) -> None:
         """将 Skill 注册到内部 API（v2.6: 不再注册 MCP 工具）"""

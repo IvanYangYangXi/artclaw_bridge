@@ -635,41 +635,14 @@ if "!PLATFORM!"=="openclaw" (
     echo [跳过] 平台 !PLATFORM! 无 Gateway 插件
 )
 
-:: 安装 OpenClaw Skills (从 skills/official/ 扫描所有 SKILL.md)
-set "OPENCLAW_SKILLS_DST=%USERPROFILE%\.openclaw\skills"
-:: 根据平台选择 Skill 安装路径
-if "!PLATFORM!"=="workbuddy" set "OPENCLAW_SKILLS_DST=%USERPROFILE%\.workbuddy\skills"
-if "!PLATFORM!"=="claude" set "OPENCLAW_SKILLS_DST=%USERPROFILE%\.claude\skills"
-if not exist "!OPENCLAW_SKILLS_DST!" mkdir "!OPENCLAW_SKILLS_DST!"
-
-if exist "%SKILLS_SRC%\official" (
-    echo [复制] Skills...
-    :: 扫描 official/universal/ 和 official/unreal/ 等子目录
-    for /D %%D in ("%SKILLS_SRC%\official\*") do (
-        for /D %%S in ("%%D\*") do (
-            if exist "%%S\SKILL.md" (
-                set "SKILL_NAME=%%~nxS"
-                set "SKILL_DST=!OPENCLAW_SKILLS_DST!\!SKILL_NAME!"
-                if not exist "!SKILL_DST!" mkdir "!SKILL_DST!"
-                copy /Y "%%S\SKILL.md" "!SKILL_DST!\SKILL.md" >nul 2>&1
-                echo   [OK] !SKILL_NAME!
-            )
-        )
-    )
-    echo [OK] Skills 已安装到: !OPENCLAW_SKILLS_DST!
-) else (
-    echo [跳过] 未找到 Skills 源: %SKILLS_SRC%\official
-)
-
-:: 写入 ~/.artclaw/config.json (project_root + platform + skills + mcp)
+:: 安装 Skills + 写入配置（委托给 install.py，支持完整目录复制）
 set "ARTCLAW_CFG_DIR=%USERPROFILE%\.artclaw"
 if not exist "%ARTCLAW_CFG_DIR%" mkdir "%ARTCLAW_CFG_DIR%"
-set "ARTCLAW_CFG=%ARTCLAW_CFG_DIR%\config.json"
-echo [配置] 写入 %ARTCLAW_CFG%...
+echo [配置] 安装 Skills + 写入配置...
 where python >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     python "%ROOT_DIR%\install.py" --openclaw --platform !PLATFORM! --force 2>nul
-    echo [OK] 平台配置已写入 (platform=!PLATFORM!)
+    echo [OK] Skills + 平台配置已完成 (platform=!PLATFORM!)
 ) else (
     echo [跳过] 未找到 Python，请手动运行: python install.py --openclaw --platform !PLATFORM!
 )

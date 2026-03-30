@@ -620,36 +620,38 @@ def install_openclaw(platform_type: str = "openclaw"):
     else:
         cprint("跳过", f"平台 {platform_type} 无 Gateway 插件", "yellow")
 
-    # 安装 Skills（从 skills/official/ 扫描所有 SKILL.md）
+    # 安装 Skills（从 skills/official/ + marketplace/ 复制整个 Skill 目录）
     skills_installed_path = os.path.expanduser(
         pcfg.get("skills_installed_path", "~/.openclaw/skills")
     )
     os.makedirs(skills_installed_path, exist_ok=True)
 
-    official_dir = SKILLS_SRC / "official"
-    if official_dir.exists():
-        cprint("复制", "Skills...")
-        skill_count = 0
-        for category_dir in official_dir.iterdir():
+    skill_count = 0
+    for layer in ("official", "marketplace"):
+        layer_dir = SKILLS_SRC / layer
+        if not layer_dir.exists():
+            continue
+        for category_dir in layer_dir.iterdir():
             if not category_dir.is_dir():
                 continue
             for skill_dir in category_dir.iterdir():
-                if not skill_dir.is_dir():
+                if not skill_dir.is_dir() or skill_dir.name.startswith("."):
                     continue
-                skill_md = skill_dir / "SKILL.md"
-                if skill_md.exists():
-                    dst = os.path.join(skills_installed_path, skill_dir.name)
-                    os.makedirs(dst, exist_ok=True)
-                    shutil.copy2(str(skill_md), os.path.join(dst, "SKILL.md"))
-                    # 复制 references/ 目录（如果有）
-                    refs_dir = skill_dir / "references"
-                    if refs_dir.exists():
-                        refs_dst = os.path.join(dst, "references")
-                        if os.path.exists(refs_dst):
-                            shutil.rmtree(refs_dst)
-                        shutil.copytree(str(refs_dir), refs_dst)
-                    skill_count += 1
+                # 必须有 SKILL.md 或 manifest.json
+                if not (skill_dir / "SKILL.md").exists() and not (skill_dir / "manifest.json").exists():
+                    continue
+                dst = os.path.join(skills_installed_path, skill_dir.name)
+                if os.path.exists(dst):
+                    shutil.rmtree(dst)
+                shutil.copytree(
+                    str(skill_dir), dst,
+                    ignore=shutil.ignore_patterns("__pycache__"),
+                )
+                skill_count += 1
+    if skill_count:
         cprint("OK", f"{skill_count} 个 Skills 已安装到: {skills_installed_path}", "green")
+    else:
+        cprint("跳过", "未找到可安装的 Skills", "yellow")
 
     # 写入 ~/.artclaw/config.json
     write_artclaw_config(platform_type)
