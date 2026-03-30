@@ -287,7 +287,7 @@ class OpenClawBridge:
                     elif event_name == "tick":
                         pass
                     else:
-                        UELogger.verbose(f"OpenClaw Bridge: unhandled event '{event_name}'")
+                        pass  # unhandled event (e.g. cron, tick variants) — ignore silently
         except Exception as e:
             if not self._stop_event.is_set():
                 UELogger.warning(f"OpenClaw Bridge: message loop error: {e}")
