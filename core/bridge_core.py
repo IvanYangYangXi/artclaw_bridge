@@ -649,6 +649,53 @@ class OpenClawBridge:
             self._log.error(f"OpenClaw chat.send error: {error_str}")
             return f"[错误] {error_str}"
 
+    async def _async_chat_send_fire_and_forget(self, message: str) -> str:
+        """发送消息，拿到 run_id 后立即返回，不等 final 事件。
+        后续响应通过 on_ai_message / on_tool_call / on_tool_result 回调流式推送。
+        返回 run_id 字符串，或以 "[错误]" 开头的错误信息。
+        """
+        self._cancel_event = asyncio.Event()
+
+        if not self._session_key:
+            ts = int(time.time() * 1000)
+            self._session_key = f"{self.agent_id}/{self.client_id}:{ts}"
+
+        params = {
+            "sessionKey": self._session_key,
+            "message": message,
+            "idempotencyKey": str(uuid.uuid4()),
+        }
+
+        try:
+            result = await self._rpc_request("chat.send", params, timeout=300.0)
+            if isinstance(result, dict):
+                status = result.get("status", "")
+                if status in ("started", "streaming", "accepted", "running"):
+                    run_id = result.get("runId", "")
+                    self._active_run_id = run_id
+                    self._log.info(
+                        f"OpenClaw chat fire-and-forget started (runId={run_id[:8]}...)"
+                    )
+                    return run_id
+            return f"[错误] 意外的响应状态: {result}"
+        except Exception as e:
+            self._log.error(f"OpenClaw chat.send error: {e}")
+            return f"[错误] {e}"
+
+    def send_message_fire_and_forget(self, message: str) -> str:
+        """同步版 fire-and-forget：发出消息后立即返回 run_id，不阻塞等待。"""
+        if not self._connected or not self._loop:
+            self.start()
+            if not self._connected:
+                return "[错误] 未连接到 OpenClaw Gateway"
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self._async_chat_send_fire_and_forget(message), self._loop
+            )
+            return future.result(timeout=60.0)
+        except Exception as e:
+            return f"[错误] {e}"
+
     async def _wait_for_final(self, timeout: float = 1800.0) -> str:
         latest_text = [""]
         final_event = asyncio.Event()
@@ -668,16 +715,24 @@ class OpenClawBridge:
         self.on_ai_message = _capture
 
         try:
-            cancel_evt = self._cancel_event
+            # 注意：不在这里捕获 cancel_evt 引用，因为 cancel_current() 会替换
+            # self._cancel_event，旧引用无法感知新的 cancel 信号。
+            # 改为在协程里动态读 self._cancel_event，支持新旧 cancel 都能响应。
+            cancel_evt_snapshot = self._cancel_event
 
             async def _wait_final():
                 await final_event.wait()
 
             async def _wait_cancel():
-                if cancel_evt:
-                    await cancel_evt.wait()
-                else:
-                    await asyncio.Event().wait()
+                # 每 0.1s 轮询，检测 self._cancel_event 是否被替换或置位
+                while True:
+                    current_evt = self._cancel_event
+                    if current_evt is not None and current_evt.is_set():
+                        return
+                    # 原始 cancel_event 也检测（防止同一个 event 对象被 set）
+                    if cancel_evt_snapshot is not None and cancel_evt_snapshot.is_set():
+                        return
+                    await asyncio.sleep(0.1)
 
             done, pending = await asyncio.wait(
                 [
@@ -691,7 +746,12 @@ class OpenClawBridge:
             for task in pending:
                 task.cancel()
 
-            if cancel_evt and cancel_evt.is_set():
+            # 检测任意 cancel event 是否触发
+            cancelled = (
+                (self._cancel_event is not None and self._cancel_event.is_set())
+                or (cancel_evt_snapshot is not None and cancel_evt_snapshot.is_set())
+            )
+            if cancelled:
                 self._log.info("OpenClaw Bridge: request cancelled by user")
                 if latest_text[0]:
                     return latest_text[0] + "\n\n[已取消]"

@@ -14,29 +14,26 @@ void FOpenClawPlatformBridge::ExecPython(const FString& Code) const
 
 void FOpenClawPlatformBridge::Connect(const FString& StatusOutFile)
 {
+	// 检查 MCP Server 端口（仅日志，不阻断）
 	ExecPython(
-		TEXT("import socket\n")
-		TEXT("def _check_mcp_ready():\n")
-		TEXT("    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n")
-		TEXT("    s.settimeout(0.5)\n")
-		TEXT("    try:\n")
-		TEXT("        s.connect(('127.0.0.1', 8080))\n")
-		TEXT("        s.close()\n")
-		TEXT("        print('[LogUEAgent] MCP Server: OK')\n")
-		TEXT("    except:\n")
-		TEXT("        s.close()\n")
-		TEXT("        print('[LogUEAgent] MCP Server: not ready yet (init_unreal will start it)')\n")
-		TEXT("_check_mcp_ready()\n")
+		TEXT("import socket as _s\n")
+		TEXT("_sock = _s.socket(_s.AF_INET, _s.SOCK_STREAM)\n")
+		TEXT("_sock.settimeout(0.5)\n")
+		TEXT("try:\n")
+		TEXT("    _sock.connect(('127.0.0.1', 8080))\n")
+		TEXT("    print('[LogUEAgent] MCP Server: OK')\n")
+		TEXT("except:\n")
+		TEXT("    print('[LogUEAgent] MCP Server: not ready')\n")
+		TEXT("finally:\n")
+		TEXT("    _sock.close()\n")
 	);
 
+	// connect() 直接返回 bool（socket 探测，不建立持久连接）
 	FString PythonCmd = FString::Printf(
-		TEXT("import time\n")
-		TEXT("from openclaw_chat import connect, is_connected\n")
-		TEXT("connect()\n")
-		TEXT("time.sleep(1.5)\n")
-		TEXT("status = 'ok' if is_connected() else 'fail'\n")
-		TEXT("with open(r'%s', 'w') as f:\n")
-		TEXT("    f.write(status)\n"),
+		TEXT("from openclaw_chat import connect as _oc_connect\n")
+		TEXT("_ok = _oc_connect()\n")
+		TEXT("with open(r'%s', 'w', encoding='utf-8') as _f:\n")
+		TEXT("    _f.write('ok' if _ok else 'fail')\n"),
 		*StatusOutFile
 	);
 	ExecPython(PythonCmd);
@@ -54,7 +51,8 @@ void FOpenClawPlatformBridge::Disconnect()
 void FOpenClawPlatformBridge::CancelCurrentRequest()
 {
 	ExecPython(
-		TEXT("from openclaw_chat import cancel_current_request; cancel_current_request()")
+		TEXT("from openclaw_chat import cancel_current_request\n")
+		TEXT("cancel_current_request()\n")
 	);
 }
 
@@ -65,20 +63,18 @@ void FOpenClawPlatformBridge::CancelRequest()
 
 void FOpenClawPlatformBridge::SendMessageAsync(const FString& Message, const FString& ResponseFile)
 {
-	// 消息内容通过临时文件传递，避免字符串拼接导致的引号/特殊字符/Unicode 问题
-	FString TempDir   = FPaths::GetPath(ResponseFile);
-	FString MsgFile   = TempDir / TEXT("_openclaw_msg_input.txt");
+	// 消息内容通过临时文件传递，避免字符串拼接导致的引号/Unicode 问题
+	FString MsgFile = FPaths::GetPath(ResponseFile) / TEXT("_openclaw_msg_input.txt");
 
-	// 写入消息文件（UTF-8）
 	FFileHelper::SaveStringToFile(
 		Message, *MsgFile,
 		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM
 	);
 
-	// Python 侧通过 @file: 前缀读取消息文件
+	// send_chat_async_to_file(msg_file, response_file) — 直接传文件路径
 	FString PythonCmd = FString::Printf(
 		TEXT("from openclaw_chat import send_chat_async_to_file\n")
-		TEXT("send_chat_async_to_file('@file:%s', r'%s')\n"),
+		TEXT("send_chat_async_to_file(r'%s', r'%s')\n"),
 		*MsgFile, *ResponseFile
 	);
 	ExecPython(PythonCmd);
@@ -113,31 +109,27 @@ void FOpenClawPlatformBridge::CollectEnvironmentContext(const FString& ContextOu
 void FOpenClawPlatformBridge::QueryStatus()
 {
 	ExecPython(
-		TEXT("import socket\n")
-		TEXT("_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n")
-		TEXT("_s.settimeout(0.5)\n")
-		TEXT("mcp_ok = False\n")
+		TEXT("import socket as _s\n")
+		TEXT("_sock = _s.socket(_s.AF_INET, _s.SOCK_STREAM)\n")
+		TEXT("_sock.settimeout(0.5)\n")
+		TEXT("_mcp_ok = False\n")
 		TEXT("try:\n")
-		TEXT("    _s.connect(('127.0.0.1', 8080))\n")
-		TEXT("    mcp_ok = True\n")
+		TEXT("    _sock.connect(('127.0.0.1', 8080))\n")
+		TEXT("    _mcp_ok = True\n")
 		TEXT("except: pass\n")
-		TEXT("finally: _s.close()\n")
-		TEXT("from openclaw_chat import is_connected as _oc_connected\n")
-		TEXT("oc_ok = _oc_connected()\n")
-		TEXT("_mcp_s = 'OK' if mcp_ok else 'DOWN'\n")
-		TEXT("_oc_s = 'Connected' if oc_ok else 'Disconnected'\n")
-		TEXT("print(f'[LogUEAgent] Status: MCP Server={_mcp_s}, OpenClaw Bridge={_oc_s}')\n")
+		TEXT("finally: _sock.close()\n")
+		TEXT("from openclaw_chat import connect as _oc_connect\n")
+		TEXT("_oc_ok = _oc_connect()\n")
+		TEXT("print(f'[LogUEAgent] MCP Server={\"OK\" if _mcp_ok else \"DOWN\"}, "
+		     "OpenClaw Gateway={\"Connected\" if _oc_ok else \"Disconnected\"}')\n")
 	);
 }
 
 void FOpenClawPlatformBridge::ResetSession()
 {
 	ExecPython(
-		TEXT("try:\n")
-		TEXT("    from openclaw_chat import reset_session\n")
-		TEXT("    import openclaw_chat as _oc\n")
-		TEXT("    reset_session()\n")
-		TEXT("except: pass")
+		TEXT("from openclaw_chat import reset_session\n")
+		TEXT("reset_session()\n")
 	);
 }
 
@@ -147,7 +139,8 @@ void FOpenClawPlatformBridge::SetSessionKey(const FString& SessionKey)
 	EscapedKey.ReplaceInline(TEXT("'"), TEXT("\\'"));
 
 	FString PythonCmd = FString::Printf(
-		TEXT("from openclaw_chat import set_session_key; set_session_key('%s')"),
+		TEXT("from openclaw_chat import set_session_key\n")
+		TEXT("set_session_key('%s')\n"),
 		*EscapedKey
 	);
 	ExecPython(PythonCmd);
@@ -163,8 +156,8 @@ FString FOpenClawPlatformBridge::GetSessionKey() const
 	FString PythonCmd = FString::Printf(
 		TEXT("from openclaw_chat import get_session_key\n")
 		TEXT("_key = get_session_key()\n")
-		TEXT("with open(r'%s', 'w', encoding='utf-8') as f:\n")
-		TEXT("    f.write(_key)\n"),
+		TEXT("with open(r'%s', 'w', encoding='utf-8') as _f:\n")
+		TEXT("    _f.write(_key)\n"),
 		*KeyFile
 	);
 	ExecPython(PythonCmd);
