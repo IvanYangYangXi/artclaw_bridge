@@ -112,7 +112,7 @@ async def do_chat(
             ping_timeout=10,
             open_timeout=10,
         ) as ws:
-            if not await _handshake(ws, token):
+            if not await _handshake(ws, token, session_key=session_key):
                 _error(stream_file, response_file, "[Error] Gateway handshake failed", stream_lock)
                 return
 
@@ -157,12 +157,17 @@ async def do_chat(
         UELogger.mcp_error(f"[openclaw_ws] do_chat exception: {exc}")
 
 
-async def _handshake(ws, token: str) -> bool:
+async def _handshake(ws, token: str, session_key: str = "") -> bool:
+    """握手并认证。displayName 带上 session key 后缀，方便在网页端区分会话。"""
     try:
         raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
         msg = json.loads(raw)
         if msg.get("event") != "connect.challenge":
             return False
+
+        # displayName: "UE Claw Bridge · ue-editor:17334..."（取 session key 末尾 16 字符）
+        suffix = session_key[-16:] if session_key else ""
+        display_name = f"UE Claw Bridge · {suffix}" if suffix else "UE Claw Bridge"
 
         req_id = str(uuid.uuid4())
         await ws.send(json.dumps({
@@ -171,7 +176,7 @@ async def _handshake(ws, token: str) -> bool:
                 "minProtocol": _PROTOCOL_VERSION,
                 "maxProtocol": _PROTOCOL_VERSION,
                 "client": {
-                    "id": _CLIENT_NAME, "displayName": "UE Claw Bridge",
+                    "id": _CLIENT_NAME, "displayName": display_name,
                     "version": _CLIENT_VERSION, "platform": "win32", "mode": "cli",
                 },
                 "caps": [], "auth": {"token": token},

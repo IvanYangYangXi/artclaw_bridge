@@ -320,7 +320,8 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 								FString Content = JsonObj->GetStringField(TEXT("content"));
 								bool bIsError = JsonObj->GetBoolField(TEXT("is_error"));
 
-								if (!ToolName.IsEmpty())
+								// 用 ToolId 判断有效性（ToolName 可能为空，但 ToolId 不会）
+								if (!ToolId.IsEmpty())
 								{
 									Self->AddToolResultMessage(ToolName, ToolId, Content, bIsError);
 								}

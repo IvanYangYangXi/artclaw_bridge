@@ -96,7 +96,14 @@ def prune_asset(asset_path: str) -> dict:
     try:
         asset_data = unreal.EditorAssetLibrary.find_asset_data(asset_path)
         if asset_data:
-            data["class"] = str(asset_data.asset_class)
+            # asset_class 在 UE5.1+ 已废弃，始终返回 "None"
+            # 正确方式: asset_class_path.asset_name (TopLevelAssetPath)
+            # 或 find_asset_native_class().get_name() 获取原生类
+            try:
+                cls = asset_data.find_asset_native_class()
+                data["class"] = cls.get_name() if cls else str(asset_data.asset_class_path.asset_name)
+            except Exception:
+                data["class"] = str(asset_data.asset_class_path.asset_name)
             data["name"] = str(asset_data.asset_name)
     except Exception:
         pass
@@ -295,9 +302,12 @@ def _read_editor_context() -> dict:
                 "path": str(ad.package_name),
             }
             try:
-                asset_info["class"] = str(ad.asset_class)
+                # asset_class 在 UE5.1+ 已废弃，始终返回 "None"
+                # 优先用 find_asset_native_class()，回退到 asset_class_path.asset_name
+                cls = ad.find_asset_native_class()
+                asset_info["class"] = cls.get_name() if cls else str(ad.asset_class_path.asset_name)
             except Exception:
-                pass
+                asset_info["class"] = str(ad.asset_class_path.asset_name)
             cb_selected_assets.append(asset_info)
     except Exception:
         pass
