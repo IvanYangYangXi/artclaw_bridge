@@ -141,9 +141,16 @@ async def do_chat(
                     return
                 UELogger.warning(f"[openclaw_ws] unexpected status: {status}")
 
-            UELogger.info(f"[openclaw_ws] chat.send OK, runId={ack.get('runId', 'N/A')[:8]}...")
+            # Gateway 可能对 sessionKey 做 namespace 包装，优先用 ACK 返回的 sessionKey；
+            # 同时记录 runId 作为备用过滤维度。
+            effective_session_key = ack.get("sessionKey") or session_key
+            active_run_id = ack.get("runId", "")
+            UELogger.info(f"[openclaw_ws] chat.send OK, "
+                          f"runId={active_run_id[:8] if active_run_id else 'N/A'}..., "
+                          f"effectiveSession={effective_session_key[:50] if effective_session_key else 'N/A'}")
             await _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lock,
-                                  session_key=session_key)
+                                  session_key=effective_session_key,
+                                  run_id=active_run_id)
 
     except Exception as exc:
         _error(stream_file, response_file, f"[Error] WebSocket: {exc}", stream_lock)
@@ -207,10 +214,12 @@ async def _wait_for_ack(ws, req_id: str, timeout: float = 15.0) -> Optional[dict
 
 
 async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lock,
-                          session_key: str = "") -> None:
+                          session_key: str = "", run_id: str = "") -> None:
     """接收 chat 流式事件，直到 final/aborted/error。
-    
-    只处理与 session_key 匹配的 chat 事件，过滤其他 session 的广播消息。
+
+    过滤策略（双重保险）:
+    1. sessionKey 匹配：事件 sessionKey 包含本地 key，或等于 ACK 返回的 effective key
+    2. runId 匹配：如果 ACK 返回了 runId，只接受同 runId 的事件（更精确）
     只响应 delta/final/aborted/error 四种 state，忽略其他状态（如 monitoring）。
     """
     latest_text = ""
@@ -242,18 +251,34 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
 
         payload = msg.get("payload", {})
 
-        # --- Bug Fix: 过滤其他 session 的广播事件 ---
-        # Gateway 会向所有连接推送 chat 事件，必须按 sessionKey 过滤
+        # --- 过滤其他 session / run 的广播事件 ---
+        # 优先用 runId 过滤（最精确）；fallback 到 sessionKey 包含匹配。
+        # Gateway 可能对 sessionKey 做 namespace 包装（如 "agent:qi:qi/ue-editor:xxx"），
+        # 所以不用精确匹配，而是检查本地 key 是否包含在事件 key 中（或反之）。
+        event_run_id = payload.get("runId", "")
         event_session = payload.get("sessionKey", "")
-        if session_key and event_session and event_session != session_key:
-            UELogger.info(f"[openclaw_ws] skip event from other session: {event_session[:30]}")
-            continue
+
+        if run_id and event_run_id:
+            # runId 过滤：精确匹配
+            if event_run_id != run_id:
+                UELogger.info(f"[openclaw_ws] skip event runId={event_run_id[:12]} (want {run_id[:12]})")
+                continue
+        elif session_key and event_session:
+            # sessionKey 过滤：包含匹配（兼容 Gateway namespace 包装）
+            match = (
+                event_session == session_key
+                or session_key in event_session
+                or event_session in session_key
+            )
+            if not match:
+                UELogger.info(f"[openclaw_ws] skip event from other session: {event_session[:60]}")
+                continue
 
         state   = payload.get("state", "")
         message = payload.get("message", {})
         text    = _extract_text(message)
 
-        # --- Bug Fix: 只处理已知 state，忽略 monitoring 等非对话状态 ---
+        # --- 只处理已知 state，忽略 monitoring 等非对话状态 ---
         if state not in ("delta", "final", "aborted", "error"):
             UELogger.info(f"[openclaw_ws] skip non-chat state: {state}")
             continue
