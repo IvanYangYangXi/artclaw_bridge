@@ -4,19 +4,21 @@
 ArtClaw Bridge — 跨平台安装器
 ================================
 
-统一安装 UE / Maya / 3ds Max 插件 + OpenClaw 配置。
+统一安装 UE / Maya / 3ds Max 插件 + 平台配置。
 每个目标部署为自包含模式（bridge_core 等共享模块打包进目标目录）。
+支持多平台: openclaw (默认) / workbuddy / claude
 
 用法:
     python install.py --maya                              # 安装 Maya 插件
     python install.py --maya --maya-version 2024          # 指定 Maya 版本
     python install.py --max --max-version 2024            # 安装 Max 插件
     python install.py --ue --ue-project "C:\\path\\to\\proj"  # 安装 UE 插件
-    python install.py --openclaw                          # 配置 OpenClaw
+    python install.py --openclaw                          # 配置平台
     python install.py --all --ue-project "C:\\path\\to\\proj"  # 全部安装
     python install.py --uninstall --maya                  # 卸载 Maya 插件
     python install.py --uninstall --max                   # 卸载 Max 插件
     python install.py --uninstall --ue --ue-project "C:\\path\\to\\proj"  # 卸载 UE 插件
+    python install.py --platform workbuddy --maya         # 安装 Maya 并配置 WorkBuddy 平台
     python install.py --force                             # 跳过覆盖确认
 """
 
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 import os
 import platform
 import re
@@ -40,11 +43,45 @@ ROOT_DIR = Path(__file__).resolve().parent
 DCC_BRIDGE_SRC = ROOT_DIR / "subprojects" / "DCCClawBridge"
 UE_PLUGIN_SRC = ROOT_DIR / "subprojects" / "UEDAgentProj" / "Plugins" / "UEClawBridge"
 BRIDGE_MODULES_SRC = ROOT_DIR / "core"
-PLATFORM_SRC = ROOT_DIR / "platforms" / "openclaw"
-MCP_BRIDGE_SRC = PLATFORM_SRC / "gateway"
+PLATFORMS_DIR = ROOT_DIR / "platforms"
+SKILLS_SRC = ROOT_DIR / "skills"
 
 # 需要打包到每个目标的共享模块
 SHARED_MODULES = ["bridge_core.py", "bridge_config.py", "bridge_diagnostics.py"]
+
+# 支持的平台及其默认配置（与 bridge_config.py 的 _PLATFORM_DEFAULTS 保持一致）
+PLATFORM_CONFIGS = {
+    "openclaw": {
+        "gateway_url": "ws://127.0.0.1:18789",
+        "mcp_port": 8080,
+        "skills_installed_path": "~/.openclaw/skills",
+        "mcp_config_path": "~/.openclaw/openclaw.json",
+        "mcp_config_key": "mcp.servers",
+        "bridge_file": "openclaw_bridge.py",
+        "has_gateway": True,
+        "has_setup_config": True,
+    },
+    "workbuddy": {
+        "gateway_url": "ws://127.0.0.1:18789",
+        "mcp_port": 8080,
+        "skills_installed_path": "~/.workbuddy/skills",
+        "mcp_config_path": "~/.workbuddy/config.json",
+        "mcp_config_key": "mcpServers",
+        "bridge_file": "workbuddy_bridge.py",
+        "has_gateway": False,
+        "has_setup_config": False,
+    },
+    "claude": {
+        "gateway_url": "",
+        "mcp_port": 8080,
+        "skills_installed_path": "~/.claude/skills",
+        "mcp_config_path": "~/.claude/config.json",
+        "mcp_config_key": "mcpServers",
+        "bridge_file": "claude_bridge.py",
+        "has_gateway": False,
+        "has_setup_config": False,
+    },
+}
 
 # userSetup / startup 注入标记
 INJECT_START = "# ===== ArtClaw Bridge START ====="
@@ -82,6 +119,16 @@ def copy_dir(src: str, dst: str):
     shutil.copytree(src, dst)
 
 
+def get_platform_src(platform_type: str) -> Path:
+    """获取平台源码目录"""
+    return PLATFORMS_DIR / platform_type
+
+
+def get_gateway_src(platform_type: str) -> Path:
+    """获取平台 Gateway 插件源码目录"""
+    return get_platform_src(platform_type) / "gateway"
+
+
 def copy_shared_modules(dst_dir: str):
     """将 bridge_core 等共享模块复制到目标目录"""
     os.makedirs(dst_dir, exist_ok=True)
@@ -91,6 +138,69 @@ def copy_shared_modules(dst_dir: str):
             shutil.copy2(str(src), os.path.join(dst_dir, mod))
         else:
             cprint("警告", f"共享模块不存在: {src}", "yellow")
+
+
+def copy_platform_bridge(platform_type: str, dst_dir: str):
+    """将平台特定 bridge 文件复制到目标目录"""
+    pcfg = PLATFORM_CONFIGS.get(platform_type)
+    if not pcfg:
+        cprint("警告", f"未知平台: {platform_type}，跳过 bridge 文件复制", "yellow")
+        return
+    bridge_file = pcfg["bridge_file"]
+    src = get_platform_src(platform_type) / bridge_file
+    if src.exists():
+        os.makedirs(dst_dir, exist_ok=True)
+        shutil.copy2(str(src), os.path.join(dst_dir, bridge_file))
+        cprint("OK", f"平台 bridge 已复制: {bridge_file}", "green")
+    else:
+        cprint("警告", f"平台 bridge 文件不存在: {src}", "yellow")
+
+
+def write_artclaw_config(platform_type: str):
+    """
+    写入 ~/.artclaw/config.json 的平台配置。
+    保留已有字段（如 project_root、ue_agent_id），更新 platform/skills/mcp 节。
+    """
+    pcfg = PLATFORM_CONFIGS.get(platform_type)
+    if not pcfg:
+        cprint("警告", f"未知平台: {platform_type}，跳过配置写入", "yellow")
+        return
+
+    config_path = os.path.expanduser("~/.artclaw/config.json")
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+
+    # 读取现有配置
+    existing = {}
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+
+    # 更新 project_root
+    existing["project_root"] = str(ROOT_DIR)
+
+    # 更新平台配置
+    existing["platform"] = {
+        "type": platform_type,
+        "gateway_url": pcfg["gateway_url"],
+        "mcp_port": pcfg["mcp_port"],
+    }
+    existing["skills"] = {
+        "installed_path": pcfg["skills_installed_path"],
+        "disabled": existing.get("skills", {}).get("disabled", []),
+        "pinned": existing.get("skills", {}).get("pinned", []),
+    }
+    existing["mcp"] = {
+        "config_path": pcfg["mcp_config_path"],
+        "config_key": pcfg["mcp_config_key"],
+    }
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(existing, f, indent=2, ensure_ascii=False)
+
+    cprint("OK", f"~/.artclaw/config.json 已更新 (platform={platform_type})", "green")
 
 
 def read_file(path: str) -> str:
@@ -216,7 +326,7 @@ def remove_startup_injection(target_file: str, label: str) -> bool:
 # 安装: UE
 # ---------------------------------------------------------------------------
 
-def install_ue(ue_project: str, force: bool):
+def install_ue(ue_project: str, force: bool, platform_type: str = "openclaw"):
     """安装 UE 插件到指定项目"""
     print()
     print("  ── Unreal Engine 插件安装 ──────────────────────────")
@@ -233,6 +343,7 @@ def install_ue(ue_project: str, force: bool):
         return False
 
     cprint("OK", f"UE 项目: {uproject_files[0]}", "green")
+    cprint("信息", f"平台: {platform_type}")
 
     if not UE_PLUGIN_SRC.exists():
         cprint("错误", f"UE 插件源码不存在: {UE_PLUGIN_SRC}", "red")
@@ -253,6 +364,10 @@ def install_ue(ue_project: str, force: bool):
     python_dst = os.path.join(plugin_dst, "Content", "Python")
     copy_shared_modules(python_dst)
     cprint("OK", f"共享模块已打包到: {python_dst}", "green")
+
+    # 复制平台 bridge
+    cprint("复制", f"平台 bridge ({platform_type})...")
+    copy_platform_bridge(platform_type, python_dst)
 
     # 尝试安装 Python 依赖
     _install_ue_python_deps()
@@ -315,7 +430,7 @@ def _find_ue_python() -> str | None:
 # 安装: Maya
 # ---------------------------------------------------------------------------
 
-def install_maya(maya_version: str, force: bool):
+def install_maya(maya_version: str, force: bool, platform_type: str = "openclaw"):
     """安装 Maya 插件"""
     print()
     print("  ── Maya 插件安装 ───────────────────────────────────")
@@ -327,6 +442,7 @@ def install_maya(maya_version: str, force: bool):
     dcc_dst = os.path.join(scripts_dir, "DCCClawBridge")
 
     cprint("信息", f"Maya 版本: {maya_version}")
+    cprint("信息", f"平台: {platform_type}")
     cprint("信息", f"目标目录: {dcc_dst}")
 
     if not confirm_overwrite(dcc_dst, force):
@@ -345,6 +461,10 @@ def install_maya(maya_version: str, force: bool):
     cprint("复制", "bridge_core 共享模块到 core/...")
     copy_shared_modules(os.path.join(dcc_dst, "core"))
     cprint("OK", "共享模块已打包 (自包含部署)", "green")
+
+    # 复制平台 bridge 到 core/
+    cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
+    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
 
     # 注入 userSetup.py（幂等追加）
     user_setup_src = str(DCC_BRIDGE_SRC / "maya_setup" / "userSetup.py")
@@ -385,7 +505,7 @@ def uninstall_maya(maya_version: str):
 # 安装: 3ds Max
 # ---------------------------------------------------------------------------
 
-def install_max(max_version: str, force: bool):
+def install_max(max_version: str, force: bool, platform_type: str = "openclaw"):
     """安装 3ds Max 插件"""
     print()
     print("  ── 3ds Max 插件安装 ────────────────────────────────")
@@ -403,6 +523,7 @@ def install_max(max_version: str, force: bool):
     dcc_dst = os.path.join(scripts_dir, "DCCClawBridge")
 
     cprint("信息", f"3ds Max 版本: {max_version}")
+    cprint("信息", f"平台: {platform_type}")
     cprint("信息", f"目标目录: {dcc_dst}")
 
     if not confirm_overwrite(dcc_dst, force):
@@ -422,6 +543,10 @@ def install_max(max_version: str, force: bool):
     cprint("复制", "bridge_core 共享模块到 core/...")
     copy_shared_modules(os.path.join(dcc_dst, "core"))
     cprint("OK", "共享模块已打包 (自包含部署)", "green")
+
+    # 复制平台 bridge 到 core/
+    cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
+    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
 
     # 注入 startup.py（幂等追加）
     startup_src = str(DCC_BRIDGE_SRC / "max_setup" / "startup.py")
@@ -464,39 +589,81 @@ def uninstall_max(max_version: str):
 # 安装: OpenClaw 配置
 # ---------------------------------------------------------------------------
 
-def install_openclaw():
+def install_openclaw(platform_type: str = "openclaw"):
     """配置 OpenClaw mcp-bridge 插件"""
     print()
     print("  ── OpenClaw mcp-bridge 配置 ────────────────────────")
     print()
 
-    # 复制 mcp-bridge 插件文件
-    ext_dir = os.path.join(os.path.expanduser("~"), ".openclaw", "extensions", "mcp-bridge")
-    os.makedirs(ext_dir, exist_ok=True)
+    platform_src = get_platform_src(platform_type)
+    gateway_src = get_gateway_src(platform_type)
+    pcfg = PLATFORM_CONFIGS.get(platform_type, {})
 
-    for fname in ["index.ts", "openclaw.plugin.json"]:
-        src = MCP_BRIDGE_SRC / fname
-        if src.exists():
-            shutil.copy2(str(src), os.path.join(ext_dir, fname))
-    cprint("OK", f"mcp-bridge 已复制到: {ext_dir}", "green")
+    # 复制 Gateway 插件文件（仅支持 Gateway 的平台）
+    if pcfg.get("has_gateway") and gateway_src.exists():
+        ext_dir = os.path.join(os.path.expanduser("~"), ".openclaw", "extensions", "mcp-bridge")
+        os.makedirs(ext_dir, exist_ok=True)
 
-    # 运行配置脚本
-    config_script = PLATFORM_SRC / "setup_openclaw_config.py"
-    if config_script.exists():
-        cprint("配置", "运行 setup_openclaw_config.py...")
-        try:
-            subprocess.run(
-                [sys.executable, str(config_script), "--ue", "--maya", "--max"],
-                check=True, timeout=30,
-            )
-            cprint("OK", "OpenClaw 配置已更新", "green")
-        except Exception as e:
-            cprint("警告", f"配置脚本失败: {e}", "yellow")
-            cprint("提示", f"请手动运行: python {config_script}", "yellow")
+        for fname in ["index.ts", "openclaw.plugin.json"]:
+            src = gateway_src / fname
+            if src.exists():
+                shutil.copy2(str(src), os.path.join(ext_dir, fname))
+        cprint("OK", f"mcp-bridge 已复制到: {ext_dir}", "green")
     else:
-        cprint("警告", f"配置脚本不存在: {config_script}", "yellow")
+        cprint("跳过", f"平台 {platform_type} 无 Gateway 插件", "yellow")
 
-    cprint("完成", "OpenClaw 配置成功!", "green")
+    # 安装 Skills（从 skills/official/ 扫描所有 SKILL.md）
+    skills_installed_path = os.path.expanduser(
+        pcfg.get("skills_installed_path", "~/.openclaw/skills")
+    )
+    os.makedirs(skills_installed_path, exist_ok=True)
+
+    official_dir = SKILLS_SRC / "official"
+    if official_dir.exists():
+        cprint("复制", "Skills...")
+        skill_count = 0
+        for category_dir in official_dir.iterdir():
+            if not category_dir.is_dir():
+                continue
+            for skill_dir in category_dir.iterdir():
+                if not skill_dir.is_dir():
+                    continue
+                skill_md = skill_dir / "SKILL.md"
+                if skill_md.exists():
+                    dst = os.path.join(skills_installed_path, skill_dir.name)
+                    os.makedirs(dst, exist_ok=True)
+                    shutil.copy2(str(skill_md), os.path.join(dst, "SKILL.md"))
+                    # 复制 references/ 目录（如果有）
+                    refs_dir = skill_dir / "references"
+                    if refs_dir.exists():
+                        refs_dst = os.path.join(dst, "references")
+                        if os.path.exists(refs_dst):
+                            shutil.rmtree(refs_dst)
+                        shutil.copytree(str(refs_dir), refs_dst)
+                    skill_count += 1
+        cprint("OK", f"{skill_count} 个 Skills 已安装到: {skills_installed_path}", "green")
+
+    # 写入 ~/.artclaw/config.json
+    write_artclaw_config(platform_type)
+
+    # 运行平台特定配置脚本（如 setup_openclaw_config.py）
+    if pcfg.get("has_setup_config"):
+        config_script = platform_src / "setup_openclaw_config.py"
+        if config_script.exists():
+            cprint("配置", "运行 setup_openclaw_config.py...")
+            try:
+                subprocess.run(
+                    [sys.executable, str(config_script), "--ue", "--maya", "--max"],
+                    check=True, timeout=30,
+                )
+                cprint("OK", "平台配置已更新", "green")
+            except Exception as e:
+                cprint("警告", f"配置脚本失败: {e}", "yellow")
+                cprint("提示", f"请手动运行: python {config_script}", "yellow")
+    else:
+        cprint("跳过", f"平台 {platform_type} 无配置脚本", "yellow")
+
+    cprint("完成", f"平台配置成功 (platform={platform_type})!", "green")
     return True
 
 
@@ -572,11 +739,12 @@ def main():
   python install.py --maya --maya-version 2024           安装到 Maya 2024
   python install.py --max --max-version 2024             安装 Max 插件
   python install.py --ue --ue-project "C:\\MyProject"     安装 UE 插件
-  python install.py --openclaw                           配置 OpenClaw
+  python install.py --openclaw                           配置平台 (默认 openclaw)
   python install.py --all --ue-project "C:\\MyProject"    全部安装
   python install.py --uninstall --maya                   卸载 Maya 插件
   python install.py --uninstall --maya --max             卸载 Maya + Max
   python install.py --force --maya --max                 跳过覆盖确认
+  python install.py --platform workbuddy --maya          安装 Maya 并配置 WorkBuddy 平台
         """,
     )
 
@@ -584,13 +752,20 @@ def main():
     parser.add_argument("--maya", action="store_true", help="安装/卸载 Maya 插件")
     parser.add_argument("--max", action="store_true", help="安装/卸载 3ds Max 插件")
     parser.add_argument("--ue", action="store_true", help="安装/卸载 UE 插件")
-    parser.add_argument("--openclaw", action="store_true", help="配置 OpenClaw mcp-bridge")
-    parser.add_argument("--all", action="store_true", help="安装全部 (UE + Maya + Max + OpenClaw)")
+    parser.add_argument("--openclaw", action="store_true", help="配置平台 (Gateway + Skills + config)")
+    parser.add_argument("--all", action="store_true", help="安装全部 (UE + Maya + Max + 平台配置)")
 
     # 版本参数
     parser.add_argument("--maya-version", default="2023", help="Maya 版本 (默认: 2023)")
     parser.add_argument("--max-version", default="2024", help="3ds Max 版本 (默认: 2024)")
     parser.add_argument("--ue-project", default="", help="UE 项目路径 (包含 .uproject 的目录)")
+
+    # 平台选择
+    parser.add_argument(
+        "--platform", default="openclaw",
+        choices=list(PLATFORM_CONFIGS.keys()),
+        help="目标平台 (默认: openclaw)，决定部署哪个平台的 bridge 和配置",
+    )
 
     # 选项
     parser.add_argument("--force", action="store_true", help="跳过覆盖确认")
@@ -610,16 +785,27 @@ def main():
         args.ue = True
         args.openclaw = True
 
+    pt = args.platform
+
+    # 验证平台目录存在（非卸载模式）
+    if not args.uninstall:
+        platform_dir = get_platform_src(pt)
+        if not platform_dir.exists():
+            cprint("警告", f"平台目录不存在: {platform_dir}（可能尚未开发）", "yellow")
+            cprint("提示", "将继续安装 DCC 插件 + 共享核心，但跳过平台 bridge 文件", "yellow")
+
     print()
     print("  ╔══════════════════════════════════════════════════════╗")
     if args.uninstall:
         print("  ║       ArtClaw Bridge — 卸载器                        ║")
     else:
-        print("  ║       ArtClaw Bridge — 安装器 v1.0                    ║")
+        print("  ║       ArtClaw Bridge — 安装器 v1.2                    ║")
     print("  ║       UE / Maya / 3ds Max                             ║")
     print("  ╚══════════════════════════════════════════════════════╝")
     print()
     cprint("信息", f"项目目录: {ROOT_DIR}")
+    if not args.uninstall:
+        cprint("信息", f"目标平台: {pt}")
 
     installed = []
     uninstalled = []
@@ -636,21 +822,21 @@ def main():
             if uninstall_max(args.max_version):
                 uninstalled.append(f"3ds Max {args.max_version} 插件")
         if args.openclaw:
-            cprint("提示", "OpenClaw 配置需手动修改平台配置文件（参考 ~/.artclaw/config.json 中的 mcp.config_path）", "yellow")
+            cprint("提示", "平台配置需手动修改（参考 ~/.artclaw/config.json）", "yellow")
     else:
         # ─── 安装模式 ───
         if args.ue:
-            if install_ue(args.ue_project, args.force):
+            if install_ue(args.ue_project, args.force, pt):
                 installed.append("UE 插件")
         if args.maya:
-            if install_maya(args.maya_version, args.force):
+            if install_maya(args.maya_version, args.force, pt):
                 installed.append(f"Maya {args.maya_version} 插件")
         if args.max:
-            if install_max(args.max_version, args.force):
+            if install_max(args.max_version, args.force, pt):
                 installed.append(f"3ds Max {args.max_version} 插件")
         if args.openclaw:
-            if install_openclaw():
-                installed.append("OpenClaw mcp-bridge")
+            if install_openclaw(pt):
+                installed.append(f"平台配置 ({pt})")
 
     print_summary(installed, uninstalled)
 

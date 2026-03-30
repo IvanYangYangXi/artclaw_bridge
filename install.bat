@@ -6,13 +6,13 @@ setlocal EnableDelayedExpansion
 ::  ArtClaw Bridge — 统一一键安装器 (Windows)
 ::
 ::  用法:
-::    双击运行，按菜单选择安装目标
+::    双击运行，选择平台后按菜单选择安装目标
 ::
 ::  功能:
 ::    - 安装 UE 插件到 UE 项目
 ::    - 安装 Maya 插件到 Maya scripts 目录 (幂等追加 userSetup.py)
 ::    - 安装 3ds Max 插件到 Max scripts 目录 (幂等注入 startup)
-::    - 配置 OpenClaw mcp-bridge 插件
+::    - 配置平台 (OpenClaw / WorkBuddy / Claude)
 ::    - 自动打包 bridge_core 共享模块（自包含部署）
 ::    - 卸载已安装的插件
 ::
@@ -29,8 +29,7 @@ if "%ROOT_DIR:~-1%"=="\" set "ROOT_DIR=%ROOT_DIR:~0,-1%"
 set "DCC_BRIDGE_SRC=%ROOT_DIR%\subprojects\DCCClawBridge"
 set "UE_PLUGIN_SRC=%ROOT_DIR%\subprojects\UEDAgentProj\Plugins\UEClawBridge"
 set "BRIDGE_MODULES_SRC=%ROOT_DIR%\core"
-set "PLATFORM_SRC=%ROOT_DIR%\platforms\openclaw"
-set "MCP_BRIDGE_SRC=%PLATFORM_SRC%\gateway"
+set "PLATFORMS_DIR=%ROOT_DIR%\platforms"
 set "SKILLS_SRC=%ROOT_DIR%\skills"
 
 :: 标记常量
@@ -53,11 +52,34 @@ if not exist "%UE_PLUGIN_SRC%\UEClawBridge.uplugin" (
 
 echo.
 echo  ╔══════════════════════════════════════════════════════╗
-echo  ║       ArtClaw Bridge — 统一安装器 v1.2               ║
-echo  ║       UE / Maya / 3ds Max / OpenClaw 一键部署        ║
+echo  ║       ArtClaw Bridge — 统一安装器 v1.3               ║
+echo  ║       UE / Maya / 3ds Max / 平台配置 一键部署        ║
 echo  ╚══════════════════════════════════════════════════════╝
 echo.
 echo  项目目录: %ROOT_DIR%
+echo.
+
+:: ============================================================
+:: 平台选择（默认 openclaw）
+:: ============================================================
+set "PLATFORM=openclaw"
+echo  当前平台: openclaw (默认)
+echo  支持的平台: openclaw / workbuddy / claude
+echo.
+set /p PLATFORM_INPUT="  更改平台? (直接回车使用默认): "
+if not "%PLATFORM_INPUT%"=="" (
+    if /I "%PLATFORM_INPUT%"=="openclaw" set "PLATFORM=openclaw"
+    if /I "%PLATFORM_INPUT%"=="workbuddy" set "PLATFORM=workbuddy"
+    if /I "%PLATFORM_INPUT%"=="claude" set "PLATFORM=claude"
+    if /I not "%PLATFORM_INPUT%"=="openclaw" if /I not "%PLATFORM_INPUT%"=="workbuddy" if /I not "%PLATFORM_INPUT%"=="claude" (
+        echo [警告] 未知平台: %PLATFORM_INPUT%，使用默认 openclaw
+        set "PLATFORM=openclaw"
+    )
+)
+set "PLATFORM_SRC=%ROOT_DIR%\platforms\!PLATFORM!"
+set "MCP_BRIDGE_SRC=!PLATFORM_SRC!\gateway"
+echo.
+echo  选定平台: !PLATFORM!
 echo.
 
 :: ============================================================
@@ -68,8 +90,8 @@ echo.
 echo    [1] 安装 Unreal Engine 插件
 echo    [2] 安装 Maya 插件
 echo    [3] 安装 3ds Max 插件
-echo    [4] 配置 OpenClaw mcp-bridge
-echo    [5] 全部安装 (UE + Maya + Max + OpenClaw)
+echo    [4] 配置平台 (Gateway + Skills + config)
+echo    [5] 全部安装 (UE + Maya + Max + 平台配置)
 echo    [6] 卸载 Maya 插件
 echo    [7] 卸载 3ds Max 插件
 echo    [8] 卸载 UE 插件
@@ -596,72 +618,63 @@ goto :summary
 
 :do_install_openclaw
 echo.
-echo  ── OpenClaw mcp-bridge 配置 ────────────────────────
+echo  ── 平台配置 (!PLATFORM!) ────────────────────────────
 echo.
 
-:: 复制 mcp-bridge 插件
-set "OPENCLAW_EXT=%USERPROFILE%\.openclaw\extensions\mcp-bridge"
-if not exist "%USERPROFILE%\.openclaw\extensions" mkdir "%USERPROFILE%\.openclaw\extensions"
-if not exist "%OPENCLAW_EXT%" mkdir "%OPENCLAW_EXT%"
+:: 复制 mcp-bridge 插件（仅 openclaw 有 gateway）
+if "!PLATFORM!"=="openclaw" (
+    set "OPENCLAW_EXT=%USERPROFILE%\.openclaw\extensions\mcp-bridge"
+    if not exist "%USERPROFILE%\.openclaw\extensions" mkdir "%USERPROFILE%\.openclaw\extensions"
+    if not exist "!OPENCLAW_EXT!" mkdir "!OPENCLAW_EXT!"
 
-echo [复制] mcp-bridge 插件...
-copy /Y "%MCP_BRIDGE_SRC%\index.ts" "%OPENCLAW_EXT%\" >nul
-copy /Y "%MCP_BRIDGE_SRC%\openclaw.plugin.json" "%OPENCLAW_EXT%\" >nul
-echo [OK] mcp-bridge 已复制到: %OPENCLAW_EXT%
+    echo [复制] mcp-bridge 插件...
+    copy /Y "!MCP_BRIDGE_SRC!\index.ts" "!OPENCLAW_EXT!\" >nul
+    copy /Y "!MCP_BRIDGE_SRC!\openclaw.plugin.json" "!OPENCLAW_EXT!\" >nul
+    echo [OK] mcp-bridge 已复制到: !OPENCLAW_EXT!
+) else (
+    echo [跳过] 平台 !PLATFORM! 无 Gateway 插件
+)
 
 :: 安装 OpenClaw Skills (从 skills/official/ 扫描所有 SKILL.md)
 set "OPENCLAW_SKILLS_DST=%USERPROFILE%\.openclaw\skills"
-if not exist "%OPENCLAW_SKILLS_DST%" mkdir "%OPENCLAW_SKILLS_DST%"
+:: 根据平台选择 Skill 安装路径
+if "!PLATFORM!"=="workbuddy" set "OPENCLAW_SKILLS_DST=%USERPROFILE%\.workbuddy\skills"
+if "!PLATFORM!"=="claude" set "OPENCLAW_SKILLS_DST=%USERPROFILE%\.claude\skills"
+if not exist "!OPENCLAW_SKILLS_DST!" mkdir "!OPENCLAW_SKILLS_DST!"
 
 if exist "%SKILLS_SRC%\official" (
-    echo [复制] OpenClaw Skills...
+    echo [复制] Skills...
     :: 扫描 official/universal/ 和 official/unreal/ 等子目录
     for /D %%D in ("%SKILLS_SRC%\official\*") do (
         for /D %%S in ("%%D\*") do (
             if exist "%%S\SKILL.md" (
                 set "SKILL_NAME=%%~nxS"
-                set "SKILL_DST=%OPENCLAW_SKILLS_DST%\!SKILL_NAME!"
+                set "SKILL_DST=!OPENCLAW_SKILLS_DST!\!SKILL_NAME!"
                 if not exist "!SKILL_DST!" mkdir "!SKILL_DST!"
                 copy /Y "%%S\SKILL.md" "!SKILL_DST!\SKILL.md" >nul 2>&1
                 echo   [OK] !SKILL_NAME!
             )
         )
     )
-    echo [OK] OpenClaw Skills 已安装到: %OPENCLAW_SKILLS_DST%
+    echo [OK] Skills 已安装到: !OPENCLAW_SKILLS_DST!
 ) else (
     echo [跳过] 未找到 Skills 源: %SKILLS_SRC%\official
 )
 
-:: 写入 ~/.artclaw/config.json (project_root)
+:: 写入 ~/.artclaw/config.json (project_root + platform + skills + mcp)
 set "ARTCLAW_CFG_DIR=%USERPROFILE%\.artclaw"
 if not exist "%ARTCLAW_CFG_DIR%" mkdir "%ARTCLAW_CFG_DIR%"
 set "ARTCLAW_CFG=%ARTCLAW_CFG_DIR%\config.json"
 echo [配置] 写入 %ARTCLAW_CFG%...
-:: 使用 Python 写入 JSON (bat 不擅长 JSON)
 where python >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
-    python -c "import json,os;p=r'%ROOT_DIR%';f=r'%ARTCLAW_CFG%';d={};exec('try:\n with open(f,\"r\",encoding=\"utf-8\") as fh: d=json.load(fh)\nexcept: pass');d['project_root']=p;open(f,'w',encoding='utf-8').write(json.dumps(d,indent=2,ensure_ascii=False))" 2>nul
-    echo [OK] project_root 已写入
+    python "%ROOT_DIR%\install.py" --openclaw --platform !PLATFORM! --force 2>nul
+    echo [OK] 平台配置已写入 (platform=!PLATFORM!)
 ) else (
-    echo [跳过] 未找到 Python，请手动创建 %ARTCLAW_CFG%
+    echo [跳过] 未找到 Python，请手动运行: python install.py --openclaw --platform !PLATFORM!
 )
 
-:: 运行配置脚本
-echo [配置] 运行 setup_openclaw_config.py...
-where python >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-    python "%PLATFORM_SRC%\setup_openclaw_config.py" --ue --maya --max
-    if !ERRORLEVEL! EQU 0 (
-        echo [OK] OpenClaw 配置已更新
-    ) else (
-        echo [警告] 配置脚本执行失败，请手动配置
-    )
-) else (
-    echo [警告] 未找到 Python，请手动运行:
-    echo        python "%PLATFORM_SRC%\setup_openclaw_config.py"
-)
-
-echo [完成] OpenClaw 配置成功!
+echo [完成] 平台配置成功 (!PLATFORM!)!
 exit /b 0
 
 :: ============================================================
@@ -711,10 +724,9 @@ echo      1. 启动 Max -- ArtClaw 自动加载
 echo      2. 菜单栏 -- ArtClaw -- Chat Panel
 echo      3. 点击 连接 或输入 /connect
 echo.
-echo    OpenClaw:
-echo      1. 重启 Gateway: openclaw gateway restart
-echo      2. 确认 mcp-bridge 已加载
-echo      3. 确认 artclaw-* Skills 已安装（位置见 ~/.artclaw/config.json）
+echo    平台 (!PLATFORM!):
+echo      1. 参考 ~/.artclaw/config.json 确认配置
+echo      2. 确认 artclaw-* Skills 已安装
 echo.
 echo  提示: 更完整的功能 (卸载、跨平台、CLI) 请使用:
 echo        python install.py --help

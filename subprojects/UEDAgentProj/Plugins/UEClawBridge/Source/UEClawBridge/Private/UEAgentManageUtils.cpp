@@ -67,9 +67,9 @@ bool FUEAgentManageUtils::WriteStringToFile(const FString& FilePath, const FStri
 }
 
 // ---------------------------------------------------------------------------
-// 内部辅助: 读取 artclaw config.json
+// 读取 artclaw config.json
 // ---------------------------------------------------------------------------
-static TSharedPtr<FJsonObject> LoadArtClawConfig()
+TSharedPtr<FJsonObject> FUEAgentManageUtils::LoadArtClawConfig()
 {
 	FString ConfigPath = FString(FPlatformProcess::UserHomeDir()) / TEXT(".artclaw") / TEXT("config.json");
 	FString JsonStr;

@@ -48,11 +48,35 @@ void SUEAgentMcpTab::RefreshData()
 {
 	Servers.Empty();
 
+	// 从 artclaw config 读取 config_key
+	FString ConfigKey = TEXT("plugins.entries.mcp-bridge.config.servers"); // OpenClaw 默认
+	auto ArtClawCfg = FUEAgentManageUtils::LoadArtClawConfig();
+	if (ArtClawCfg.IsValid())
+	{
+		auto McpObj = ArtClawCfg->GetObjectField(TEXT("mcp"));
+		if (McpObj.IsValid())
+		{
+			FString Key;
+			if (McpObj->TryGetStringField(TEXT("config_key"), Key) && !Key.IsEmpty())
+			{
+				// OpenClaw: "mcp.servers" → "plugins.entries.mcp-bridge.config.servers"
+				// WorkBuddy/Claude: "mcpServers" → 直接用
+				if (Key == TEXT("mcp.servers"))
+					ConfigKey = TEXT("plugins.entries.mcp-bridge.config.servers");
+				else
+					ConfigKey = Key;
+			}
+		}
+	}
+
+	// 缓存 ConfigKey 供后续 SetServerEnabled / WriteNewServer 使用
+	CachedConfigKey = ConfigKey;
+
 	FString ConfigJson;
 	if (FUEAgentManageUtils::ReadFileToString(
 			FUEAgentManageUtils::GetOpenClawConfigPath(), ConfigJson))
 	{
-		ParseMcpConfig(ConfigJson);
+		ParseMcpConfig(ConfigJson, ConfigKey);
 	}
 
 	// 探测端口
@@ -114,28 +138,25 @@ void SUEAgentMcpTab::RefreshData()
 	}
 }
 
-void SUEAgentMcpTab::ParseMcpConfig(const FString& JsonStr)
+void SUEAgentMcpTab::ParseMcpConfig(const FString& JsonStr, const FString& ConfigKey)
 {
 	TSharedPtr<FJsonObject> Root;
 	TSharedRef<TJsonReader<>> R = TJsonReaderFactory<>::Create(JsonStr);
 	if (!FJsonSerializer::Deserialize(R, Root) || !Root.IsValid()) return;
 
-	const TSharedPtr<FJsonObject>* P, *E, *M, *C, *S;
-	if (!Root->TryGetObjectField(TEXT("plugins"), P)) return;
-	if (!(*P)->TryGetObjectField(TEXT("entries"), E)) return;
-	if (!(*E)->TryGetObjectField(TEXT("mcp-bridge"), M)) return;
-	if (!(*M)->TryGetObjectField(TEXT("config"), C)) return;
-	if (!(*C)->TryGetObjectField(TEXT("servers"), S)) return;
+	// 按 dot-separated key 路径遍历到 servers 对象
+	TSharedPtr<FJsonObject> Current = TraverseJsonPath(Root, ConfigKey);
+	if (!Current.IsValid()) return;
 
 	TMap<FString, FString> Names;
 	Names.Add(TEXT("ue-editor-agent"), TEXT("UE Claw Bridge"));
 	Names.Add(TEXT("maya-primary"),    TEXT("Maya Claw Bridge"));
 	Names.Add(TEXT("max-primary"),     TEXT("3ds Max Claw Bridge"));
 
-	for (const auto& Pair : (*S)->Values)
+	for (const auto& Pair : Current->Values)
 	{
 		const TSharedPtr<FJsonObject>* Obj;
-		if (!(*S)->TryGetObjectField(Pair.Key, Obj)) continue;
+		if (!Current->TryGetObjectField(Pair.Key, Obj)) continue;
 
 		auto Entry = MakeShared<FMcpServerEntry>();
 		Entry->ServerId = Pair.Key;
@@ -304,6 +325,24 @@ TSharedRef<ITableRow> SUEAgentMcpTab::GenerateRow(
 // Actions
 // ==================================================================
 
+TSharedPtr<FJsonObject> SUEAgentMcpTab::TraverseJsonPath(
+	TSharedPtr<FJsonObject> Root, const FString& DotPath)
+{
+	if (!Root.IsValid() || DotPath.IsEmpty()) return nullptr;
+
+	TSharedPtr<FJsonObject> Current = Root;
+	TArray<FString> Parts;
+	DotPath.ParseIntoArray(Parts, TEXT("."));
+	for (const FString& Part : Parts)
+	{
+		if (!Current.IsValid()) return nullptr;
+		const TSharedPtr<FJsonObject>* Next;
+		if (!Current->TryGetObjectField(Part, Next)) return nullptr;
+		Current = *Next;
+	}
+	return Current;
+}
+
 void SUEAgentMcpTab::OnEnableChanged(ECheckBoxState NewState, FMcpServerEntryPtr Item)
 {
 	Item->bEnabled = (NewState == ECheckBoxState::Checked);
@@ -321,12 +360,8 @@ void SUEAgentMcpTab::SetServerEnabled(const FString& ServerId, bool bEnabled)
 	TSharedRef<TJsonReader<>> R = TJsonReaderFactory<>::Create(JsonStr);
 	if (!FJsonSerializer::Deserialize(R, Root) || !Root.IsValid()) return;
 
-	auto Plug = Root->GetObjectField(TEXT("plugins"));
-	auto Ent = Plug ? Plug->GetObjectField(TEXT("entries")) : nullptr;
-	auto Mcp = Ent ? Ent->GetObjectField(TEXT("mcp-bridge")) : nullptr;
-	auto Cfg = Mcp ? Mcp->GetObjectField(TEXT("config")) : nullptr;
-	auto Srvs = Cfg ? Cfg->GetObjectField(TEXT("servers")) : nullptr;
-	auto Srv = Srvs ? Srvs->GetObjectField(ServerId) : nullptr;
+	auto Srvs = TraverseJsonPath(Root, CachedConfigKey);
+	auto Srv = Srvs.IsValid() ? Srvs->GetObjectField(ServerId) : nullptr;
 	if (!Srv) return;
 
 	if (bEnabled) Srv->RemoveField(TEXT("enabled"));
@@ -349,11 +384,7 @@ void SUEAgentMcpTab::WriteNewServer(const FString& Id, const FString& Type,
 	TSharedRef<TJsonReader<>> R = TJsonReaderFactory<>::Create(JsonStr);
 	if (!FJsonSerializer::Deserialize(R, Root) || !Root.IsValid()) return;
 
-	auto Plug = Root->GetObjectField(TEXT("plugins"));
-	auto Ent = Plug ? Plug->GetObjectField(TEXT("entries")) : nullptr;
-	auto Mcp = Ent ? Ent->GetObjectField(TEXT("mcp-bridge")) : nullptr;
-	auto Cfg = Mcp ? Mcp->GetObjectField(TEXT("config")) : nullptr;
-	auto Srvs = Cfg ? Cfg->GetObjectField(TEXT("servers")) : nullptr;
+	auto Srvs = TraverseJsonPath(Root, CachedConfigKey);
 	if (!Srvs) return;
 
 	TSharedPtr<FJsonObject> NewSrv = MakeShared<FJsonObject>();

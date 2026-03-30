@@ -4,6 +4,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Dom/JsonObject.h"
 
 class FUEAgentManageUtils
 {
@@ -25,4 +26,7 @@ public:
 
 	/** 获取平台已安装 Skills 目录（通过 artclaw config 驱动） */
 	static FString GetOpenClawSkillsDir();
+
+	/** 加载 ~/.artclaw/config.json 并返回 JSON 对象 */
+	static TSharedPtr<FJsonObject> LoadArtClawConfig();
 };

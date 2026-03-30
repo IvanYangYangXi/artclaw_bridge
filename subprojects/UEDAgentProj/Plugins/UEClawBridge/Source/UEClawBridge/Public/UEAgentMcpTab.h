@@ -37,7 +37,11 @@ private:
 	TSharedRef<ITableRow> GenerateRow(
 		FMcpServerEntryPtr Item, const TSharedRef<STableViewBase>& OwnerTable);
 
-	void ParseMcpConfig(const FString& JsonStr);
+	void ParseMcpConfig(const FString& JsonStr, const FString& ConfigKey);
+
+	/** 按 dot-separated key 路径遍历 JSON 对象树，返回目标节点 */
+	static TSharedPtr<FJsonObject> TraverseJsonPath(
+		TSharedPtr<FJsonObject> Root, const FString& DotPath);
 
 	void OnEnableChanged(ECheckBoxState NewState, FMcpServerEntryPtr Item);
 	void SetServerEnabled(const FString& ServerId, bool bEnabled);
@@ -50,4 +54,7 @@ private:
 	TArray<FMcpServerEntryPtr> Servers;
 	TSharedPtr<SListView<FMcpServerEntryPtr>> ServerListView;
 	TSharedPtr<SVerticalBox> ContentBox;
+
+	/** MCP Server 配置在 JSON 文件中的 key 路径 (dot-separated) */
+	FString CachedConfigKey;
 };
