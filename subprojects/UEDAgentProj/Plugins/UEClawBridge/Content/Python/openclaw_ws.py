@@ -142,7 +142,8 @@ async def do_chat(
                 UELogger.warning(f"[openclaw_ws] unexpected status: {status}")
 
             UELogger.info(f"[openclaw_ws] chat.send OK, runId={ack.get('runId', 'N/A')[:8]}...")
-            await _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lock)
+            await _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lock,
+                                  session_key=session_key)
 
     except Exception as exc:
         _error(stream_file, response_file, f"[Error] WebSocket: {exc}", stream_lock)
@@ -205,8 +206,13 @@ async def _wait_for_ack(ws, req_id: str, timeout: float = 15.0) -> Optional[dict
     return None
 
 
-async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lock) -> None:
-    """接收 chat 流式事件，直到 final/aborted/error。"""
+async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lock,
+                          session_key: str = "") -> None:
+    """接收 chat 流式事件，直到 final/aborted/error。
+    
+    只处理与 session_key 匹配的 chat 事件，过滤其他 session 的广播消息。
+    只响应 delta/final/aborted/error 四种 state，忽略其他状态（如 monitoring）。
+    """
     latest_text = ""
     deadline = time.time() + _CHAT_TIMEOUT
 
@@ -235,9 +241,22 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
             continue
 
         payload = msg.get("payload", {})
+
+        # --- Bug Fix: 过滤其他 session 的广播事件 ---
+        # Gateway 会向所有连接推送 chat 事件，必须按 sessionKey 过滤
+        event_session = payload.get("sessionKey", "")
+        if session_key and event_session and event_session != session_key:
+            UELogger.info(f"[openclaw_ws] skip event from other session: {event_session[:30]}")
+            continue
+
         state   = payload.get("state", "")
         message = payload.get("message", {})
         text    = _extract_text(message)
+
+        # --- Bug Fix: 只处理已知 state，忽略 monitoring 等非对话状态 ---
+        if state not in ("delta", "final", "aborted", "error"):
+            UELogger.info(f"[openclaw_ws] skip non-chat state: {state}")
+            continue
 
         _dispatch_tool_events(message, stream_file, stream_lock)
 
