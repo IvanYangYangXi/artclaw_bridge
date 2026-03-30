@@ -24,18 +24,17 @@ echo.
 set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 
-:: setup.bat 位于 openclaw-mcp-bridge/ 目录
-:: UE 插件位于 ../subprojects/UEDAgentProj/Plugins/UEClawBridge
-set "PROJECT_ROOT=%SCRIPT_DIR%\.."
-set "PROJECT_ROOT=!PROJECT_ROOT:\openclaw-mcp-bridge\..=!"
+:: setup.bat 位于 platforms/openclaw/ 目录
+:: 项目根目录在 ../../
+set "PROJECT_ROOT=%SCRIPT_DIR%\..\.."
 
 :: 规范化路径
-pushd "%SCRIPT_DIR%\.."
+pushd "%SCRIPT_DIR%\..\.."
 set "PROJECT_ROOT=%CD%"
 popd
 
 set "PLUGIN_SRC=%PROJECT_ROOT%\subprojects\UEDAgentProj\Plugins\UEClawBridge"
-set "BRIDGE_MODULES=%SCRIPT_DIR%"
+set "BRIDGE_MODULES=%PROJECT_ROOT%\core"
 
 if not exist "%PLUGIN_SRC%\UEClawBridge.uplugin" (
     echo [ERROR] 未找到 UE 插件源码: %PLUGIN_SRC%

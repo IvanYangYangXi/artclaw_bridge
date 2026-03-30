@@ -87,7 +87,8 @@ artclaw_bridge/
 │       ├── maya_setup/              #    Maya 部署文件
 │       ├── max_setup/               #    Max 部署文件
 │       └── skills/                  #    DCC Skill 模板
-├── openclaw-mcp-bridge/             # OpenClaw MCP Bridge 插件 + 共享模块
+├── core/                             # 共享核心模块 (bridge_core, config, memory_core 等)
+├── platforms/                         # 平台 Bridge 子项目 (openclaw/, workbuddy/ 等)
 │   ├── bridge_core.py               #    通信核心 (UE/DCC 共用)
 │   ├── bridge_config.py             #    配置管理
 │   ├── bridge_diagnostics.py        #    诊断工具
@@ -152,9 +153,9 @@ python install.py --all --ue-project "C:\path\to\project"    # 全部安装
 xcopy /E /I subprojects\UEDAgentProj\Plugins\UEClawBridge "<UE项目路径>\Plugins\UEClawBridge"
 
 # 2. 复制共享模块到插件的 Python 目录
-copy openclaw-mcp-bridge\bridge_core.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
-copy openclaw-mcp-bridge\bridge_config.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
-copy openclaw-mcp-bridge\bridge_diagnostics.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
+copy core\bridge_core.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
+copy core\bridge_config.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
+copy core\bridge_diagnostics.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
 
 # 3. 安装 Python 依赖 (使用 UE 内置 Python)
 "C:\Epic Games\UE_5.7\Engine\Binaries\ThirdParty\Python3\Win64\python.exe" -m pip install websockets pydantic
@@ -169,9 +170,9 @@ copy openclaw-mcp-bridge\bridge_diagnostics.py "<UE项目路径>\Plugins\UEClawB
 xcopy /E /I subprojects\DCCClawBridge "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\DCCClawBridge"
 
 # 2. 复制共享模块到 core/ (自包含部署)
-copy openclaw-mcp-bridge\bridge_core.py "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\DCCClawBridge\core\"
-copy openclaw-mcp-bridge\bridge_config.py "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\DCCClawBridge\core\"
-copy openclaw-mcp-bridge\bridge_diagnostics.py "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\DCCClawBridge\core\"
+copy core\bridge_core.py "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\DCCClawBridge\core\"
+copy core\bridge_config.py "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\DCCClawBridge\core\"
+copy core\bridge_diagnostics.py "%USERPROFILE%\Documents\maya\<Maya版本>\scripts\DCCClawBridge\core\"
 
 # 3. 复制 userSetup.py (如果已有该文件，请追加而非覆盖!)
 # 方式 A: 无已有 userSetup.py — 直接复制:
@@ -194,9 +195,9 @@ copy subprojects\DCCClawBridge\maya_setup\userSetup.py "%USERPROFILE%\Documents\
 xcopy /E /I subprojects\DCCClawBridge "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\DCCClawBridge"
 
 # 2. 复制共享模块到 core/ (自包含部署)
-copy openclaw-mcp-bridge\bridge_core.py "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\DCCClawBridge\core\"
-copy openclaw-mcp-bridge\bridge_config.py "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\DCCClawBridge\core\"
-copy openclaw-mcp-bridge\bridge_diagnostics.py "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\DCCClawBridge\core\"
+copy core\bridge_core.py "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\DCCClawBridge\core\"
+copy core\bridge_config.py "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\DCCClawBridge\core\"
+copy core\bridge_diagnostics.py "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\DCCClawBridge\core\"
 
 # 3. 复制 startup 脚本
 copy subprojects\DCCClawBridge\max_setup\startup.py "%LOCALAPPDATA%\Autodesk\3dsMax\<Max版本>\ENU\scripts\startup\artclaw_startup.py"
@@ -207,10 +208,10 @@ copy subprojects\DCCClawBridge\max_setup\startup.py "%LOCALAPPDATA%\Autodesk\3ds
 ```bash
 # 1. 复制 mcp-bridge 插件
 mkdir %USERPROFILE%\.openclaw\extensions\mcp-bridge
-copy openclaw-mcp-bridge\mcp-bridge\* %USERPROFILE%\.openclaw\extensions\mcp-bridge\
+copy platforms\openclaw\gateway\* %USERPROFILE%\.openclaw\extensions\mcp-bridge\
 
 # 2. 运行配置脚本 (自动合并到 openclaw.json)
-python openclaw-mcp-bridge\setup_openclaw_config.py --ue --maya --max
+python platforms\openclaw\setup_openclaw_config.py --ue --maya --max
 
 # 3. 重启 Gateway
 openclaw gateway restart
@@ -294,7 +295,7 @@ python artclaw.py skill test scene_ops   # 测试指定 Skill
 - **[系统架构设计](docs/specs/系统架构设计.md)** — 整体架构与设计原则
 - **[Skill 开发指南](docs/skills/SKILL_DEVELOPMENT_GUIDE.md)** — 编写自定义 Skill
 - **[Skill 规范](docs/skills/MANIFEST_SPEC.md)** — manifest.json 格式规范
-- **[MCP Bridge 部署](openclaw-mcp-bridge/README.md)** — OpenClaw 集成详细说明
+- **[MCP Bridge 部署](platforms/openclaw/README.md)** — OpenClaw 集成详细说明
 - **[DCCClawBridge](subprojects/DCCClawBridge/README.md)** — Maya / 3ds Max 插件详细说明
 - **[贡献指南](docs/skills/CONTRIBUTING.md)** — 如何为项目贡献
 

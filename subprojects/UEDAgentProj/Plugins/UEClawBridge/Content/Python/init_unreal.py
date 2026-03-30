@@ -879,7 +879,7 @@ def _initialize():
             # integrity_check.py 也缺失 → 尝试从开发路径导入
             _bridge_dir = os.path.normpath(
                 os.path.join(_PLUGIN_PYTHON_DIR, "..", "..", "..", "..", "..", "..",
-                             "openclaw-mcp-bridge")
+                             "core")
             )
             if os.path.isdir(_bridge_dir) and _bridge_dir not in sys.path:
                 sys.path.insert(0, _bridge_dir)

@@ -39,8 +39,9 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent
 DCC_BRIDGE_SRC = ROOT_DIR / "subprojects" / "DCCClawBridge"
 UE_PLUGIN_SRC = ROOT_DIR / "subprojects" / "UEDAgentProj" / "Plugins" / "UEClawBridge"
-BRIDGE_MODULES_SRC = ROOT_DIR / "openclaw-mcp-bridge"
-MCP_BRIDGE_SRC = ROOT_DIR / "openclaw-mcp-bridge" / "mcp-bridge"
+BRIDGE_MODULES_SRC = ROOT_DIR / "core"
+PLATFORM_SRC = ROOT_DIR / "platforms" / "openclaw"
+MCP_BRIDGE_SRC = PLATFORM_SRC / "gateway"
 
 # 需要打包到每个目标的共享模块
 SHARED_MODULES = ["bridge_core.py", "bridge_config.py", "bridge_diagnostics.py"]
@@ -480,7 +481,7 @@ def install_openclaw():
     cprint("OK", f"mcp-bridge 已复制到: {ext_dir}", "green")
 
     # 运行配置脚本
-    config_script = BRIDGE_MODULES_SRC / "setup_openclaw_config.py"
+    config_script = PLATFORM_SRC / "setup_openclaw_config.py"
     if config_script.exists():
         cprint("配置", "运行 setup_openclaw_config.py...")
         try:

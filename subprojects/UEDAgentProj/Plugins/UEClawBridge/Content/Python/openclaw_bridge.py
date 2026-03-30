@@ -29,7 +29,7 @@ from init_unreal import UELogger
 # 导入 bridge_core / bridge_config / bridge_diagnostics
 # 优先级:
 #   1. 自包含部署: 安装器已将 bridge_core.py 等复制到当前 Content/Python/ 目录
-#   2. 开发模式: 通过相对路径找到 openclaw-mcp-bridge/ 目录
+#   2. 开发模式: 通过相对路径找到 core/ 目录
 # ---------------------------------------------------------------------------
 
 try:
@@ -41,10 +41,10 @@ try:
         load_config as _load_config,
     )
 except ImportError:
-    # 开发模式: 通过相对路径回溯到 openclaw-mcp-bridge/
+    # 开发模式: 通过相对路径回溯到 core/
     _bridge_pkg_dir = os.path.normpath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "..",
-                     "openclaw-mcp-bridge")
+                     "core")
     )
     if os.path.isdir(_bridge_pkg_dir) and _bridge_pkg_dir not in sys.path:
         sys.path.insert(0, _bridge_pkg_dir)

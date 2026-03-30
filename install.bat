@@ -28,8 +28,9 @@ if "%ROOT_DIR:~-1%"=="\" set "ROOT_DIR=%ROOT_DIR:~0,-1%"
 
 set "DCC_BRIDGE_SRC=%ROOT_DIR%\subprojects\DCCClawBridge"
 set "UE_PLUGIN_SRC=%ROOT_DIR%\subprojects\UEDAgentProj\Plugins\UEClawBridge"
-set "BRIDGE_MODULES_SRC=%ROOT_DIR%\openclaw-mcp-bridge"
-set "MCP_BRIDGE_SRC=%ROOT_DIR%\openclaw-mcp-bridge\mcp-bridge"
+set "BRIDGE_MODULES_SRC=%ROOT_DIR%\core"
+set "PLATFORM_SRC=%ROOT_DIR%\platforms\openclaw"
+set "MCP_BRIDGE_SRC=%PLATFORM_SRC%\gateway"
 set "SKILLS_SRC=%ROOT_DIR%\skills"
 
 :: 标记常量
@@ -649,7 +650,7 @@ if %ERRORLEVEL% EQU 0 (
 echo [配置] 运行 setup_openclaw_config.py...
 where python >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
-    python "%BRIDGE_MODULES_SRC%\setup_openclaw_config.py" --ue --maya --max
+    python "%PLATFORM_SRC%\setup_openclaw_config.py" --ue --maya --max
     if !ERRORLEVEL! EQU 0 (
         echo [OK] OpenClaw 配置已更新
     ) else (
@@ -657,7 +658,7 @@ if %ERRORLEVEL% EQU 0 (
     )
 ) else (
     echo [警告] 未找到 Python，请手动运行:
-    echo        python "%BRIDGE_MODULES_SRC%\setup_openclaw_config.py"
+    echo        python "%PLATFORM_SRC%\setup_openclaw_config.py"
 )
 
 echo [完成] OpenClaw 配置成功!

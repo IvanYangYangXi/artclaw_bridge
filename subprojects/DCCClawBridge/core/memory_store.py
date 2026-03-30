@@ -11,7 +11,7 @@ memory_store.py - DCCClawBridge 记忆管理 v2 适配层
   - 适配 Python logging
 
 共享核心:
-  - memory_core.py (openclaw-mcp-bridge/)
+  - memory_core.py (core/)
   - 开发模式: 通过相对路径回溯导入
   - 部署模式: 安装器已复制到 core/ 目录
 """
@@ -30,14 +30,14 @@ logger = logging.getLogger("artclaw.memory")
 # 导入 memory_core
 # 优先级:
 #   1. 自包含部署: memory_core.py 已复制到 core/ 目录（同级）
-#   2. 开发模式: 通过相对路径找到 openclaw-mcp-bridge/
+#   2. 开发模式: 通过相对路径找到 core/
 # ---------------------------------------------------------------------------
 
 try:
     from memory_core import MemoryManagerV2, DEFAULT_CONFIG  # noqa: E402
 except ImportError:
     _bridge_pkg_dir = os.path.normpath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "openclaw-mcp-bridge")
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "core")
     )
     if os.path.isdir(_bridge_pkg_dir) and _bridge_pkg_dir not in sys.path:
         sys.path.insert(0, _bridge_pkg_dir)

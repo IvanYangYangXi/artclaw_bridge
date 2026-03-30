@@ -11,7 +11,7 @@ memory_store.py - UE 记忆管理 v2 适配层
   - 适配 UE 日志系统
 
 共享核心:
-  - memory_core.py (openclaw-mcp-bridge/)
+  - memory_core.py (core/)
   - 开发模式: 通过相对路径回溯导入
   - 部署模式: setup.bat 已复制到 Content/Python/
 
@@ -40,7 +40,7 @@ from init_unreal import UELogger
 # 导入 memory_core
 # 优先级:
 #   1. 自包含部署: memory_core.py 与本文件在同一目录
-#   2. 开发模式: 通过相对路径找到 openclaw-mcp-bridge/
+#   2. 开发模式: 通过相对路径找到 core/
 # ---------------------------------------------------------------------------
 
 try:
@@ -48,7 +48,7 @@ try:
 except ImportError:
     _bridge_pkg_dir = os.path.normpath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "..",
-                     "openclaw-mcp-bridge")
+                     "core")
     )
     if os.path.isdir(_bridge_pkg_dir) and _bridge_pkg_dir not in sys.path:
         sys.path.insert(0, _bridge_pkg_dir)

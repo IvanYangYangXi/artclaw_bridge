@@ -30,7 +30,7 @@ from typing import Optional
 # 导入 bridge_core / bridge_diagnostics
 # 优先级:
 #   1. 自包含部署: bridge_core.py 已复制到当前 core/ 目录 (同级文件)
-#   2. 开发模式: 通过相对路径找到 openclaw-mcp-bridge/ 目录
+#   2. 开发模式: 通过相对路径找到 core/ 目录
 # ---------------------------------------------------------------------------
 
 # 确保 core/ 目录在 sys.path 上（bridge_core.py 用裸导入）
@@ -43,9 +43,9 @@ try:
     from bridge_core import OpenClawBridge, BridgeLogger  # noqa: E402
     from bridge_diagnostics import diagnose_connection  # noqa: E402
 except ImportError:
-    # 开发模式: 通过相对路径回溯到 openclaw-mcp-bridge/
+    # 开发模式: 通过相对路径回溯到 core/
     _bridge_pkg_dir = os.path.normpath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "openclaw-mcp-bridge")
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "core")
     )
     if os.path.isdir(_bridge_pkg_dir) and _bridge_pkg_dir not in sys.path:
         sys.path.insert(0, _bridge_pkg_dir)

@@ -377,19 +377,26 @@ Agent 在对话中可直接调用这些工具。
 
 ## 文件清单
 
-本目录包含以下文件：
+本目录包含 OpenClaw 平台的适配文件：
 
 ```
-openclaw-mcp-bridge/
+platforms/openclaw/
 ├── README.md                          # 本文档
-├── setup.bat                          # Windows 一键安装脚本
-├── health_check.py                    # 健康检查工具
-├── openclaw_bridge.py                 # UE ↔ OpenClaw 双向通信桥
-├── openclaw-config-snippet.json       # openclaw.json 配置片段示例
-└── mcp-bridge/
-    ├── openclaw.plugin.json           # 插件清单 (manifest)
-    └── index.ts                       # 插件主代码 (TypeScript)
+├── openclaw_bridge.py                 # OpenClaw Gateway WebSocket RPC 桥接
+├── setup.bat                          # OpenClaw 部署脚本
+├── setup_openclaw_config.py           # 自动配置 openclaw.json
+├── memory_manager.py                  # 记忆管理器入口
+├── __init__.py
+├── gateway/                           # Gateway 侧插件
+│   ├── openclaw.plugin.json           # 插件清单 (manifest)
+│   └── index.ts                       # 插件主代码 (TypeScript)
+└── config/                            # 配置模板
+    ├── openclaw-config-snippet.json
+    ├── ue-single-config.json
+    └── multi-dcc-config.json
 ```
+
+共享核心模块在 `core/` 目录（项目根），安装时复制到各 DCC 插件目录。
 
 部署目标路径：
 

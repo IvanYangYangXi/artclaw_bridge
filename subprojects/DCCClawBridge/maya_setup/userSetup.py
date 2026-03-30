@@ -71,9 +71,9 @@ def _deferred_startup():
                 try:
                     from integrity_check import check_and_repair
                 except ImportError:
-                    # integrity_check.py 不在 core/ 里，从 openclaw-mcp-bridge/ 找
+                    # integrity_check.py 不在 core/ 里，从 core/ 找
                     _bridge_dir = os.path.normpath(
-                        os.path.join(core_dir, "..", "..", "..", "openclaw-mcp-bridge")
+                        os.path.join(core_dir, "..", "..", "..", "core")
                     )
                     if os.path.isdir(_bridge_dir) and _bridge_dir not in sys.path:
                         sys.path.insert(0, _bridge_dir)

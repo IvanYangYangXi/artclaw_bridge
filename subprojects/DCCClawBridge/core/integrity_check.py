@@ -6,14 +6,14 @@ integrity_check.py - 插件启动完整性检查与自动修复
 缺失时尝试从已知位置自动复制补全。
 
 共享模块清单:
-  - bridge_core.py       (OpenClaw 通信核心)
+  - bridge_core.py       (通信核心)
   - bridge_config.py     (通信配置)
   - bridge_diagnostics.py (连接诊断)
   - memory_core.py       (记忆管理系统 v2 核心)
 
 搜索优先级:
   1. 当前目录（已部署）
-  2. openclaw-mcp-bridge/ 目录（开发模式，通过相对路径）
+  2. core/ 目录（开发模式，通过相对路径回溯）
   3. 环境变量 ARTCLAW_BRIDGE_DIR 指向的目录
 
 使用方式:
@@ -87,21 +87,21 @@ class IntegrityResult:
             "",
             "**方法 1 (推荐):** 使用安装脚本重新安装插件",
             "```",
-            "cd <artclaw_bridge项目目录>/openclaw-mcp-bridge",
-            "setup.bat <UE项目路径>",
+            "cd <artclaw_bridge项目目录>",
+            "install.bat",
             "```",
             "",
             "**方法 2:** 手动复制缺失文件",
-            f"从 `openclaw-mcp-bridge/` 目录复制以下文件到插件的 `Content/Python/` 目录:",
+            f"从 `core/` 目录复制以下文件到插件的 `Content/Python/` 目录:",
         ])
         for f in self.failed:
             lines.append(f"- `{f}`")
 
         lines.extend([
             "",
-            "**方法 3:** 设置环境变量指向 artclaw_bridge 源码目录",
+            "**方法 3:** 设置环境变量指向 artclaw_bridge 源码的 core 目录",
             "```",
-            "set ARTCLAW_BRIDGE_DIR=D:\\path\\to\\artclaw_bridge\\openclaw-mcp-bridge",
+            "set ARTCLAW_BRIDGE_DIR=D:\\path\\to\\artclaw_bridge\\core",
             "```",
         ])
 
@@ -113,8 +113,8 @@ def _find_source_dir(plugin_python_dir: str) -> Optional[str]:
 
     搜索优先级:
     1. 环境变量 ARTCLAW_BRIDGE_DIR
-    2. 相对路径回溯到 openclaw-mcp-bridge/ (UE 开发模式)
-    3. 相对路径回溯到 openclaw-mcp-bridge/ (DCC 开发模式)
+    2. 相对路径回溯到 core/ (UE 开发模式)
+    3. 相对路径回溯到 core/ (DCC 开发模式)
     """
     # 1. 环境变量
     env_dir = os.environ.get("ARTCLAW_BRIDGE_DIR", "")
@@ -124,18 +124,18 @@ def _find_source_dir(plugin_python_dir: str) -> Optional[str]:
             logger.info(f"从环境变量找到源目录: {env_dir}")
             return env_dir
 
-    # 2. UE 开发模式回溯: Content/Python/ → 6级上 → openclaw-mcp-bridge/
+    # 2. UE 开发模式回溯: Content/Python/ → 6级上 → core/
     ue_candidate = os.path.normpath(
         os.path.join(plugin_python_dir, "..", "..", "..", "..", "..", "..",
-                     "openclaw-mcp-bridge")
+                     "core")
     )
     if os.path.isdir(ue_candidate) and os.path.exists(os.path.join(ue_candidate, "bridge_core.py")):
         logger.info(f"从 UE 开发路径找到源目录: {ue_candidate}")
         return ue_candidate
 
-    # 3. DCC 开发模式回溯: core/ → 3级上 → openclaw-mcp-bridge/
+    # 3. DCC 开发模式回溯: core/ → 3级上 → core/
     dcc_candidate = os.path.normpath(
-        os.path.join(plugin_python_dir, "..", "..", "..", "openclaw-mcp-bridge")
+        os.path.join(plugin_python_dir, "..", "..", "..", "core")
     )
     if os.path.isdir(dcc_candidate) and os.path.exists(os.path.join(dcc_candidate, "bridge_core.py")):
         logger.info(f"从 DCC 开发路径找到源目录: {dcc_candidate}")
@@ -189,7 +189,7 @@ def check_and_repair(plugin_python_dir: Optional[str] = None,
         logger.error(
             "无法找到共享模块源目录。"
             "请使用 setup.bat 重新安装插件，"
-            "或设置环境变量 ARTCLAW_BRIDGE_DIR 指向 openclaw-mcp-bridge 目录。"
+            "或设置环境变量 ARTCLAW_BRIDGE_DIR 指向 artclaw_bridge/core 目录。"
         )
         result.failed = result.missing.copy()
         result.ok = False
