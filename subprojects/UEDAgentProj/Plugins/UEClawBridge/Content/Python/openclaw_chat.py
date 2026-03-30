@@ -88,22 +88,36 @@ def _make_tool_event_writer(stream_file: str, request_id: str):
 # ---------------------------------------------------------------------------
 
 def _enrich_with_context(message: str) -> str:
-    """首条消息注入 DCC 上下文摘要（通过 memory_core briefing）"""
+    """首条消息注入 UE 环境上下文（项目名/引擎版本/工具约束）"""
     global _context_injected
     if _context_injected:
         return message
+    _context_injected = True
+
+    ctx_lines = ["[UE Context]"]
+    try:
+        import unreal as ue
+        ctx_lines.append(f"Engine: Unreal Engine {ue.SystemLibrary.get_engine_version()}")
+        ctx_lines.append(f"Project: {ue.SystemLibrary.get_game_name()}")
+    except Exception:
+        ctx_lines.append("Engine: Unreal Engine")
+
+    ctx_lines.append("Role: UE Editor AI Assistant")
+    ctx_lines.append("Constraint: Only use run_ue_python tool. Do NOT call tools for other DCCs (Maya, Max, etc.).")
+
+    # 追加 memory briefing（如果有）
     try:
         from memory_store import get_memory_manager
         mm = get_memory_manager()
         if mm:
             briefing = mm.export_briefing()
             if briefing:
-                _context_injected = True
-                return f"{briefing}\n\n{message}"
+                ctx_lines.append(briefing)
     except Exception:
         pass
-    _context_injected = True
-    return message
+
+    ctx = "\n".join(ctx_lines)
+    return f"{ctx}\n\n{message}"
 
 
 # ---------------------------------------------------------------------------

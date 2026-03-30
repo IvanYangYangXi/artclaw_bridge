@@ -352,7 +352,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		.AutoWrapText(true)
 		.HintText_Lambda([this]() { return GetSendHintText(); })
 		.OnTextChanged(this, &SUEAgentDashboard::OnInputTextChanged)
-		.OnTextCommitted(this, &SUEAgentDashboard::OnInputTextCommitted);
+		.OnTextCommitted(this, &SUEAgentDashboard::OnInputTextCommitted)
+		.OnKeyDownHandler(this, &SUEAgentDashboard::OnInputKeyDown);
 
 	// 再创建 SlashMenuAnchor，包裹 InputTextBox
 	SlashMenuAnchor = SNew(SMenuAnchor)
@@ -472,12 +473,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					Self->CachedSubsystem->SetConnectionStatus(bConnected);
 				}
 
-				// 当 Bridge 已连接 + MCP Server 就绪 + 环境上下文待发送 → 发送环境信息给 AI
-				if (bConnected && bMcpReady && Self->bEnvContextPending)
-				{
-					Self->bEnvContextPending = false;
-					Self->SendEnvironmentContext();
-				}
+				// 环境上下文注入已移至 Python 侧 (openclaw_chat._enrich_with_context)
+				// C++ 不再主动发送，避免打断正在进行的 AI 请求
 
 				return true; // 持续轮询
 			}),

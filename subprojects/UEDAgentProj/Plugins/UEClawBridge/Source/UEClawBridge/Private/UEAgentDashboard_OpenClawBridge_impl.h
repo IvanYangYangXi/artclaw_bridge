@@ -61,9 +61,7 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 				Self->ConnectGraceUntil = FPlatformTime::Seconds() + 5.0;
 
 				Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ConnectOK")));
-
-				// 环境上下文延迟到 mcp_ready=true 时发送（见 BridgeStatusPoll）
-				Self->bEnvContextPending = true;
+				// 环境上下文已由 Python 侧 openclaw_chat._enrich_with_context 注入，C++ 不再主动发送
 			}
 			else
 			{
@@ -193,8 +191,11 @@ void SUEAgentDashboard::SendEnvironmentContext()
 
 			if (!ContextMsg.IsEmpty())
 			{
-				// 作为系统消息发送给 AI (非静默，AI 的回复会显示在面板)
-				Self->SendToOpenClaw(ContextMsg);
+				// 如果 AI 正在回复中，不要打断 — 环境上下文已由 Python _enrich_with_briefing 注入，跳过即可
+				if (!Self->bIsWaitingForResponse)
+				{
+					Self->SendToOpenClaw(ContextMsg);
+				}
 			}
 			return false;
 		}),
