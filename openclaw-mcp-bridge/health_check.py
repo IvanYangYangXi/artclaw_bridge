@@ -226,8 +226,12 @@ def _check_openclaw_gateway() -> CheckResult:
     """检查 5: OpenClaw Gateway (ws://localhost:18789)"""
     r = CheckResult("OpenClaw Gateway (Port 18789)")
 
-    # 加载配置
-    config_path = Path.home() / ".openclaw" / "openclaw.json"
+    # 加载配置 (通过 artclaw config 驱动)
+    try:
+        from bridge_config import _resolve_platform_config_path
+        config_path = Path(_resolve_platform_config_path())
+    except ImportError:
+        config_path = Path.home() / ".openclaw" / "openclaw.json"
     host, port = "127.0.0.1", 18789
     token = ""
 
@@ -242,7 +246,7 @@ def _check_openclaw_gateway() -> CheckResult:
         except Exception as e:
             r.warn(f"Failed to read config: {e}")
     else:
-        r.info("No openclaw.json found, using defaults")
+        r.info(f"No config found at {config_path}, using defaults")
 
     # TCP 检查
     try:
@@ -276,9 +280,13 @@ def _check_openclaw_mcp_bridge() -> CheckResult:
     """检查 6: OpenClaw MCP Bridge 插件是否注册了 ue-editor server"""
     r = CheckResult("OpenClaw MCP Bridge Plugin")
 
-    config_path = Path.home() / ".openclaw" / "openclaw.json"
+    try:
+        from bridge_config import _resolve_platform_config_path
+        config_path = Path(_resolve_platform_config_path())
+    except ImportError:
+        config_path = Path.home() / ".openclaw" / "openclaw.json"
     if not config_path.exists():
-        r.skip("openclaw.json not found")
+        r.skip(f"Platform config not found: {config_path}")
         return r
 
     try:
@@ -291,7 +299,7 @@ def _check_openclaw_mcp_bridge() -> CheckResult:
 
         if not mcp_bridge.get("enabled", False):
             r.fail("mcp-bridge plugin is not enabled")
-            r.info("Fix: Set plugins.entries.mcp-bridge.enabled = true in openclaw.json")
+            r.info(f"Fix: Set plugins.entries.mcp-bridge.enabled = true in {config_path}")
             return r
 
         r.info("mcp-bridge plugin: enabled")

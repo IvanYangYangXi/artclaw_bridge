@@ -54,8 +54,20 @@ def _get_runtime_skills_dir() -> Path:
 
 
 def _get_openclaw_skills_dir() -> Path:
-    """获取 ~/.openclaw/skills/ 目录"""
-    return Path.home() / ".openclaw" / "skills"
+    """获取平台已安装 Skills 目录（通过 ~/.artclaw/config.json 配置驱动）"""
+    cfg = _get_config()
+    # 优先从 artclaw config 的 skills.installed_path 读取
+    installed_path = cfg.get("skills", {}).get("installed_path", "")
+    if installed_path:
+        return Path(os.path.expanduser(installed_path))
+    # 回退：根据 platform.type 确定默认路径
+    platform_type = cfg.get("platform", {}).get("type", "openclaw")
+    _defaults = {
+        "openclaw": "~/.openclaw/skills",
+        "workbuddy": "~/.workbuddy/skills",
+        "claude": "~/.claude/skills",
+    }
+    return Path(os.path.expanduser(_defaults.get(platform_type, "~/.openclaw/skills")))
 
 
 # ============================================================================
@@ -219,7 +231,7 @@ def install_skill(skill_name: str) -> dict:
     从项目源码安装一个 Skill 到运行时。
 
     1. 复制代码包到运行时 Skills/{layer}/
-    2. 复制 SKILL.md 到 ~/.openclaw/skills/
+    2. 复制 SKILL.md 到平台已安装 Skills 目录
     3. 通知 skill_hub 热重载
 
     返回: {"ok": bool, "message": str}
@@ -247,7 +259,7 @@ def install_skill(skill_name: str) -> dict:
         shutil.copytree(src_path, runtime_dir)
         UELogger.info(f"Skill installed: {skill_name} → {runtime_dir}")
 
-        # 复制 SKILL.md 到 ~/.openclaw/skills/
+        # 复制 SKILL.md 到平台已安装 Skills 目录
         skill_md = src_path / "SKILL.md"
         if skill_md.exists():
             oc_dir = _get_openclaw_skills_dir() / skill_name
@@ -290,7 +302,7 @@ def uninstall_skill(skill_name: str) -> dict:
     从运行时卸载一个 Skill。
 
     1. 删除运行时 Skills/{layer}/{name}/
-    2. 删除 ~/.openclaw/skills/{name}/
+    2. 删除平台已安装 Skills 目录中的 {name}/
     3. 通知 skill_hub
 
     返回: {"ok": bool, "message": str}
@@ -446,7 +458,7 @@ def publish_skill(skill_name: str, target_layer: str = "marketplace",
             shutil.rmtree(source_target)
         shutil.copytree(target_runtime_path, source_target)
 
-        # 4. 更新 ~/.openclaw/skills/
+        # 4. 更新平台已安装 Skills 目录
         skill_md = target_runtime_path / "SKILL.md"
         if skill_md.exists():
             oc_dir = _get_openclaw_skills_dir() / skill_name

@@ -17,12 +17,12 @@ public:
 	/** 写入文件内容（自动创建目录） */
 	static bool WriteStringToFile(const FString& FilePath, const FString& Content);
 
-	/** 获取 ~/.openclaw/openclaw.json 路径 */
+	/** 获取平台配置文件路径（通过 artclaw config 驱动，回退到 ~/.openclaw/openclaw.json） */
 	static FString GetOpenClawConfigPath();
 
 	/** 获取 ~/.artclaw/config.json 路径 */
 	static FString GetArtClawConfigPath();
 
-	/** 获取 ~/.openclaw/skills/ 路径 */
+	/** 获取平台已安装 Skills 目录（通过 artclaw config 驱动） */
 	static FString GetOpenClawSkillsDir();
 };

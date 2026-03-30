@@ -21,6 +21,7 @@ from bridge_config import (
     CLIENT_NAME,
     CLIENT_VERSION,
     load_config,
+    get_platform_config_path,
 )
 
 
@@ -97,13 +98,13 @@ def diagnose_connection(
         lines.append(f"  ✅ Token 已配置: {masked}")
         file_token = gw_config.get("auth", {}).get("token", "")
         if file_token and tok == file_token:
-            lines.append("  ℹ️  来源: ~/.openclaw/openclaw.json")
+            lines.append(f"  ℹ️  来源: {get_platform_config_path()}")
         elif tok == DEFAULT_TOKEN:
-            lines.append("  ⚠️  来源: 硬编码默认值 (建议从 openclaw.json 读取)")
+            lines.append("  ⚠️  来源: 硬编码默认值 (建议从平台配置文件读取)")
             warnings += 1
     else:
         lines.append("  ❌ Token 为空!")
-        lines.append("     修复: 检查 ~/.openclaw/openclaw.json 中的 gateway.auth.token")
+        lines.append(f"     修复: 检查 {get_platform_config_path()} 中的 gateway.auth.token")
         errors += 1
 
     # ── 检查 5: Client ID 白名单 ──

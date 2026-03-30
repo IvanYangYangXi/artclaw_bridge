@@ -1,0 +1,28 @@
+{
+  "_comment": "UE Editor Agent MCP Server — 各平台配置模板",
+  "id": "ue-editor-agent",
+  "name": "UE Claw Bridge",
+  "dcc": "unreal_engine",
+  "default_port": 8080,
+  "platforms": {
+    "openclaw": {
+      "config_key": "mcp.servers.ue-editor-agent",
+      "config_value": {
+        "url": "ws://127.0.0.1:8080/ws",
+        "type": "streamable-http"
+      }
+    },
+    "workbuddy": {
+      "config_key": "mcpServers.ue-editor-agent",
+      "config_value": {
+        "url": "ws://127.0.0.1:8080/ws"
+      }
+    },
+    "claude": {
+      "config_key": "mcpServers.ue-editor-agent",
+      "config_value": {
+        "url": "ws://127.0.0.1:8080/ws"
+      }
+    }
+  }
+}

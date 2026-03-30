@@ -43,7 +43,7 @@ private:
 	void SetServerEnabled(const FString& ServerId, bool bEnabled);
 	FReply OnAddServerClicked();
 
-	/** 将新 server 写入 openclaw.json */
+	/** 将新 server 写入平台配置文件 */
 	void WriteNewServer(const FString& Id, const FString& Type,
 		const FString& Url, const FString& Command);
 

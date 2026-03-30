@@ -5,6 +5,9 @@
 #include "Misc/FileHelper.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+#include "Dom/JsonObject.h"
 
 FString FUEAgentManageUtils::RunPythonAndCapture(const FString& PythonCode)
 {
@@ -63,8 +66,64 @@ bool FUEAgentManageUtils::WriteStringToFile(const FString& FilePath, const FStri
 		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 }
 
+// ---------------------------------------------------------------------------
+// 内部辅助: 读取 artclaw config.json
+// ---------------------------------------------------------------------------
+static TSharedPtr<FJsonObject> LoadArtClawConfig()
+{
+	FString ConfigPath = FString(FPlatformProcess::UserHomeDir()) / TEXT(".artclaw") / TEXT("config.json");
+	FString JsonStr;
+	if (!FFileHelper::LoadFileToString(JsonStr, *ConfigPath))
+		return nullptr;
+
+	TSharedPtr<FJsonObject> Obj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
+	if (!FJsonSerializer::Deserialize(Reader, Obj))
+		return nullptr;
+	return Obj;
+}
+
+// 平台默认路径
+static const TCHAR* GetDefaultMcpConfigPath(const FString& PlatformType)
+{
+	if (PlatformType == TEXT("workbuddy")) return TEXT(".workbuddy/config.json");
+	if (PlatformType == TEXT("claude"))    return TEXT(".claude/config.json");
+	return TEXT(".openclaw/openclaw.json"); // openclaw 默认
+}
+
+static const TCHAR* GetDefaultSkillsDir(const FString& PlatformType)
+{
+	if (PlatformType == TEXT("workbuddy")) return TEXT(".workbuddy/skills");
+	if (PlatformType == TEXT("claude"))    return TEXT(".claude/skills");
+	return TEXT(".openclaw/skills"); // openclaw 默认
+}
+
 FString FUEAgentManageUtils::GetOpenClawConfigPath()
 {
+	auto Cfg = LoadArtClawConfig();
+	if (Cfg.IsValid())
+	{
+		// 优先从 mcp.config_path 读取
+		auto Mcp = Cfg->GetObjectField(TEXT("mcp"));
+		if (Mcp.IsValid())
+		{
+			FString CfgPath;
+			if (Mcp->TryGetStringField(TEXT("config_path"), CfgPath) && !CfgPath.IsEmpty())
+			{
+				CfgPath.ReplaceInline(TEXT("~"), *FString(FPlatformProcess::UserHomeDir()));
+				return CfgPath;
+			}
+		}
+		// 回退到平台默认
+		auto Platform = Cfg->GetObjectField(TEXT("platform"));
+		if (Platform.IsValid())
+		{
+			FString PlatformType;
+			Platform->TryGetStringField(TEXT("type"), PlatformType);
+			return FString(FPlatformProcess::UserHomeDir()) / GetDefaultMcpConfigPath(PlatformType);
+		}
+	}
+	// 最终回退
 	return FString(FPlatformProcess::UserHomeDir()) / TEXT(".openclaw") / TEXT("openclaw.json");
 }
 
@@ -75,5 +134,29 @@ FString FUEAgentManageUtils::GetArtClawConfigPath()
 
 FString FUEAgentManageUtils::GetOpenClawSkillsDir()
 {
+	auto Cfg = LoadArtClawConfig();
+	if (Cfg.IsValid())
+	{
+		// 优先从 skills.installed_path 读取
+		auto Skills = Cfg->GetObjectField(TEXT("skills"));
+		if (Skills.IsValid())
+		{
+			FString Path;
+			if (Skills->TryGetStringField(TEXT("installed_path"), Path) && !Path.IsEmpty())
+			{
+				Path.ReplaceInline(TEXT("~"), *FString(FPlatformProcess::UserHomeDir()));
+				return Path;
+			}
+		}
+		// 回退到平台默认
+		auto Platform = Cfg->GetObjectField(TEXT("platform"));
+		if (Platform.IsValid())
+		{
+			FString PlatformType;
+			Platform->TryGetStringField(TEXT("type"), PlatformType);
+			return FString(FPlatformProcess::UserHomeDir()) / GetDefaultSkillsDir(PlatformType);
+		}
+	}
+	// 最终回退
 	return FString(FPlatformProcess::UserHomeDir()) / TEXT(".openclaw") / TEXT("skills");
 }

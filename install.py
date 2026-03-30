@@ -635,7 +635,7 @@ def main():
             if uninstall_max(args.max_version):
                 uninstalled.append(f"3ds Max {args.max_version} 插件")
         if args.openclaw:
-            cprint("提示", "OpenClaw 配置需手动修改 ~/.openclaw/openclaw.json", "yellow")
+            cprint("提示", "OpenClaw 配置需手动修改平台配置文件（参考 ~/.artclaw/config.json 中的 mcp.config_path）", "yellow")
     else:
         # ─── 安装模式 ───
         if args.ue:

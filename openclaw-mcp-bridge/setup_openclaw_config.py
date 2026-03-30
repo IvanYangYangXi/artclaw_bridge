@@ -2,7 +2,7 @@
 setup_openclaw_config.py - 自动配置 OpenClaw mcp-bridge
 =========================================================
 
-自动将 mcp-bridge 插件配置合并到 ~/.openclaw/openclaw.json。
+自动将 mcp-bridge 插件配置合并到平台配置文件（默认 ~/.openclaw/openclaw.json）。
 安全操作：合并前自动备份原文件。
 
 用法:

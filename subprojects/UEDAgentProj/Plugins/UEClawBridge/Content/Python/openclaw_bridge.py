@@ -383,10 +383,21 @@ def load_session_history(session_key: str) -> str:
     if _bridge:
         agent_id = _bridge.agent_id
 
-    # 构建 sessions.json 路径
-    sessions_file = os.path.expanduser(
-        f"~/.openclaw/agents/{agent_id}/sessions/sessions.json"
-    )
+    # 构建 sessions.json 路径（通过平台配置驱动）
+    try:
+        from bridge_config import load_artclaw_config, get_platform_type
+        _ac = load_artclaw_config()
+        _pt = _ac.get("platform", {}).get("type", "openclaw")
+        # 不同平台的 agent 数据目录
+        _platform_agent_dirs = {
+            "openclaw": os.path.expanduser(f"~/.openclaw/agents/{agent_id}"),
+            "workbuddy": os.path.expanduser(f"~/.workbuddy/agents/{agent_id}"),
+            "claude": os.path.expanduser(f"~/.claude/agents/{agent_id}"),
+        }
+        _agent_dir = _platform_agent_dirs.get(_pt, _platform_agent_dirs["openclaw"])
+    except ImportError:
+        _agent_dir = os.path.expanduser(f"~/.openclaw/agents/{agent_id}")
+    sessions_file = os.path.join(_agent_dir, "sessions", "sessions.json")
     if not os.path.exists(sessions_file):
         return "[]"
 

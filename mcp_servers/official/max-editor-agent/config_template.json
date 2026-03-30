@@ -1,0 +1,28 @@
+{
+  "_comment": "Max Editor Agent MCP Server — 各平台配置模板",
+  "id": "max-editor-agent",
+  "name": "Max Claw Bridge",
+  "dcc": "3dsmax",
+  "default_port": 8082,
+  "platforms": {
+    "openclaw": {
+      "config_key": "mcp.servers.max-primary",
+      "config_value": {
+        "url": "ws://127.0.0.1:8082/ws",
+        "type": "streamable-http"
+      }
+    },
+    "workbuddy": {
+      "config_key": "mcpServers.max-primary",
+      "config_value": {
+        "url": "ws://127.0.0.1:8082/ws"
+      }
+    },
+    "claude": {
+      "config_key": "mcpServers.max-primary",
+      "config_value": {
+        "url": "ws://127.0.0.1:8082/ws"
+      }
+    }
+  }
+}

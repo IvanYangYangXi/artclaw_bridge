@@ -397,7 +397,7 @@ if %ERRORLEVEL% EQU 0 (
 )
 
 echo [完成] Maya 插件卸载完成
-echo [提示] OpenClaw 配置需手动修改 ~/.openclaw/openclaw.json
+echo [提示] 平台配置需手动修改（参考 ~/.artclaw/config.json）
 goto :summary
 
 :: ============================================================
@@ -583,7 +583,7 @@ if %ERRORLEVEL% EQU 0 (
 )
 
 echo [完成] 3ds Max 插件卸载完成
-echo [提示] OpenClaw 配置需手动修改 ~/.openclaw/openclaw.json
+echo [提示] 平台配置需手动修改（参考 ~/.artclaw/config.json）
 goto :summary
 
 :: ============================================================
@@ -713,7 +713,7 @@ echo.
 echo    OpenClaw:
 echo      1. 重启 Gateway: openclaw gateway restart
 echo      2. 确认 mcp-bridge 已加载
-echo      3. 确认 artclaw-* Skills 已安装到 ~/.openclaw/skills/
+echo      3. 确认 artclaw-* Skills 已安装（位置见 ~/.artclaw/config.json）
 echo.
 echo  提示: 更完整的功能 (卸载、跨平台、CLI) 请使用:
 echo        python install.py --help
