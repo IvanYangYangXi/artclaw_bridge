@@ -1,9 +1,15 @@
 # ArtClaw Skill 管理体系设计文档
 
-**版本**: v2.1  
-**日期**: 2026-03-27  
+**版本**: v2.2  
+**日期**: 2026-03-30  
 **状态**: 已完成  
 **文档路径**: `docs/specs/skill-management-system.md`
+
+> **v2.2 变更说明 (2026-03-30)**:
+> - 统一 Skill 安装目录重构：删除 UE 插件内 `Content/Python/Skills/` 目录，统一安装到 `~/.openclaw/skills/`
+> - skill_hub.py 改为从 `~/.artclaw/config.json` 的 `skills.installed_path` 读取安装路径
+> - install.py 用 `shutil.copytree` 复制整个 Skill 目录（含代码），不再只复制 SKILL.md
+> - 支持扁平+分层两种目录结构扫描，向后兼容
 
 > **v2.1 变更说明 (2026-03-27)**:
 > - MCP 工具精简重构：每个 DCC 仅保留 1 个 MCP 工具（`run_ue_python` / `run_python`），原有工具全部降级为 Python API
@@ -119,20 +125,22 @@ artclaw/                              # 项目根目录
         └── templates/                # 文档模板
 ```
 
-### 3.2 运行时加载目录（UE 插件内）
+### 3.2 已安装目录（运行时，扁平结构）
 
 ```
-UEClawBridge/
-└── Content/
-    └── Python/
-        ├── skill_hub.py              # Skill 管理中心
-        ├── Skills/                   # 运行时加载目录（合并视图）
-        │   ├── 00_official/          # 软链接/拷贝: 官方库
-        │   ├── 01_team/              # 软链接/拷贝: 团队库
-        │   ├── 02_user/              # 软链接/拷贝: 用户库
-        │   └── 99_custom/            # 临时/实验 Skill
-        └── ...
+~/.openclaw/skills/                   # OpenClaw 平台统一安装目录
+├── ue54_material_node_edit/          # 扁平，直接是 Skill 包
+│   ├── SKILL.md
+│   ├── __init__.py
+│   ├── manifest.json
+│   ├── references/
+│   └── scripts/
+├── ue54_get_material_nodes/
+├── artclaw-context/
+└── ...
 ```
+
+**注意**：Skills 现已统一安装到外部目录（`~/.openclaw/skills/` 或按平台配置），不再存储在 UE 插件内部的 `Content/Python/Skills/`。`skill_hub.py` 通过 `~/.artclaw/config.json` 的 `skills.installed_path` 字段读取安装路径。
 
 ### 3.3 用户库位置
 
@@ -670,20 +678,24 @@ notifications/skills/dependencies_resolved            # 依赖解析完成
 
 ### 11.2 目录结构
 
-Skill 统一放在 UE 插件运行时目录 `Skills/` 的分层子目录中：
+Skills 统一安装到外部配置目录（`~/.openclaw/skills/`），采用扁平结构：
 
 ```
-Skills/
-├── 00_official/<skill_name>/         # 官方 Skill
-├── 01_team/<skill_name>/             # 团队共享
-├── 02_user/<skill_name>/             # 用户个人
-└── 99_custom/<skill_name>/           # 临时实验
+~/.openclaw/skills/                   # 配置驱动的统一安装目录
+├── ue54_material_node_edit/          # 官方 Skill（扁平结构）
+├── ue54_get_material_nodes/
+├── artclaw-context/                  # OpenClaw 触发文档 Skill
+├── team_skill_example/               # 团队 Skill
+├── user_custom_skill/                # 用户个人 Skill
+└── ...
 ```
 
-开发资源（模板、枚举）位于 `artclaw/skills/`：
+**配置驱动**：`skill_hub.py` 启动时从 `~/.artclaw/config.json` 的 `skills.installed_path` 读取实际安装路径。
+
+开发资源（模板、枚举）仍位于项目内 `artclaw/skills/`：
 
 ```
-artclaw/skills/
+artclaw/skills/                       # 项目内开发资源
 ├── categories.py                     # 标准分类枚举
 └── templates/                        # 开发模板
 ```

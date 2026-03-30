@@ -107,16 +107,21 @@ skill/<category>/<skill-name>
 
 ## 目录放置规则
 
-Skill 统一放在 UE 插件运行时目录中：
+Skills 现已统一安装到外部目录（`~/.openclaw/skills/` 或按平台配置），采用扁平结构：
 
-| 层级 | 目录 | 说明 |
-|------|------|------|
-| 官方 | `Skills/00_official/<skill_name>/` | ArtClaw 官方维护 |
-| 团队 | `Skills/01_team/<skill_name>/` | 团队共享定制 |
-| 用户 | `Skills/02_user/<skill_name>/` | 个人私有 |
-| 临时 | `Skills/99_custom/<skill_name>/` | 临时实验 |
+```
+~/.openclaw/skills/                   # 统一安装目录
+├── ue54_material_node_edit/          # 官方 Skill
+├── team_custom_tool/                 # 团队 Skill  
+├── user_personal_skill/              # 用户 Skill
+└── experimental_feature/             # 实验性 Skill
+```
 
-> 提交到官方库的 PR 应放在 `00_official/` 层级。
+**安装流程**：
+- 开发完成的 Skill 通过 `install.py --openclaw` 从项目源码 `skills/official/` 或 `skills/marketplace/` 复制到统一安装目录
+- `skill_hub.py` 通过 `~/.artclaw/config.json` 的 `skills.installed_path` 读取实际安装路径
+
+> 不再有分层目录（`00_official/`, `01_team/` 等），改为扁平结构。Skill 优先级通过来源和版本管理。
 
 ## 版本规范
 

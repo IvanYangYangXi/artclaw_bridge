@@ -26,26 +26,27 @@
 ① 项目源码（唯一编辑位置，Git 管理）
    skills/official/unreal/ue54_artclaw_material/
 
-        │ install.bat 或 管理面板一键同步
+        │ install.py --openclaw 或 管理面板一键同步
         ▼
 
-② DCC 运行时目录                               ③ OpenClaw Skills 目录
-   UEClawBridge/.../Skills/official/               ~/.openclaw/skills/
-   └── ue54_artclaw_material/                      └── ue54_artclaw_material/
-       ├── manifest.json                               └── SKILL.md (仅文档)
-       ├── __init__.py  ← 执行位置
-       └── SKILL.md
+② 已安装目录（统一，扁平结构）                    ③ OpenClaw Skills 目录（同一位置）
+   ~/.openclaw/skills/                              ~/.openclaw/skills/
+   └── ue54_artclaw_material/                       └── ue54_artclaw_material/
+       ├── manifest.json                                ├── SKILL.md（AI 文档）
+       ├── __init__.py  ← 执行位置                     ├── __init__.py（执行代码）
+       └── SKILL.md                                     └── manifest.json（元数据）
 ```
 
-**用户创建的 Skill** 不经过项目源码，直接在运行时目录创建：
+**重要变更**：Skills 现已统一安装到 `~/.openclaw/skills/`，DCC 插件不再包含 Skills 目录。运行时和 OpenClaw 共享同一安装位置。
+
+**用户创建的 Skill** 不经过项目源码，直接在统一安装目录创建：
 
 ```
 用户在编辑器内创建 Skill
         ↓
-直接写入 ② DCC 运行时: Skills/user/ue54_my_tool/
-同时写入 ③ OpenClaw: ~/.openclaw/skills/ue54_my_tool/SKILL.md
+直接写入 ~/.openclaw/skills/ue54_my_tool/
         ↓
-skill_hub 热加载 → 立即可用
+skill_hub 热加载（从统一安装目录）→ 立即可用
         ↓
 用户想分享 → "发布"到 ① 项目源码 skills/marketplace/
 ```
@@ -146,25 +147,23 @@ AI 自动命名: ue54_batch_rename_actors
 AI 确认摘要:
   "📦 名称: ue54_batch_rename_actors
    📂 分类: scene     🎯 适用: UE 5.4+
-   ⚠️ 风险: medium   📁 位置: user 层
+   ⚠️ 风险: medium   📁 位置: 统一安装目录
    确认创建？"
         ↓
 用户确认 → AI 生成代码 → 写入:
-  ② Skills/user/ue54_batch_rename_actors/
-     ├── manifest.json  (自动生成，version: "0.1.0")
-     ├── __init__.py    (AI 写的代码)
-     └── SKILL.md       (AI 写的文档)
-  ③ ~/.openclaw/skills/ue54_batch_rename_actors/
-     └── SKILL.md       (同步复制)
+  ~/.openclaw/skills/ue54_batch_rename_actors/
+  ├── manifest.json  (自动生成，version: "0.1.0")
+  ├── __init__.py    (AI 写的代码)
+  └── SKILL.md       (AI 写的文档)
         ↓
-skill_hub 热加载 → 立即可用
+skill_hub 热加载（从统一安装目录）→ 立即可用
 ```
 
-此时 Skill **只在 user 层**，是私有的。
+此时 Skill 在统一安装目录，是用户私有的。
 
 ### 3.3 修改
 
-用户在管理面板点 [编辑] → 打开 Skill **当前所在目录**（此时是 `Skills/user/ue54_batch_rename_actors/`）。
+用户在管理面板点 [编辑] → 打开 Skill **在统一安装目录的位置**（`~/.openclaw/skills/ue54_batch_rename_actors/`）。
 
 修改代码 → skill_hub 文件监控检测变更 → 热重载。无需额外操作。
 
@@ -178,18 +177,16 @@ skill_hub 热加载 → 立即可用
 执行（原子操作）:
   1. 复制到项目源码: skills/marketplace/unreal/ue54_batch_rename_actors/
   2. git add + commit
-  3. 运行时: 移动 Skills/user/ → Skills/marketplace/（搬家，不是复制）
-  4. 更新 skill_hub 注册信息（层级从 user → marketplace）
-  5. 同步更新 ~/.openclaw/skills/ 的 SKILL.md
+  3. 标记 Skill 为"已发布到市集"（metadata 更新）
+  4. 提示用户 git push 分享给团队
         ↓
-提示用户 git push 分享给团队
 ```
 
-**关键**: 发布后 `user/` 中的原件**被移走**，此 Skill 现在属于 marketplace 层。
+**关键变更**: Skill 仍保留在统一安装目录，不再有"搬家"操作。发布是复制到源码目录 + 更新元数据标记。
 
 ### 3.5 发布后继续修改
 
-Skill 已在 marketplace 层。用户点 [编辑] → 打开 `Skills/marketplace/ue54_batch_rename_actors/`。
+Skill 已标记为"市集级"。用户点 [编辑] → 打开 `~/.openclaw/skills/ue54_batch_rename_actors/`。
 
 ```
 修改代码 → 热重载 → 本地立即生效
@@ -199,7 +196,7 @@ Skill 已在 marketplace 层。用户点 [编辑] → 打开 `Skills/marketplace
 更新项目源码 skills/marketplace/ → git commit → push
 ```
 
-**编辑始终操作 Skill 当前所在的运行时目录**，不存在两份文件的问题。
+**编辑始终操作 Skill 在统一安装目录的位置**，发布是同步到源码目录。
 
 ### 3.6 发布到系统（晋升）
 
