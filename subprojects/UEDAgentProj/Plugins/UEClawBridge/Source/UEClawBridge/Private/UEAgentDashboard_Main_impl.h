@@ -498,6 +498,14 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 
 SUEAgentDashboard::~SUEAgentDashboard()
 {
+	// 停止聊天响应轮询 — 必须最先清理，防止 lambda 捕获的 Self 在析构后触发
+	if (PollTimerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(PollTimerHandle);
+		PollTimerHandle.Reset();
+	}
+	bIsWaitingForResponse = false;
+
 	// 停止 bridge 状态轮询
 	if (BridgeStatusPollHandle.IsValid())
 	{
@@ -518,7 +526,8 @@ SUEAgentDashboard::~SUEAgentDashboard()
 	}
 
 	// 关闭管理面板窗口，防止 Dashboard 销毁后窗口仍引用无效 Widget
-	if (ManageWindow.IsValid())
+	// 注意：关机阶段 Slate 可能已被销毁，必须先检查 FSlateApplication::IsInitialized()
+	if (ManageWindow.IsValid() && FSlateApplication::IsInitialized())
 	{
 		ManageWindow->RequestDestroyWindow();
 		ManageWindow.Reset();
