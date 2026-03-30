@@ -22,12 +22,14 @@
 
 FReply SUEAgentDashboard::OnSettingsClicked()
 {
-	// 如果窗口已存在，直接激活
-	if (SettingsWindow.IsValid())
+	// 如果窗口已存在且未销毁，直接激活
+	if (SettingsWindow.IsValid() && !SettingsWindow->GetNativeWindow().IsValid() == false)
 	{
 		SettingsWindow->BringToFront();
 		return FReply::Handled();
 	}
+	// 窗口已被用户关闭（X 按钮），清理悬垂引用
+	SettingsWindow.Reset();
 
 	// 记录当前状态（用于取消时恢复）
 	const bool OrigSilentMedium = bSilentMedium;
@@ -40,6 +42,11 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 	SettingsWindow = SNew(SWindow)
 		.Title(FUEAgentL10n::Get(TEXT("SettingsTitle")))
 		.ClientSize(FVector2D(380.0f, 480.0f))
+		.OnClosed_Lambda([Self](const TSharedRef<SWindow>&)
+		{
+			// 用户点 X 关闭时自动清理引用，确保下次可以重新打开
+			Self->SettingsWindow.Reset();
+		})
 		.SupportsMinimize(false)
 		.SupportsMaximize(false)
 		[

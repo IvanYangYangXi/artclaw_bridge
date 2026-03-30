@@ -58,6 +58,36 @@ def write_response(response_file: str, text: str) -> None:
     try:
         with open(response_file, "w", encoding="utf-8") as f:
             f.write(text)
+
+
+def write_bridge_status(status_dir: str, connected: bool, mcp_ready: bool = False,
+                        mcp_clients: int = 0, detail: str = "") -> None:
+    """写入 _bridge_status.json，供 C++ BridgeStatusPoll 读取连接状态。"""
+    try:
+        import tempfile
+        path = os.path.join(status_dir, "_bridge_status.json")
+        data = {
+            "timestamp": time.time(),
+            "connected": connected,
+            "mcp_ready": mcp_ready,
+            "mcp_clients": mcp_clients,
+            "detail": detail,
+        }
+        payload = json.dumps(data, ensure_ascii=False)
+        # 原子写：先写临时文件再 rename，避免 C++ 读到半写文件
+        fd, tmp = tempfile.mkstemp(dir=status_dir, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+            raise
+    except Exception as exc:
+        UELogger.mcp_error(f"[openclaw_ws] write_bridge_status: {exc}")
         UELogger.info(f"[openclaw_ws] response written ({len(text)} chars)")
     except Exception as exc:
         UELogger.mcp_error(f"[openclaw_ws] response write: {exc}")

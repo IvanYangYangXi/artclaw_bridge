@@ -606,8 +606,10 @@ class MCPServer:
 
         # 同步 MCP 就绪状态到 bridge 状态文件
         try:
-            from openclaw_bridge import write_mcp_ready
-            write_mcp_ready(True)
+            import openclaw_ws, os
+            _status_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "..", "..", "Saved", "UEAgent")
+            openclaw_ws.write_bridge_status(_status_dir, connected=True, mcp_ready=True)
         except Exception:
             pass
 
@@ -636,8 +638,10 @@ class MCPServer:
 
         # 同步 MCP 停止状态到 bridge 状态文件
         try:
-            from openclaw_bridge import write_mcp_ready
-            write_mcp_ready(False)
+            import openclaw_ws, os
+            _status_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "..", "..", "Saved", "UEAgent")
+            openclaw_ws.write_bridge_status(_status_dir, connected=True, mcp_ready=False)
         except Exception:
             pass
 

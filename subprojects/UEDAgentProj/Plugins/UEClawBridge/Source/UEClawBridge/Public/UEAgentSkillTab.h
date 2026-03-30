@@ -7,6 +7,7 @@
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/Views/SListView.h"
+#include "Widgets/Input/SEditableTextBox.h"
 
 class SUEAgentSkillTab : public SCompoundWidget
 {
@@ -18,7 +19,8 @@ public:
 	void Refresh();
 
 private:
-	enum class EInstallStatus : uint8 { Full, DocOnly, NotInstalled };
+	// 安装状态：只区分"已安装"和"未安装"，去掉 DocOnly 细分
+	enum class EInstallStatus : uint8 { Installed, NotInstalled };
 
 	struct FSkillEntry
 	{
@@ -26,7 +28,7 @@ private:
 		FString DisplayName;
 		FString Description;
 		FString Version;
-		FString Layer;
+		FString Layer;       // official / marketplace / user / custom / platform
 		FString Software;
 		FString Category;
 		FString RiskLevel;
@@ -34,12 +36,11 @@ private:
 		bool bPinned = false;
 		bool bHasCode = false;
 		bool bHasSkillMd = false;
-		EInstallStatus InstallStatus = EInstallStatus::Full;
+		EInstallStatus InstallStatus = EInstallStatus::Installed;
 		FString SourceDir;
-		// Phase 4: 同步信息
-		FString RuntimeVersion;   // 运行时版本（用于更新检测）
-		FString SourcePath;       // 源码路径
-		bool bUpdatable = false;  // 版本不一致
+		FString RuntimeVersion;
+		FString SourcePath;
+		bool bUpdatable = false;
 	};
 	typedef TSharedPtr<FSkillEntry> FSkillEntryPtr;
 
@@ -70,10 +71,15 @@ private:
 	TArray<FSkillEntryPtr> FilteredSkills;
 	TSharedPtr<SListView<FSkillEntryPtr>> SkillListView;
 	TSharedPtr<SVerticalBox> ContentBox;
+	TSharedPtr<SEditableTextBox> SearchBox;
 
-	FString LayerFilter = TEXT("all");
-	FString DccFilter = TEXT("all");
-	FString InstallFilter = TEXT("all");  // all / full / doc_only / not_installed
+	FString LayerFilter   = TEXT("all");
+	FString DccFilter     = TEXT("all");
+	FString SearchKeyword;   // 搜索关键字（空 = 不过滤）
 
 	void ApplyFilters();
+
+	/** 延迟刷新：在下一帧执行 Refresh，避免在 Slate 事件回调中同步销毁 widget */
+	void RequestRefresh();
+	bool bPendingRefresh = false;
 };

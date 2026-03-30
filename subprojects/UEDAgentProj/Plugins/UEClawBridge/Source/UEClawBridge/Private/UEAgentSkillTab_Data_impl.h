@@ -76,7 +76,7 @@ static const TCHAR* SkillRefreshPyScript = TEXT(
 	"        except: pass\n"
 	"        skills.append({\n"
 	"            'name': name, 'display_name': name, 'description': desc,\n"
-	"            'version': '', 'layer': 'openclaw', 'software': 'universal',\n"
+	"            'version': '', 'layer': 'platform', 'software': 'universal',\n"
 	"            'category': 'general', 'risk_level': 'low',\n"
 	"            'has_code': False, 'has_skill_md': True,\n"
 	"            'install_status': 'doc_only', 'source_dir': sd,\n"
@@ -176,12 +176,10 @@ void SUEAgentSkillTab::ParseSkillList(const FString& JsonStr)
 		E->SourceDir = Obj->GetStringField(TEXT("source_dir"));
 
 		FString InstallStr = Obj->GetStringField(TEXT("install_status"));
-		if (InstallStr == TEXT("doc_only"))
-			E->InstallStatus = EInstallStatus::DocOnly;
-		else if (InstallStr == TEXT("not_installed"))
-			E->InstallStatus = EInstallStatus::NotInstalled;
-		else
-			E->InstallStatus = EInstallStatus::Full;
+		// doc_only / full → Installed；not_installed → NotInstalled
+		E->InstallStatus = (InstallStr == TEXT("not_installed"))
+			? EInstallStatus::NotInstalled
+			: EInstallStatus::Installed;
 
 		Obj->TryGetStringField(TEXT("source_version"), E->SourcePath);
 
@@ -210,11 +208,14 @@ void SUEAgentSkillTab::ApplyFilters()
 				continue;
 		}
 
-		if (InstallFilter != TEXT("all"))
+		// 搜索关键字过滤（名称 / DisplayName / 描述 不区分大小写）
+		if (!SearchKeyword.IsEmpty())
 		{
-			if (InstallFilter == TEXT("full") && S->InstallStatus != EInstallStatus::Full) continue;
-			if (InstallFilter == TEXT("doc_only") && S->InstallStatus != EInstallStatus::DocOnly) continue;
-			if (InstallFilter == TEXT("not_installed") && S->InstallStatus != EInstallStatus::NotInstalled) continue;
+			const FString KW = SearchKeyword.ToLower();
+			bool bMatch = S->Name.ToLower().Contains(KW)
+				|| S->DisplayName.ToLower().Contains(KW)
+				|| S->Description.ToLower().Contains(KW);
+			if (!bMatch) continue;
 		}
 
 		FilteredSkills.Add(S);

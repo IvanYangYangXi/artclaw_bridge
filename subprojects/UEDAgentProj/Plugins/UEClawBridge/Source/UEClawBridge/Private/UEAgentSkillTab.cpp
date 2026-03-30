@@ -33,10 +33,24 @@ void SUEAgentSkillTab::Construct(const FArguments& InArgs)
 
 void SUEAgentSkillTab::Refresh()
 {
+	bPendingRefresh = false;
 	RefreshData();
 	if (!ContentBox.IsValid()) return;
 	ContentBox->ClearChildren();
 	ContentBox->AddSlot().FillHeight(1.0f)[ BuildContent() ];
+}
+
+void SUEAgentSkillTab::RequestRefresh()
+{
+	if (bPendingRefresh) return;
+	bPendingRefresh = true;
+	RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateLambda(
+		[this](double, float) -> EActiveTimerReturnType
+		{
+			Refresh();
+			return EActiveTimerReturnType::Stop;
+		}
+	));
 }
 
 FString SUEAgentSkillTab::RunSyncAction(const FString& PyCode)
@@ -69,8 +83,7 @@ TSharedRef<SWidget> SUEAgentSkillTab::BuildContent()
 			.Text(FText::FromString(Label))
 			.OnClicked_Lambda([this, Key, Field]() {
 				if (Field == TEXT("layer")) LayerFilter = Key;
-				else if (Field == TEXT("install")) InstallFilter = Key;
-				Refresh();
+				RequestRefresh();
 				return FReply::Handled();
 			})
 			.ButtonColorAndOpacity(bActive
@@ -104,51 +117,41 @@ TSharedRef<SWidget> SUEAgentSkillTab::BuildContent()
 		[ MakeFilterBtn(FUEAgentL10n::GetStr(TEXT("ManageFilterLayerUser")),
 			TEXT("user"), TEXT("layer"), FLinearColor(0.8f, 0.6f, 0.2f)) ]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(2, 0)
-		[ MakeFilterBtn(FUEAgentL10n::GetStr(TEXT("ManageFilterLayerOpenClaw")),
-			TEXT("openclaw"), TEXT("layer"), FLinearColor(0.6f, 0.4f, 0.8f)) ]
+		[ MakeFilterBtn(FUEAgentL10n::GetStr(TEXT("ManageFilterLayerPlatform")),
+			TEXT("platform"), TEXT("layer"), FLinearColor(0.5f, 0.4f, 0.7f)) ]
 	]
 
-	// Install status filter + sync button
+	// 搜索框 + 同步按钮
 	+ SVerticalBox::Slot().AutoHeight().Padding(8, 2, 8, 4)
 	[
 		SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+
+		// 搜索框
+		+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 		[
-			SNew(STextBlock)
-			.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ManageFilterInstall")); })
-			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
-			.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
-		]
-		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)
-		[
-			MakeFilterBtn(
-				FString::Printf(TEXT("%s (%d)"),
-					*FUEAgentL10n::GetStr(TEXT("ManageInstallFilterAll")), AllSkills.Num()),
-				TEXT("all"), TEXT("install"), FLinearColor(0.15f, 0.45f, 0.75f))
-		]
-		+ SHorizontalBox::Slot().AutoWidth().Padding(2, 0)
-		[
-			MakeFilterBtn(
-				FString::Printf(TEXT("%s (%d)"),
-					*FUEAgentL10n::GetStr(TEXT("ManageInstallFull")), FullCount),
-				TEXT("full"), TEXT("install"), FLinearColor(0.2f, 0.65f, 0.5f))
-		]
-		+ SHorizontalBox::Slot().AutoWidth().Padding(2, 0)
-		[
-			MakeFilterBtn(
-				FString::Printf(TEXT("%s (%d)"),
-					*FUEAgentL10n::GetStr(TEXT("ManageInstallDoc")), DocCount),
-				TEXT("doc_only"), TEXT("install"), FLinearColor(0.55f, 0.55f, 0.7f))
-		]
-		+ SHorizontalBox::Slot().AutoWidth().Padding(2, 0)
-		[
-			MakeFilterBtn(
-				FString::Printf(TEXT("%s (%d)"),
-					*FUEAgentL10n::GetStr(TEXT("ManageInstallNotInstalled")), NotInstalledCount),
-				TEXT("not_installed"), TEXT("install"), FLinearColor(0.6f, 0.4f, 0.3f))
+			SAssignNew(SearchBox, SEditableTextBox)
+			.HintText_Lambda([]() { return FUEAgentL10n::Get(TEXT("ManageSearchHint")); })
+			.Text(FText::FromString(SearchKeyword))
+			.OnTextChanged_Lambda([this](const FText& NewText)
+			{
+				SearchKeyword = NewText.ToString();
+				ApplyFilters();
+				if (SkillListView.IsValid()) SkillListView->RequestListRefresh();
+			})
 		]
 
-		+ SHorizontalBox::Slot().FillWidth(1.0f)[ SNew(SSpacer) ]
+		+ SHorizontalBox::Slot().AutoWidth().Padding(6, 0, 0, 0)
+		[
+			SNew(STextBlock)
+			.Text(FText::Format(
+				FUEAgentL10n::Get(TEXT("ManageSkillCount")),
+				FText::AsNumber(FilteredSkills.Num()),
+				FText::AsNumber(AllSkills.Num())))
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+			.VAlign(VAlign_Center)
+		]
+
+		+ SHorizontalBox::Slot().FillWidth(0.05f)[ SNew(SSpacer) ]
 
 		// 一键同步 (Phase 4)
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)
@@ -162,16 +165,6 @@ TSharedRef<SWidget> SUEAgentSkillTab::BuildContent()
 			.OnClicked(this, &SUEAgentSkillTab::OnSyncAllClicked)
 			.IsEnabled(NotInstalledCount + UpdatableCount > 0)
 			.ContentPadding(FMargin(6, 2))
-		]
-
-		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8, 0, 0, 0)
-		[
-			SNew(STextBlock)
-			.Text(FText::Format(
-				FUEAgentL10n::Get(TEXT("ManageSkillCount")),
-				FText::AsNumber(FilteredSkills.Num()),
-				FText::AsNumber(AllSkills.Num())))
-			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 		]
 	]
 
@@ -200,19 +193,14 @@ TSharedRef<ITableRow> SUEAgentSkillTab::GenerateRow(
 	else if (Item->Layer == TEXT("marketplace")) LC = FLinearColor(0.3f, 0.5f, 0.9f);
 	else if (Item->Layer == TEXT("user")) LC = FLinearColor(0.8f, 0.6f, 0.2f);
 	else if (Item->Layer == TEXT("custom")) LC = FLinearColor(0.6f, 0.4f, 0.6f);
-	else if (Item->Layer == TEXT("openclaw")) LC = FLinearColor(0.6f, 0.4f, 0.8f);
+	else if (Item->Layer == TEXT("openclaw") || Item->Layer == TEXT("platform")) LC = FLinearColor(0.5f, 0.4f, 0.7f);
 
-	// 安装状态
+	// 安装状态（已简化：只区分 Installed / NotInstalled）
 	FLinearColor IC; FString IL;
-	if (Item->InstallStatus == EInstallStatus::Full)
+	if (Item->InstallStatus == EInstallStatus::Installed)
 	{
 		IC = FLinearColor(0.2f, 0.65f, 0.5f);
 		IL = FUEAgentL10n::GetStr(TEXT("ManageInstallFull"));
-	}
-	else if (Item->InstallStatus == EInstallStatus::DocOnly)
-	{
-		IC = FLinearColor(0.55f, 0.55f, 0.7f);
-		IL = FUEAgentL10n::GetStr(TEXT("ManageInstallDoc"));
 	}
 	else // NotInstalled
 	{
@@ -353,7 +341,8 @@ TSharedRef<ITableRow> SUEAgentSkillTab::GenerateRow(
 			SNew(SButton)
 			.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ManagePublishBtn")); })
 			.OnClicked(FOnClicked::CreateSP(this, &SUEAgentSkillTab::OnPublishClicked, Item))
-			.Visibility(bIsInstalled && (Item->Layer == TEXT("user") || Item->Layer == TEXT("custom"))
+			.Visibility(bIsInstalled && (Item->Layer == TEXT("user") || Item->Layer == TEXT("custom")
+				|| Item->Layer == TEXT("platform"))
 				? EVisibility::Visible : EVisibility::Collapsed)
 			.ContentPadding(FMargin(4, 1))
 		]
@@ -384,7 +373,7 @@ FReply SUEAgentSkillTab::OnPinClicked(FSkillEntryPtr Item)
 {
 	Item->bPinned = !Item->bPinned;
 	ExecuteSkillAction(Item->bPinned ? TEXT("pin") : TEXT("unpin"), Item->Name);
-	Refresh();
+	RequestRefresh();
 	return FReply::Handled();
 }
 
@@ -486,7 +475,7 @@ FReply SUEAgentSkillTab::OnInstallClicked(FSkillEntryPtr Item)
 		"_result = install_skill('%s')\n"
 	), *Item->Name);
 	RunSyncAction(PyCode);
-	Refresh();
+	RequestRefresh();
 	return FReply::Handled();
 }
 
@@ -497,7 +486,7 @@ FReply SUEAgentSkillTab::OnUninstallClicked(FSkillEntryPtr Item)
 		"_result = uninstall_skill('%s')\n"
 	), *Item->Name);
 	RunSyncAction(PyCode);
-	Refresh();
+	RequestRefresh();
 	return FReply::Handled();
 }
 
@@ -508,7 +497,7 @@ FReply SUEAgentSkillTab::OnUpdateClicked(FSkillEntryPtr Item)
 		"_result = update_skill('%s')\n"
 	), *Item->Name);
 	RunSyncAction(PyCode);
-	Refresh();
+	RequestRefresh();
 	return FReply::Handled();
 }
 
@@ -519,7 +508,7 @@ FReply SUEAgentSkillTab::OnSyncAllClicked()
 		"_result = sync_all()\n"
 	);
 	RunSyncAction(PyCode);
-	Refresh();
+	RequestRefresh();
 	return FReply::Handled();
 }
 
@@ -589,7 +578,7 @@ FReply SUEAgentSkillTab::OnPublishClicked(FSkillEntryPtr Item)
 					), *SkillName, *CL.Replace(TEXT("'"), TEXT("\\'")));
 					RunSyncAction(Py);
 					if (WeakWin.IsValid()) WeakWin.Pin()->RequestDestroyWindow();
-					Refresh();
+					RequestRefresh();
 					return FReply::Handled();
 				})
 				.ContentPadding(FMargin(6, 3))
@@ -606,7 +595,7 @@ FReply SUEAgentSkillTab::OnPublishClicked(FSkillEntryPtr Item)
 					), *SkillName, *CL.Replace(TEXT("'"), TEXT("\\'")));
 					RunSyncAction(Py);
 					if (WeakWin.IsValid()) WeakWin.Pin()->RequestDestroyWindow();
-					Refresh();
+					RequestRefresh();
 					return FReply::Handled();
 				})
 				.ContentPadding(FMargin(6, 3))
@@ -623,7 +612,7 @@ FReply SUEAgentSkillTab::OnPublishClicked(FSkillEntryPtr Item)
 					), *SkillName, *CL.Replace(TEXT("'"), TEXT("\\'")));
 					RunSyncAction(Py);
 					if (WeakWin.IsValid()) WeakWin.Pin()->RequestDestroyWindow();
-					Refresh();
+					RequestRefresh();
 					return FReply::Handled();
 				})
 				.ContentPadding(FMargin(6, 3))

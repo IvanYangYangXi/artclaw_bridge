@@ -246,6 +246,9 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("ManageFilterLayerMarket"), TEXT("市集"),                TEXT("Market"));
 	Reg(TEXT("ManageFilterLayerUser"), TEXT("用户"),                  TEXT("User"));
 	Reg(TEXT("ManageFilterLayerOpenClaw"), TEXT("OC"),                TEXT("OC"));
+	Reg(TEXT("ManageFilterLayerPlatform"), TEXT("其他平台"),           TEXT("Platform"));
+	Reg(TEXT("ManageSearchHint"),    TEXT("搜索 Skill 名称/描述..."), TEXT("Search skills..."));
+	Reg(TEXT("ManageMcpStatus"),     TEXT("MCP: {0}"),                TEXT("MCP: {0}"));
 
 	// Skill 安装状态
 	Reg(TEXT("ManageInstallFull"),    TEXT("运行时"),                    TEXT("Runtime"));

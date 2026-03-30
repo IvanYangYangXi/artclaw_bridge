@@ -94,6 +94,12 @@ FText SUEAgentDashboard::GetStatusSummaryText() const
 		? FUEAgentL10n::GetStr(TEXT("ConnectedDot"))
 		: FUEAgentL10n::GetStr(TEXT("DisconnectedDot"));
 
+	// MCP 连接状态
+	FString McpState = bCachedMcpReady
+		? TEXT("MCP ✓")
+		: TEXT("MCP ✗");
+	Summary += FString::Printf(TEXT("  |  %s"), *McpState);
+
 	// 显示上下文使用百分比 (任务 5.5)
 	if (LastTotalTokens > 0 && ContextWindowSize > 0)
 	{

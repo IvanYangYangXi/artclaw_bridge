@@ -125,10 +125,26 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			.AutoHeight()
 			.Padding(0.0f, 2.0f, 0.0f, 0.0f)
 			[
-				SNew(STextBlock)
-				.Text_Lambda([this]() { return GetStatusSummaryText(); })
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
-				.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
+				SNew(SHorizontalBox)
+
+				// 连接状态 + MCP 状态 + Session Token
+				+ SHorizontalBox::Slot().AutoWidth()
+				[
+					SNew(STextBlock)
+					.Text_Lambda([this]() { return GetStatusSummaryText(); })
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+					.ColorAndOpacity_Lambda([this]() -> FSlateColor
+					{
+						// Token 超 80% → 红色警告
+						if (ContextWindowSize > 0 && LastTotalTokens > 0)
+						{
+							float Pct = (float)LastTotalTokens / (float)ContextWindowSize;
+							if (Pct >= 0.8f)
+								return FSlateColor(FLinearColor(0.9f, 0.2f, 0.2f));
+						}
+						return FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f));
+					})
+				]
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
@@ -457,6 +473,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				}
 				bool bMcpReady = false;
 				JsonObj->TryGetBoolField(TEXT("mcp_ready"), bMcpReady);
+				Self->bCachedMcpReady = bMcpReady;
 
 				// Connect 成功后的宽限期内，忽略 connected=false（防止旧值覆盖）
 				if (!bConnected && Self->ConnectGraceUntil > 0.0

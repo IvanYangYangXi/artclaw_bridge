@@ -295,6 +295,9 @@ private:
 	int32 LastTotalTokens = 0;
 	int32 ContextWindowSize = 200000;  // 默认 200K (claude-opus-4-6)
 
+	/** MCP Server 连接状态（由 _bridge_status.json 轮询更新） */
+	bool bCachedMcpReady = false;
+
 	// --- 多会话管理 (任务 5.8) ---
 
 	/** 会话条目数据模型 */

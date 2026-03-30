@@ -256,7 +256,18 @@ void SUEAgentDashboard::RebuildMessageList()
 		];
 	}
 
-	MessageScrollBox->ScrollToEnd();
+	// 延迟一帧再滚到底部，确保 Slate layout pass 完成后尺寸已知
+	TWeakPtr<SScrollBox> WeakScroll = MessageScrollBox;
+	RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateLambda(
+		[WeakScroll](double, float) -> EActiveTimerReturnType
+		{
+			if (TSharedPtr<SScrollBox> Scroll = WeakScroll.Pin())
+			{
+				Scroll->ScrollToEnd();
+			}
+			return EActiveTimerReturnType::Stop;
+		}
+	));
 }
 
 FSlateColor SUEAgentDashboard::GetSenderColor(const FString& Sender) const

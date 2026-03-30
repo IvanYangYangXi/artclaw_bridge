@@ -45,11 +45,17 @@ FReply SUEAgentDashboard::OnManageClicked()
 		return FReply::Handled();
 	}
 
+	auto Self = SharedThis(this);
 	ManageWindow = SNew(SWindow)
 		.Title(FUEAgentL10n::Get(TEXT("ManageWindowTitle")))
 		.ClientSize(FVector2D(600.0f, 500.0f))
 		.SupportsMinimize(false)
 		.SupportsMaximize(false)
+		.OnClosed_Lambda([Self](const TSharedRef<SWindow>&)
+		{
+			Self->ManageWindow.Reset();
+			Self->ManagePanelWidget.Reset();
+		})
 		[
 			SNew(SBorder)
 			.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
