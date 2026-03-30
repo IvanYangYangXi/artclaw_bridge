@@ -1,15 +1,6 @@
 // Copyright ArtClaw Project. All Rights Reserved.
 // 消息列表渲染模块 - RebuildMessageList 及相关辅助方法
-
-#include "UEAgentDashboard.h"
-#include "UEAgentLocalization.h"
-#include "Widgets/Text/STextBlock.h"
-#include "Widgets/Text/SMultiLineEditableText.h"
-#include "Widgets/Layout/SBox.h"
-#include "Widgets/Input/SButton.h"
-#include "Widgets/Layout/SBorder.h"
-
-#define LOCTEXT_NAMESPACE "UEAgentDashboard"
+// 所有 include 由 UEAgentDashboard.cpp 统一管理
 
 // ==================================================================
 // 消息列表渲染
@@ -139,9 +130,22 @@ void SUEAgentDashboard::RebuildMessageList()
 		// --- Tool call / tool result 消息 ---
 		if (Msg.Sender == TEXT("tool_call") || Msg.Sender == TEXT("tool_result") || Msg.Sender == TEXT("tool_error"))
 		{
-			FString ToolLabel = Msg.Sender == TEXT("tool_call")
-				? FString::Printf(TEXT("Tool: %s"), *Msg.ToolName)
-				: FString::Printf(TEXT("Result: %s"), *Msg.ToolName);
+			// 折叠标题: 显示工具名 + 状态
+			FString ToolStatus;
+			if (Msg.Sender == TEXT("tool_error"))
+			{
+				ToolStatus = TEXT("[error]");
+			}
+			else if (!Msg.ToolResult.IsEmpty())
+			{
+				ToolStatus = TEXT("[done]");
+			}
+			else if (Msg.Sender == TEXT("tool_call"))
+			{
+				ToolStatus = TEXT("[running]");
+			}
+
+			FString ToolLabel = FString::Printf(TEXT("Tool: %s %s"), *Msg.ToolName, *ToolStatus);
 
 			MessageScrollBox->AddSlot()
 			.Padding(4.0f, 2.0f)
@@ -156,7 +160,7 @@ void SUEAgentDashboard::RebuildMessageList()
 					.AutoHeight()
 					[
 						SNew(SButton)
-						.Text(FText::FromString(Msg.bToolCollapsed ? ToolLabel : (ToolLabel + TEXT(" (expanded)"))))
+						.Text(FText::FromString(Msg.bToolCollapsed ? ToolLabel : (ToolLabel + TEXT(" <<"))))
 						.OnClicked_Lambda([this, i]() -> FReply { return OnToggleToolCollapse(i); })
 						.ButtonStyle(FCoreStyle::Get(), "NoBorder")
 						.ForegroundColor(GetSenderColor(Msg.Sender))
@@ -169,13 +173,30 @@ void SUEAgentDashboard::RebuildMessageList()
 						SNew(SBox)
 						.Visibility(Msg.bToolCollapsed ? EVisibility::Collapsed : EVisibility::Visible)
 						[
-							SNew(SMultiLineEditableText)
-							.Text(FText::FromString(
-								Msg.Sender == TEXT("tool_call") ? Msg.ToolArguments : Msg.ToolResult))
-							.Font(FCoreStyle::GetDefaultFontStyle("Mono", 9))
-							.AutoWrapText(true)
-							.IsReadOnly(true)
-							.AllowContextMenu(true)
+							SNew(SVerticalBox)
+							+ SVerticalBox::Slot()
+							.AutoHeight()
+							[
+								SNew(SMultiLineEditableText)
+								.Text(FText::FromString(Msg.ToolArguments))
+								.Font(FCoreStyle::GetDefaultFontStyle("Mono", 9))
+								.AutoWrapText(true)
+								.IsReadOnly(true)
+								.AllowContextMenu(true)
+								.Visibility(Msg.ToolArguments.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+							]
+							+ SVerticalBox::Slot()
+							.AutoHeight()
+							.Padding(0.0f, 2.0f, 0.0f, 0.0f)
+							[
+								SNew(SMultiLineEditableText)
+								.Text(FText::FromString(Msg.ToolResult))
+								.Font(FCoreStyle::GetDefaultFontStyle("Mono", 9))
+								.AutoWrapText(true)
+								.IsReadOnly(true)
+								.AllowContextMenu(true)
+								.Visibility(Msg.ToolResult.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+							]
 						]
 					]
 				]
@@ -261,6 +282,11 @@ void SUEAgentDashboard::RebuildMessageList()
 	RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateLambda(
 		[WeakScroll](double, float) -> EActiveTimerReturnType
 		{
+			// 关引擎时 Slate 可能已 shutdown，必须先检查
+			if (!FSlateApplication::IsInitialized())
+			{
+				return EActiveTimerReturnType::Stop;
+			}
 			if (TSharedPtr<SScrollBox> Scroll = WeakScroll.Pin())
 			{
 				Scroll->ScrollToEnd();

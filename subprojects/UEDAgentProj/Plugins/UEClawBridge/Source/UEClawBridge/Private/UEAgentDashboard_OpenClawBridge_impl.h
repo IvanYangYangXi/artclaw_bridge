@@ -1,20 +1,5 @@
 // Copyright ArtClaw Project. All Rights Reserved. OpenClaw桥接模块 - 连接管理、环境上下文发送、流式响应处理
-
-#include "UEAgentDashboard.h"
-#include "UEAgentSubsystem.h"
-#include "UEAgentLocalization.h"
-#include "IAgentPlatformBridge.h"
-#include "OpenClawPlatformBridge.h"
-#include "IPythonScriptPlugin.h"
-#include "Serialization/JsonReader.h"
-#include "Serialization/JsonSerializer.h"
-#include "Dom/JsonObject.h"
-#include "Misc/FileHelper.h"
-#include "Dom/JsonValue.h"
-#include "Serialization/JsonWriter.h"
-#include "HAL/PlatformProcess.h"
-
-#define LOCTEXT_NAMESPACE "UEAgentDashboard"
+// 所有 include 由 UEAgentDashboard.cpp 统一管理
 
 // ==================================================================
 // OpenClaw Bridge 连接管理

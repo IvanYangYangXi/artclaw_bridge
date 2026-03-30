@@ -1,36 +1,6 @@
 // Copyright ArtClaw Project. All Rights Reserved.
 // 状态栏模块 - 连接状态、版本号、服务器地址、诊断日志
-
-#include "UEAgentDashboard.h"
-#include "UEAgentSubsystem.h"
-#include "UEAgentLocalization.h"
-#include "Editor.h"
-#include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SScrollBox.h"
-#include "Widgets/Layout/SSeparator.h"
-#include "Widgets/Layout/SExpandableArea.h"
-#include "Widgets/Layout/SSpacer.h"
-#include "Widgets/Layout/SWrapBox.h"
-#include "Widgets/Text/STextBlock.h"
-#include "Widgets/Text/SMultiLineEditableText.h"
-#include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SCheckBox.h"
-#include "Widgets/Input/SComboBox.h"
-#include "Widgets/Input/SMultiLineEditableTextBox.h"
-#include "Widgets/Input/SEditableTextBox.h"
-#include "Widgets/Input/SMenuAnchor.h"
-#include "Widgets/Views/SListView.h"
-#include "Widgets/Views/STableRow.h"
-#include "Framework/Application/SlateApplication.h"
-#include "Serialization/JsonReader.h"
-#include "Serialization/JsonSerializer.h"
-#include "Dom/JsonObject.h"
-#include "Misc/FileHelper.h"
-#include "Dom/JsonValue.h"
-#include "Serialization/JsonWriter.h"
-#include "HAL/PlatformProcess.h"
-
-#define LOCTEXT_NAMESPACE "UEAgentDashboard"
+// 所有 include 由 UEAgentDashboard.cpp 统一管理
 
 // ==================================================================
 // 状态栏辅助方法

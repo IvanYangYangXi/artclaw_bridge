@@ -1,20 +1,7 @@
 // Copyright ArtClaw Project. All Rights Reserved.
 // 设置面板模块 - 语言切换、静默模式、Plan 模式、Skills 管理
 // Ref: docs/specs/系统架构设计.md#SettingsPanel
-
-#include "UEAgentDashboard.h"
-#include "UEAgentLocalization.h"
-#include "UEAgentManagePanel.h"
-#include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SCheckBox.h"
-#include "Widgets/Text/STextBlock.h"
-#include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SSpacer.h"
-#include "Widgets/Layout/SSeparator.h"
-#include "Framework/Application/SlateApplication.h"
-#include "Widgets/SWindow.h"
-
-#define LOCTEXT_NAMESPACE "UEAgentDashboard"
+// 所有 include 由 UEAgentDashboard.cpp 统一管理
 
 // ==================================================================
 // 设置面板 - 打开/关闭
@@ -42,11 +29,6 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 	SettingsWindow = SNew(SWindow)
 		.Title(FUEAgentL10n::Get(TEXT("SettingsTitle")))
 		.ClientSize(FVector2D(380.0f, 480.0f))
-		.OnClosed_Lambda([Self](const TSharedRef<SWindow>&)
-		{
-			// 用户点 X 关闭时自动清理引用，确保下次可以重新打开
-			Self->SettingsWindow.Reset();
-		})
 		.SupportsMinimize(false)
 		.SupportsMaximize(false)
 		[
@@ -286,6 +268,11 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 		];
 
 	// 显示窗口，作为模态窗口
+	SettingsWindow->SetOnWindowClosed(FOnWindowClosed::CreateLambda([Self](const TSharedRef<SWindow>&)
+	{
+		Self->SettingsWindow.Reset();
+	}));
+
 	FSlateApplication::Get().AddWindow(SettingsWindow.ToSharedRef());
 
 	return FReply::Handled();

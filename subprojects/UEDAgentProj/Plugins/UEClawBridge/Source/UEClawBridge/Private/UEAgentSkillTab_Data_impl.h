@@ -40,6 +40,7 @@ static const TCHAR* SkillRefreshPyScript = TEXT(
 	"            'software': getattr(m, 'software', 'universal'),\n"
 	"            'category': getattr(m, 'category', 'general'),\n"
 	"            'risk_level': getattr(m, 'risk_level', 'low'),\n"
+	"            'author': getattr(m, 'author', ''),\n"
 	"            'has_code': os.path.exists(os.path.join(str(src_dir), '__init__.py')) if src_dir else False,\n"
 	"            'has_skill_md': os.path.exists(os.path.join(str(src_dir), 'SKILL.md')) if src_dir else False,\n"
 	"            'install_status': 'full',\n"
@@ -60,24 +61,58 @@ static const TCHAR* SkillRefreshPyScript = TEXT(
 	"    _installed_path = _defaults.get(_pt, '~/.openclaw/skills')\n"
 	"oc_dir = os.path.expanduser(_installed_path)\n"
 	"if os.path.isdir(oc_dir):\n"
+	"    # 从项目源码判断 layer: 检查 official / marketplace 目录是否有同名 skill\n"
+	"    _project_root = _ac_cfg.get('project_root', '')\n"
+	"    _official_names = set()\n"
+	"    _marketplace_names = set()\n"
+	"    if _project_root and os.path.isdir(_project_root):\n"
+	"        for _subdir in ['universal', 'unreal', 'maya', 'max']:\n"
+	"            _odir = os.path.join(_project_root, 'skills', 'official', _subdir)\n"
+	"            if os.path.isdir(_odir):\n"
+	"                _official_names.update(os.listdir(_odir))\n"
+	"            _mdir = os.path.join(_project_root, 'skills', 'marketplace', _subdir)\n"
+	"            if os.path.isdir(_mdir):\n"
+	"                _marketplace_names.update(os.listdir(_mdir))\n"
 	"    for name in sorted(os.listdir(oc_dir)):\n"
 	"        if name in seen_names: continue\n"
 	"        sd = os.path.join(oc_dir, name)\n"
 	"        sm = os.path.join(sd, 'SKILL.md')\n"
 	"        if not os.path.isdir(sd) or not os.path.isfile(sm): continue\n"
 	"        seen_names.add(name)\n"
-	"        desc = ''\n"
+	"        desc = ''; _author = ''\n"
 	"        try:\n"
 	"            with open(sm, 'r', encoding='utf-8') as f:\n"
-	"                for line in f:\n"
-	"                    line = line.strip()\n"
-	"                    if line and not line.startswith('#'):\n"
-	"                        desc = line[:120]; break\n"
+	"                _raw = f.read(4096)\n"
+	"            # 解析 YAML frontmatter (--- ... ---)\n"
+	"            if _raw.startswith('---'):\n"
+	"                _end = _raw.find('---', 3)\n"
+	"                if _end > 0:\n"
+	"                    _fm = _raw[3:_end]\n"
+	"                    for _fl in _fm.split('\\n'):\n"
+	"                        _fl = _fl.strip()\n"
+	"                        if _fl.startswith('author:'):\n"
+	"                            _author = _fl[7:].strip()\n"
+	"                        elif _fl.startswith('description:') and not desc:\n"
+	"                            _dv = _fl[12:].strip()\n"
+	"                            if _dv and _dv != '>':\n"
+	"                                desc = _dv[:120]\n"
+	"            # fallback: 第一行非标题文本\n"
+	"            if not desc:\n"
+	"                for _fl in _raw.split('\\n'):\n"
+	"                    _fl = _fl.strip()\n"
+	"                    if _fl and not _fl.startswith('#') and not _fl.startswith('---'):\n"
+	"                        desc = _fl[:120]; break\n"
 	"        except: pass\n"
+	"        # 判断 layer: 优先匹配项目源码中的 official/marketplace\n"
+	"        _layer = 'platform'\n"
+	"        if name in _official_names:\n"
+	"            _layer = 'official'\n"
+	"        elif name in _marketplace_names:\n"
+	"            _layer = 'marketplace'\n"
 	"        skills.append({\n"
 	"            'name': name, 'display_name': name, 'description': desc,\n"
-	"            'version': '', 'layer': 'platform', 'software': 'universal',\n"
-	"            'category': 'general', 'risk_level': 'low',\n"
+	"            'version': '', 'layer': _layer, 'software': 'universal',\n"
+	"            'category': 'general', 'risk_level': 'low', 'author': _author,\n"
 	"            'has_code': False, 'has_skill_md': True,\n"
 	"            'install_status': 'doc_only', 'source_dir': sd,\n"
 	"        })\n"
@@ -168,6 +203,7 @@ void SUEAgentSkillTab::ParseSkillList(const FString& JsonStr)
 		E->Software = Obj->GetStringField(TEXT("software"));
 		E->Category = Obj->GetStringField(TEXT("category"));
 		E->RiskLevel = Obj->GetStringField(TEXT("risk_level"));
+		Obj->TryGetStringField(TEXT("author"), E->Author);
 		Obj->TryGetBoolField(TEXT("enabled"), E->bEnabled);
 		Obj->TryGetBoolField(TEXT("pinned"), E->bPinned);
 		Obj->TryGetBoolField(TEXT("has_code"), E->bHasCode);
@@ -195,6 +231,13 @@ void SUEAgentSkillTab::ApplyFilters()
 	for (const auto& S : AllSkills)
 	{
 		if (LayerFilter != TEXT("all") && S->Layer != LayerFilter) continue;
+
+		// 安装状态过滤
+		if (InstallFilter != TEXT("all"))
+		{
+			if (InstallFilter == TEXT("installed") && S->InstallStatus != EInstallStatus::Installed) continue;
+			if (InstallFilter == TEXT("notinstalled") && S->InstallStatus != EInstallStatus::NotInstalled) continue;
+		}
 
 		if (DccFilter != TEXT("all"))
 		{

@@ -1,19 +1,6 @@
 // Copyright ArtClaw Project. All Rights Reserved.
 // 会话管理模块 - 多会话切换、 历史记录加载
-
-#include "UEAgentDashboard.h"
-#include "UEAgentSubsystem.h"
-#include "UEAgentLocalization.h"
-#include "IAgentPlatformBridge.h"
-#include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SMenuAnchor.h"
-#include "Widgets/Text/STextBlock.h"
-#include "Serialization/JsonReader.h"
-#include "Serialization/JsonSerializer.h"
-#include "Dom/JsonObject.h"
-#include "Misc/FileHelper.h"
-
-#define LOCTEXT_NAMESPACE "UEAgentDashboard"
+// 所有 include 由 UEAgentDashboard.cpp 统一管理
 
 // ==================================================================
 // 多会话管理 (任务 5.8)

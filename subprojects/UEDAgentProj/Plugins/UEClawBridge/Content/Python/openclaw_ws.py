@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from typing import Optional
@@ -58,6 +59,9 @@ def write_response(response_file: str, text: str) -> None:
     try:
         with open(response_file, "w", encoding="utf-8") as f:
             f.write(text)
+        UELogger.info(f"[openclaw_ws] response written ({len(text)} chars)")
+    except Exception as exc:
+        UELogger.mcp_error(f"[openclaw_ws] response write: {exc}")
 
 
 def write_bridge_status(status_dir: str, connected: bool, mcp_ready: bool = False,
@@ -88,9 +92,6 @@ def write_bridge_status(status_dir: str, connected: bool, mcp_ready: bool = Fals
             raise
     except Exception as exc:
         UELogger.mcp_error(f"[openclaw_ws] write_bridge_status: {exc}")
-        UELogger.info(f"[openclaw_ws] response written ({len(text)} chars)")
-    except Exception as exc:
-        UELogger.mcp_error(f"[openclaw_ws] response write: {exc}")
 
 
 # ---------------------------------------------------------------------------

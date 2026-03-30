@@ -32,6 +32,7 @@ private:
 		FString Software;
 		FString Category;
 		FString RiskLevel;
+		FString Author;
 		bool bEnabled = true;
 		bool bPinned = false;
 		bool bHasCode = false;
@@ -73,8 +74,9 @@ private:
 	TSharedPtr<SVerticalBox> ContentBox;
 	TSharedPtr<SEditableTextBox> SearchBox;
 
-	FString LayerFilter   = TEXT("all");
-	FString DccFilter     = TEXT("all");
+	FString LayerFilter     = TEXT("all");
+	FString DccFilter       = TEXT("all");
+	FString InstallFilter   = TEXT("all");  // "all" / "installed" / "notinstalled"
 	FString SearchKeyword;   // 搜索关键字（空 = 不过滤）
 
 	void ApplyFilters();

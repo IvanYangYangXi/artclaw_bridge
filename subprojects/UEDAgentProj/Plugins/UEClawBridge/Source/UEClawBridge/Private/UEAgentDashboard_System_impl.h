@@ -1,24 +1,6 @@
 // Copyright ArtClaw Project. All Rights Reserved. 
 // 系统功能模块 - 技能创建、语言切换、确认对话框、静默模式
-
-#include "UEAgentDashboard.h"
-#include "UEAgentLocalization.h"
-#include "UEAgentManagePanel.h"
-#include "Widgets/Input/SButton.h"
-#include "Widgets/Text/STextBlock.h"
-#include "Widgets/Layout/SBorder.h"
-#include "Widgets/Layout/SBox.h"
-#include "Framework/Application/SlateApplication.h"
-#include "Widgets/SWindow.h"
-#include "Serialization/JsonReader.h"
-#include "Serialization/JsonSerializer.h"
-#include "Dom/JsonObject.h"
-#include "Misc/FileHelper.h"
-#include "Dom/JsonValue.h"
-#include "Serialization/JsonWriter.h"
-#include "Misc/MessageDialog.h"
-
-#define LOCTEXT_NAMESPACE "UEAgentDashboard"
+// 所有 include 由 UEAgentDashboard.cpp 统一管理
 
 // ==================================================================
 // 阶段 D: Skill 创建集成 (v2 — 对话式，无弹窗)
@@ -51,11 +33,6 @@ FReply SUEAgentDashboard::OnManageClicked()
 		.ClientSize(FVector2D(600.0f, 500.0f))
 		.SupportsMinimize(false)
 		.SupportsMaximize(false)
-		.OnClosed_Lambda([Self](const TSharedRef<SWindow>&)
-		{
-			Self->ManageWindow.Reset();
-			Self->ManagePanelWidget.Reset();
-		})
 		[
 			SNew(SBorder)
 			.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
@@ -64,6 +41,12 @@ FReply SUEAgentDashboard::OnManageClicked()
 				SAssignNew(ManagePanelWidget, SUEAgentManagePanel)
 			]
 		];
+
+	ManageWindow->SetOnWindowClosed(FOnWindowClosed::CreateLambda([Self](const TSharedRef<SWindow>&)
+	{
+		Self->ManageWindow.Reset();
+		Self->ManagePanelWidget.Reset();
+	}));
 
 	FSlateApplication::Get().AddWindow(ManageWindow.ToSharedRef());
 	return FReply::Handled();

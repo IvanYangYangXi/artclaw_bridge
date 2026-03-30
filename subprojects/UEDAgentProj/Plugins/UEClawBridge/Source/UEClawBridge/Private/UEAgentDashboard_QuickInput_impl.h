@@ -1,25 +1,6 @@
 // Copyright ArtClaw Project. All Rights Reserved.
 // 快捷输入面板模块 - 快捷短语管理、增删改查、模态对话框
-
-#include "UEAgentDashboard.h"
-#include "UEAgentLocalization.h"
-#include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SEditableTextBox.h"
-#include "Widgets/Input/SMultiLineEditableTextBox.h"
-#include "Widgets/Layout/SWrapBox.h"
-#include "Widgets/Layout/SBorder.h"
-#include "Widgets/Layout/SBox.h"
-#include "Widgets/Text/STextBlock.h"
-#include "Widgets/Layout/SSpacer.h"
-#include "Framework/Application/SlateApplication.h"
-#include "Widgets/SWindow.h"
-#include "Serialization/JsonReader.h"
-#include "Serialization/JsonSerializer.h"
-#include "Dom/JsonObject.h"
-#include "Dom/JsonValue.h"
-#include "Misc/FileHelper.h"
-
-#define LOCTEXT_NAMESPACE "UEAgentDashboard"
+// 所有 include 由 UEAgentDashboard.cpp 统一管理
 
 // ==================================================================
 // 快捷输入 (Quick Inputs)

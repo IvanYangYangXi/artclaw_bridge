@@ -1,27 +1,6 @@
 // Copyright ArtClaw Project. All Rights Reserved.
 // 聊天功能模块 - 消息发送/接收、输入处理、Slash命令、工具调用展示
-
-#include "UEAgentDashboard.h"
-#include "UEAgentSubsystem.h"
-#include "UEAgentLocalization.h"
-#include "IAgentPlatformBridge.h"
-#include "OpenClawPlatformBridge.h"
-#include "Editor.h"
-#include "Widgets/Text/STextBlock.h"
-#include "Widgets/Text/SMultiLineEditableText.h"
-#include "Widgets/Layout/SBox.h"
-#include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SMultiLineEditableTextBox.h"
-#include "Widgets/Input/SMenuAnchor.h"
-#include "Widgets/Views/SListView.h"
-#include "Widgets/Views/STableRow.h"
-#include "Framework/Application/SlateApplication.h"
-#include "Serialization/JsonReader.h"
-#include "Serialization/JsonSerializer.h"
-#include "Dom/JsonObject.h"
-#include "Dom/JsonValue.h"
-
-#define LOCTEXT_NAMESPACE "UEAgentDashboard"
+// 所有 include 由 UEAgentDashboard.cpp 统一管理
 
 // ==================================================================
 // 按钮回调 - 聊天相关

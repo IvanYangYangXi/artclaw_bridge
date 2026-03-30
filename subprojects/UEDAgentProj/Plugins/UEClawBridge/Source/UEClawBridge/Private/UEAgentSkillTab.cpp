@@ -9,6 +9,7 @@
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Widgets/Text/SMultiLineEditableText.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
@@ -64,11 +65,10 @@ FString SUEAgentSkillTab::RunSyncAction(const FString& PyCode)
 
 TSharedRef<SWidget> SUEAgentSkillTab::BuildContent()
 {
-	int32 FullCount = 0, DocCount = 0, NotInstalledCount = 0, UpdatableCount = 0;
+	int32 FullCount = 0, NotInstalledCount = 0, UpdatableCount = 0;
 	for (const auto& S : AllSkills)
 	{
-		if (S->InstallStatus == EInstallStatus::Full) FullCount++;
-		else if (S->InstallStatus == EInstallStatus::DocOnly) DocCount++;
+		if (S->InstallStatus == EInstallStatus::Installed) FullCount++;
 		else NotInstalledCount++;
 		if (S->bUpdatable) UpdatableCount++;
 	}
@@ -83,6 +83,7 @@ TSharedRef<SWidget> SUEAgentSkillTab::BuildContent()
 			.Text(FText::FromString(Label))
 			.OnClicked_Lambda([this, Key, Field]() {
 				if (Field == TEXT("layer")) LayerFilter = Key;
+				else if (Field == TEXT("install")) InstallFilter = Key;
 				RequestRefresh();
 				return FReply::Handled();
 			})
@@ -140,7 +141,7 @@ TSharedRef<SWidget> SUEAgentSkillTab::BuildContent()
 			})
 		]
 
-		+ SHorizontalBox::Slot().AutoWidth().Padding(6, 0, 0, 0)
+		+ SHorizontalBox::Slot().AutoWidth().Padding(6, 0, 0, 0).VAlign(VAlign_Center)
 		[
 			SNew(STextBlock)
 			.Text(FText::Format(
@@ -148,7 +149,6 @@ TSharedRef<SWidget> SUEAgentSkillTab::BuildContent()
 				FText::AsNumber(FilteredSkills.Num()),
 				FText::AsNumber(AllSkills.Num())))
 			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-			.VAlign(VAlign_Center)
 		]
 
 		+ SHorizontalBox::Slot().FillWidth(0.05f)[ SNew(SSpacer) ]
@@ -269,6 +269,14 @@ TSharedRef<ITableRow> SUEAgentSkillTab::GenerateRow(
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 7))
 				.ColorAndOpacity(FSlateColor(FLinearColor(0.4f*Op, 0.4f*Op, 0.4f*Op)))
 			]
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Item->Author))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 7))
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.5f*Op, 0.5f*Op, 0.35f*Op)))
+				.Visibility(Item->Author.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+			]
 		]
 
 		// Layer badge
@@ -380,17 +388,19 @@ FReply SUEAgentSkillTab::OnPinClicked(FSkillEntryPtr Item)
 FReply SUEAgentSkillTab::OnDetailClicked(FSkillEntryPtr Item)
 {
 	FString InstallStr;
-	if (Item->InstallStatus == EInstallStatus::Full)
+	if (Item->InstallStatus == EInstallStatus::Installed)
 		InstallStr = FUEAgentL10n::GetStr(TEXT("ManageInstallFull"));
-	else if (Item->InstallStatus == EInstallStatus::DocOnly)
-		InstallStr = FUEAgentL10n::GetStr(TEXT("ManageInstallDoc"));
 	else
 		InstallStr = FUEAgentL10n::GetStr(TEXT("ManageInstallNotInstalled"));
 
+	FString AuthorStr = Item->Author.IsEmpty() ? TEXT("-") : Item->Author;
+	FString PathStr = Item->SourceDir.IsEmpty() ? TEXT("-") : Item->SourceDir;
+
 	FString DetailText = FString::Printf(
-		TEXT("%s\n%s v%s\n\n%s\n\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s"),
+		TEXT("%s\n%s v%s\n\n%s\n\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s\n%s: %s"),
 		*Item->DisplayName, *Item->Name, *Item->Version,
 		*Item->Description,
+		*FUEAgentL10n::GetStr(TEXT("ManageDetailAuthor")), *AuthorStr,
 		*FUEAgentL10n::GetStr(TEXT("ManageDetailLayer")), *Item->Layer,
 		*FUEAgentL10n::GetStr(TEXT("ManageDetailSoftware")), *Item->Software,
 		*FUEAgentL10n::GetStr(TEXT("ManageDetailCategory")), *Item->Category,
@@ -400,21 +410,46 @@ FReply SUEAgentSkillTab::OnDetailClicked(FSkillEntryPtr Item)
 			Item->bHasCode ? TEXT("Yes") : TEXT("No"),
 		*FUEAgentL10n::GetStr(TEXT("ManageDetailSkillMd")),
 			Item->bHasSkillMd ? TEXT("Yes") : TEXT("No"),
-		*FUEAgentL10n::GetStr(TEXT("ManageDetailPath")),
-			Item->SourceDir.IsEmpty() ? TEXT("-") : *Item->SourceDir
+		*FUEAgentL10n::GetStr(TEXT("ManageDetailPath")), *PathStr
 	);
+
+	FString CapturedDir = Item->SourceDir;
 
 	TSharedRef<SWindow> Win = SNew(SWindow)
 		.Title(FText::FromString(Item->DisplayName))
-		.ClientSize(FVector2D(420, 340))
+		.ClientSize(FVector2D(420, 380))
 		.SupportsMinimize(false).SupportsMaximize(false)
 		[
-			SNew(SScrollBox) + SScrollBox::Slot().Padding(12)
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.FillHeight(1.0f)
 			[
-				SNew(STextBlock)
-				.Text(FText::FromString(DetailText))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-				.AutoWrapText(true)
+				SNew(SScrollBox) + SScrollBox::Slot().Padding(12)
+				[
+					SNew(SMultiLineEditableText)
+					.Text(FText::FromString(DetailText))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+					.AutoWrapText(true)
+					.IsReadOnly(true)
+					.AllowContextMenu(true)
+				]
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(12.0f, 4.0f, 12.0f, 8.0f)
+			[
+				SNew(SButton)
+				.Text(FText::FromString(FUEAgentL10n::GetStr(TEXT("ManageOpenPath"))))
+				.OnClicked_Lambda([CapturedDir]() -> FReply
+				{
+					if (!CapturedDir.IsEmpty())
+					{
+						FPlatformProcess::ExploreFolder(*CapturedDir);
+					}
+					return FReply::Handled();
+				})
+				.IsEnabled(!CapturedDir.IsEmpty())
+				.HAlign(HAlign_Center)
 			]
 		];
 	FSlateApplication::Get().AddWindow(Win);

@@ -1,15 +1,5 @@
 // Copyright ArtClaw Project. All Rights Reserved. Plan模式模块 - 计划解析、步骤执行、暂停/恢复/取消
-
-#include "UEAgentDashboard.h"
-#include "UEAgentLocalization.h"
-#include "Widgets/Input/SButton.h"
-#include "Widgets/Text/STextBlock.h"
-#include "Serialization/JsonReader.h"
-#include "Serialization/JsonSerializer.h"
-#include "Dom/JsonObject.h"
-#include "Dom/JsonValue.h"
-
-#define LOCTEXT_NAMESPACE "UEAgentDashboard"
+// 所有 include 由 UEAgentDashboard.cpp 统一管理
 
 // ==================================================================
 // Plan 模式 (任务 5.9)

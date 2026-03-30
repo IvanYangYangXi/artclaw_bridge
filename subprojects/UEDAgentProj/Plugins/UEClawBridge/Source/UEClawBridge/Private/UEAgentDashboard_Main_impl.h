@@ -1,41 +1,6 @@
 // Copyright ArtClaw Project. All Rights Reserved.  主入口文件 - 包含Construct、析构函数等核心方法
 // Ref: docs/specs/系统架构设计.md#SlateUI
-#include "UEAgentDashboard.h"
-#include "UEAgentSubsystem.h"
-#include "UEAgentLocalization.h"
-#include "UEAgentManagePanel.h"
-#include "IAgentPlatformBridge.h"
-#include "OpenClawPlatformBridge.h"
-#include "Editor.h"
-#include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SScrollBox.h"
-#include "Widgets/Layout/SSeparator.h"
-#include "Widgets/Layout/SExpandableArea.h"
-#include "Widgets/Layout/SSpacer.h"
-#include "Widgets/Layout/SWrapBox.h"
-#include "Widgets/Text/STextBlock.h"
-#include "Widgets/Text/SMultiLineEditableText.h"
-#include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SCheckBox.h"
-#include "Widgets/Input/SComboBox.h"
-#include "Widgets/Input/SMultiLineEditableTextBox.h"
-#include "Widgets/Input/SEditableTextBox.h"
-#include "Widgets/Input/SMenuAnchor.h"
-#include "Widgets/Views/SListView.h"
-#include "Widgets/Views/STableRow.h"
-#include "Framework/Application/SlateApplication.h"
-#include "Misc/MessageDialog.h"
-#include "IPythonScriptPlugin.h"
-#include "Serialization/JsonReader.h"
-#include "Serialization/JsonSerializer.h"
-#include "Dom/JsonObject.h"
-#include "Misc/Guid.h"
-#include "Misc/FileHelper.h"
-#include "Dom/JsonValue.h"
-#include "Serialization/JsonWriter.h"
-#include "HAL/PlatformProcess.h"
-
-#define LOCTEXT_NAMESPACE "UEAgentDashboard"
+// 所有 include 由 UEAgentDashboard.cpp 统一管理
 
 // ==================================================================
 // Construct
@@ -188,20 +153,6 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 						.ToolTipText(FUEAgentL10n::Get(TEXT("ViewLogsTip")))
 						.ContentPadding(FMargin(6.0f, 2.0f))
 					]
-					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4.0f, 0.0f)
-					[
-						SNew(SCheckBox)
-						.IsChecked_Lambda([this]() -> ECheckBoxState {
-							return bEnterToSend ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-						})
-						.OnCheckStateChanged(this, &SUEAgentDashboard::OnSendModeChanged)
-						.ToolTipText(FUEAgentL10n::Get(TEXT("EnterToSendLabel")))
-						[
-							SNew(STextBlock)
-							.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("EnterToSendLabel")); })
-							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
-						]
-					]
 				]
 			]
 		]
@@ -233,9 +184,10 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	// --- 快捷输入栏（可折叠，位于消息列表下方、工具栏上方）---
 	MainVBox->AddSlot()
 	.AutoHeight()
-	.Padding(6.0f, 4.0f)
+	.Padding(6.0f, 1.0f)
 	[
 		SAssignNew(QuickInputExpandableArea, SExpandableArea)
+		.HeaderPadding(FMargin(2.0f, 1.0f))
 		.HeaderContent()
 		[
 			SNew(SHorizontalBox)
@@ -245,7 +197,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			[
 				SNew(STextBlock)
 				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("QuickInputTitle")); })
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
 				.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
 			]
 			+ SHorizontalBox::Slot()
@@ -261,7 +213,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("AddQuickInputBtn")); })
 				.OnClicked(this, &SUEAgentDashboard::OnAddQuickInputClicked)
 				.ToolTipText(FUEAgentL10n::Get(TEXT("AddQuickInputTip")))
-				.ContentPadding(FMargin(6.0f, 2.0f))
+				.ContentPadding(FMargin(4.0f, 1.0f))
 			]
 		]
 		.BodyContent()
@@ -541,6 +493,15 @@ SUEAgentDashboard::~SUEAgentDashboard()
 	{
 		CachedSubsystem->OnConnectionStatusChangedNative.RemoveAll(this);
 	}
+
+	// 主动清空消息列表 Widget — 必须在 Slate 还活着时执行，否则 STextBlock /
+	// SButton 子 Widget 在析构链中会访问已关闭的 Slate 字体/渲染服务导致崩溃
+	// (STextBlock::~STextBlock → TextLayoutCache → 访问 null 渲染器)
+	if (MessageScrollBox.IsValid() && FSlateApplication::IsInitialized())
+	{
+		MessageScrollBox->ClearChildren();
+	}
+	MessageScrollBox.Reset();
 
 	// 关闭管理面板窗口，防止 Dashboard 销毁后窗口仍引用无效 Widget
 	// 注意：关机阶段 Slate 可能已被销毁，必须先检查 FSlateApplication::IsInitialized()

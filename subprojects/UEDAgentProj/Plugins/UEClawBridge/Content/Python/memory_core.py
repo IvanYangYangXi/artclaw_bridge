@@ -146,7 +146,32 @@ class MemoryManagerV2:
         # 日志配置
         self.logger = logging.getLogger("artclaw.memory")
         if not self.logger.handlers:
-            handler = logging.StreamHandler()
+            # 优先使用 UE 原生 log（避免 Python stderr 被 UE 误标为 [Error]）
+            try:
+                import unreal as _unreal_log
+
+                class _UELogHandler(logging.Handler):
+                    _LEVEL_MAP = {
+                        logging.DEBUG: _unreal_log.log,
+                        logging.INFO: _unreal_log.log,
+                        logging.WARNING: _unreal_log.log_warning,
+                        logging.ERROR: _unreal_log.log_error,
+                        logging.CRITICAL: _unreal_log.log_error,
+                    }
+
+                    def emit(self, record):
+                        fn = self._LEVEL_MAP.get(record.levelno, _unreal_log.log)
+                        try:
+                            fn(self.format(record))
+                        except Exception:
+                            pass
+
+                handler = _UELogHandler()
+            except ImportError:
+                # 非 UE 环境（Maya/Max/独立运行）回落到 stdout
+                import sys as _sys
+                handler = logging.StreamHandler(_sys.stdout)
+
             formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)

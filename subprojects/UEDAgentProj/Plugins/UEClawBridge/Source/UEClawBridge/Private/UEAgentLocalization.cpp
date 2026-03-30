@@ -218,6 +218,8 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("ManageDetailCode"),    TEXT("代码"),                      TEXT("Code"));
 	Reg(TEXT("ManageDetailSkillMd"), TEXT("SKILL.md"),                  TEXT("SKILL.md"));
 	Reg(TEXT("ManageDetailPath"),    TEXT("文件路径"),                  TEXT("File Path"));
+	Reg(TEXT("ManageDetailAuthor"),  TEXT("作者"),                      TEXT("Author"));
+	Reg(TEXT("ManageOpenPath"),      TEXT("打开所在目录"),              TEXT("Open in Explorer"));
 	Reg(TEXT("ManageDetailInstall"), TEXT("安装类型"),                  TEXT("Install Type"));
 	Reg(TEXT("ManageFilterLayer"),   TEXT("层级: "),                    TEXT("Layer: "));
 	Reg(TEXT("ManageFilterInstall"), TEXT("安装: "),                    TEXT("Install: "));
@@ -324,7 +326,7 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("SettingsTip"),            TEXT("打开设置面板"),               TEXT("Open settings panel"));
 	Reg(TEXT("SettingsTitle"),          TEXT("设置"),                      TEXT("Settings"));
 	Reg(TEXT("SettingsLanguage"),       TEXT("语言 / Language"),           TEXT("Language"));
-	Reg(TEXT("SettingsSendMode"),       TEXT("发送模式"),                   TEXT("Send Mode"));
+	Reg(TEXT("SettingsSendMode"),       TEXT("Enter 发送"),                TEXT("Enter to Send"));
 	Reg(TEXT("SettingsSilentMode"),     TEXT("静默模式"),                   TEXT("Silent Mode"));
 	Reg(TEXT("SettingsPlanMode"),       TEXT("Plan 模式"),                  TEXT("Plan Mode"));
 	Reg(TEXT("SettingsSkillsManage"),   TEXT("Skills 管理"),                TEXT("Skills Management"));
