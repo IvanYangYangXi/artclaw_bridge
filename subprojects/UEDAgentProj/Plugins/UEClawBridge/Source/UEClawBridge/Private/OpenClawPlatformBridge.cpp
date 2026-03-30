@@ -65,9 +65,21 @@ void FOpenClawPlatformBridge::CancelRequest()
 
 void FOpenClawPlatformBridge::SendMessageAsync(const FString& Message, const FString& ResponseFile)
 {
+	// 消息内容通过临时文件传递，避免字符串拼接导致的引号/特殊字符/Unicode 问题
+	FString TempDir   = FPaths::GetPath(ResponseFile);
+	FString MsgFile   = TempDir / TEXT("_openclaw_msg_input.txt");
+
+	// 写入消息文件（UTF-8）
+	FFileHelper::SaveStringToFile(
+		Message, *MsgFile,
+		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM
+	);
+
+	// Python 侧通过 @file: 前缀读取消息文件
 	FString PythonCmd = FString::Printf(
-		TEXT("from openclaw_chat import send_chat_async_to_file; send_chat_async_to_file('%s', r'%s')"),
-		*Message, *ResponseFile
+		TEXT("from openclaw_chat import send_chat_async_to_file\n")
+		TEXT("send_chat_async_to_file('@file:%s', r'%s')\n"),
+		*MsgFile, *ResponseFile
 	);
 	ExecPython(PythonCmd);
 }

@@ -225,25 +225,19 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 	bHasStreamingMessage = false;
 	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("Thinking")));
 
-	// 转义消息中的引号和特殊字符，安全嵌入 Python 字符串
-	FString EscapedMsg = UserMessage;
-	EscapedMsg.ReplaceInline(TEXT("\\"), TEXT("\\\\"));
-	EscapedMsg.ReplaceInline(TEXT("'"), TEXT("\\'"));
-	EscapedMsg.ReplaceInline(TEXT("\n"), TEXT("\\n"));
-	EscapedMsg.ReplaceInline(TEXT("\r"), TEXT(""));
-
 	// 临时文件路径 — Python 写入响应，C++ 读取
+	// 消息内容由 SendMessageAsync 通过临时文件传递（不在此处转义）
 	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString ResponseFile = TempDir / TEXT("_openclaw_response.txt");
-	FString StreamFile = TempDir / TEXT("_openclaw_response_stream.jsonl");
+	FString StreamFile   = TempDir / TEXT("_openclaw_response_stream.jsonl");
 
 	// 清除上次响应文件
 	IFileManager::Get().Delete(*ResponseFile, false, false, true);
-	IFileManager::Get().Delete(*StreamFile, false, false, true);
+	IFileManager::Get().Delete(*StreamFile,   false, false, true);
 
-	// 通过平台桥接异步发送
-	PlatformBridge->SendMessageAsync(EscapedMsg, ResponseFile);
+	// 通过平台桥接异步发送（消息通过临时文件传递，避免字符串拼接问题）
+	PlatformBridge->SendMessageAsync(UserMessage, ResponseFile);
 
 	// 启动定时器轮询临时文件
 	auto Self = SharedThis(this);
