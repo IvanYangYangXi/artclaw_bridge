@@ -285,7 +285,12 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
 
 
 def _dispatch_tool_events(message: dict, stream_file: str, stream_lock) -> None:
-    """解析 message content blocks，写入 tool_call / tool_result 事件。"""
+    """解析 message content blocks，写入 tool_call / tool_result 事件。
+
+    Gateway 推送的 block 字段为驼峰格式（OpenClaw 协议），与 Anthropic 原生格式不同：
+      toolCall:   type="toolCall",  id,          name,      arguments (dict/str)
+      toolResult: type="toolResult", toolCallId,  toolName,  content,  isError
+    """
     if not isinstance(message, dict):
         return
     content = message.get("content", [])
@@ -295,22 +300,40 @@ def _dispatch_tool_events(message: dict, stream_file: str, stream_lock) -> None:
         if not isinstance(block, dict):
             continue
         btype = block.get("type", "")
-        if btype == "tool_use":
+
+        if btype == "toolCall":
+            tool_args = block.get("arguments", {})
+            if isinstance(tool_args, str):
+                try:
+                    tool_args = json.loads(tool_args)
+                except (json.JSONDecodeError, ValueError):
+                    tool_args = {"raw": tool_args}
             write_stream(stream_file, {
-                "type": "tool_call",
+                "type":      "tool_call",
                 "tool_name": block.get("name", ""),
                 "tool_id":   block.get("id", ""),
-                "arguments": block.get("input", {}),
+                "arguments": tool_args,
             }, stream_lock)
-        elif btype == "tool_result":
-            content_str = block.get("content", "")
-            if isinstance(content_str, str) and len(content_str) > _TOOL_RESULT_LIMIT:
-                content_str = content_str[:_TOOL_RESULT_LIMIT] + "...[truncated]"
+
+        elif btype == "toolResult":
+            result_content = block.get("content", "")
+            if isinstance(result_content, list):
+                # content 可能是 [{type:"text", text:"..."}, ...] 形式
+                result_content = "\n".join(
+                    item.get("text", "")
+                    for item in result_content
+                    if isinstance(item, dict)
+                )
+            elif not isinstance(result_content, str):
+                result_content = str(result_content)
+            if len(result_content) > _TOOL_RESULT_LIMIT:
+                result_content = result_content[:_TOOL_RESULT_LIMIT] + "...[truncated]"
             write_stream(stream_file, {
-                "type":     "tool_result",
-                "tool_id":  block.get("tool_use_id", ""),
-                "content":  content_str,
-                "is_error": block.get("is_error", False),
+                "type":      "tool_result",
+                "tool_name": block.get("toolName", ""),
+                "tool_id":   block.get("toolCallId", ""),
+                "content":   result_content,
+                "is_error":  block.get("isError", False),
             }, stream_lock)
 
 
