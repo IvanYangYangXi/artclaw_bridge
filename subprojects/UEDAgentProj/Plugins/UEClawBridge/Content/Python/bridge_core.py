@@ -212,6 +212,119 @@ class OpenClawBridge:
         """返回最近一次 AI 回复的 token usage 信息"""
         return self._last_usage or {}
 
+    # ------------------------------------------------------------------
+    # Agent 切换 + 会话管理 (Phase 3)
+    # ------------------------------------------------------------------
+
+    def get_agent_id(self) -> str:
+        """获取当前 Agent ID"""
+        return self.agent_id
+
+    def set_agent(self, agent_id: str):
+        """切换 Agent，重置 session。"""
+        self.agent_id = agent_id
+        self._session_key = None
+        self._log.info(f"OpenClaw Bridge: agent switched to {agent_id}")
+
+        # 持久化到 config
+        try:
+            from bridge_config import load_artclaw_config
+            config = load_artclaw_config()
+            config["last_agent_id"] = agent_id
+            import os, tempfile
+            config_dir = os.path.join(os.path.expanduser("~"), ".artclaw")
+            os.makedirs(config_dir, exist_ok=True)
+            config_path = os.path.join(config_dir, "config.json")
+            fd, tmp = tempfile.mkstemp(dir=config_dir, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    import json as _json
+                    _json.dump(config, f, ensure_ascii=False, indent=2)
+                os.replace(tmp, config_path)
+            except Exception:
+                try:
+                    os.unlink(tmp)
+                except Exception:
+                    pass
+                raise
+        except Exception as e:
+            self._log.warning(f"OpenClaw Bridge: save agent_id failed: {e}")
+
+    def list_agents(self) -> list:
+        """查询可用 Agent 列表（同步阻塞）。
+        返回 [{"id": ..., "name": ..., "emoji": ...}, ...]
+        """
+        if not self._connected or not self._loop:
+            self.start()
+            if not self._connected:
+                return []
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self._rpc_request("agents.list", {}, timeout=10.0),
+                self._loop,
+            )
+            result = future.result(timeout=15.0)
+            if isinstance(result, dict):
+                agents = result.get("agents", [])
+                parsed = []
+                for a in agents:
+                    if isinstance(a, dict):
+                        parsed.append({
+                            "id": a.get("id", ""),
+                            "name": a.get("name", a.get("id", "")),
+                            "emoji": a.get("emoji", ""),
+                        })
+                return parsed
+        except Exception as e:
+            self._log.warning(f"OpenClaw Bridge: list_agents failed: {e}")
+        return []
+
+    def fetch_history(self, session_key: str, limit: int = 50) -> list:
+        """从 Gateway 拉取指定 session 的聊天历史（同步阻塞）。
+        返回 [{"sender": "user/assistant/system", "content": "..."}, ...]
+        """
+        if not self._connected or not self._loop:
+            self.start()
+            if not self._connected:
+                return []
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self._rpc_request(
+                    "chat.history",
+                    {"sessionKey": session_key, "limit": limit},
+                    timeout=10.0,
+                ),
+                self._loop,
+            )
+            result = future.result(timeout=15.0)
+            if isinstance(result, dict):
+                raw_messages = result.get("messages", [])
+                messages = []
+                for m in raw_messages:
+                    if not isinstance(m, dict):
+                        continue
+                    role = m.get("role", "")
+                    content = m.get("content", "")
+                    if isinstance(content, list):
+                        content = "".join(
+                            b.get("text", "") for b in content
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        )
+                    if not content:
+                        continue
+                    sender = "assistant"
+                    if role in ("user", "human"):
+                        sender = "user"
+                    elif role == "system":
+                        sender = "system"
+                    messages.append({"sender": sender, "content": content})
+                return messages
+        except Exception as e:
+            self._log.warning(f"OpenClaw Bridge: fetch_history failed: {e}")
+        return []
+
     async def _async_reset_session(self, session_key: str):
         """向 Gateway 发送 /new 重置指定 session（不走流式回调）。"""
         if not self._ws:

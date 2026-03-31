@@ -275,7 +275,7 @@ class DCCBridgeManager:
             self._bridge.cancel_current()
 
     def reset_session(self):
-        """重置会话 — 创建新 session 并发送 /new，AI 回复显示在面板中"""
+        """重置会话 — 创建新 session"""
         if not self._bridge:
             return
 
@@ -283,9 +283,42 @@ class DCCBridgeManager:
         self._bridge.reset_session()
         self._context_injected = False
 
-        # 在新 session 中发送 /new，走正常消息路径让 AI 回复回传到面板
-        if self._bridge.is_connected():
-            self.send_message("/new")
+    def get_session_key(self) -> str:
+        """获取当前 session key"""
+        return self._bridge.get_session_key() if self._bridge else ""
+
+    def set_session_key(self, key: str):
+        """设置 session key（会话切换）"""
+        if self._bridge:
+            self._bridge.set_session_key(key)
+
+    # --- Agent 切换 + 会话管理 (Phase 3) ---
+
+    def get_agent_id(self) -> str:
+        """获取当前 Agent ID"""
+        return self._bridge.get_agent_id() if self._bridge else ""
+
+    def set_agent(self, agent_id: str):
+        """切换 Agent，重置 session。"""
+        if self._bridge:
+            self._bridge.set_agent(agent_id)
+            self._context_injected = False
+
+    def list_agents(self) -> list:
+        """查询可用 Agent 列表（同步）。
+        返回 [{"id": ..., "name": ..., "emoji": ...}, ...]
+        """
+        if not self._bridge:
+            self.connect()
+        return self._bridge.list_agents() if self._bridge else []
+
+    def fetch_history(self, session_key: str) -> list:
+        """从 Gateway 拉取会话历史（同步）。
+        返回 [{"sender": ..., "content": ...}, ...]
+        """
+        if not self._bridge:
+            self.connect()
+        return self._bridge.fetch_history(session_key) if self._bridge else []
 
     def run_diagnostics(self) -> str:
         """运行连接诊断，返回报告文本"""

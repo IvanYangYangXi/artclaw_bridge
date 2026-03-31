@@ -434,12 +434,6 @@ class ChatPanel(QWidget):
         self._last_ai_cursor_pos = -1
         self._add_system_message("新对话已开始")
         if self._bridge_manager:
-            # reset_session 会发 /new 并走流式回调，设置 streaming 状态
-            self._is_streaming = True
-            self._streaming_text = ""
-            self._send_btn.setEnabled(False)
-            self._send_btn.setText("等待...")
-            self._add_message("assistant", "...")
             self._bridge_manager.reset_session()
 
     @Slot()
