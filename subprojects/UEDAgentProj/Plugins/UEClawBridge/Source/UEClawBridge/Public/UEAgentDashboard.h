@@ -114,6 +114,7 @@ private:
 	FText GetServerAddressText() const;
 	FText GetStatsText() const;
 	FText GetStatusSummaryText() const;
+	FText GetContextUsageText() const;
 
 	// --- 按钮回调 ---
 	FReply OnToggleStatusClicked();
@@ -293,6 +294,10 @@ private:
 	/** Token usage 跟踪 (任务 5.5) */
 	int32 LastTotalTokens = 0;
 	int32 ContextWindowSize = 200000;  // 默认 200K (claude-opus-4-6)
+
+	/** 保存/加载上下文窗口大小到 config.json */
+	void SaveContextWindowSize();
+	void LoadContextWindowSize();
 
 	/** MCP Server 连接状态（由 Python 直接查询更新） */
 	bool bCachedMcpReady = false;

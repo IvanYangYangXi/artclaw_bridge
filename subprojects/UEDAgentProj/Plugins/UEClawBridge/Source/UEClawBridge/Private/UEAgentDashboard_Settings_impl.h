@@ -23,6 +23,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 	const bool OrigSilentHigh = bSilentHigh;
 	const bool OrigPlanMode = bPlanMode;
 	const bool OrigEnterToSend = bEnterToSend;
+	const int32 OrigContextWindowSize = ContextWindowSize;
 
 	auto Self = SharedThis(this);
 
@@ -101,6 +102,85 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 				[
 					SNew(STextBlock)
 					.Text(FUEAgentL10n::Get(TEXT("SettingsSendMode")))
+				]
+			]
+
+			// --- 分隔线 ---
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 8.0f, 0.0f, 8.0f)
+			[
+				SNew(SSeparator)
+			]
+
+			// --- 上下文窗口大小 ---
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(STextBlock)
+				.Text(FUEAgentL10n::Get(TEXT("SettingsContextWindow")))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(SButton)
+					.Text_Lambda([Self]() -> FText
+					{
+						return FText::FromString(Self->ContextWindowSize == 128000 ? TEXT("[128K]") : TEXT("128K"));
+					})
+					.OnClicked_Lambda([Self]() { Self->ContextWindowSize = 128000; return FReply::Handled(); })
+					.ContentPadding(FMargin(6.0f, 2.0f))
+					.ButtonColorAndOpacity_Lambda([Self]() -> FSlateColor
+					{
+						return Self->ContextWindowSize == 128000
+							? FSlateColor(FLinearColor(0.2f, 0.5f, 0.7f))
+							: FSlateColor(FLinearColor(0.22f, 0.22f, 0.22f));
+					})
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text_Lambda([Self]() -> FText
+					{
+						return FText::FromString(Self->ContextWindowSize == 200000 ? TEXT("[200K]") : TEXT("200K"));
+					})
+					.OnClicked_Lambda([Self]() { Self->ContextWindowSize = 200000; return FReply::Handled(); })
+					.ContentPadding(FMargin(6.0f, 2.0f))
+					.ButtonColorAndOpacity_Lambda([Self]() -> FSlateColor
+					{
+						return Self->ContextWindowSize == 200000
+							? FSlateColor(FLinearColor(0.2f, 0.5f, 0.7f))
+							: FSlateColor(FLinearColor(0.22f, 0.22f, 0.22f));
+					})
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text_Lambda([Self]() -> FText
+					{
+						return FText::FromString(Self->ContextWindowSize == 500000 ? TEXT("[500K]") : TEXT("500K"));
+					})
+					.OnClicked_Lambda([Self]() { Self->ContextWindowSize = 500000; return FReply::Handled(); })
+					.ContentPadding(FMargin(6.0f, 2.0f))
+					.ButtonColorAndOpacity_Lambda([Self]() -> FSlateColor
+					{
+						return Self->ContextWindowSize == 500000
+							? FSlateColor(FLinearColor(0.2f, 0.5f, 0.7f))
+							: FSlateColor(FLinearColor(0.22f, 0.22f, 0.22f));
+					})
 				]
 			]
 
@@ -285,12 +365,18 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 			[
 				SNew(SButton)
 				.Text(FUEAgentL10n::Get(TEXT("SettingsCloseBtn")))
-				.OnClicked_Lambda([Self, OrigSilentMedium, OrigSilentHigh, OrigPlanMode, OrigEnterToSend]()
+				.OnClicked_Lambda([Self, OrigSilentMedium, OrigSilentHigh, OrigPlanMode, OrigEnterToSend, OrigContextWindowSize]()
 				{
 					// 保存静默模式配置（仅在变更时）
 					if (Self->bSilentMedium != OrigSilentMedium || Self->bSilentHigh != OrigSilentHigh)
 					{
 						Self->SaveSilentModeToConfig();
+					}
+
+					// 保存上下文窗口大小（仅在变更时）
+					if (Self->ContextWindowSize != OrigContextWindowSize)
+					{
+						Self->SaveContextWindowSize();
 					}
 
 					// 关闭窗口

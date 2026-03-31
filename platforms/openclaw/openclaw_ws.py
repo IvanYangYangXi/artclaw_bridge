@@ -398,6 +398,66 @@ def _dispatch_usage(payload: dict, message: dict, stream_file: str, stream_lock)
         }, stream_lock)
 
 
+def _format_tool_call_summary(tool_name: str, tool_args: dict) -> str:
+    """格式化 tool_call 的单行摘要文本。
+
+    根据工具类型提取关键参数，控制在一行内。
+    例如:
+      [Tool] read - file_path: src/main.py
+      [Tool] exec - command: ls -la
+      [Tool] web_search - query: "python async"
+      [Tool] edit - path: src/main.py
+      [Tool] run_ue_python
+    """
+    if not tool_args:
+        return f"[Tool] {tool_name}"
+
+    # 提取最有意义的参数（按工具类型）
+    key_param = ""
+    # 常见的关键参数名（优先级从高到低）
+    _KEY_PARAMS = [
+        "query", "command", "code", "message", "text", "url",
+        "file_path", "path", "action",
+    ]
+    for k in _KEY_PARAMS:
+        v = tool_args.get(k)
+        if v and isinstance(v, str):
+            v = v.strip().replace("\n", " ")
+            if len(v) > 60:
+                v = v[:57] + "..."
+            key_param = f"{k}: {v}"
+            break
+
+    if not key_param:
+        # fallback: 取第一个字符串参数
+        for k, v in tool_args.items():
+            if isinstance(v, str) and v.strip():
+                v = v.strip().replace("\n", " ")
+                if len(v) > 60:
+                    v = v[:57] + "..."
+                key_param = f"{k}: {v}"
+                break
+
+    if key_param:
+        return f"[Tool] {tool_name} - {key_param}"
+    return f"[Tool] {tool_name}"
+
+
+def _format_tool_result_preview(result_content: str) -> str:
+    """从 tool_result 内容中提取简短预览（单行，最多 80 字符）。"""
+    if not result_content:
+        return ""
+
+    # 取第一个非空行
+    for line in result_content.split("\n"):
+        line = line.strip()
+        if line:
+            if len(line) > 80:
+                return line[:77] + "..."
+            return line
+    return ""
+
+
 def _dispatch_tool_events(message: dict, stream_file: str, stream_lock,
                           seen_tool_ids: set | None = None) -> None:
     """解析 message content blocks，写入 tool 事件 + 系统消息文本。
@@ -444,16 +504,11 @@ def _dispatch_tool_events(message: dict, stream_file: str, stream_lock,
             text_key = f"call:{tool_id}"
             if text_key not in seen_tool_ids:
                 seen_tool_ids.add(text_key)
-                # 格式化参数摘要（截断，避免刷屏）
-                args_summary = ""
-                if tool_args:
-                    args_str = json.dumps(tool_args, ensure_ascii=False)
-                    if len(args_str) > 200:
-                        args_str = args_str[:200] + "..."
-                    args_summary = f"\n  Args: {args_str}"
+                # 提取关键参数作为单行摘要
+                call_summary = _format_tool_call_summary(tool_name, tool_args)
                 write_stream(stream_file, {
                     "type": "tool_use_text",
-                    "text": f"\n[Tool] {tool_name}{args_summary}\n",
+                    "text": call_summary,
                 }, stream_lock)
 
         elif btype == "toolResult":
@@ -486,13 +541,14 @@ def _dispatch_tool_events(message: dict, stream_file: str, stream_lock,
             if text_key not in seen_tool_ids:
                 seen_tool_ids.add(text_key)
                 status = "[Error]" if is_error else "[Done]"
-                # 结果摘要截断
-                result_preview = result_content[:150]
-                if len(result_content) > 150:
-                    result_preview += "..."
+                # 结果摘要: 取第一个有意义的行，截断到 80 字符
+                result_preview = _format_tool_result_preview(result_content)
+                result_line = f"  {tool_name} {status}"
+                if result_preview:
+                    result_line += f" - {result_preview}"
                 write_stream(stream_file, {
                     "type": "tool_use_text",
-                    "text": f"[Tool] {tool_name} {status}\n",
+                    "text": result_line,
                 }, stream_lock)
 
 

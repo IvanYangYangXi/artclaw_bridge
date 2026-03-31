@@ -347,6 +347,9 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("SettingsSkillsManage"),   TEXT("Skills 管理"),                TEXT("Skills Management"));
 	Reg(TEXT("SettingsCloseBtn"),       TEXT("关闭"),                      TEXT("Close"));
 
+	// 上下文窗口大小
+	Reg(TEXT("SettingsContextWindow"),  TEXT("最大上下文窗口"),             TEXT("Max Context Window"));
+
 	// Agent 切换
 	Reg(TEXT("SettingsAgent"),          TEXT("当前 Agent"),                 TEXT("Current Agent"));
 	Reg(TEXT("AgentRefreshBtn"),        TEXT("刷新列表"),                   TEXT("Refresh List"));

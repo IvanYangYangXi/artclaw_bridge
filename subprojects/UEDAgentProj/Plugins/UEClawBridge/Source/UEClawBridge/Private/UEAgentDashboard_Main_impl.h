@@ -36,6 +36,9 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	// 加载静默模式配置 (阶段 5.7)
 	LoadSilentModeFromConfig();
 
+	// 加载上下文窗口大小配置
+	LoadContextWindowSize();
+
 	// ==================================================================
 	// 构建 UI 布局
 	// ==================================================================
@@ -49,10 +52,12 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		.Padding(FMargin(6.0f, 4.0f))
 		[
 			SNew(SVerticalBox)
+			// 第一行: 连接状态 + Agent + Session + 上下文 + 设置
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
 				SNew(SHorizontalBox)
+				// 连接状态按钮 — 最左
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
@@ -61,59 +66,100 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					.Text_Lambda([this]() { return GetConnectionStatusText(); })
 					.OnClicked(this, &SUEAgentDashboard::OnToggleStatusClicked)
 					.ButtonColorAndOpacity_Lambda([this]() { return GetConnectionStatusColor(); })
-					.ContentPadding(FMargin(6.0f, 2.0f))
+					.ContentPadding(FMargin(4.0f, 1.0f))
 				]
+				// Agent 标签 — 点击打开设置面板
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
-				.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
 				[
-					SNew(STextBlock)
-					.Text_Lambda([this]() { return GetVersionText(); })
-					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
-					.ColorAndOpacity(FSlateColor(FLinearColor(0.45f, 0.45f, 0.45f)))
+					SNew(SButton)
+					.Text_Lambda([this]() -> FText
+					{
+						for (const auto& A : CachedAgents)
+						{
+							if (A.Id == CurrentAgentId)
+							{
+								FString Display = A.Emoji.IsEmpty() ? A.Name : FString::Printf(TEXT("%s %s"), *A.Emoji, *A.Name);
+								return FText::FromString(Display);
+							}
+						}
+						return FText::FromString(CurrentAgentId);
+					})
+					.OnClicked(this, &SUEAgentDashboard::OnSettingsClicked)
+					.ContentPadding(FMargin(4.0f, 1.0f))
+					.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.18f, 0.35f, 0.55f)))
+				]
+				// Session 下拉
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SAssignNew(SessionMenuAnchor, SMenuAnchor)
+					.ToolTipText(FUEAgentL10n::Get(TEXT("SessionMenuTip")))
+					[
+						SNew(SButton)
+						.Text_Lambda([this]() { return GetActiveSessionLabel(); })
+						.OnClicked(this, &SUEAgentDashboard::OnSessionMenuClicked)
+						.ContentPadding(FMargin(4.0f, 1.0f))
+					]
 				]
 				+ SHorizontalBox::Slot()
 				.FillWidth(1.0f)
 				[
 					SNew(SSpacer)
 				]
+				// 上下文使用百分比 — 带标签
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
 				[
-					SNew(SButton)
-					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("SettingsBtn")); })
-					.OnClicked(this, &SUEAgentDashboard::OnSettingsClicked)
-					.ToolTipText(FUEAgentL10n::Get(TEXT("SettingsTip")))
-					.ContentPadding(FMargin(6.0f, 2.0f))
-				]
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, 2.0f, 0.0f, 0.0f)
-			[
-				SNew(SHorizontalBox)
-
-				// 连接状态 + MCP 状态 + Session Token
-				+ SHorizontalBox::Slot().AutoWidth()
-				[
 					SNew(STextBlock)
-					.Text_Lambda([this]() { return GetStatusSummaryText(); })
+					.Text_Lambda([this]() { return GetContextUsageText(); })
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
 					.ColorAndOpacity_Lambda([this]() -> FSlateColor
 					{
-						// Token 超 80% → 红色警告
 						if (ContextWindowSize > 0 && LastTotalTokens > 0)
 						{
 							float Pct = (float)LastTotalTokens / (float)ContextWindowSize;
 							if (Pct >= 0.8f)
 								return FSlateColor(FLinearColor(0.9f, 0.2f, 0.2f));
+							if (Pct >= 0.6f)
+								return FSlateColor(FLinearColor(0.9f, 0.7f, 0.2f));
 						}
 						return FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f));
 					})
 				]
+				// 设置按钮
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("SettingsBtn")); })
+					.OnClicked(this, &SUEAgentDashboard::OnSettingsClicked)
+					.ToolTipText(FUEAgentL10n::Get(TEXT("SettingsTip")))
+					.ContentPadding(FMargin(4.0f, 1.0f))
+				]
 			]
+			// 第二行: 状态摘要 (连接+MCP+服务器地址)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 2.0f, 0.0f, 0.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth()
+				[
+					SNew(STextBlock)
+					.Text_Lambda([this]() { return GetStatusSummaryText(); })
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+					.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
+				]
+			]
+			// 可折叠详情: 连接/断开/诊断/日志按钮
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
@@ -239,53 +285,15 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		];
 	}
 
-	// --- 工具栏行 ---
+	// --- 工具栏行 (常用按钮) ---
 	MainVBox->AddSlot()
 	.AutoHeight()
 	.Padding(4.0f)
 	[
 		SNew(SHorizontalBox)
-		// Agent 标签 — 点击打开设置面板
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
-		[
-			SNew(SButton)
-			.Text_Lambda([this]() -> FText
-			{
-				// 找到当前 Agent 的 emoji+name
-				for (const auto& A : CachedAgents)
-				{
-					if (A.Id == CurrentAgentId)
-					{
-						FString Display = A.Emoji.IsEmpty() ? A.Name : FString::Printf(TEXT("%s %s"), *A.Emoji, *A.Name);
-						return FText::FromString(Display);
-					}
-				}
-				return FText::FromString(CurrentAgentId);
-			})
-			.OnClicked(this, &SUEAgentDashboard::OnSettingsClicked)
-			.ContentPadding(FMargin(6.0f, 2.0f))
-			.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.18f, 0.35f, 0.55f)))
-		]
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.VAlign(VAlign_Center)
-		.Padding(4.0f, 0.0f, 0.0f, 0.0f)
-		[
-			SAssignNew(SessionMenuAnchor, SMenuAnchor)
-			.ToolTipText(FUEAgentL10n::Get(TEXT("SessionMenuTip")))
-			[
-				SNew(SButton)
-				.Text_Lambda([this]() { return GetActiveSessionLabel(); })
-				.OnClicked(this, &SUEAgentDashboard::OnSessionMenuClicked)
-				.ContentPadding(FMargin(6.0f, 2.0f))
-			]
-		]
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.VAlign(VAlign_Center)
-		.Padding(4.0f, 0.0f)
 		[
 			SNew(SButton)
 			.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("NewChatBtn")); })
@@ -296,6 +304,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
+		.Padding(4.0f, 0.0f, 0.0f, 0.0f)
 		[
 			SNew(SButton)
 			.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ManageBtn")); })
