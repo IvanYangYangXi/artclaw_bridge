@@ -35,7 +35,8 @@ from init_unreal import UELogger
 _PROTOCOL_VERSION  = 3
 _CLIENT_NAME       = "cli"
 _CLIENT_VERSION    = "0.1.0"
-_CHAT_TIMEOUT      = 120.0   # 秒
+_CHAT_TIMEOUT      = 1800.0  # 绝对超时 30 分钟
+_IDLE_TIMEOUT      = 120.0   # 无活动超时: 收到事件后重置
 _TOOL_RESULT_LIMIT = 2000    # tool_result 内容截断字符数
 
 
@@ -269,9 +270,15 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
     """
     latest_text = ""
     seen_tool_ids: set = set()  # 追踪已写过系统消息的 tool id，避免重复
-    deadline = time.time() + _CHAT_TIMEOUT
+    abs_deadline = time.time() + _CHAT_TIMEOUT    # 绝对上限
+    idle_deadline = time.time() + _IDLE_TIMEOUT    # 无活动超时（收到事件后重置）
 
-    while time.time() < deadline:
+    while True:
+        now = time.time()
+        if now >= abs_deadline:
+            break
+        if now >= idle_deadline:
+            break
         if cancel_flag.is_set():
             cancel_flag.clear()
             result = latest_text or "[Cancelled]"
@@ -329,6 +336,9 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
             UELogger.info(f"[openclaw_ws] skip non-chat state: {state}")
             continue
 
+        # 收到有效事件 → 重置无活动超时
+        idle_deadline = time.time() + _IDLE_TIMEOUT
+
         _dispatch_tool_events(message, stream_file, stream_lock, seen_tool_ids)
 
         if state == "delta" and text:
@@ -356,7 +366,11 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
             write_response(response_file, result)
             return
 
-    timeout_text = (latest_text + "\n\n[Response truncated - timeout]") if latest_text else "[Error] AI response timed out"
+    # 超时处理: 区分绝对超时和无活动超时
+    if time.time() >= abs_deadline:
+        timeout_text = (latest_text + "\n\n[Response truncated - absolute timeout 30min]") if latest_text else "[Error] AI response timed out (30min)"
+    else:
+        timeout_text = (latest_text + "\n\n[Response truncated - idle timeout 2min]") if latest_text else "[Error] AI response timed out (no activity for 2min)"
     write_stream(stream_file, {"type": "error", "text": timeout_text}, stream_lock)
     write_response(response_file, timeout_text)
 
