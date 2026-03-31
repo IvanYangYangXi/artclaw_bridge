@@ -333,6 +333,15 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 									Self->AddMessage(TEXT("tool_status"), EventText);
 								}
 							}
+							else if (EventType == TEXT("session_key"))
+							{
+								// Session key 回传 — Python 端生成 key 后通知 C++
+								FString Key = JsonObj->GetStringField(TEXT("key"));
+								if (!Key.IsEmpty() && Self->SessionEntries.IsValidIndex(Self->ActiveSessionIndex))
+								{
+									Self->SessionEntries[Self->ActiveSessionIndex].SessionKey = Key;
+								}
+							}
 						}
 					}
 					Self->StreamLinesRead = Lines.Num();

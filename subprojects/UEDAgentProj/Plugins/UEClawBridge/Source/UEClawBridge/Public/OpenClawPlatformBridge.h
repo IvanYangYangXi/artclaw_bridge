@@ -30,6 +30,12 @@ public:
 	virtual void SetSessionKey(const FString& SessionKey) override;
 	virtual FString GetSessionKey() const override;
 
+	// --- Agent 切换 + 会话管理 ---
+	virtual FString GetAgentId() const override;
+	virtual void SetAgentId(const FString& AgentId) override;
+	virtual void ListAgents(const FString& ResultFile) override;
+	virtual void FetchSessionHistory(const FString& SessionKey, const FString& HistoryFile) override;
+
 private:
 	/** 执行 Python 命令的辅助方法 */
 	void ExecPython(const FString& Code) const;

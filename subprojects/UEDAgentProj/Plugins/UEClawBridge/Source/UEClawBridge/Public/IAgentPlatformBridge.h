@@ -85,4 +85,34 @@ public:
 	 * @return 当前活跃的 session key
 	 */
 	virtual FString GetSessionKey() const = 0;
+
+	// --- Agent 切换 + 会话管理 (Phase 1+2) ---
+
+	/**
+	 * 获取当前 Agent ID。
+	 * @return 当前 Agent ID 字符串
+	 */
+	virtual FString GetAgentId() const = 0;
+
+	/**
+	 * 设置当前 Agent ID（切换 Agent）。
+	 * 实现应同时 reset session 和清除上下文注入标记。
+	 * @param AgentId 新的 Agent ID
+	 */
+	virtual void SetAgentId(const FString& AgentId) = 0;
+
+	/**
+	 * 异步获取可用 Agent 列表。
+	 * 结果以 JSON 写入 ResultFile: {"agents": [{"id":"...", "name":"...", "emoji":"..."}]}
+	 * @param ResultFile 结果写入路径
+	 */
+	virtual void ListAgents(const FString& ResultFile) = 0;
+
+	/**
+	 * 异步获取指定 session 的聊天历史（从远端 Gateway 拉取）。
+	 * 结果以 JSON 写入 HistoryFile: {"messages": [{"sender":"user/assistant", "content":"..."}]}
+	 * @param SessionKey 目标 session key
+	 * @param HistoryFile 历史写入路径
+	 */
+	virtual void FetchSessionHistory(const FString& SessionKey, const FString& HistoryFile) = 0;
 };

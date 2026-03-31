@@ -307,6 +307,9 @@ private:
 		FString Label;            // "对话 03-28 09:15"
 		FDateTime CreatedAt;
 		bool bIsActive = false;
+
+		/** 本地消息缓存 — 切换 session 时保存/恢复，避免每次从 Gateway 拉取 */
+		TArray<FChatMessage> CachedMessages;
 	};
 
 	/** 所有会话列表 */

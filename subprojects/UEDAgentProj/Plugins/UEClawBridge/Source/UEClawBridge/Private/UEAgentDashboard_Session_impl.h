@@ -76,7 +76,7 @@ void SUEAgentDashboard::OnSessionSelected(int32 Index)
 		return;
 	}
 
-	// 保存当前会话
+	// 保存当前会话的消息到 CachedMessages
 	if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
 	{
 		FString CurrentKey = PlatformBridge->GetSessionKey();
@@ -84,6 +84,7 @@ void SUEAgentDashboard::OnSessionSelected(int32 Index)
 		{
 			SessionEntries[ActiveSessionIndex].SessionKey = CurrentKey;
 		}
+		SessionEntries[ActiveSessionIndex].CachedMessages = Messages;
 		SessionEntries[ActiveSessionIndex].bIsActive = false;
 	}
 
@@ -92,18 +93,39 @@ void SUEAgentDashboard::OnSessionSelected(int32 Index)
 	SessionEntries[Index].bIsActive = true;
 	CurrentSessionLabel = SessionEntries[Index].Label;
 
-	// 加载会话历史
 	FString SessionKey = SessionEntries[Index].SessionKey;
-	if (!SessionKey.IsEmpty())
+
+	// 恢复消息: 优先本地缓存，fallback 到 Gateway 历史
+	if (SessionEntries[Index].CachedMessages.Num() > 0)
 	{
+		// 本地缓存命中 — 直接恢复，零延迟
+		Messages = SessionEntries[Index].CachedMessages;
+		RebuildMessageList();
+	}
+	else if (!SessionKey.IsEmpty())
+	{
+		// 从 Gateway 拉取历史
+		Messages.Empty();
+		RebuildMessageList();
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("LoadingHistory")));
 		LoadSessionHistory(SessionKey);
 	}
 	else
 	{
-		// 新会话，清空消息
+		// 新空会话
 		Messages.Empty();
 		RebuildMessageList();
 		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("NewChatStarted")));
+	}
+
+	// 切换 Python 端的活跃 session key
+	if (!SessionKey.IsEmpty())
+	{
+		PlatformBridge->SetSessionKey(SessionKey);
+	}
+	else
+	{
+		PlatformBridge->ResetSession();
 	}
 
 	// 关闭菜单
@@ -142,56 +164,102 @@ void SUEAgentDashboard::OnDeleteSession(int32 Index)
 
 void SUEAgentDashboard::LoadSessionHistory(const FString& SessionKey)
 {
-	// 从 Gateway transcript 加载会话历史
+	// 从 Gateway 异步拉取会话历史
 	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
-	FString HistoryFile = TempDir / FString::Printf(TEXT("_session_%s.json"), *SessionKey);
+	IFileManager::Get().MakeDirectory(*TempDir, true);
 
-	if (!FPaths::FileExists(HistoryFile))
-	{
-		return;
-	}
+	// 用 session key 的 hash 作为临时文件名，避免冲突
+	FString SafeKey = SessionKey;
+	SafeKey.ReplaceInline(TEXT("/"), TEXT("_"));
+	SafeKey.ReplaceInline(TEXT(":"), TEXT("_"));
+	FString HistoryFile = TempDir / FString::Printf(TEXT("_history_%s.json"), *SafeKey);
+	IFileManager::Get().Delete(*HistoryFile, false, false, true);
 
-	FString JsonContent;
-	TArray<uint8> RawBytes;
-	if (!FFileHelper::LoadFileToArray(RawBytes, *HistoryFile))
-	{
-		return;
-	}
+	// 调用平台桥接异步拉取
+	PlatformBridge->FetchSessionHistory(SessionKey, HistoryFile);
 
-	FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
-	JsonContent = FString(Converter.Length(), Converter.Get());
-
-	TSharedPtr<FJsonObject> JsonObj;
-	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
-	if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
-	{
-		return;
-	}
-
-	// 解析消息历史
-	const TArray<TSharedPtr<FJsonValue>>* MessagesArray = nullptr;
-	if (!JsonObj->TryGetArrayField(TEXT("messages"), MessagesArray) || !MessagesArray)
-	{
-		return;
-	}
-
-	Messages.Empty();
-	for (const auto& MsgVal : *MessagesArray)
-	{
-		const TSharedPtr<FJsonObject>* MsgObj = nullptr;
-		if (!MsgVal->TryGetObject(MsgObj) || !MsgObj)
+	// 轮询历史文件
+	auto Self = SharedThis(this);
+	FString CapturedFile = HistoryFile;
+	int32 CapturedIndex = ActiveSessionIndex;
+	FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([Self, CapturedFile, CapturedIndex](float) -> bool
 		{
-			continue;
-		}
+			if (!FPaths::FileExists(CapturedFile))
+			{
+				return true; // 继续等待
+			}
 
-		FChatMessage Msg;
-		Msg.Sender = (*MsgObj)->GetStringField(TEXT("sender"));
-		Msg.Content = (*MsgObj)->GetStringField(TEXT("content"));
-		Msg.bIsCode = (*MsgObj)->GetBoolField(TEXT("isCode"));
-		Messages.Add(MoveTemp(Msg));
-	}
+			// 读取 JSON
+			TArray<uint8> RawBytes;
+			if (!FFileHelper::LoadFileToArray(RawBytes, *CapturedFile))
+			{
+				IFileManager::Get().Delete(*CapturedFile, false, false, true);
+				return false;
+			}
 
-	RebuildMessageList();
+			FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
+			FString JsonContent(Converter.Length(), Converter.Get());
+			IFileManager::Get().Delete(*CapturedFile, false, false, true);
+
+			TSharedPtr<FJsonObject> JsonObj;
+			TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
+			if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
+			{
+				return false;
+			}
+
+			// 解析消息数组
+			const TArray<TSharedPtr<FJsonValue>>* MessagesArray = nullptr;
+			if (!JsonObj->TryGetArrayField(TEXT("messages"), MessagesArray) || !MessagesArray)
+			{
+				return false;
+			}
+
+			// 只有当用户仍停留在同一个 session 时才更新 UI
+			if (Self->ActiveSessionIndex != CapturedIndex)
+			{
+				return false;
+			}
+
+			// 移除 "加载中..." 消息
+			for (int32 i = Self->Messages.Num() - 1; i >= 0; --i)
+			{
+				if (Self->Messages[i].Sender == TEXT("system")
+					&& Self->Messages[i].Content == FUEAgentL10n::GetStr(TEXT("LoadingHistory")))
+				{
+					Self->Messages.RemoveAt(i);
+					break;
+				}
+			}
+
+			for (const auto& MsgVal : *MessagesArray)
+			{
+				const TSharedPtr<FJsonObject>* MsgObj = nullptr;
+				if (!MsgVal->TryGetObject(MsgObj) || !MsgObj)
+				{
+					continue;
+				}
+
+				FChatMessage Msg;
+				Msg.Sender = (*MsgObj)->GetStringField(TEXT("sender"));
+				Msg.Content = (*MsgObj)->GetStringField(TEXT("content"));
+				(*MsgObj)->TryGetBoolField(TEXT("isCode"), Msg.bIsCode);
+				Self->Messages.Add(MoveTemp(Msg));
+			}
+
+			Self->RebuildMessageList();
+
+			// 缓存到 SessionEntry，下次切换直接用
+			if (Self->SessionEntries.IsValidIndex(CapturedIndex))
+			{
+				Self->SessionEntries[CapturedIndex].CachedMessages = Self->Messages;
+			}
+
+			return false;
+		}),
+		0.5f
+	);
 }
 
 FText SUEAgentDashboard::GetActiveSessionLabel() const

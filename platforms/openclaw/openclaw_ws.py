@@ -181,6 +181,13 @@ async def do_chat(
             UELogger.info(f"[openclaw_ws] chat.send OK, status={status!r}, "
                           f"runId={active_run_id[:8] if active_run_id else 'N/A'}..., "
                           f"effectiveSession={effective_session_key[:50] if effective_session_key else 'N/A'}")
+
+            # 回传 session key 给 C++，让 SessionEntry 记录真实 key
+            write_stream(stream_file, {
+                "type": "session_key",
+                "key": effective_session_key,
+            }, stream_lock)
+
             await _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lock,
                                   session_key=effective_session_key,
                                   run_id=active_run_id)
@@ -492,3 +499,96 @@ def _dispatch_tool_events(message: dict, stream_file: str, stream_lock,
 def _error(stream_file: str, response_file: str, msg: str, stream_lock) -> None:
     write_stream(stream_file, {"type": "error", "text": msg}, stream_lock)
     write_response(response_file, msg)
+
+
+# ---------------------------------------------------------------------------
+# 一次性 RPC 辅助: Agent 列表 / 会话历史
+# ---------------------------------------------------------------------------
+
+async def do_list_agents(gateway_url: str, token: str) -> str:
+    """一次性连接 → agents.list RPC → 返回 JSON。"""
+    try:
+        import websockets
+    except ImportError:
+        return json.dumps({"agents": [], "error": "websockets not installed"})
+
+    try:
+        async with websockets.connect(gateway_url, open_timeout=5) as ws:
+            if not await _handshake(ws, token):
+                return json.dumps({"agents": [], "error": "handshake failed"})
+
+            req_id = str(uuid.uuid4())
+            await ws.send(json.dumps({
+                "type": "req", "id": req_id,
+                "method": "agents.list",
+                "params": {},
+            }))
+            ack = await _wait_for_ack(ws, req_id, timeout=10.0)
+            if not ack:
+                return json.dumps({"agents": [], "error": "timeout"})
+
+            # Gateway 返回格式: {"agents": [{"id":"...", "name":"...", "emoji":"...", ...}]}
+            agents = ack.get("agents", [])
+            result = []
+            for a in agents:
+                if isinstance(a, dict):
+                    result.append({
+                        "id": a.get("id", ""),
+                        "name": a.get("name", a.get("id", "")),
+                        "emoji": a.get("emoji", ""),
+                    })
+            return json.dumps({"agents": result}, ensure_ascii=False)
+
+    except Exception as exc:
+        UELogger.mcp_error(f"[openclaw_ws] do_list_agents: {exc}")
+        return json.dumps({"agents": [], "error": str(exc)})
+
+
+async def do_fetch_history(session_key: str, gateway_url: str, token: str) -> str:
+    """一次性连接 → chat.history RPC → 返回 JSON。"""
+    try:
+        import websockets
+    except ImportError:
+        return json.dumps({"messages": [], "error": "websockets not installed"})
+
+    try:
+        async with websockets.connect(gateway_url, open_timeout=5) as ws:
+            if not await _handshake(ws, token, session_key=session_key):
+                return json.dumps({"messages": [], "error": "handshake failed"})
+
+            req_id = str(uuid.uuid4())
+            await ws.send(json.dumps({
+                "type": "req", "id": req_id,
+                "method": "chat.history",
+                "params": {"sessionKey": session_key, "limit": 50},
+            }))
+            ack = await _wait_for_ack(ws, req_id, timeout=10.0)
+            if not ack:
+                return json.dumps({"messages": [], "error": "timeout"})
+
+            # 将 Gateway 消息格式转换为我们的格式
+            raw_messages = ack.get("messages", [])
+            messages = []
+            for m in raw_messages:
+                if not isinstance(m, dict):
+                    continue
+                role = m.get("role", "")
+                content = _extract_text(m)
+                if not content:
+                    continue
+                # 映射 role → sender
+                sender = "assistant"
+                if role in ("user", "human"):
+                    sender = "user"
+                elif role == "system":
+                    sender = "system"
+                messages.append({
+                    "sender": sender,
+                    "content": content,
+                    "isCode": False,
+                })
+            return json.dumps({"messages": messages}, ensure_ascii=False)
+
+    except Exception as exc:
+        UELogger.mcp_error(f"[openclaw_ws] do_fetch_history: {exc}")
+        return json.dumps({"messages": [], "error": str(exc)})

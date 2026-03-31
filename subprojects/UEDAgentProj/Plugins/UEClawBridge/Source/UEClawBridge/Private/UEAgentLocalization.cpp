@@ -105,6 +105,7 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("Thinking"),           TEXT("思考中..."),                 TEXT("Thinking..."));
 	Reg(TEXT("EmptyResponse"),      TEXT("AI 返回了空回复。"),         TEXT("Empty response from AI."));
 	Reg(TEXT("NewChatStarted"),     TEXT("已开始新会话。"),            TEXT("New conversation started."));
+	Reg(TEXT("LoadingHistory"),     TEXT("正在加载历史消息..."),       TEXT("Loading conversation history..."));
 	Reg(TEXT("ChatCleared"),        TEXT("聊天已清空。"),              TEXT("Chat cleared."));
 	Reg(TEXT("RequestCancelled"),   TEXT("请求已取消，可以继续聊天。"),TEXT("Request cancelled. You can continue chatting."));
 	Reg(TEXT("NothingToCancel"),    TEXT("没有正在进行的请求。"),      TEXT("Nothing to cancel."));

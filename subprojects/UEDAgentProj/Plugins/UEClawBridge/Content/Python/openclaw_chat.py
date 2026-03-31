@@ -38,6 +38,40 @@ _DEFAULT_TOKEN    = "ec8900cf3e3c4bbfab43c8d7d5a4638c69b854e075902325"
 _GATEWAY_PORT     = 18789
 
 
+def _load_artclaw_config() -> dict:
+    """读取 ~/.artclaw/config.json（Agent 切换 + 缓存用）。"""
+    try:
+        config_path = os.path.join(os.path.expanduser("~"), ".artclaw", "config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def _save_artclaw_config(config: dict) -> None:
+    """原子写入 ~/.artclaw/config.json。"""
+    try:
+        config_dir = os.path.join(os.path.expanduser("~"), ".artclaw")
+        os.makedirs(config_dir, exist_ok=True)
+        config_path = os.path.join(config_dir, "config.json")
+        import tempfile
+        fd, tmp = tempfile.mkstemp(dir=config_dir, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, config_path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+            raise
+    except Exception as exc:
+        UELogger.mcp_error(f"[openclaw_chat] save artclaw config: {exc}")
+
+
 def _get_gateway_config() -> dict:
     try:
         from bridge_config import _resolve_platform_config_path
@@ -64,10 +98,17 @@ def _get_token() -> str:
 # 全局状态（最小化）
 # ---------------------------------------------------------------------------
 
+_agent_id:         str             = _DEFAULT_AGENT_ID
 _session_key:      Optional[str]   = None
 _context_injected: bool            = False
 _cancel_flag:      threading.Event = threading.Event()
 _stream_lock:      threading.Lock  = threading.Lock()
+
+# 启动时从 config 恢复 last_agent_id
+try:
+    _agent_id = _load_artclaw_config().get("last_agent_id", _DEFAULT_AGENT_ID) or _DEFAULT_AGENT_ID
+except Exception:
+    pass
 
 # ---------------------------------------------------------------------------
 # UE 上下文注入
@@ -147,7 +188,7 @@ def _chat_worker(message: str, stream_file: str, response_file: str) -> None:
     """在独立线程中运行 asyncio.run()，完成一次完整的聊天请求。"""
     global _session_key
     if not _session_key:
-        _session_key = f"{_DEFAULT_AGENT_ID}/ue-editor:{int(time.time())}"
+        _session_key = f"{_agent_id}/ue-editor:{int(time.time())}"
 
     UELogger.info(f"[openclaw_chat] connecting to {_get_gateway_url()}, session={_session_key}")
 
@@ -276,6 +317,94 @@ def diagnose_connection(gateway_url: str = "", token: str = "") -> str:
 
 def shutdown() -> None:
     disconnect()
+
+
+# ---------------------------------------------------------------------------
+# Agent 切换 + 会话管理 API
+# ---------------------------------------------------------------------------
+
+def get_agent_id() -> str:
+    """获取当前 Agent ID。"""
+    return _agent_id
+
+
+def set_agent_id(agent_id: str) -> str:
+    """切换 Agent，reset session，写入 config。返回 JSON 确认。"""
+    global _agent_id, _session_key, _context_injected
+    _agent_id = agent_id
+    _session_key = None
+    _context_injected = False
+    # 持久化
+    try:
+        config = _load_artclaw_config()
+        config["last_agent_id"] = agent_id
+        _save_artclaw_config(config)
+    except Exception as exc:
+        UELogger.mcp_error(f"[openclaw_chat] save last_agent_id: {exc}")
+    UELogger.info(f"[openclaw_chat] agent switched to: {agent_id}")
+    return json.dumps({"ok": True, "agentId": agent_id})
+
+
+def get_cached_agents() -> str:
+    """从 config.json 读取缓存的 Agent 列表（无需网络）。"""
+    try:
+        config = _load_artclaw_config()
+        agents = config.get("agents_cache", [])
+        return json.dumps({"agents": agents}, ensure_ascii=False)
+    except Exception:
+        return json.dumps({"agents": []})
+
+
+def list_agents(result_file: str) -> None:
+    """异步查询 Agent 列表，写入 result_file。同时更新 config.json 缓存。"""
+    def _worker():
+        try:
+            result = asyncio.run(openclaw_ws.do_list_agents(
+                gateway_url=_get_gateway_url(),
+                token=_get_token(),
+            ))
+            with open(result_file, "w", encoding="utf-8") as f:
+                f.write(result)
+            # 更新缓存
+            try:
+                data = json.loads(result)
+                agents = data.get("agents", [])
+                if agents:
+                    config = _load_artclaw_config()
+                    config["agents_cache"] = agents
+                    config["agents_cache_updated"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                    _save_artclaw_config(config)
+            except Exception:
+                pass
+        except Exception as exc:
+            UELogger.mcp_error(f"[openclaw_chat] list_agents: {exc}")
+            try:
+                with open(result_file, "w", encoding="utf-8") as f:
+                    f.write(json.dumps({"agents": [], "error": str(exc)}))
+            except Exception:
+                pass
+    threading.Thread(target=_worker, daemon=True, name="OCListAgents").start()
+
+
+def fetch_history(session_key: str, result_file: str) -> None:
+    """异步从 Gateway 拉取会话历史，写入 result_file。"""
+    def _worker():
+        try:
+            result = asyncio.run(openclaw_ws.do_fetch_history(
+                session_key=session_key,
+                gateway_url=_get_gateway_url(),
+                token=_get_token(),
+            ))
+            with open(result_file, "w", encoding="utf-8") as f:
+                f.write(result)
+        except Exception as exc:
+            UELogger.mcp_error(f"[openclaw_chat] fetch_history: {exc}")
+            try:
+                with open(result_file, "w", encoding="utf-8") as f:
+                    f.write(json.dumps({"messages": [], "error": str(exc)}))
+            except Exception:
+                pass
+    threading.Thread(target=_worker, daemon=True, name="OCFetchHistory").start()
 
 
 def _collect_and_save_context(context_file: str) -> None:

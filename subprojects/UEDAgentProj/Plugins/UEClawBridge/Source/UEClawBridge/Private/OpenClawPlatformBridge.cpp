@@ -173,3 +173,65 @@ FString FOpenClawPlatformBridge::GetSessionKey() const
 	IFileManager::Get().Delete(*KeyFile, false, false, true);
 	return Result.TrimStartAndEnd();
 }
+
+// ==================================================================
+// Agent 切换 + 会话管理
+// ==================================================================
+
+FString FOpenClawPlatformBridge::GetAgentId() const
+{
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString AgentFile = TempDir / TEXT("_agent_id.txt");
+	IFileManager::Get().Delete(*AgentFile, false, false, true);
+
+	FString PythonCmd = FString::Printf(
+		TEXT("from openclaw_chat import get_agent_id\n")
+		TEXT("_aid = get_agent_id()\n")
+		TEXT("with open(r'%s', 'w', encoding='utf-8') as _f:\n")
+		TEXT("    _f.write(_aid)\n"),
+		*AgentFile
+	);
+	ExecPython(PythonCmd);
+
+	FString Result;
+	FFileHelper::LoadFileToString(Result, *AgentFile);
+	IFileManager::Get().Delete(*AgentFile, false, false, true);
+	return Result.TrimStartAndEnd();
+}
+
+void FOpenClawPlatformBridge::SetAgentId(const FString& AgentId)
+{
+	FString EscapedId = AgentId;
+	EscapedId.ReplaceInline(TEXT("'"), TEXT("\\'"));
+
+	FString PythonCmd = FString::Printf(
+		TEXT("from openclaw_chat import set_agent_id\n")
+		TEXT("set_agent_id('%s')\n"),
+		*EscapedId
+	);
+	ExecPython(PythonCmd);
+}
+
+void FOpenClawPlatformBridge::ListAgents(const FString& ResultFile)
+{
+	FString PythonCmd = FString::Printf(
+		TEXT("from openclaw_chat import list_agents\n")
+		TEXT("list_agents(r'%s')\n"),
+		*ResultFile
+	);
+	ExecPython(PythonCmd);
+}
+
+void FOpenClawPlatformBridge::FetchSessionHistory(const FString& SessionKey, const FString& HistoryFile)
+{
+	FString EscapedKey = SessionKey;
+	EscapedKey.ReplaceInline(TEXT("'"), TEXT("\\'"));
+
+	FString PythonCmd = FString::Printf(
+		TEXT("from openclaw_chat import fetch_history\n")
+		TEXT("fetch_history('%s', r'%s')\n"),
+		*EscapedKey, *HistoryFile
+	);
+	ExecPython(PythonCmd);
+}

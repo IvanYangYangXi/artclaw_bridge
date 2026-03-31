@@ -125,14 +125,14 @@ FReply SUEAgentDashboard::OnNewChatClicked()
 		NewEntry.Label = CurrentSessionLabel;
 		NewEntry.CreatedAt = Now;
 		NewEntry.bIsActive = true;
-		// SessionKey 会在首次发送消息后由 bridge 自动生成
+		// SessionKey 会在首次发送消息后由 stream.jsonl 的 session_key 事件回填
 
 		SessionEntries.Add(MoveTemp(NewEntry));
 		ActiveSessionIndex = SessionEntries.Num() - 1;
 	}
 
-	// 6) 发送 /new 给 AI（重置远端会话），非静默——显示 AI 的回复
-	SendToOpenClaw(TEXT("/new"));
+	// 6) 不再发 /new 给 AI — reset_session() 已清空 _session_key，
+	//    下次用户发消息时 _chat_worker 自动生成新 key → 新 session 自动创建
 
 	return FReply::Handled();
 }
