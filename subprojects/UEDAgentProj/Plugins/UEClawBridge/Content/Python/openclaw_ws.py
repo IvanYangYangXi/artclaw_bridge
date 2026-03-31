@@ -331,6 +331,8 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
 
         elif state == "final":
             final_text = text or latest_text
+            # 提取 usage 信息（Gateway 在 final 事件中携带 token 统计）
+            _dispatch_usage(payload, message, stream_file, stream_lock)
             write_stream(stream_file, {"type": "final", "text": final_text}, stream_lock)
             write_response(response_file, final_text)
             return
@@ -347,6 +349,43 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
     timeout_text = (latest_text + "\n\n[Response truncated - timeout]") if latest_text else "[Error] AI response timed out"
     write_stream(stream_file, {"type": "error", "text": timeout_text}, stream_lock)
     write_response(response_file, timeout_text)
+
+
+def _dispatch_usage(payload: dict, message: dict, stream_file: str, stream_lock) -> None:
+    """从 final 事件中提取 token usage 并写入 stream.jsonl。
+
+    Gateway 的 usage 位置不确定（payload.usage / message.usage / payload.message.usage），
+    逐层查找，取第一个有效的。
+    """
+    usage = None
+    for source in (payload, message):
+        if isinstance(source, dict) and isinstance(source.get("usage"), dict):
+            usage = source["usage"]
+            break
+    if not usage:
+        return
+
+    # 统一字段名: Gateway 可能用 camelCase 或 snake_case
+    total = (
+        usage.get("totalTokens")
+        or usage.get("total_tokens")
+        or 0
+    )
+    if not total:
+        # 尝试 input + output 合计
+        inp = usage.get("inputTokens") or usage.get("input_tokens") or 0
+        out = usage.get("outputTokens") or usage.get("output_tokens") or 0
+        total = inp + out
+
+    if total > 0:
+        write_stream(stream_file, {
+            "type": "usage",
+            "usage": {
+                "totalTokens": total,
+                "inputTokens": usage.get("inputTokens") or usage.get("input_tokens") or 0,
+                "outputTokens": usage.get("outputTokens") or usage.get("output_tokens") or 0,
+            },
+        }, stream_lock)
 
 
 def _dispatch_tool_events(message: dict, stream_file: str, stream_lock) -> None:
