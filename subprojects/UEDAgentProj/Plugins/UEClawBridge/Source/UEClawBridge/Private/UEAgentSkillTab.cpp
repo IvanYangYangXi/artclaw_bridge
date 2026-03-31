@@ -293,12 +293,16 @@ TSharedRef<ITableRow> SUEAgentSkillTab::GenerateRow(
 		SNew(SHorizontalBox)
 
 		// Pin (only for installed)
-		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(2, 2, 0, 2)
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 2, 0, 2)
 		[
 			SNew(SButton)
-			.Text(FText::FromString(Item->bPinned ? TEXT("*") : TEXT(" ")))
+			.Text(FText::FromString(Item->bPinned ? TEXT("\u2605") : TEXT("\u2606")))  // ★ pinned / ☆ unpinned
 			.OnClicked(FOnClicked::CreateSP(this, &SUEAgentSkillTab::OnPinClicked, Item))
-			.ContentPadding(FMargin(2, 0))
+			.ButtonStyle(FCoreStyle::Get(), "NoBorder")
+			.ContentPadding(FMargin(4, 2))
+			.ForegroundColor(Item->bPinned
+				? FSlateColor(FLinearColor(0.95f, 0.75f, 0.1f))   // 金色 (pinned)
+				: FSlateColor(FLinearColor(0.45f, 0.45f, 0.45f)))  // 灰色 (unpinned)
 			.IsEnabled(bIsInstalled)
 			.ToolTipText_Lambda([Item]() {
 				return Item->bPinned
