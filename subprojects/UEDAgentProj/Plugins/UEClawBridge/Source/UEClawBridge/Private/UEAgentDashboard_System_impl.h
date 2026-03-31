@@ -110,11 +110,38 @@ void SUEAgentDashboard::PollConfirmationRequests()
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
 	if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
 	{
+		IFileManager::Get().Delete(*ConfirmFile, false, false, true);
 		return;
 	}
 
 	FString RiskLevel = JsonObj->GetStringField(TEXT("riskLevel"));
 	FString CodePreview = JsonObj->GetStringField(TEXT("codePreview"));
+
+	// 删除请求文件（无论是否弹窗）
+	IFileManager::Get().Delete(*ConfirmFile, false, false, true);
+
+	// 静默模式检查：按风险级别自动批准
+	bool bAutoApprove = false;
+	if (RiskLevel == TEXT("medium") && bSilentMedium)
+	{
+		bAutoApprove = true;
+	}
+	else if (RiskLevel == TEXT("high") && bSilentHigh)
+	{
+		bAutoApprove = true;
+	}
+
+	if (bAutoApprove)
+	{
+		// 静默模式：直接写入批准响应，不弹窗
+		FString ResponseFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_confirm_response.json");
+		FFileHelper::SaveStringToFile(TEXT("yes"), *ResponseFile);
+		AddMessage(TEXT("system"),
+			FString::Printf(TEXT("[%s] %s"),
+				*RiskLevel,
+				*FUEAgentL10n::GetStr(TEXT("ConfirmSessionSilent"))));
+		return;
+	}
 
 	const TArray<TSharedPtr<FJsonValue>>* OperationsArray = nullptr;
 	JsonObj->TryGetArrayField(TEXT("operations"), OperationsArray);
@@ -127,9 +154,6 @@ void SUEAgentDashboard::PollConfirmationRequests()
 
 	// 显示确认对话框
 	ShowConfirmationDialog(RiskLevel, Operations, CodePreview);
-
-	// 删除请求文件
-	IFileManager::Get().Delete(*ConfirmFile, false, false, true);
 }
 
 void SUEAgentDashboard::ShowConfirmationDialog(const FString& RiskLevel,

@@ -34,6 +34,15 @@ import unreal
 # 插件 Content/Python 目录（本文件所在目录）
 _PLUGIN_PYTHON_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# 启动时清理 __pycache__，确保源码修改后不会加载过期的 .pyc
+_pycache_dir = os.path.join(_PLUGIN_PYTHON_DIR, "__pycache__")
+if os.path.isdir(_pycache_dir):
+    import shutil
+    try:
+        shutil.rmtree(_pycache_dir)
+    except Exception:
+        pass
+
 # 插件私有第三方库目录
 _PLUGIN_LIB_DIR = os.path.join(_PLUGIN_PYTHON_DIR, "Lib")
 
