@@ -48,7 +48,7 @@ FReply SUEAgentDashboard::OnManageClicked()
 		Self->ManagePanelWidget.Reset();
 	}));
 
-	FSlateApplication::Get().AddWindow(ManageWindow.ToSharedRef());
+	FUEAgentManageUtils::AddChildWindow(ManageWindow.ToSharedRef());
 	return FReply::Handled();
 }
 

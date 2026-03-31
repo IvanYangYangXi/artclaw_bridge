@@ -249,7 +249,7 @@ FReply SUEAgentDashboard::OnAddQuickInputClicked()
 
 	if (QuickInputEditWindow.IsValid())
 	{
-		FSlateApplication::Get().AddWindow(QuickInputEditWindow.ToSharedRef());
+		FUEAgentManageUtils::AddChildWindow(QuickInputEditWindow.ToSharedRef());
 	}
 
 	return FReply::Handled();
@@ -334,7 +334,7 @@ FReply SUEAgentDashboard::OnEditQuickInputClicked(int32 Index)
 
 	if (QuickInputEditWindow.IsValid())
 	{
-		FSlateApplication::Get().AddWindow(QuickInputEditWindow.ToSharedRef());
+		FUEAgentManageUtils::AddChildWindow(QuickInputEditWindow.ToSharedRef());
 	}
 
 	return FReply::Handled();

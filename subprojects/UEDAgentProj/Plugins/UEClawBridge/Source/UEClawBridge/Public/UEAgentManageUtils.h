@@ -29,4 +29,10 @@ public:
 
 	/** 加载 ~/.artclaw/config.json 并返回 JSON 对象 */
 	static TSharedPtr<FJsonObject> LoadArtClawConfig();
+
+	/**
+	 * 以 UE 主窗口的子窗口方式添加 SWindow，确保弹窗始终在 UE 前面。
+	 * 回退: 找不到主窗口时降级为普通 AddWindow。
+	 */
+	static void AddChildWindow(const TSharedRef<SWindow>& InWindow);
 };

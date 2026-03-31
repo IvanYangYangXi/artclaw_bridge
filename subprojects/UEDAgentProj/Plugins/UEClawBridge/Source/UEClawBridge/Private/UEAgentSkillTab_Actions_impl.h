@@ -124,7 +124,7 @@ FReply SUEAgentSkillTab::OnDetailClicked(FSkillEntryPtr Item)
 				SNew(SSpacer).Size(FVector2D(0, 4))
 			]
 		];
-	FSlateApplication::Get().AddWindow(Win);
+	FUEAgentManageUtils::AddChildWindow(Win);
 	return FReply::Handled();
 }
 
@@ -518,7 +518,7 @@ FReply SUEAgentSkillTab::OnPublishClicked(FSkillEntryPtr Item)
 		]
 	);
 
-	FSlateApplication::Get().AddWindow(Win);
+	FUEAgentManageUtils::AddChildWindow(Win);
 	return FReply::Handled();
 }
 

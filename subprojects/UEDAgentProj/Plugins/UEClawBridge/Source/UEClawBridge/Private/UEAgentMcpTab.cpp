@@ -585,7 +585,7 @@ FReply SUEAgentMcpTab::OnAddServerClicked()
 		]
 	);
 
-	FSlateApplication::Get().AddWindow(Win);
+	FUEAgentManageUtils::AddChildWindow(Win);
 	return FReply::Handled();
 }
 

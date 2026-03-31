@@ -8,6 +8,8 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Dom/JsonObject.h"
+#include "Widgets/SWindow.h"
+#include "Framework/Application/SlateApplication.h"
 
 FString FUEAgentManageUtils::RunPythonAndCapture(const FString& PythonCode)
 {
@@ -166,4 +168,27 @@ FString FUEAgentManageUtils::GetOpenClawSkillsDir()
 	}
 	// 最终回退
 	return FString(FPlatformProcess::UserHomeDir()) / TEXT(".openclaw") / TEXT("skills");
+}
+
+// ---------------------------------------------------------------------------
+// 子窗口添加 — 确保弹窗始终在 UE 主窗口前面
+// ---------------------------------------------------------------------------
+void FUEAgentManageUtils::AddChildWindow(const TSharedRef<SWindow>& InWindow)
+{
+	if (!FSlateApplication::IsInitialized())
+	{
+		return;
+	}
+
+	// 查找 UE 主窗口作为 parent
+	TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().GetActiveTopLevelRegularWindow();
+	if (ParentWindow.IsValid())
+	{
+		FSlateApplication::Get().AddWindowAsNativeChild(InWindow, ParentWindow.ToSharedRef());
+	}
+	else
+	{
+		// Fallback: 无法找到主窗口时降级为独立窗口
+		FSlateApplication::Get().AddWindow(InWindow);
+	}
 }

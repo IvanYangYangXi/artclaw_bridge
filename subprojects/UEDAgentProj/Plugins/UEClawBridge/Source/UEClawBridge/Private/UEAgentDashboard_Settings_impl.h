@@ -273,7 +273,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 		Self->SettingsWindow.Reset();
 	}));
 
-	FSlateApplication::Get().AddWindow(SettingsWindow.ToSharedRef());
+	FUEAgentManageUtils::AddChildWindow(SettingsWindow.ToSharedRef());
 
 	return FReply::Handled();
 }
