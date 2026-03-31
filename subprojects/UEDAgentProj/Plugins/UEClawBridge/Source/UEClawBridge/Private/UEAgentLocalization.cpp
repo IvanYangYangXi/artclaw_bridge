@@ -346,6 +346,17 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("SettingsPlanMode"),       TEXT("Plan 模式"),                  TEXT("Plan Mode"));
 	Reg(TEXT("SettingsSkillsManage"),   TEXT("Skills 管理"),                TEXT("Skills Management"));
 	Reg(TEXT("SettingsCloseBtn"),       TEXT("关闭"),                      TEXT("Close"));
+
+	// Agent 切换
+	Reg(TEXT("SettingsAgent"),          TEXT("当前 Agent"),                 TEXT("Current Agent"));
+	Reg(TEXT("AgentRefreshBtn"),        TEXT("刷新列表"),                   TEXT("Refresh List"));
+	Reg(TEXT("AgentRefreshTip"),        TEXT("从 Gateway 获取最新 Agent 列表"), TEXT("Fetch latest Agent list from Gateway"));
+	Reg(TEXT("AgentCurrent"),           TEXT("[当前]"),                     TEXT("[Current]"));
+	Reg(TEXT("AgentSwitched"),          TEXT("已切换到 Agent: "),            TEXT("Switched to Agent: "));
+	Reg(TEXT("AgentRefreshing"),        TEXT("正在刷新 Agent 列表..."),      TEXT("Refreshing Agent list..."));
+	Reg(TEXT("AgentRefreshDone"),       TEXT("Agent 列表已刷新。"),          TEXT("Agent list refreshed."));
+	Reg(TEXT("AgentRefreshFail"),       TEXT("Agent 列表刷新失败。"),        TEXT("Failed to refresh Agent list."));
+	Reg(TEXT("AgentNone"),              TEXT("(无缓存列表，请点击刷新)"),    TEXT("(No cached list, click Refresh)"));
 }
 
 FText FUEAgentL10n::Get(const FString& Key)

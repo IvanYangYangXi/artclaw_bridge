@@ -27,6 +27,9 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	// 初始化会话名称标签 (任务 5.4) + 首个会话条目 (任务 5.8)
 	InitFirstSession();
 
+	// 加载缓存的 Agent 列表 (Agent 切换)
+	LoadCachedAgents();
+
 	// 初始化 Slash 快捷命令
 	InitSlashCommands();
 
@@ -242,9 +245,33 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	.Padding(4.0f)
 	[
 		SNew(SHorizontalBox)
+		// Agent 标签 — 点击打开设置面板
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
+		[
+			SNew(SButton)
+			.Text_Lambda([this]() -> FText
+			{
+				// 找到当前 Agent 的 emoji+name
+				for (const auto& A : CachedAgents)
+				{
+					if (A.Id == CurrentAgentId)
+					{
+						FString Display = A.Emoji.IsEmpty() ? A.Name : FString::Printf(TEXT("%s %s"), *A.Emoji, *A.Name);
+						return FText::FromString(Display);
+					}
+				}
+				return FText::FromString(CurrentAgentId);
+			})
+			.OnClicked(this, &SUEAgentDashboard::OnSettingsClicked)
+			.ContentPadding(FMargin(6.0f, 2.0f))
+			.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.18f, 0.35f, 0.55f)))
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(4.0f, 0.0f, 0.0f, 0.0f)
 		[
 			SAssignNew(SessionMenuAnchor, SMenuAnchor)
 			.ToolTipText(FUEAgentL10n::Get(TEXT("SessionMenuTip")))

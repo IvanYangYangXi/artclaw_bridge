@@ -112,6 +112,45 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 				SNew(SSeparator)
 			]
 
+			// --- Agent 切换 ---
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(FUEAgentL10n::Get(TEXT("SettingsAgent")))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(SButton)
+					.Text(FUEAgentL10n::Get(TEXT("AgentRefreshBtn")))
+					.OnClicked_Lambda([Self]() { return Self->OnRefreshAgentsClicked(); })
+					.ToolTipText(FUEAgentL10n::Get(TEXT("AgentRefreshTip")))
+					.ContentPadding(FMargin(6.0f, 2.0f))
+				]
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				SAssignNew(Self->AgentListBox, SVerticalBox)
+			]
+
+			// --- 分隔线 ---
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 8.0f, 0.0f, 8.0f)
+			[
+				SNew(SSeparator)
+			]
+
 			// --- 静默模式 ---
 			+ SVerticalBox::Slot()
 			.AutoHeight()
@@ -275,5 +314,232 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 
 	FUEAgentManageUtils::AddChildWindow(SettingsWindow.ToSharedRef());
 
+	// Agent 列表 UI 构建（必须在 AgentListBox 已赋值之后）
+	RebuildAgentListUI();
+
 	return FReply::Handled();
+}
+
+// ==================================================================
+// Agent 切换
+// ==================================================================
+
+void SUEAgentDashboard::LoadCachedAgents()
+{
+	// 从 Python 端读取缓存的 Agent 列表
+	FString ResultJson = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
+		"from openclaw_chat import get_cached_agents, get_agent_id\n"
+		"import json\n"
+		"_agents = json.loads(get_cached_agents())\n"
+		"_agents['current_id'] = get_agent_id()\n"
+		"_result = _agents\n"
+	));
+
+	CachedAgents.Empty();
+	CurrentAgentId.Empty();
+
+	TSharedPtr<FJsonObject> JsonObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResultJson);
+	if (FJsonSerializer::Deserialize(Reader, JsonObj) && JsonObj.IsValid())
+	{
+		CurrentAgentId = JsonObj->GetStringField(TEXT("current_id"));
+
+		const TArray<TSharedPtr<FJsonValue>>* AgentsArray = nullptr;
+		if (JsonObj->TryGetArrayField(TEXT("agents"), AgentsArray) && AgentsArray)
+		{
+			for (const auto& Val : *AgentsArray)
+			{
+				const TSharedPtr<FJsonObject>* AgentObj = nullptr;
+				if (Val->TryGetObject(AgentObj) && AgentObj)
+				{
+					FAgentEntry Entry;
+					Entry.Id = (*AgentObj)->GetStringField(TEXT("id"));
+					Entry.Name = (*AgentObj)->GetStringField(TEXT("name"));
+					Entry.Emoji = (*AgentObj)->GetStringField(TEXT("emoji"));
+					CachedAgents.Add(MoveTemp(Entry));
+				}
+			}
+		}
+	}
+}
+
+FReply SUEAgentDashboard::OnRefreshAgentsClicked()
+{
+	// 异步从 Gateway 拉取 Agent 列表
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString ResultFile = TempDir / TEXT("_agents_list.json");
+	IFileManager::Get().Delete(*ResultFile, false, false, true);
+
+	PlatformBridge->ListAgents(ResultFile);
+
+	// 轮询结果
+	auto Self = SharedThis(this);
+	FString CapturedFile = ResultFile;
+	FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateLambda([Self, CapturedFile](float) -> bool
+		{
+			if (!FPaths::FileExists(CapturedFile))
+			{
+				return true; // 继续等待
+			}
+
+			TArray<uint8> RawBytes;
+			if (!FFileHelper::LoadFileToArray(RawBytes, *CapturedFile))
+			{
+				IFileManager::Get().Delete(*CapturedFile, false, false, true);
+				return false;
+			}
+
+			FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
+			FString JsonContent(Converter.Length(), Converter.Get());
+			IFileManager::Get().Delete(*CapturedFile, false, false, true);
+
+			// 解析
+			TSharedPtr<FJsonObject> JsonObj;
+			TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
+			if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
+			{
+				Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("AgentRefreshFail")));
+				return false;
+			}
+
+			// 检查错误
+			FString Error;
+			if (JsonObj->TryGetStringField(TEXT("error"), Error) && !Error.IsEmpty())
+			{
+				Self->AddMessage(TEXT("system"),
+					FUEAgentL10n::GetStr(TEXT("AgentRefreshFail")) + TEXT(" ") + Error);
+				return false;
+			}
+
+			// 更新缓存
+			Self->CachedAgents.Empty();
+			const TArray<TSharedPtr<FJsonValue>>* AgentsArray = nullptr;
+			if (JsonObj->TryGetArrayField(TEXT("agents"), AgentsArray) && AgentsArray)
+			{
+				for (const auto& Val : *AgentsArray)
+				{
+					const TSharedPtr<FJsonObject>* AgentObj = nullptr;
+					if (Val->TryGetObject(AgentObj) && AgentObj)
+					{
+						FAgentEntry Entry;
+						Entry.Id = (*AgentObj)->GetStringField(TEXT("id"));
+						Entry.Name = (*AgentObj)->GetStringField(TEXT("name"));
+						Entry.Emoji = (*AgentObj)->GetStringField(TEXT("emoji"));
+						Self->CachedAgents.Add(MoveTemp(Entry));
+					}
+				}
+			}
+
+			Self->RebuildAgentListUI();
+			Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("AgentRefreshDone")));
+
+			return false;
+		}),
+		0.5f
+	);
+
+	return FReply::Handled();
+}
+
+void SUEAgentDashboard::OnAgentSelected(const FString& AgentId)
+{
+	if (AgentId == CurrentAgentId)
+	{
+		return; // 已经是当前 Agent
+	}
+
+	// 通过平台桥接切换 Agent
+	PlatformBridge->SetAgentId(AgentId);
+	CurrentAgentId = AgentId;
+
+	// 清空所有会话（Agent 切换后旧 session 不再有效）
+	SessionEntries.Empty();
+	Messages.Empty();
+	RebuildMessageList();
+	InitFirstSession();
+
+	// 重置 token usage
+	LastTotalTokens = 0;
+
+	// 找到 Agent 名称
+	FString AgentDisplay = AgentId;
+	for (const auto& A : CachedAgents)
+	{
+		if (A.Id == AgentId)
+		{
+			AgentDisplay = A.Emoji.IsEmpty()
+				? A.Name
+				: FString::Printf(TEXT("%s %s"), *A.Emoji, *A.Name);
+			break;
+		}
+	}
+
+	AddMessage(TEXT("system"),
+		FUEAgentL10n::GetStr(TEXT("AgentSwitched")) + AgentDisplay);
+
+	// 刷新 Agent 列表 UI（更新 [当前] 标记）
+	RebuildAgentListUI();
+}
+
+void SUEAgentDashboard::RebuildAgentListUI()
+{
+	if (!AgentListBox.IsValid())
+	{
+		return;
+	}
+
+	AgentListBox->ClearChildren();
+
+	if (CachedAgents.Num() == 0)
+	{
+		AgentListBox->AddSlot()
+		.AutoHeight()
+		.Padding(4.0f)
+		[
+			SNew(STextBlock)
+			.Text(FUEAgentL10n::Get(TEXT("AgentNone")))
+			.Font(FCoreStyle::GetDefaultFontStyle("Italic", 9))
+			.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
+		];
+		return;
+	}
+
+	auto Self = SharedThis(this);
+
+	for (const FAgentEntry& Agent : CachedAgents)
+	{
+		const bool bIsCurrent = (Agent.Id == CurrentAgentId);
+		FString CapturedId = Agent.Id;
+
+		// 显示: emoji + name (id) [当前]
+		FString DisplayText = Agent.Emoji.IsEmpty()
+			? FString::Printf(TEXT("%s (%s)"), *Agent.Name, *Agent.Id)
+			: FString::Printf(TEXT("%s %s (%s)"), *Agent.Emoji, *Agent.Name, *Agent.Id);
+
+		if (bIsCurrent)
+		{
+			DisplayText += TEXT("  ") + FUEAgentL10n::GetStr(TEXT("AgentCurrent"));
+		}
+
+		FLinearColor BtnColor = bIsCurrent
+			? FLinearColor(0.2f, 0.45f, 0.7f)  // 蓝色高亮
+			: FLinearColor(0.22f, 0.22f, 0.22f); // 默认灰
+
+		AgentListBox->AddSlot()
+		.AutoHeight()
+		.Padding(2.0f, 1.0f)
+		[
+			SNew(SButton)
+			.Text(FText::FromString(DisplayText))
+			.OnClicked_Lambda([Self, CapturedId]() -> FReply
+			{
+				Self->OnAgentSelected(CapturedId);
+				return FReply::Handled();
+			})
+			.ButtonColorAndOpacity(FSlateColor(BtnColor))
+			.ContentPadding(FMargin(8.0f, 4.0f))
+		];
+	}
 }

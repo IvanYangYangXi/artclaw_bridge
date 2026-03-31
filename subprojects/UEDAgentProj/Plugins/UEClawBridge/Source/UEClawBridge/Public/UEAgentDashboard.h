@@ -438,6 +438,37 @@ private:
 	/** 设置面板窗口 */
 	TSharedPtr<SWindow> SettingsWindow;
 
+	// --- Agent 切换 ---
+
+	/** Agent 条目数据模型 */
+	struct FAgentEntry
+	{
+		FString Id;
+		FString Name;
+		FString Emoji;
+	};
+
+	/** 缓存的 Agent 列表 */
+	TArray<FAgentEntry> CachedAgents;
+
+	/** 当前 Agent ID */
+	FString CurrentAgentId;
+
+	/** Agent 列表容器 (设置面板中) */
+	TSharedPtr<SVerticalBox> AgentListBox;
+
+	/** 加载缓存的 Agent 列表 (config.json) */
+	void LoadCachedAgents();
+
+	/** 刷新 Agent 列表 (Gateway RPC) */
+	FReply OnRefreshAgentsClicked();
+
+	/** 选中 Agent */
+	void OnAgentSelected(const FString& AgentId);
+
+	/** 重建 Agent 列表 UI */
+	void RebuildAgentListUI();
+
 	// --- Skills 管理面板 ---
 
 	/** 管理面板窗口 */
