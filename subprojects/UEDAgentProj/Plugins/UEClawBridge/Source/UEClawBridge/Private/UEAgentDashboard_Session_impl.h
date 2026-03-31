@@ -26,6 +26,8 @@ FReply SUEAgentDashboard::OnSessionMenuClicked()
 {
 	if (SessionMenuAnchor.IsValid())
 	{
+		// 每次打开菜单前重建内容（SessionEntries 可能已变化）
+		SessionMenuAnchor->SetMenuContent(BuildSessionMenuContent());
 		SessionMenuAnchor->SetIsOpen(!SessionMenuAnchor->IsOpen());
 	}
 	return FReply::Handled();

@@ -188,7 +188,9 @@ def _chat_worker(message: str, stream_file: str, response_file: str) -> None:
     """在独立线程中运行 asyncio.run()，完成一次完整的聊天请求。"""
     global _session_key
     if not _session_key:
-        _session_key = f"{_agent_id}/ue-editor:{int(time.time())}"
+        # 使用 Gateway 规范的 session key 格式: agent:<agentId>:<rest>
+        # Gateway 通过 agent: 前缀识别目标 Agent，不用 bindings
+        _session_key = f"agent:{_agent_id}:ue-editor:{int(time.time())}"
 
     UELogger.info(f"[openclaw_chat] connecting to {_get_gateway_url()}, session={_session_key}")
 

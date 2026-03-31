@@ -722,9 +722,10 @@ class OpenClawBridge:
         self._cancel_event = asyncio.Event()
 
         if not self._session_key:
-            # 用时间戳后缀确保每次新对话是不同的 session
+            # 使用 Gateway 规范的 session key 格式: agent:<agentId>:<rest>
+            # Gateway 通过 agent: 前缀识别目标 Agent
             ts = int(time.time() * 1000)
-            self._session_key = f"{self.agent_id}/{self.client_id}:{ts}"
+            self._session_key = f"agent:{self.agent_id}:{self.client_id}:{ts}"
 
         params = {
             "sessionKey": self._session_key,
@@ -771,7 +772,7 @@ class OpenClawBridge:
 
         if not self._session_key:
             ts = int(time.time() * 1000)
-            self._session_key = f"{self.agent_id}/{self.client_id}:{ts}"
+            self._session_key = f"agent:{self.agent_id}:{self.client_id}:{ts}"
 
         params = {
             "sessionKey": self._session_key,
