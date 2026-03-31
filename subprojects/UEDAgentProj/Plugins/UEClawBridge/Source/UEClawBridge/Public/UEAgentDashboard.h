@@ -243,9 +243,8 @@ private:
 	FTSTicker::FDelegateHandle PollTimerHandle;
 	TArray<FString> PendingPythonResult;
 
-	/** Bridge 连接状态持续轮询 */
+	/** Bridge + MCP 状态持续轮询 */
 	FTSTicker::FDelegateHandle BridgeStatusPollHandle;
-	double LastBridgeStatusTimestamp = 0.0;
 
 	/** 环境上下文待发送标记：Connect 成功后设为 true，等 mcp_ready 后实际发送 */
 	bool bEnvContextPending = false;
@@ -295,7 +294,7 @@ private:
 	int32 LastTotalTokens = 0;
 	int32 ContextWindowSize = 200000;  // 默认 200K (claude-opus-4-6)
 
-	/** MCP Server 连接状态（由 _bridge_status.json 轮询更新） */
+	/** MCP Server 连接状态（由 Python 直接查询更新） */
 	bool bCachedMcpReady = false;
 
 	// --- 多会话管理 (任务 5.8) ---

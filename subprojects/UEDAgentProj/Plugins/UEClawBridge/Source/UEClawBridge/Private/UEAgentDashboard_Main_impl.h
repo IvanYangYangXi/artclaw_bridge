@@ -383,49 +383,13 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	// 打开面板时自动连接 OpenClaw Bridge
 	ConnectOpenClawBridge();
 
-	// Bridge 连接状态持续轮询 — 读取 Python 侧写入的 _bridge_status.json
+	// Bridge + MCP 状态持续轮询 — 纯 Python 查询，不依赖中间文件
 	{
 		auto Self = SharedThis(this);
 		BridgeStatusPollHandle = FTSTicker::GetCoreTicker().AddTicker(
 			FTickerDelegate::CreateLambda([Self](float) -> bool
 			{
-				FString StatusFile = FPaths::ProjectSavedDir() / TEXT("UEAgent") / TEXT("_bridge_status.json");
-				if (!FPaths::FileExists(StatusFile))
-				{
-					return true; // 继续轮询
-				}
-
-				TArray<uint8> RawBytes;
-				if (!FFileHelper::LoadFileToArray(RawBytes, *StatusFile))
-				{
-					return true;
-				}
-				FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
-				FString JsonStr(Converter.Length(), Converter.Get());
-
-				TSharedPtr<FJsonObject> JsonObj;
-				TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonStr);
-				if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
-				{
-					return true;
-				}
-
-				double Timestamp = JsonObj->GetNumberField(TEXT("timestamp"));
-				// 只处理比上次更新的状态
-				if (Timestamp <= Self->LastBridgeStatusTimestamp)
-				{
-					return true;
-				}
-				Self->LastBridgeStatusTimestamp = Timestamp;
-
-				bool bConnected = false;
-				if (!JsonObj->TryGetBoolField(TEXT("connected"), bConnected))
-				{
-					return true; // connected 字段缺失，跳过本次（文件可能正在被写入）
-				}
-
-				// MCP 状态: 直接查询 Python MCP Server 运行状态（不依赖文件，更可靠）
-				// 每 2 秒随 BridgeStatusPoll 执行，开销极低（纯内存查询）
+				// MCP 状态: 直接查询 Python MCP Server 运行状态（纯内存查询）
 				{
 					FString McpCheck = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
 						"try:\n"
@@ -445,23 +409,49 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					}
 				}
 
-				// Connect 成功后的宽限期内，忽略 connected=false（防止旧值覆盖）
-				if (!bConnected && Self->ConnectGraceUntil > 0.0
-					&& FPlatformTime::Seconds() < Self->ConnectGraceUntil)
+				// Gateway 连接状态: 轻量 socket 探测（不经过 openclaw_chat，避免日志刷屏）
 				{
-					return true;
-				}
-				// 宽限期过后或读到 connected=true 时，清除宽限期
-				Self->ConnectGraceUntil = 0.0;
+					FString GwCheck = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
+						"import socket\n"
+						"try:\n"
+						"    from bridge_config import load_artclaw_config\n"
+						"    _cfg = load_artclaw_config()\n"
+						"    _port = _cfg.get('gateway',{}).get('port', 3577)\n"
+						"except:\n"
+						"    _port = 3577\n"
+						"_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+						"_s.settimeout(0.3)\n"
+						"try:\n"
+						"    _s.connect(('127.0.0.1', _port))\n"
+						"    _result = {'connected': True}\n"
+						"except:\n"
+						"    _result = {'connected': False}\n"
+						"finally:\n"
+						"    _s.close()\n"
+					));
+					TSharedPtr<FJsonObject> GwObj;
+					TSharedRef<TJsonReader<>> GwReader = TJsonReaderFactory<>::Create(GwCheck);
+					if (FJsonSerializer::Deserialize(GwReader, GwObj) && GwObj.IsValid())
+					{
+						bool bConnected = false;
+						GwObj->TryGetBoolField(TEXT("connected"), bConnected);
 
-				// 更新 Subsystem 状态（触发图标颜色变化等）
-				if (Self->CachedSubsystem.IsValid())
-				{
-					Self->CachedSubsystem->SetConnectionStatus(bConnected);
-				}
+						// Connect 成功后的宽限期内，忽略 connected=false（防止旧值覆盖）
+						if (!bConnected && Self->ConnectGraceUntil > 0.0
+							&& FPlatformTime::Seconds() < Self->ConnectGraceUntil)
+						{
+							return true;
+						}
+						// 宽限期过后或读到 connected=true 时，清除宽限期
+						Self->ConnectGraceUntil = 0.0;
 
-				// 环境上下文注入已移至 Python 侧 (openclaw_chat._enrich_with_context)
-				// C++ 不再主动发送，避免打断正在进行的 AI 请求
+						// 更新 Subsystem 状态（触发图标颜色变化等）
+						if (Self->CachedSubsystem.IsValid())
+						{
+							Self->CachedSubsystem->SetConnectionStatus(bConnected);
+						}
+					}
+				}
 
 				return true; // 持续轮询
 			}),

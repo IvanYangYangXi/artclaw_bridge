@@ -35,13 +35,13 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 
 			if (Status == TEXT("ok"))
 			{
-				// 立即更新 Subsystem 状态（不等 _bridge_status.json 轮询）
+				// 立即更新 Subsystem 状态（不等轮询）
 				if (Self->CachedSubsystem.IsValid())
 				{
 					Self->CachedSubsystem->SetConnectionStatus(true);
 				}
 
-				// 防止旧的 _bridge_status.json 轮询覆盖刚设置的 connected 状态：
+				// 防止 poll 里的 socket 探测因时序差覆盖刚设置的 connected 状态：
 				// 设置宽限期，在此期间轮询跳过状态更新
 				Self->ConnectGraceUntil = FPlatformTime::Seconds() + 5.0;
 
@@ -71,7 +71,7 @@ void SUEAgentDashboard::DisconnectOpenClawBridge()
 	bEnvContextPending = false;
 	ConnectGraceUntil = 0.0;
 
-	// 立即更新 Subsystem 状态（不等 _bridge_status.json 轮询）
+	// 立即更新 Subsystem 状态（不等轮询）
 	if (CachedSubsystem.IsValid())
 	{
 		CachedSubsystem->SetConnectionStatus(false);
