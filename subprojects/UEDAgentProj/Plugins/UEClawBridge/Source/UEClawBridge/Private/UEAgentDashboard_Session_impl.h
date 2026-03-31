@@ -13,14 +13,13 @@ FString SUEAgentDashboard::GetLastSessionFilePath() const
 
 void SUEAgentDashboard::SaveLastSession()
 {
-	// 获取当前 session key（如果 Python 端还活着的话）
+	// 从 C++ 缓存获取 session key（不调 Python，避免析构时 Python 已卸载）
 	FString SessionKey;
-	if (PlatformBridge.IsValid())
+	if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
 	{
-		SessionKey = PlatformBridge->GetSessionKey();
+		SessionKey = SessionEntries[ActiveSessionIndex].SessionKey;
 	}
 
-	// 如果没有 session key，也保存（恢复时会创建新会话）
 	TSharedRef<FJsonObject> JsonObj = MakeShared<FJsonObject>();
 	JsonObj->SetStringField(TEXT("session_key"), SessionKey);
 	JsonObj->SetStringField(TEXT("agent_id"), CurrentAgentId);

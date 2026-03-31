@@ -340,6 +340,8 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 								if (!Key.IsEmpty() && Self->SessionEntries.IsValidIndex(Self->ActiveSessionIndex))
 								{
 									Self->SessionEntries[Self->ActiveSessionIndex].SessionKey = Key;
+									// 实时保存 — 确保即使崩溃也能恢复会话
+									Self->SaveLastSession();
 								}
 							}
 						}
