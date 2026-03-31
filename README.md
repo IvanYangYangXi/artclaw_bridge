@@ -75,31 +75,31 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max 等数字内容创作（DCC）
 
 ```
 artclaw_bridge/
+├── core/                            # 🔧 共享核心模块（唯一源码，安装时复制到各 DCC）
+│   ├── bridge_core.py               #    WebSocket RPC 通信核心
+│   ├── bridge_config.py             #    配置加载与平台默认值
+│   ├── memory_core.py               #    记忆管理系统 v2 核心
+│   └── ...                          #    诊断、健康检查、完整性检查
+├── platforms/                       # 🌐 平台 Bridge 子项目（可替换）
+│   ├── openclaw/                    #    OpenClaw 适配（gateway/ + config/ + bridge）
+│   └── claude/                      #    Claude Desktop 适配（stdio→WS 桥接 POC）
+├── mcp_servers/                     # 📡 MCP Server 配置模板
+│   └── official/                    #    ue/maya/max-editor-agent 注册配置
+├── subprojects/                     # 💻 DCC 插件子项目
+│   ├── UEDAgentProj/                #    ✅ Unreal Engine 工程
+│   │   └── Plugins/UEClawBridge/    #       UE 插件（C++ + Python）
+│   └── DCCClawBridge/               #    ✅ Maya / 3ds Max 共享插件
+│       ├── artclaw_ui/              #       通用 Qt 聊天面板
+│       ├── adapters/                #       DCC 适配层 (Maya / Max)
+│       ├── core/                    #       核心模块（含 MCP Server、bridge_dcc 等）
+│       ├── maya_setup/              #       Maya 部署文件
+│       └── max_setup/               #       Max 部署文件
+├── skills/                          # 🛠️ Skill 源码（official/marketplace/templates）
+├── cli/                             # ⌨️ ArtClaw CLI 工具
+├── docs/                            # 📚 项目文档
+├── tests/                           # 🧪 测试
 ├── install.bat                      # 📦 一键安装器 (Windows 交互菜单)
-├── install.py                       # 📦 跨平台安装器 (CLI, 支持卸载)
-├── subprojects/                     # 各 DCC 软件的工程实现
-│   ├── UEDAgentProj/                # ✅ Unreal Engine 工程
-│   │   └── Plugins/UEClawBridge/    #    UE 插件（C++ + Python）
-│   └── DCCClawBridge/               # ✅ Maya / 3ds Max 共享插件
-│       ├── artclaw_ui/              #    通用 Qt 聊天面板
-│       ├── adapters/                #    DCC 适配层 (Maya / Max)
-│       ├── core/                    #    共享核心 (bridge, MCP, skill...)
-│       ├── maya_setup/              #    Maya 部署文件
-│       ├── max_setup/               #    Max 部署文件
-│       └── skills/                  #    DCC Skill 模板
-├── core/                             # 共享核心模块 (bridge_core, config, memory_core 等)
-├── platforms/                         # 平台 Bridge 子项目 (openclaw/, workbuddy/ 等)
-│   ├── bridge_core.py               #    通信核心 (UE/DCC 共用)
-│   ├── bridge_config.py             #    配置管理
-│   ├── bridge_diagnostics.py        #    诊断工具
-│   ├── mcp-bridge/                  #    OpenClaw 插件文件
-│   ├── setup.bat                    #    UE 快速安装脚本
-│   └── setup_openclaw_config.py     #    OpenClaw 配置生成
-├── cli/                             # ArtClaw CLI 工具
-├── skills/                          # Skill 模板库（跨 DCC 共享）
-├── team_skills/                     # 团队共享 Skill（Git 同步）
-├── docs/                            # 项目文档
-└── tests/                           # 测试用例
+└── install.py                       # 📦 跨平台安装器 (CLI, 支持 --platform 选择)
 ```
 
 ## 🚀 安装
@@ -149,15 +149,19 @@ python install.py --all --ue-project "C:\path\to\project"    # 全部安装
 
 ```bash
 # 1. 复制插件
-# 将 subprojects/UEDAgentProj/Plugins/UEClawBridge 复制到 <UE项目>/Plugins/
 xcopy /E /I subprojects\UEDAgentProj\Plugins\UEClawBridge "<UE项目路径>\Plugins\UEClawBridge"
 
-# 2. 复制共享模块到插件的 Python 目录
-copy core\bridge_core.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
-copy core\bridge_config.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
-copy core\bridge_diagnostics.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
+# 2. 复制共享核心模块到插件的 Python 目录
+for %f in (bridge_core bridge_config bridge_diagnostics health_check integrity_check memory_core) do (
+    copy core\%f.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
+)
 
-# 3. 安装 Python 依赖 (使用 UE 内置 Python)
+# 3. 复制平台 Bridge 模块（以 OpenClaw 为例）
+for %f in (openclaw_ws openclaw_chat openclaw_diagnose) do (
+    copy platforms\openclaw\%f.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
+)
+
+# 4. 安装 Python 依赖 (使用 UE 内置 Python)
 "C:\Epic Games\UE_5.7\Engine\Binaries\ThirdParty\Python3\Win64\python.exe" -m pip install websockets pydantic
 ```
 
