@@ -259,6 +259,7 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
     只响应 delta/final/aborted/error 四种 state，忽略其他状态（如 monitoring）。
     """
     latest_text = ""
+    seen_tool_ids: set = set()  # 追踪已写过系统消息的 tool id，避免重复
     deadline = time.time() + _CHAT_TIMEOUT
 
     while time.time() < deadline:
@@ -319,7 +320,7 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
             UELogger.info(f"[openclaw_ws] skip non-chat state: {state}")
             continue
 
-        _dispatch_tool_events(message, stream_file, stream_lock)
+        _dispatch_tool_events(message, stream_file, stream_lock, seen_tool_ids)
 
         if state == "delta" and text:
             # Gateway 推送的 delta text 是累积全文，需要提取增量部分写入 stream
@@ -388,13 +389,20 @@ def _dispatch_usage(payload: dict, message: dict, stream_file: str, stream_lock)
         }, stream_lock)
 
 
-def _dispatch_tool_events(message: dict, stream_file: str, stream_lock) -> None:
-    """解析 message content blocks，写入 tool_call / tool_result 事件。
+def _dispatch_tool_events(message: dict, stream_file: str, stream_lock,
+                          seen_tool_ids: set | None = None) -> None:
+    """解析 message content blocks，写入 tool 事件 + 系统消息文本。
 
-    Gateway 推送的 block 字段为驼峰格式（OpenClaw 协议），与 Anthropic 原生格式不同：
-      toolCall:   type="toolCall",  id,          name,      arguments (dict/str)
-      toolResult: type="toolResult", toolCallId,  toolName,  content,  isError
+    双轨输出:
+    1. tool_call / tool_result 事件 — 供 C++ 特殊消息类型解析（保留兼容）
+    2. tool_use 文本（delta 类型）— 作为可靠 fallback，直接显示在消息流中
+
+    Gateway 推送的 block 字段为驼峰格式（OpenClaw 协议）：
+      toolCall:   type="toolCall",  id, name, arguments (dict/str)
+      toolResult: type="toolResult", toolCallId, toolName, content, isError
     """
+    if seen_tool_ids is None:
+        seen_tool_ids = set()
     if not isinstance(message, dict):
         return
     content = message.get("content", [])
@@ -406,23 +414,45 @@ def _dispatch_tool_events(message: dict, stream_file: str, stream_lock) -> None:
         btype = block.get("type", "")
 
         if btype == "toolCall":
+            tool_id = block.get("id", "")
+            tool_name = block.get("name", "")
             tool_args = block.get("arguments", {})
             if isinstance(tool_args, str):
                 try:
                     tool_args = json.loads(tool_args)
                 except (json.JSONDecodeError, ValueError):
                     tool_args = {"raw": tool_args}
+
+            # 写原有 tool_call 事件（C++ 兼容）
             write_stream(stream_file, {
                 "type":      "tool_call",
-                "tool_name": block.get("name", ""),
-                "tool_id":   block.get("id", ""),
+                "tool_name": tool_name,
+                "tool_id":   tool_id,
                 "arguments": tool_args,
             }, stream_lock)
 
+            # 写系统消息文本（可靠 fallback），只写一次
+            text_key = f"call:{tool_id}"
+            if text_key not in seen_tool_ids:
+                seen_tool_ids.add(text_key)
+                # 格式化参数摘要（截断，避免刷屏）
+                args_summary = ""
+                if tool_args:
+                    args_str = json.dumps(tool_args, ensure_ascii=False)
+                    if len(args_str) > 200:
+                        args_str = args_str[:200] + "..."
+                    args_summary = f"\n  Args: {args_str}"
+                write_stream(stream_file, {
+                    "type": "tool_use_text",
+                    "text": f"\n[Tool] {tool_name}{args_summary}\n",
+                }, stream_lock)
+
         elif btype == "toolResult":
+            tool_id = block.get("toolCallId", "")
+            tool_name = block.get("toolName", "")
+            is_error = block.get("isError", False)
             result_content = block.get("content", "")
             if isinstance(result_content, list):
-                # content 可能是 [{type:"text", text:"..."}, ...] 形式
                 result_content = "\n".join(
                     item.get("text", "")
                     for item in result_content
@@ -432,13 +462,29 @@ def _dispatch_tool_events(message: dict, stream_file: str, stream_lock) -> None:
                 result_content = str(result_content)
             if len(result_content) > _TOOL_RESULT_LIMIT:
                 result_content = result_content[:_TOOL_RESULT_LIMIT] + "...[truncated]"
+
+            # 写原有 tool_result 事件（C++ 兼容）
             write_stream(stream_file, {
                 "type":      "tool_result",
-                "tool_name": block.get("toolName", ""),
-                "tool_id":   block.get("toolCallId", ""),
+                "tool_name": tool_name,
+                "tool_id":   tool_id,
                 "content":   result_content,
-                "is_error":  block.get("isError", False),
+                "is_error":  is_error,
             }, stream_lock)
+
+            # 写系统消息文本（可靠 fallback），只写一次
+            text_key = f"result:{tool_id}"
+            if text_key not in seen_tool_ids:
+                seen_tool_ids.add(text_key)
+                status = "[Error]" if is_error else "[Done]"
+                # 结果摘要截断
+                result_preview = result_content[:150]
+                if len(result_content) > 150:
+                    result_preview += "..."
+                write_stream(stream_file, {
+                    "type": "tool_use_text",
+                    "text": f"[Tool] {tool_name} {status}\n",
+                }, stream_lock)
 
 
 def _error(stream_file: str, response_file: str, msg: str, stream_lock) -> None:

@@ -324,6 +324,15 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 									}
 								}
 							}
+							else if (EventType == TEXT("tool_use_text"))
+							{
+								// Tool 调用系统消息（可靠 fallback 显示方式）
+								FString EventText = JsonObj->GetStringField(TEXT("text"));
+								if (!EventText.IsEmpty())
+								{
+									Self->AddMessage(TEXT("system"), EventText);
+								}
+							}
 						}
 					}
 					Self->StreamLinesRead = Lines.Num();
