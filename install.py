@@ -850,6 +850,31 @@ def main():
 
     print_summary(installed, uninstalled)
 
+    # 安装模式结束后自动运行同步校验
+    if not args.uninstall and installed:
+        print()
+        cprint("信息", "运行共享模块同步校验...", "cyan")
+        try:
+            import verify_sync
+            rc = verify_sync.main.__wrapped__() if hasattr(verify_sync.main, '__wrapped__') else _run_verify_sync()
+        except Exception:
+            _run_verify_sync()
+
+
+def _run_verify_sync():
+    """通过子进程运行 verify_sync.py"""
+    import subprocess
+    verify_script = ROOT_DIR / "verify_sync.py"
+    if verify_script.exists():
+        result = subprocess.run(
+            [sys.executable, str(verify_script)],
+            cwd=str(ROOT_DIR),
+        )
+        return result.returncode
+    else:
+        cprint("警告", "verify_sync.py 不存在，跳过同步校验", "yellow")
+        return 0
+
 
 if __name__ == "__main__":
     main()
