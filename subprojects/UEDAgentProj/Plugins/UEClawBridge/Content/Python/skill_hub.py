@@ -293,12 +293,19 @@ LAYER_ORDER = ["official", "marketplace", "user", "custom"]
 # 3. Skill Hub 核心（Phase B 增强版）
 # ============================================================================
 
-# Skill 改名兼容映射：旧名 → 新名 (v2.6 改名迁移)
+# Skill 改名兼容映射：旧名 → 新名 (v2.6 → v2.7 改名迁移)
 _NAME_ALIAS_MAP = {
-    "artclaw_material": "ue54_material_node_edit",
-    "ue54_artclaw_material": "ue54_material_node_edit",
-    "get_material_nodes": "ue54_get_material_nodes",
-    "generate_material_documentation": "ue54_generate_material_documentation",
+    # ue54 → ue57 迁移
+    "artclaw_material": "ue57_material_node_edit",
+    "ue54_artclaw_material": "ue57_material_node_edit",
+    "ue54_material_node_edit": "ue57_material_node_edit",
+    "get_material_nodes": "ue57_get_material_nodes",
+    "ue54_get_material_nodes": "ue57_get_material_nodes",
+    "generate_material_documentation": "ue57_generate_material_documentation",
+    "ue54_generate_material_documentation": "ue57_generate_material_documentation",
+    # artclaw-context/highlight 旧名兼容
+    "artclaw-context": "ue57-artclaw-context",
+    "artclaw-highlight": "ue57-artclaw-highlight",
 }
 
 

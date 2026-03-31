@@ -76,29 +76,43 @@ def _get_openclaw_skills_dir() -> Path:
 
 def _scan_source_skills(project_root: Path) -> Dict[str, dict]:
     """
-    扫描项目源码中的所有 Skill。
-    返回: {skill_name: {layer, dcc, path, has_code, has_skill_md, version}}
+    递归扫描项目源码 skills/ 下所有 Skill。
+
+    支持任意 DCC 子目录（不硬编码 universal/unreal/maya/max），
+    路径格式: skills/{layer}/{dcc}/{skill_name}/
+
+    跳过 templates/ 目录（含占位符模板）。
+
+    返回: {skill_name: {layer, dcc, path, has_code, has_skill_md, version, content_hash}}
     """
     skills = {}
     skills_dir = project_root / "skills"
+    if not skills_dir.is_dir():
+        return skills
 
-    for layer in ("official", "marketplace"):
-        layer_dir = skills_dir / layer
-        if not layer_dir.is_dir():
+    SKIP_DIRS = {"templates", "__pycache__", ".git"}
+
+    for layer_dir in sorted(skills_dir.iterdir()):
+        if not layer_dir.is_dir() or layer_dir.name in SKIP_DIRS or layer_dir.name.startswith("."):
             continue
+        layer = layer_dir.name  # official, marketplace, user, ...
 
-        for dcc in ("universal", "unreal", "maya", "max"):
-            dcc_dir = layer_dir / dcc
-            if not dcc_dir.is_dir():
+        for dcc_dir in sorted(layer_dir.iterdir()):
+            if not dcc_dir.is_dir() or dcc_dir.name in SKIP_DIRS or dcc_dir.name.startswith("."):
                 continue
+            dcc = dcc_dir.name  # universal, unreal, maya, max, blender, ...
 
             for skill_dir in sorted(dcc_dir.iterdir()):
-                if not skill_dir.is_dir() or skill_dir.name.startswith("."):
+                if not skill_dir.is_dir() or skill_dir.name in SKIP_DIRS or skill_dir.name.startswith("."):
                     continue
 
                 manifest_path = skill_dir / "manifest.json"
                 skill_md_path = skill_dir / "SKILL.md"
                 init_path = skill_dir / "__init__.py"
+
+                # 至少有一个标识文件才视为 Skill
+                if not (manifest_path.exists() or skill_md_path.exists() or init_path.exists()):
+                    continue
 
                 version = ""
                 if manifest_path.exists():
@@ -116,6 +130,7 @@ def _scan_source_skills(project_root: Path) -> Dict[str, dict]:
                     "has_code": init_path.exists(),
                     "has_skill_md": skill_md_path.exists(),
                     "version": version,
+                    "content_hash": _dir_content_hash(skill_dir),
                 }
 
     return skills
@@ -178,7 +193,36 @@ def _add_skill_entry(skills: dict, skill_dir: Path, layer: str) -> None:
         "layer": layer,
         "path": str(skill_dir),
         "version": version,
+        "content_hash": _dir_content_hash(skill_dir),
     }
+
+
+# ============================================================================
+# 辅助：目录内容 hash（用于无版本号 Skill 的变更检测）
+# ============================================================================
+
+def _dir_content_hash(skill_dir: Path) -> str:
+    """
+    计算 Skill 目录的内容 hash（MD5 前 12 位）。
+
+    只扫描关键文件（.py, .md, .json），跳过 __pycache__。
+    用于对比源码和安装目录的 Skill 是否有差异（无版本号时的 fallback）。
+    """
+    import hashlib
+    h = hashlib.md5()
+    EXTENSIONS = {".py", ".md", ".json"}
+
+    for root, dirs, files in os.walk(skill_dir):
+        dirs[:] = [d for d in sorted(dirs) if d != "__pycache__"]
+        for fname in sorted(files):
+            if Path(fname).suffix not in EXTENSIONS:
+                continue
+            fpath = Path(root) / fname
+            try:
+                h.update(fpath.read_bytes())
+            except Exception:
+                pass
+    return h.hexdigest()[:12]
 
 
 # ============================================================================
@@ -221,11 +265,19 @@ def compare_source_vs_runtime() -> dict:
             rt = runtime[name]
             installed.append({**info, "runtime_version": rt["version"],
                               "runtime_path": rt["path"]})
-            # 版本不同 → 可更新
-            if info["version"] and rt["version"] and info["version"] != rt["version"]:
-                updatable.append({**info, "runtime_version": rt["version"]})
+            # 判断是否可更新：版本号不同 或 无版本号时 hash 不同
+            src_ver = info.get("version", "")
+            rt_ver = rt.get("version", "")
+            if src_ver and rt_ver and src_ver != rt_ver:
+                updatable.append({**info, "runtime_version": rt_ver})
+            elif not (src_ver and rt_ver):
+                # 无版本号的 Skill，用 content hash 对比
+                src_hash = info.get("content_hash", "")
+                rt_hash = rt.get("content_hash", "")
+                if src_hash and rt_hash and src_hash != rt_hash:
+                    updatable.append({**info, "runtime_version": rt_ver,
+                                      "reason": "content_changed"})
         else:
-            # 也检查旧名映射（artclaw_material → ue54_material_node_edit）
             available.append(info)
 
     # 运行时有但源码没有
@@ -605,7 +657,7 @@ def _build_manifest_from_skill_md(skill_dir: Path, existing: dict) -> dict:
 
 def _git_commit(project_root: Path, skill_name: str, layer: str,
                 version: str, changelog: str, dcc: str = "") -> None:
-    """尝试 git add + commit"""
+    """尝试 git add（含删除）+ commit"""
     import subprocess
     try:
         target_dcc = dcc if dcc else _infer_dcc_from_name(skill_name)
@@ -614,13 +666,97 @@ def _git_commit(project_root: Path, skill_name: str, layer: str,
         if changelog:
             msg += f"\n\n{changelog}"
 
-        subprocess.run(["git", "add", skill_rel],
+        # git add 整个 skills/ 目录，包括旧位置的删除
+        subprocess.run(["git", "add", "skills/"],
                        cwd=str(project_root), capture_output=True, timeout=10)
         subprocess.run(["git", "commit", "-m", msg],
                        cwd=str(project_root), capture_output=True, timeout=10)
         UELogger.info(f"Git commit: {msg.splitlines()[0]}")
     except Exception as e:
         UELogger.warning(f"Git commit skipped: {e}")
+
+
+# ============================================================================
+# 重命名
+# ============================================================================
+
+def rename_skill(old_name: str, new_name: str,
+                 update_source: bool = True) -> dict:
+    """
+    重命名一个已安装的 Skill。
+
+    1. 重命名安装目录 old_name/ → new_name/
+    2. 更新 manifest.json 中的 name 字段
+    3. 更新 SKILL.md frontmatter 中的 name 字段
+    4. 可选: 同步更新项目源码中的目录名
+    5. 通知 skill_hub 重新扫描
+
+    Args:
+        old_name: 当前 Skill 名称（目录名）
+        new_name: 新 Skill 名称
+        update_source: 是否同步更新项目源码（默认 True）
+
+    返回: {"ok": bool, "message": str}
+    """
+    installed_dir = _get_openclaw_skills_dir()
+    old_dir = installed_dir / old_name
+    new_dir = installed_dir / new_name
+
+    if not old_dir.exists():
+        return {"ok": False, "message": f"已安装目录中找不到: {old_name}"}
+    if new_dir.exists():
+        return {"ok": False, "message": f"目标名称已存在: {new_name}"}
+
+    try:
+        # 1. 重命名目录
+        old_dir.rename(new_dir)
+
+        # 2. 更新 manifest.json
+        manifest_path = new_dir / "manifest.json"
+        if manifest_path.exists():
+            try:
+                m = json.loads(manifest_path.read_text(encoding="utf-8"))
+                m["name"] = new_name
+                # 也更新 tools 中的名称
+                for tool in m.get("tools", []):
+                    if tool.get("name", "").startswith(old_name):
+                        tool["name"] = tool["name"].replace(old_name, new_name, 1)
+                manifest_path.write_text(
+                    json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
+            except Exception:
+                pass
+
+        # 3. 更新 SKILL.md frontmatter
+        skill_md_path = new_dir / "SKILL.md"
+        if skill_md_path.exists():
+            try:
+                content = skill_md_path.read_text(encoding="utf-8")
+                # 替换 frontmatter 中的 name 字段
+                old_kebab = old_name.replace("_", "-")
+                new_kebab = new_name.replace("_", "-")
+                content = content.replace(f"name: {old_name}", f"name: {new_name}")
+                content = content.replace(f"name: {old_kebab}", f"name: {new_kebab}")
+                skill_md_path.write_text(content, encoding="utf-8")
+            except Exception:
+                pass
+
+        # 4. 同步更新源码
+        if update_source:
+            project_root = _get_project_root()
+            if project_root:
+                source = _scan_source_skills(project_root)
+                if old_name in source:
+                    old_src = Path(source[old_name]["path"])
+                    new_src = old_src.parent / new_name
+                    if old_src.exists() and not new_src.exists():
+                        old_src.rename(new_src)
+                        UELogger.info(f"Source renamed: {old_name} → {new_name}")
+
+        _notify_skill_hub()
+
+        return {"ok": True, "message": f"已重命名: {old_name} → {new_name}"}
+    except Exception as e:
+        return {"ok": False, "message": f"重命名失败: {e}"}
 
 
 def _notify_skill_hub() -> None:

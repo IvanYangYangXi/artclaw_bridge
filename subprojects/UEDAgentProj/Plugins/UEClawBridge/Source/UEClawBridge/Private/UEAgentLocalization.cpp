@@ -274,7 +274,7 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("ManageInstallBtn"),    TEXT("安装"),                      TEXT("Install"));
 	Reg(TEXT("ManageUninstallBtn"),  TEXT("卸载"),                      TEXT("Del"));
 	Reg(TEXT("ManageUpdateBtn"),     TEXT("更新"),                      TEXT("Up"));
-	Reg(TEXT("ManageSyncBtn"),       TEXT("同步 ({0})"),                TEXT("Sync ({0})"));
+	Reg(TEXT("ManageSyncBtn"),       TEXT("全量更新 ({0})"),            TEXT("Update All ({0})"));
 	Reg(TEXT("ManagePublishBtn"),    TEXT("发布"),                      TEXT("Pub"));
 	Reg(TEXT("ManagePublishTitle"),  TEXT("发布 Skill: {0}"),           TEXT("Publish Skill: {0}"));
 	Reg(TEXT("ManagePublishDesc"),   TEXT("将 {0} (v{1}) 发布到项目源码。选择目标层级、软件目录和版本号递增方式。"),

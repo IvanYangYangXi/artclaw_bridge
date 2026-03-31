@@ -1,5 +1,5 @@
 ---
-name: artclaw-highlight
+name: ue57-artclaw-highlight
 description: >
   Highlight, select, and focus actors in UE Editor viewport. Find actors by name, keyword,
   class type, or tag, then select and pilot camera to them. Use when AI needs to: (1) locate

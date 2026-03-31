@@ -1,6 +1,6 @@
 {
   "manifest_version": "1.0",
-  "name": "ue54_get_material_nodes",
+  "name": "ue57_get_material_nodes",
   "display_name": "Get Material Nodes",
   "description": "Get the blueprint node graph (expression nodes) of a UE Material. Traverses from material property inputs via BFS with safety limits. Returns node class, position, connections, and key properties.",
   "version": "1.0.0",
@@ -10,15 +10,20 @@
   "category": "material",
   "risk_level": "low",
   "dependencies": [],
-  "tags": ["material", "node-graph", "expression", "analysis"],
+  "tags": [
+    "material",
+    "node-graph",
+    "expression",
+    "analysis"
+  ],
   "entry_point": "__init__.py",
   "tools": [
     {
-      "name": "ue54_get_material_nodes",
+      "name": "ue57_get_material_nodes",
       "description": "Get all expression nodes of a Material asset. Provide material_path. Optional: max_depth (default 20), max_nodes (default 200)."
     }
   ],
   "software_version": {
-    "min": "5.4"
+    "min": "5.7"
   }
 }

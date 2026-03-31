@@ -1,6 +1,6 @@
 {
   "manifest_version": "1.0",
-  "name": "ue54_material_node_edit",
+  "name": "ue57_material_node_edit",
   "display_name": "Material Node Edit",
   "description": "Official ArtClaw skill for Material node graph write operations. Create, delete, connect, edit MaterialExpression nodes. Create new Material assets, set material properties, recompile with auto-validation.",
   "version": "1.1.0",
@@ -10,7 +10,15 @@
   "category": "material",
   "risk_level": "medium",
   "dependencies": [],
-  "tags": ["material", "node-graph", "expression", "create", "connect", "edit", "compile"],
+  "tags": [
+    "material",
+    "node-graph",
+    "expression",
+    "create",
+    "connect",
+    "edit",
+    "compile"
+  ],
   "entry_point": "__init__.py",
   "tools": [
     {
@@ -51,6 +59,6 @@
     }
   ],
   "software_version": {
-    "min": "5.4"
+    "min": "5.7"
   }
 }
