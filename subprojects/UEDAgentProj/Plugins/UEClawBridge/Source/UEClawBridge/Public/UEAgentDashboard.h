@@ -329,6 +329,15 @@ private:
 	/** 初始化首个会话条目 */
 	void InitFirstSession();
 
+	/** 恢复上次会话或创建新会话 */
+	void RestoreOrInitSession();
+
+	/** 保存当前会话状态到文件（析构时调用） */
+	void SaveLastSession();
+
+	/** 获取会话持久化文件路径 */
+	FString GetLastSessionFilePath() const;
+
 	/** 会话下拉按钮点击 */
 	FReply OnSessionMenuClicked();
 

@@ -24,8 +24,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	// 创建平台通信桥接 (当前: OpenClaw)
 	PlatformBridge = MakeShared<FOpenClawPlatformBridge>();
 
-	// 初始化会话名称标签 (任务 5.4) + 首个会话条目 (任务 5.8)
-	InitFirstSession();
+	// 恢复上次会话或创建新会话
+	RestoreOrInitSession();
 
 	// 加载缓存的 Agent 列表 (Agent 切换)
 	LoadCachedAgents();
@@ -516,6 +516,8 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 
 SUEAgentDashboard::~SUEAgentDashboard()
 {
+	// 保存当前会话状态 — 下次启动恢复
+	SaveLastSession();
 	// 停止聊天响应轮询 — 必须最先清理，防止 lambda 捕获的 Self 在析构后触发
 	if (PollTimerHandle.IsValid())
 	{

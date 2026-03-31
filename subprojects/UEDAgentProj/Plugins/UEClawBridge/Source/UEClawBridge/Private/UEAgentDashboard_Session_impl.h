@@ -1,6 +1,97 @@
 // Copyright ArtClaw Project. All Rights Reserved.
-// 会话管理模块 - 多会话切换、 历史记录加载
+// 会话管理模块 - 多会话切换、 历史记录加载、会话恢复
 // 所有 include 由 UEAgentDashboard.cpp 统一管理
+
+// ==================================================================
+// 会话持久化 — 重启恢复
+// ==================================================================
+
+FString SUEAgentDashboard::GetLastSessionFilePath() const
+{
+	return FPaths::ProjectSavedDir() / TEXT("UEAgent") / TEXT("_last_session.json");
+}
+
+void SUEAgentDashboard::SaveLastSession()
+{
+	// 获取当前 session key（如果 Python 端还活着的话）
+	FString SessionKey;
+	if (PlatformBridge.IsValid())
+	{
+		SessionKey = PlatformBridge->GetSessionKey();
+	}
+
+	// 如果没有 session key，也保存（恢复时会创建新会话）
+	TSharedRef<FJsonObject> JsonObj = MakeShared<FJsonObject>();
+	JsonObj->SetStringField(TEXT("session_key"), SessionKey);
+	JsonObj->SetStringField(TEXT("agent_id"), CurrentAgentId);
+	JsonObj->SetStringField(TEXT("session_label"), CurrentSessionLabel);
+
+	FString OutputStr;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputStr);
+	FJsonSerializer::Serialize(JsonObj, Writer);
+
+	FString FilePath = GetLastSessionFilePath();
+	FString Dir = FPaths::GetPath(FilePath);
+	IFileManager::Get().MakeDirectory(*Dir, true);
+	FFileHelper::SaveStringToFile(OutputStr, *FilePath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+}
+
+void SUEAgentDashboard::RestoreOrInitSession()
+{
+	FString FilePath = GetLastSessionFilePath();
+	FString JsonContent;
+
+	if (!FPaths::FileExists(FilePath) || !FFileHelper::LoadFileToString(JsonContent, *FilePath))
+	{
+		// 没有上次会话记录，走正常初始化
+		InitFirstSession();
+		return;
+	}
+
+	TSharedPtr<FJsonObject> JsonObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
+	if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
+	{
+		InitFirstSession();
+		return;
+	}
+
+	FString SavedKey   = JsonObj->GetStringField(TEXT("session_key"));
+	FString SavedAgent = JsonObj->GetStringField(TEXT("agent_id"));
+	FString SavedLabel = JsonObj->GetStringField(TEXT("session_label"));
+
+	if (SavedKey.IsEmpty())
+	{
+		// 没有有效 session key，走正常初始化
+		InitFirstSession();
+		return;
+	}
+
+	// 恢复 Agent ID
+	if (!SavedAgent.IsEmpty())
+	{
+		CurrentAgentId = SavedAgent;
+		PlatformBridge->SetAgentId(SavedAgent);
+	}
+
+	// 恢复 session key
+	PlatformBridge->SetSessionKey(SavedKey);
+
+	// 恢复 session label
+	CurrentSessionLabel = SavedLabel.IsEmpty()
+		? FUEAgentL10n::GetStr(TEXT("SessionLabel")) + TEXT(" (restored)")
+		: SavedLabel;
+
+	// 创建 session entry
+	FSessionEntry RestoredEntry;
+	RestoredEntry.SessionKey = SavedKey;
+	RestoredEntry.Label = CurrentSessionLabel;
+	RestoredEntry.CreatedAt = FDateTime::Now();
+	RestoredEntry.bIsActive = true;
+
+	SessionEntries.Add(MoveTemp(RestoredEntry));
+	ActiveSessionIndex = 0;
+}
 
 // ==================================================================
 // 多会话管理 (任务 5.8)
