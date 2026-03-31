@@ -1,3 +1,14 @@
+---
+name: artclaw-skill-manage
+description: >
+  Manage ArtClaw skills: list, execute, install, uninstall, update, sync, publish, rename,
+  and create new skills. Use when AI needs to: (1) install/uninstall/update skills,
+  (2) sync source vs runtime, (3) publish user skills to marketplace, (4) list available
+  skills and their info, (5) create new skills with AI-generated code, (6) rename or
+  reorganize skills. All operations via Python API in DCC (run_ue_python or run_python).
+  Replaces old MCP tools: skill_list, skill_manage, skill_generate.
+---
+
 # ArtClaw 技能管理
 
 创建、列出、执行、安装、卸载、同步、发布 ArtClaw 的 Skill 技能包。
@@ -247,7 +258,7 @@ publish_skill("ue54_my_tool", target_layer="marketplace",
 Skills/user/my_skill/
 ├── manifest.json    # 技能元数据（名称、描述、版本、依赖）
 ├── __init__.py      # 技能执行入口
-└── SKILL.md         # 技能说明文档（可选，用于 OpenClaw 匹配）
+└── SKILL.md         # 技能说明文档（必须，用于 OpenClaw 发现与匹配）
 ```
 
 ## Skill 命名规范
@@ -277,9 +288,61 @@ Skills/user/my_skill/
 
 1. `hub.auto_name(description)` 生成名称
 2. AI 生成 `__init__.py` + `manifest.json`
-3. 保存到 `Skills/user/<skill_name>/`
-4. Skill Hub 自动热加载
-5. 可选：在 `~/.openclaw/skills/` 创建 SKILL.md
+3. **必须**生成符合 OpenClaw 规范的 `SKILL.md`（见下方模板）
+4. 保存到 `Skills/user/<skill_name>/`
+5. Skill Hub 自动热加载
+6. 安装到 `~/.openclaw/skills/` 后，OpenClaw 自动发现
+
+### SKILL.md 规范（必须遵守）
+
+创建的 SKILL.md **必须**包含 YAML frontmatter，否则 OpenClaw 无法发现该 Skill，AI 也无法按需加载。
+
+**模板：**
+
+```markdown
+---
+name: my-skill-name
+description: >
+  一段完整的英文描述，说明 Skill 的功能和使用场景。必须包含 "Use when AI needs to:"
+  后跟编号列表，明确触发条件。例如：(1) create materials, (2) edit node graphs.
+  末尾加 "NOT for:" 说明不适用场景（可选但推荐）。
+  Requires UE Editor running with ArtClaw plugin.（如适用）
+---
+
+# Skill 标题（中文）
+
+简要说明...
+
+## 调用方式
+
+通过 MCP 工具 `run_ue_python`（UE）或 `run_python`（Maya/Max）执行 Python 代码。
+
+## 操作示例
+
+### 操作 1
+
+（Python 代码示例）
+
+### 操作 2
+
+（Python 代码示例）
+```
+
+**frontmatter 字段说明：**
+
+| 字段 | 必须 | 说明 |
+|------|:----:|------|
+| `name` | ✅ | kebab-case，与目录名对应（如 `artclaw-context`） |
+| `description` | ✅ | 英文，包含 "Use when AI needs to: (1)..." 格式的触发条件 |
+| `author` | 推荐 | 作者名 |
+| `software` | 推荐 | `universal` / `unreal_engine` / `maya` / `max`，默认 `universal` |
+| `version` | 推荐 | 语义版本号，如 `1.0.0` |
+
+**关键规则：**
+- description 必须是英文（OpenClaw 系统提示注入用）
+- description 必须包含 "Use when" 触发条件，否则 AI 不知道何时加载
+- description 建议 2-5 行，覆盖所有使用场景
+- SKILL.md 正文可以用中文，正文是 AI 加载后阅读的操作指南
 
 ## 旧名兼容映射
 

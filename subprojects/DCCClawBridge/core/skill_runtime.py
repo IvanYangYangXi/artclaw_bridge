@@ -59,7 +59,7 @@ class SkillRuntime:
         self._server = mcp_server
         self._adapter = adapter
         self._skills: Dict[str, SkillManifest] = {}
-        self._disabled: set = set()
+        self._disabled: set = self._load_disabled_skills()
 
         # skills 目录：配置驱动，统一使用平台已安装目录
         if skills_base_dir:
@@ -90,6 +90,27 @@ class SkillRuntime:
             except Exception:
                 pass
         return Path(os.path.expanduser("~/.openclaw/skills"))
+
+    @staticmethod
+    def _load_disabled_skills() -> set:
+        """从 ~/.artclaw/config.json 读取 disabled_skills 列表。
+
+        启动时恢复上次禁用的 Skill，确保禁用状态跨重启持久化。
+        """
+        try:
+            config_path = Path.home() / ".artclaw" / "config.json"
+            if not config_path.exists():
+                return set()
+            cfg = json.loads(config_path.read_text(encoding="utf-8"))
+            disabled = cfg.get("disabled_skills", [])
+            if isinstance(disabled, list):
+                result = set(disabled)
+                if result:
+                    logger.info(f"Loaded {len(result)} disabled skill(s) from config: {sorted(result)}")
+                return result
+        except Exception as e:
+            logger.warning(f"Failed to load disabled_skills from config: {e}")
+        return set()
 
     def scan_and_register(self) -> int:
         """扫描并注册所有 Skill，返回注册数量"""
@@ -133,7 +154,7 @@ class SkillRuntime:
             if manifest_path.exists():
                 try:
                     manifest = self._load_manifest(manifest_path, layer)
-                    if manifest and manifest.enabled:
+                    if manifest and manifest.enabled and manifest.name not in self._disabled:
                         self._register_skill(manifest)
                         count += 1
                 except Exception as e:

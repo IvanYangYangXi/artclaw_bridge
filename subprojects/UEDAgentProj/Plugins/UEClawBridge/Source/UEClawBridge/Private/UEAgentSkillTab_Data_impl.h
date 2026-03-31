@@ -18,36 +18,13 @@ static const TCHAR* SkillRefreshPyScript = TEXT(
 	"from skill_hub import get_skill_hub\n"
 	"import json, os, sys\n"
 	"\n"
-	"# 确保 skill_sync 可导入\n"
-	"py_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else ''\n"
-	"\n"
 	"hub = get_skill_hub()\n"
-	"skills = []\n"
-	"seen_names = set()\n"
-	"\n"
-	"# 1) skill_hub 代码包\n"
 	"if hub:\n"
-	"    for m in hub._all_manifests:\n"
-	"        if m.name in seen_names: continue\n"
-	"        seen_names.add(m.name)\n"
-	"        src_dir = getattr(m, 'source_dir', '')\n"
-	"        skills.append({\n"
-	"            'name': m.name,\n"
-	"            'display_name': getattr(m, 'display_name', m.name),\n"
-	"            'description': getattr(m, 'description', ''),\n"
-	"            'version': getattr(m, 'version', ''),\n"
-	"            'layer': getattr(m, 'source_layer', 'custom'),\n"
-	"            'software': getattr(m, 'software', 'universal'),\n"
-	"            'category': getattr(m, 'category', 'general'),\n"
-	"            'risk_level': getattr(m, 'risk_level', 'low'),\n"
-	"            'author': getattr(m, 'author', ''),\n"
-	"            'has_code': os.path.exists(os.path.join(str(src_dir), '__init__.py')) if src_dir else False,\n"
-	"            'has_skill_md': os.path.exists(os.path.join(str(src_dir), 'SKILL.md')) if src_dir else False,\n"
-	"            'install_status': 'full',\n"
-	"            'source_dir': str(src_dir) if src_dir else '',\n"
-	"        })\n"
+	"    hub.scan_and_register(metadata_only=True)  # 轻量重扫 manifest，不加载 Python 模块\n"
+	"skills = []\n"
+	"seen_names = set()  # 用目录名+manifest名双重去重\n"
 	"\n"
-	"# 2) 平台已安装 Skills 目录 (config 驱动)\n"
+	"# --- 加载配置 ---\n"
 	"_ac_cfg = {}\n"
 	"_ac_path = os.path.expanduser('~/.artclaw/config.json')\n"
 	"if os.path.exists(_ac_path):\n"
@@ -60,30 +37,85 @@ static const TCHAR* SkillRefreshPyScript = TEXT(
 	"    _defaults = {'openclaw': '~/.openclaw/skills', 'workbuddy': '~/.workbuddy/skills', 'claude': '~/.claude/skills'}\n"
 	"    _installed_path = _defaults.get(_pt, '~/.openclaw/skills')\n"
 	"oc_dir = os.path.expanduser(_installed_path)\n"
-	"if os.path.isdir(oc_dir):\n"
-	"    # 从项目源码判断 layer: 检查 official / marketplace 目录是否有同名 skill\n"
-	"    _project_root = _ac_cfg.get('project_root', '')\n"
-	"    _official_names = set()\n"
-	"    _marketplace_names = set()\n"
-	"    if _project_root and os.path.isdir(_project_root):\n"
+	"\n"
+	"# --- 项目源码 Skill 目录映射 (name -> {layer, path, dcc_subdir}) ---\n"
+	"_project_root = _ac_cfg.get('project_root', '')\n"
+	"_source_skill_map = {}  # skill_dir_name -> {layer, path, dcc}\n"
+	"_KNOWN_LAYERS = {'official', 'marketplace', 'user'}\n"
+	"if _project_root and os.path.isdir(_project_root):\n"
+	"    for _layer_name in ['official', 'marketplace']:\n"
 	"        for _subdir in ['universal', 'unreal', 'maya', 'max']:\n"
-	"            _odir = os.path.join(_project_root, 'skills', 'official', _subdir)\n"
-	"            if os.path.isdir(_odir):\n"
-	"                _official_names.update(os.listdir(_odir))\n"
-	"            _mdir = os.path.join(_project_root, 'skills', 'marketplace', _subdir)\n"
-	"            if os.path.isdir(_mdir):\n"
-	"                _marketplace_names.update(os.listdir(_mdir))\n"
+	"            _ldir = os.path.join(_project_root, 'skills', _layer_name, _subdir)\n"
+	"            if os.path.isdir(_ldir):\n"
+	"                for _sn in os.listdir(_ldir):\n"
+	"                    _sp = os.path.join(_ldir, _sn)\n"
+	"                    if os.path.isdir(_sp):\n"
+	"                        _source_skill_map[_sn] = {'layer': _layer_name, 'path': _sp, 'dcc': _subdir}\n"
+	"\n"
+	"# --- 名称别名映射 (旧名 -> 新名, 与 skill_hub._NAME_ALIAS_MAP 一致) ---\n"
+	"_ALIAS = {\n"
+	"    'artclaw_material': 'ue54_material_node_edit',\n"
+	"    'ue54_artclaw_material': 'ue54_material_node_edit',\n"
+	"    'get_material_nodes': 'ue54_get_material_nodes',\n"
+	"    'generate_material_documentation': 'ue54_generate_material_documentation',\n"
+	"}\n"
+	"\n"
+	"def _canonical(n):\n"
+	"    return _ALIAS.get(n, n)\n"
+	"\n"
+	"def _norm_layer(layer):\n"
+	"    \"\"\"非标准 layer 统一归为 platform\"\"\"\n"
+	"    return layer if layer in _KNOWN_LAYERS else 'platform'\n"
+	"\n"
+	"# 1) skill_hub 代码包（运行时已加载的 Skill）\n"
+	"if hub:\n"
+	"    for m in hub._all_manifests:\n"
+	"        cn = _canonical(m.name)\n"
+	"        if cn in seen_names: continue\n"
+	"        seen_names.add(cn)\n"
+	"        seen_names.add(m.name)  # 也加原名防重复\n"
+	"        src_dir = str(getattr(m, 'source_dir', '') or '')\n"
+	"        _layer = getattr(m, 'source_layer', 'custom')\n"
+	"        # 从项目源码提升 layer\n"
+	"        if cn in _source_skill_map:\n"
+	"            _layer = _source_skill_map[cn]['layer']\n"
+	"        _layer = _norm_layer(_layer)\n"
+	"        # installed_dir = 运行时路径, source_path = 项目源码路径\n"
+	"        _src_info = _source_skill_map.get(cn, {})\n"
+	"        # software: 项目源码 dcc 优先, 否则用 manifest 值\n"
+	"        _sw = _src_info.get('dcc', '') or getattr(m, 'software', 'universal')\n"
+	"        if _sw == 'unreal': _sw = 'unreal_engine'\n"
+	"        skills.append({\n"
+	"            'name': cn,\n"
+	"            'display_name': getattr(m, 'display_name', cn),\n"
+	"            'description': getattr(m, 'description', ''),\n"
+	"            'version': getattr(m, 'version', ''),\n"
+	"            'layer': _layer,\n"
+	"            'software': _sw,\n"
+	"            'category': getattr(m, 'category', 'general'),\n"
+	"            'risk_level': getattr(m, 'risk_level', 'low'),\n"
+	"            'author': getattr(m, 'author', ''),\n"
+	"            'has_code': os.path.exists(os.path.join(src_dir, '__init__.py')) if src_dir else False,\n"
+	"            'has_skill_md': os.path.exists(os.path.join(src_dir, 'SKILL.md')) if src_dir else False,\n"
+	"            'install_status': 'full',\n"
+	"            'installed_dir': src_dir,\n"
+	"            'source_dir': _src_info.get('path', ''),\n"
+	"        })\n"
+	"\n"
+	"# 2) 平台已安装 Skills 目录 (config 驱动)\n"
+	"if os.path.isdir(oc_dir):\n"
 	"    for name in sorted(os.listdir(oc_dir)):\n"
-	"        if name in seen_names: continue\n"
+	"        cn = _canonical(name)\n"
+	"        if cn in seen_names: continue\n"
 	"        sd = os.path.join(oc_dir, name)\n"
 	"        sm = os.path.join(sd, 'SKILL.md')\n"
 	"        if not os.path.isdir(sd) or not os.path.isfile(sm): continue\n"
+	"        seen_names.add(cn)\n"
 	"        seen_names.add(name)\n"
-	"        desc = ''; _author = ''\n"
+	"        desc = ''; _author = ''; _fm_software = ''\n"
 	"        try:\n"
 	"            with open(sm, 'r', encoding='utf-8') as f:\n"
 	"                _raw = f.read(4096)\n"
-	"            # 解析 YAML frontmatter (--- ... ---)\n"
 	"            if _raw.startswith('---'):\n"
 	"                _end = _raw.find('---', 3)\n"
 	"                if _end > 0:\n"
@@ -92,29 +124,40 @@ static const TCHAR* SkillRefreshPyScript = TEXT(
 	"                        _fl = _fl.strip()\n"
 	"                        if _fl.startswith('author:'):\n"
 	"                            _author = _fl[7:].strip()\n"
+	"                        elif _fl.startswith('software:'):\n"
+	"                            _fm_software = _fl[9:].strip()\n"
 	"                        elif _fl.startswith('description:') and not desc:\n"
 	"                            _dv = _fl[12:].strip()\n"
 	"                            if _dv and _dv != '>':\n"
 	"                                desc = _dv[:120]\n"
-	"            # fallback: 第一行非标题文本\n"
 	"            if not desc:\n"
 	"                for _fl in _raw.split('\\n'):\n"
 	"                    _fl = _fl.strip()\n"
 	"                    if _fl and not _fl.startswith('#') and not _fl.startswith('---'):\n"
 	"                        desc = _fl[:120]; break\n"
 	"        except: pass\n"
-	"        # 判断 layer: 优先匹配项目源码中的 official/marketplace\n"
-	"        _layer = 'platform'\n"
-	"        if name in _official_names:\n"
-	"            _layer = 'official'\n"
-	"        elif name in _marketplace_names:\n"
-	"            _layer = 'marketplace'\n"
+	"        _src_info = _source_skill_map.get(cn, _source_skill_map.get(name, {}))\n"
+	"        _layer = _src_info.get('layer', 'platform')\n"
+	"        _layer = _norm_layer(_layer)\n"
+	"        # software 优先级: frontmatter > 项目源码 dcc > 名称前缀推断 > universal\n"
+	"        _dcc = _fm_software or _src_info.get('dcc', '')\n"
+	"        if not _dcc:\n"
+	"            if cn.startswith('ue') and len(cn) > 2 and cn[2:3].isdigit():\n"
+	"                _dcc = 'unreal_engine'\n"
+	"            elif cn.startswith('maya'):\n"
+	"                _dcc = 'maya'\n"
+	"            elif cn.startswith('max'):\n"
+	"                _dcc = 'max'\n"
+	"            else:\n"
+	"                _dcc = 'universal'\n"
 	"        skills.append({\n"
-	"            'name': name, 'display_name': name, 'description': desc,\n"
-	"            'version': '', 'layer': _layer, 'software': 'universal',\n"
+	"            'name': cn, 'display_name': name, 'description': desc,\n"
+	"            'version': '', 'layer': _layer, 'software': _dcc,\n"
 	"            'category': 'general', 'risk_level': 'low', 'author': _author,\n"
 	"            'has_code': False, 'has_skill_md': True,\n"
-	"            'install_status': 'doc_only', 'source_dir': sd,\n"
+	"            'install_status': 'doc_only',\n"
+	"            'installed_dir': sd,\n"
+	"            'source_dir': _src_info.get('path', ''),\n"
 	"        })\n"
 	"\n"
 	"# 3) Phase 4: 未安装的 Skill (源码有但运行时没有)\n"
@@ -123,28 +166,29 @@ static const TCHAR* SkillRefreshPyScript = TEXT(
 	"    diff = compare_source_vs_runtime()\n"
 	"    if not diff.get('error'):\n"
 	"        for info in diff.get('available', []):\n"
-	"            n = info['name']\n"
+	"            n = _canonical(info['name'])\n"
 	"            if n in seen_names: continue\n"
 	"            seen_names.add(n)\n"
+	"            _raw_layer = info.get('layer', 'marketplace')\n"
 	"            skills.append({\n"
 	"                'name': n, 'display_name': n,\n"
 	"                'description': '',\n"
 	"                'version': info.get('version', ''),\n"
-	"                'layer': info.get('layer', 'marketplace'),\n"
+	"                'layer': _norm_layer(_raw_layer),\n"
 	"                'software': info.get('dcc', 'universal'),\n"
 	"                'category': 'general', 'risk_level': 'low',\n"
 	"                'has_code': info.get('has_code', False),\n"
 	"                'has_skill_md': info.get('has_skill_md', False),\n"
 	"                'install_status': 'not_installed',\n"
+	"                'installed_dir': '',\n"
 	"                'source_dir': info.get('path', ''),\n"
 	"            })\n"
-	"        # 标记可更新\n"
-	"        updatable_names = {i['name'] for i in diff.get('updatable', [])}\n"
+	"        updatable_names = {_canonical(i['name']) for i in diff.get('updatable', [])}\n"
 	"        for s in skills:\n"
 	"            if s['name'] in updatable_names:\n"
 	"                s['updatable'] = True\n"
 	"                for u in diff.get('updatable', []):\n"
-	"                    if u['name'] == s['name']:\n"
+	"                    if _canonical(u['name']) == s['name']:\n"
 	"                        s['source_version'] = u.get('version', '')\n"
 	"                        break\n"
 	"except Exception as e:\n"
@@ -209,7 +253,8 @@ void SUEAgentSkillTab::ParseSkillList(const FString& JsonStr)
 		Obj->TryGetBoolField(TEXT("has_code"), E->bHasCode);
 		Obj->TryGetBoolField(TEXT("has_skill_md"), E->bHasSkillMd);
 		Obj->TryGetBoolField(TEXT("updatable"), E->bUpdatable);
-		E->SourceDir = Obj->GetStringField(TEXT("source_dir"));
+		Obj->TryGetStringField(TEXT("source_dir"), E->SourceDir);
+		Obj->TryGetStringField(TEXT("installed_dir"), E->InstalledDir);
 
 		FString InstallStr = Obj->GetStringField(TEXT("install_status"));
 		// doc_only / full → Installed；not_installed → NotInstalled
@@ -217,9 +262,23 @@ void SUEAgentSkillTab::ParseSkillList(const FString& JsonStr)
 			? EInstallStatus::NotInstalled
 			: EInstallStatus::Installed;
 
-		Obj->TryGetStringField(TEXT("source_version"), E->SourcePath);
+		Obj->TryGetStringField(TEXT("source_version"), E->SourceVersion);
 
 		AllSkills.Add(E);
+	}
+
+	// 动态提取软件分类和层级列表（去重排序）
+	{
+		TSet<FString> SoftwareSet, LayerSet;
+		for (const auto& S : AllSkills)
+		{
+			if (!S->Software.IsEmpty()) SoftwareSet.Add(S->Software);
+			if (!S->Layer.IsEmpty()) LayerSet.Add(S->Layer);
+		}
+		DiscoveredSoftwareTypes = SoftwareSet.Array();
+		DiscoveredSoftwareTypes.Sort();
+		DiscoveredLayers = LayerSet.Array();
+		DiscoveredLayers.Sort();
 	}
 
 	ApplyFilters();
@@ -230,7 +289,20 @@ void SUEAgentSkillTab::ApplyFilters()
 	FilteredSkills.Empty();
 	for (const auto& S : AllSkills)
 	{
-		if (LayerFilter != TEXT("all") && S->Layer != LayerFilter) continue;
+		// Layer 筛选: "platform" 包含所有非 official/marketplace/user 的 layer
+		if (LayerFilter != TEXT("all"))
+		{
+			if (LayerFilter == TEXT("platform"))
+			{
+				if (S->Layer == TEXT("official") || S->Layer == TEXT("marketplace")
+					|| S->Layer == TEXT("user"))
+					continue;
+			}
+			else if (S->Layer != LayerFilter)
+			{
+				continue;
+			}
+		}
 
 		// 安装状态过滤
 		if (InstallFilter != TEXT("all"))
@@ -239,16 +311,22 @@ void SUEAgentSkillTab::ApplyFilters()
 			if (InstallFilter == TEXT("notinstalled") && S->InstallStatus != EInstallStatus::NotInstalled) continue;
 		}
 
+		// DCC/软件分类过滤（严格匹配，不混入通用）
 		if (DccFilter != TEXT("all"))
 		{
 			if (DccFilter == TEXT("unreal"))
 			{
-				if (S->Software != TEXT("unreal_engine") && S->Software != TEXT("universal")
-					&& S->Software != TEXT("unreal"))
+				if (S->Software != TEXT("unreal_engine") && S->Software != TEXT("unreal"))
 					continue;
 			}
+			else if (DccFilter == TEXT("universal"))
+			{
+				if (S->Software != TEXT("universal")) continue;
+			}
 			else if (S->Software != DccFilter)
+			{
 				continue;
+			}
 		}
 
 		// 搜索关键字过滤（名称 / DisplayName / 描述 不区分大小写）

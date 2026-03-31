@@ -219,10 +219,22 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("ManageDetailSkillMd"), TEXT("SKILL.md"),                  TEXT("SKILL.md"));
 	Reg(TEXT("ManageDetailPath"),    TEXT("文件路径"),                  TEXT("File Path"));
 	Reg(TEXT("ManageDetailAuthor"),  TEXT("作者"),                      TEXT("Author"));
+	Reg(TEXT("ManageDetailInstalledPath"), TEXT("安装路径"),            TEXT("Installed Path"));
+	Reg(TEXT("ManageDetailSourcePath"),    TEXT("源码路径"),            TEXT("Source Path"));
+	Reg(TEXT("ManageDetailSourceVer"),     TEXT("源码"),                TEXT("source"));
+	Reg(TEXT("ManageOpenInstalledDir"),    TEXT("打开安装目录"),        TEXT("Open Installed Dir"));
+	Reg(TEXT("ManageOpenSourceDir"),       TEXT("打开源码目录"),        TEXT("Open Source Dir"));
 	Reg(TEXT("ManageOpenPath"),      TEXT("打开所在目录"),              TEXT("Open in Explorer"));
 	Reg(TEXT("ManageDetailInstall"), TEXT("安装类型"),                  TEXT("Install Type"));
 	Reg(TEXT("ManageFilterLayer"),   TEXT("层级: "),                    TEXT("Layer: "));
 	Reg(TEXT("ManageFilterInstall"), TEXT("安装: "),                    TEXT("Install: "));
+	Reg(TEXT("ManageFilterDcc"),     TEXT("软件: "),                    TEXT("Software: "));
+	Reg(TEXT("ManageFilterDccAll"),  TEXT("全部"),                      TEXT("All"));
+	Reg(TEXT("ManageFilterDccUE"),   TEXT("UE"),                        TEXT("UE"));
+	Reg(TEXT("ManageFilterDccMaya"), TEXT("Maya"),                      TEXT("Maya"));
+	Reg(TEXT("ManageFilterDccMax"),  TEXT("Max"),                       TEXT("Max"));
+	Reg(TEXT("ManageFilterDccUniversal"), TEXT("通用"),                 TEXT("Universal"));
+	Reg(TEXT("ManageFilterNotInstalled"), TEXT("未安装"),               TEXT("Not Installed"));
 
 	// ==================================================================
 	// MCP 管理 (Phase 2 增强)
@@ -265,8 +277,10 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("ManageSyncBtn"),       TEXT("同步 ({0})"),                TEXT("Sync ({0})"));
 	Reg(TEXT("ManagePublishBtn"),    TEXT("发布"),                      TEXT("Pub"));
 	Reg(TEXT("ManagePublishTitle"),  TEXT("发布 Skill: {0}"),           TEXT("Publish Skill: {0}"));
-	Reg(TEXT("ManagePublishDesc"),   TEXT("将 {0} (v{1}) 发布到市集。选择版本号递增方式，填写变更说明后发布。"),
-	                                 TEXT("Publish {0} (v{1}) to marketplace. Choose version bump type and add changelog."));
+	Reg(TEXT("ManagePublishDesc"),   TEXT("将 {0} (v{1}) 发布到项目源码。选择目标层级、软件目录和版本号递增方式。"),
+	                                 TEXT("Publish {0} (v{1}) to project source. Choose target layer, software directory and version bump."));
+	Reg(TEXT("ManagePublishLayerLabel"), TEXT("目标层级:"),             TEXT("Target Layer:"));
+	Reg(TEXT("ManagePublishDccLabel"),   TEXT("软件目录:"),             TEXT("Software Directory:"));
 	Reg(TEXT("ManagePublishChangelogLabel"), TEXT("变更说明:"),         TEXT("Changelog:"));
 
 	// ==================================================================

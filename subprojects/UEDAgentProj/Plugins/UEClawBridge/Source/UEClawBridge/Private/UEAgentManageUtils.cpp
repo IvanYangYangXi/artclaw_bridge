@@ -42,7 +42,14 @@ FString FUEAgentManageUtils::RunPythonAndCapture(const FString& PythonCode)
 
 	FString ExecCmd = FString::Printf(
 		TEXT("exec(open(r'%s', encoding='utf-8').read())"), *TempPyFile);
-	IPythonScriptPlugin::Get()->ExecPythonCommand(*ExecCmd);
+
+	// 安全检查：引擎关闭时 Python 插件可能已卸载
+	IPythonScriptPlugin* PythonPlugin = IPythonScriptPlugin::Get();
+	if (!PythonPlugin || IsEngineExitRequested())
+	{
+		return TEXT("{}");
+	}
+	PythonPlugin->ExecPythonCommand(*ExecCmd);
 
 	FString Result;
 	if (FFileHelper::LoadFileToString(Result, *CaptureFile))

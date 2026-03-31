@@ -401,17 +401,19 @@ def sync_all() -> dict:
 # ============================================================================
 
 def publish_skill(skill_name: str, target_layer: str = "marketplace",
-                  bump: str = "patch", changelog: str = "") -> dict:
+                  bump: str = "patch", changelog: str = "",
+                  dcc: str = "") -> dict:
     """
-    发布 Skill：从当前层搬到目标层 + 同步到项目源码 + git commit。
+    发布 Skill：版本号递增 + 同步到项目源码 + 更新安装目录 + git commit。
 
-    搬家语义：运行时只保留一份。
+    不搬运行时目录（运行时统一扁平结构），只更新 manifest 和同步到项目源码。
 
     Args:
         skill_name: Skill 名称
         target_layer: "marketplace" 或 "official"
         bump: "patch" / "minor" / "major"
         changelog: 变更说明
+        dcc: 目标软件目录 ("universal"/"unreal"/"maya"/"max")，空则自动推断
 
     返回: {"ok": bool, "message": str, "new_version": str}
     """
@@ -424,63 +426,70 @@ def publish_skill(skill_name: str, target_layer: str = "marketplace",
         return {"ok": False, "message": f"运行时找不到: {skill_name}", "new_version": ""}
 
     info = runtime[skill_name]
-    src_layer = info["layer"]
     runtime_path = Path(info["path"])
 
-    # 检查层级合法性
-    if target_layer == "official" and src_layer not in ("marketplace", "user", "custom"):
-        return {"ok": False, "message": f"不能从 {src_layer} 直接发布到 official",
-                "new_version": ""}
-    if target_layer == "marketplace" and src_layer not in ("user", "custom"):
-        return {"ok": False, "message": f"不能从 {src_layer} 发布到 marketplace（已在更高层级）",
-                "new_version": ""}
+    # DCC 目录：优先使用用户选择，否则自动推断
+    target_dcc = dcc if dcc else _infer_dcc_from_name(skill_name)
 
     # 版本号递增
     old_version = info["version"] or "0.0.0"
     new_version = _bump_version(old_version, bump)
 
     try:
-        # 1. 更新 manifest 版本号
+        # 1. 更新运行时 manifest 版本号
         manifest_path = runtime_path / "manifest.json"
+        manifest = {}
         if manifest_path.exists():
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            manifest["version"] = new_version
-            manifest_path.write_text(
-                json.dumps(manifest, indent=2, ensure_ascii=False),
-                encoding="utf-8")
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        manifest["version"] = new_version
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False),
+            encoding="utf-8")
 
-        # 2. 运行时：搬家到目标层
-        target_runtime_path = _get_runtime_skills_dir() / target_layer / skill_name
-        target_runtime_path.parent.mkdir(parents=True, exist_ok=True)
-        if target_runtime_path.exists():
-            shutil.rmtree(target_runtime_path)
-        shutil.move(str(runtime_path), str(target_runtime_path))
-        UELogger.info(f"Skill moved: {src_layer}/{skill_name} → {target_layer}/{skill_name}")
+        # 2. 确定目标路径 & 清理项目源码中旧位置（如果换了层级或 DCC 目录）
+        source_target = project_root / "skills" / target_layer / target_dcc / skill_name
+        skills_root = project_root / "skills"
+        for layer_name in ("official", "marketplace"):
+            for dcc_name in ("universal", "unreal", "maya", "max"):
+                old_path = skills_root / layer_name / dcc_name / skill_name
+                if old_path.exists() and old_path != source_target:
+                    shutil.rmtree(old_path)
+                    UELogger.info(f"Removed old source: {layer_name}/{dcc_name}/{skill_name}")
 
-        # 3. 复制到项目源码
-        # 推断 DCC 类型
-        dcc = _infer_dcc_from_name(skill_name)
-        source_target = project_root / "skills" / target_layer / dcc / skill_name
+        # 3. 同步到项目源码（目标层 + DCC 目录）
         source_target.parent.mkdir(parents=True, exist_ok=True)
         if source_target.exists():
             shutil.rmtree(source_target)
-        shutil.copytree(target_runtime_path, source_target)
+        shutil.copytree(
+            runtime_path, source_target,
+            ignore=shutil.ignore_patterns("__pycache__"),
+        )
+        UELogger.info(f"Skill published to source: {target_layer}/{target_dcc}/{skill_name} v{new_version}")
 
-        # 4. 更新平台已安装 Skills 目录
-        skill_md = target_runtime_path / "SKILL.md"
-        if skill_md.exists():
-            oc_dir = _get_openclaw_skills_dir() / skill_name
+        # 4. 更新平台已安装 Skills 目录（SKILL.md + 代码）
+        oc_dir = _get_openclaw_skills_dir() / skill_name
+        if oc_dir != runtime_path:
             oc_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(skill_md, oc_dir / "SKILL.md")
+            # 同步整个目录内容
+            if oc_dir.exists():
+                shutil.rmtree(oc_dir)
+            shutil.copytree(
+                runtime_path, oc_dir,
+                ignore=shutil.ignore_patterns("__pycache__"),
+            )
 
-        # 5. git add + commit（如果在 git 仓库中）
-        _git_commit(project_root, skill_name, target_layer, new_version, changelog)
+        # 5. git add + commit
+        _git_commit(project_root, skill_name, target_layer, new_version, changelog,
+                    dcc=target_dcc)
 
         _notify_skill_hub()
 
         return {
             "ok": True,
-            "message": f"已发布: {skill_name} v{new_version} → {target_layer}",
+            "message": f"已发布: {skill_name} v{new_version} → {target_layer}/{target_dcc}",
             "new_version": new_version,
         }
     except Exception as e:
@@ -522,12 +531,13 @@ def _infer_dcc_from_name(skill_name: str) -> str:
 
 
 def _git_commit(project_root: Path, skill_name: str, layer: str,
-                version: str, changelog: str) -> None:
+                version: str, changelog: str, dcc: str = "") -> None:
     """尝试 git add + commit"""
     import subprocess
     try:
-        skill_rel = f"skills/{layer}/{_infer_dcc_from_name(skill_name)}/{skill_name}"
-        msg = f"skill: publish {skill_name} v{version} to {layer}"
+        target_dcc = dcc if dcc else _infer_dcc_from_name(skill_name)
+        skill_rel = f"skills/{layer}/{target_dcc}/{skill_name}"
+        msg = f"skill: publish {skill_name} v{version} to {layer}/{target_dcc}"
         if changelog:
             msg += f"\n\n{changelog}"
 

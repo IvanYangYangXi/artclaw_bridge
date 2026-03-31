@@ -333,7 +333,7 @@ class SkillHub:
         self._manifests: Dict[str, SkillManifest] = {}  # skill_name -> manifest
         self._all_manifests: List[SkillManifest] = []  # 所有发现的 manifest (含冲突)
         self._conflict_report: Optional[ConflictReport] = None
-        self._disabled_skills: Set[str] = set()  # 被禁用的 Skill 名称
+        self._disabled_skills: Set[str] = self._load_disabled_skills()
         self._conflict_detector = ConflictDetector(self._disabled_skills)
 
         # 软件环境信息
@@ -362,6 +362,27 @@ class SkillHub:
     # ------------------------------------------------------------------
     # 初始化辅助
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _load_disabled_skills() -> Set[str]:
+        """从 ~/.artclaw/config.json 读取 disabled_skills 列表。
+
+        启动时恢复上次禁用的 Skill，确保禁用状态跨重启持久化。
+        """
+        try:
+            config_path = Path.home() / ".artclaw" / "config.json"
+            if not config_path.exists():
+                return set()
+            cfg = json.loads(config_path.read_text(encoding="utf-8"))
+            disabled = cfg.get("disabled_skills", [])
+            if isinstance(disabled, list):
+                result = set(disabled)
+                if result:
+                    UELogger.info(f"SkillHub: loaded {len(result)} disabled skill(s) from config: {sorted(result)}")
+                return result
+        except Exception as e:
+            UELogger.info(f"SkillHub: failed to load disabled_skills from config: {e}")
+        return set()
 
     def _detect_ue_version(self) -> str:
         """检测当前 UE 版本"""
@@ -432,7 +453,7 @@ class SkillHub:
     # 公开接口
     # ------------------------------------------------------------------
 
-    def scan_and_register(self) -> int:
+    def scan_and_register(self, metadata_only: bool = False) -> int:
         """
         分层扫描 Skills/ 目录，发现、验证并注册所有 Skill。
 
@@ -442,6 +463,9 @@ class SkillHub:
           3. 验证软件版本兼容性
           4. 检测冲突并按优先级解决
           5. 加载 Python 模块并注册到 MCP Server
+
+        Args:
+            metadata_only: 仅扫描 manifest 不加载 Python 模块（管理面板刷新用）
 
         Returns:
             注册的 Skill 数量
@@ -496,7 +520,14 @@ class SkillHub:
                     f"(for {m.software}, current: {self._current_software})"
                 )
 
-        # 阶段 4: 加载 Python 模块并注册
+        # 阶段 4: 加载 Python 模块并注册（metadata_only 模式跳过）
+        if metadata_only:
+            UELogger.info(
+                f"SkillHub: metadata-only scan complete, "
+                f"{len(self._all_manifests)} skill(s) discovered"
+            )
+            return len(self._all_manifests)
+
         new_skills = 0
         for manifest in compatible:
             try:
@@ -656,6 +687,11 @@ class SkillHub:
             return None
 
         fm_name = fm["name"].replace("-", "_")  # OpenClaw 用 kebab-case，我们用 snake_case
+        # 优先使用目录名作为规范名（frontmatter name 可能和目录名不同，如 get_material_nodes vs ue54_get_material_nodes）
+        # 这样 seen_names 去重能正确匹配目录名，避免同一 Skill 出现两条
+        canonical_name = skill_dir.name
+        if _NAME_ALIAS_MAP.get(fm_name) == canonical_name or fm_name != canonical_name:
+            fm_name = canonical_name
         fm_desc = fm.get("description", "")
 
         # 扫描 __init__.py 中的 @ue_tool 装饰器（AST 静态分析，不执行）
@@ -672,6 +708,18 @@ class SkillHub:
         metadata = fm.get("metadata", {})
         oc_meta = metadata.get("openclaw", {}) if isinstance(metadata, dict) else {}
 
+        # 推断 software: frontmatter > 名称前缀 > 默认 universal
+        _software = fm.get("software", "")
+        if not _software:
+            if fm_name.startswith("ue") and len(fm_name) > 2 and fm_name[2:3].isdigit():
+                _software = "unreal_engine"
+            elif fm_name.startswith("maya"):
+                _software = "maya"
+            elif fm_name.startswith("max"):
+                _software = "max"
+            else:
+                _software = "universal"
+
         # 构建 SkillManifest
         from skill_manifest import SkillManifest, ToolEntry, SoftwareVersion
         manifest = SkillManifest(
@@ -680,9 +728,9 @@ class SkillHub:
             display_name=fm.get("display_name", fm_name.replace("_", " ").title()),
             description=fm_desc,
             version=fm.get("version", "1.0.0"),
-            author=fm.get("author", "Unknown"),
+            author=fm.get("author", ""),
             license=fm.get("license", "MIT"),
-            software=fm.get("software", "unreal_engine"),
+            software=_software,
             category=fm.get("category", "utils"),
             risk_level=fm.get("risk_level", "low"),
             dependencies=[],
@@ -697,6 +745,10 @@ class SkillHub:
         """
         加载一个 Skill 的 Python 模块并注册所有 Tool 到 MCP。
 
+        纯 SKILL.md 格式的 Skill（无 __init__.py）会跳过 Python 模块加载，
+        仅保留 manifest 用于管理面板展示。这类 Skill 通过 OpenClaw SKILL.md
+        按需指导 AI 调用 run_python，不需要本地 Python 代码。
+
         Args:
             manifest: 已验证的 SkillManifest
         """
@@ -704,7 +756,12 @@ class SkillHub:
         entry_file = skill_dir / manifest.entry_point
 
         if not entry_file.exists():
-            raise FileNotFoundError(f"Entry point not found: {entry_file}")
+            # 纯 SKILL.md 格式：无 Python 代码，跳过模块加载
+            UELogger.info(
+                f"  Skill {manifest.name}: no entry point, "
+                f"SKILL.md-only (skipping Python load)"
+            )
+            return
 
         module_name = f"ue_skill_{manifest.name}"
 

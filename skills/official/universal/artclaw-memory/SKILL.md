@@ -1,3 +1,13 @@
+---
+name: artclaw-memory
+description: >
+  Manage ArtClaw's memory system: store/get/search/list/delete user preferences, operation
+  history, project conventions, and user habits. Use when AI needs to: (1) remember user
+  preferences or conventions, (2) check operation history (what was done before), (3) store
+  lessons learned from errors, (4) maintain and compact memory tiers. Replaces old MCP tool:
+  memory (7 actions: store/get/search/list/delete/check_operation/maintain).
+---
+
 # ArtClaw 记忆管理
 
 记住用户偏好、操作历史、项目规范、用户习惯，管理和维护 ArtClaw 的记忆系统。

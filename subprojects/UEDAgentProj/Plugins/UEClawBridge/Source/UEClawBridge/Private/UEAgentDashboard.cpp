@@ -4,6 +4,7 @@
 #include "UEAgentSubsystem.h"
 #include "UEAgentLocalization.h"
 #include "UEAgentManagePanel.h"
+#include "UEAgentManageUtils.h"
 #include "IAgentPlatformBridge.h"
 #include "OpenClawPlatformBridge.h"
 #include "Editor.h"

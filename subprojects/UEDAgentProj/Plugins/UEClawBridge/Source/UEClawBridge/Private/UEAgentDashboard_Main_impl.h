@@ -423,9 +423,27 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				{
 					return true; // connected 字段缺失，跳过本次（文件可能正在被写入）
 				}
-				bool bMcpReady = false;
-				JsonObj->TryGetBoolField(TEXT("mcp_ready"), bMcpReady);
-				Self->bCachedMcpReady = bMcpReady;
+
+				// MCP 状态: 直接查询 Python MCP Server 运行状态（不依赖文件，更可靠）
+				// 每 2 秒随 BridgeStatusPoll 执行，开销极低（纯内存查询）
+				{
+					FString McpCheck = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
+						"try:\n"
+						"    from mcp_server import get_mcp_server\n"
+						"    s = get_mcp_server()\n"
+						"    _result = {'mcp_ready': bool(s and s.is_running)}\n"
+						"except:\n"
+						"    _result = {'mcp_ready': False}\n"
+					));
+					TSharedPtr<FJsonObject> McpObj;
+					TSharedRef<TJsonReader<>> McpReader = TJsonReaderFactory<>::Create(McpCheck);
+					if (FJsonSerializer::Deserialize(McpReader, McpObj) && McpObj.IsValid())
+					{
+						bool bMcpReady = false;
+						McpObj->TryGetBoolField(TEXT("mcp_ready"), bMcpReady);
+						Self->bCachedMcpReady = bMcpReady;
+					}
+				}
 
 				// Connect 成功后的宽限期内，忽略 connected=false（防止旧值覆盖）
 				if (!bConnected && Self->ConnectGraceUntil > 0.0

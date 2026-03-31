@@ -38,9 +38,9 @@ private:
 		bool bHasCode = false;
 		bool bHasSkillMd = false;
 		EInstallStatus InstallStatus = EInstallStatus::Installed;
-		FString SourceDir;
-		FString RuntimeVersion;
-		FString SourcePath;
+		FString SourceDir;      // 项目源码路径
+		FString InstalledDir;   // 安装运行时路径
+		FString SourceVersion;  // 源码版本号（可更新时有值）
 		bool bUpdatable = false;
 	};
 	typedef TSharedPtr<FSkillEntry> FSkillEntryPtr;
@@ -78,6 +78,11 @@ private:
 	FString DccFilter       = TEXT("all");
 	FString InstallFilter   = TEXT("all");  // "all" / "installed" / "notinstalled"
 	FString SearchKeyword;   // 搜索关键字（空 = 不过滤）
+
+	/** 从数据中动态提取的软件分类列表（去重排序） */
+	TArray<FString> DiscoveredSoftwareTypes;
+	/** 从数据中动态提取的层级列表（去重排序） */
+	TArray<FString> DiscoveredLayers;
 
 	void ApplyFilters();
 

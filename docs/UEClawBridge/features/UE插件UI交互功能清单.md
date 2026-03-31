@@ -256,13 +256,22 @@
 ## 十三、Skill 与 MCP 管理面板
 
 ### 13.1 Skill 管理
-- **三层展示**: 按来源分类显示
+- **分层展示**: 按来源分类显示
   - official: 官方内置 Skill
   - marketplace: 社区共享 Skill
   - user: 用户自定义 Skill
+  - platform: 其他平台 Skill（不属于以上三类的统一归此）
 - **操作**: 启用/禁用/钉选常用 Skill
-- **筛选**: 按层级分类筛选 Skill 列表
-- **详情**: 点击查看 Skill 详细信息弹窗
+- **筛选**:
+  - 层级筛选行: 全部/官方/市集/用户/其他平台 + 未安装切换按钮
+  - 软件分类筛选行: 全部/UE/Maya/Max/通用
+  - 搜索框: 名称/描述模糊匹配
+- **列表行**: DisplayName + Version + Author（同行）, 第二行 Skill ID
+- **详情弹窗**:
+  - 安装路径 + 源码路径（分别显示，路径为空时标 "-"）
+  - 版本不同时显示: `v0.3.0 (源码: v0.4.0)`
+  - 两个"打开目录"按钮: 打开安装目录 / 打开源码目录
+- **去重**: Skill 名称别名映射（旧名→新名），frontmatter name 与目录名不一致时以目录名为准
 
 ### 13.2 Skill 生命周期
 - **创建**: 通过 AI 对话式引导创建新 Skill
@@ -310,7 +319,9 @@
 | IAgentPlatformBridge.h | 平台通信接口 |
 | OpenClawPlatformBridge.h/cpp | OpenClaw 实现 |
 | UEAgentManagePanel.h/cpp | 管理面板入口 |
-| UEAgentSkillTab.h/cpp | Skill 管理面板 |
+| UEAgentSkillTab.h/cpp | Skill 管理面板（UI 构建 + 行渲染） |
+| UEAgentSkillTab_Data_impl.h | Skill 数据刷新与解析（Python 脚本 + JSON 解析 + 筛选） |
+| UEAgentSkillTab_Actions_impl.h | Skill 操作方法（详情/启用/安装/发布等） |
 | UEAgentMcpTab.h/cpp | MCP 管理面板 |
 
 ---

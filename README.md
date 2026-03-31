@@ -83,7 +83,7 @@ artclaw_bridge/
 ├── platforms/                       # 🌐 平台 Bridge 子项目（可替换）
 │   ├── openclaw/                    #    OpenClaw 适配（gateway/ + config/ + bridge）
 │   └── claude/                      #    Claude Desktop 适配（stdio→WS 桥接 POC）
-├── mcp_servers/                     # 📡 MCP Server 配置模板
+├── mcp_configs/                     # 📡 MCP Server 配置模板
 │   └── official/                    #    ue/maya/max-editor-agent 注册配置
 ├── subprojects/                     # 💻 DCC 插件子项目
 │   ├── UEDAgentProj/                #    ✅ Unreal Engine 工程

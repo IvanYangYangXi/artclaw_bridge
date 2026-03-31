@@ -1,3 +1,13 @@
+---
+name: artclaw-context
+description: >
+  Query DCC editor context: current selection, scene info, level/file name, viewport camera,
+  object counts. Use when AI needs to: (1) get selected objects, (2) get scene overview,
+  (3) check current level/file, (4) inspect viewport state. Works with UE (run_ue_python),
+  Maya and Max (run_python). Replaces old MCP tools: get_editor_context, get_selected_objects,
+  get_scene_info.
+---
+
 # ArtClaw 编辑器上下文查询
 
 获取当前编辑器状态、选中对象、场景信息、关卡/文件名、视口信息、对象数量等。

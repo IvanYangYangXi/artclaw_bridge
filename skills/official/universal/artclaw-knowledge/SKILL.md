@@ -1,3 +1,12 @@
+---
+name: artclaw-knowledge
+description: >
+  Search ArtClaw local knowledge base for UE/Maya/Max API docs, code examples, naming
+  conventions, and best practices. Use when AI needs to: (1) look up correct API usage
+  before writing code, (2) find code examples for specific operations, (3) check naming
+  conventions or project standards. Replaces old MCP tool: knowledge_search.
+---
+
 # ArtClaw 知识库搜索
 
 搜索 UE/Maya/Max API 文档、代码示例、命名规范等技术知识库，在写代码前先查正确用法。

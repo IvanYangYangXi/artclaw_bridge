@@ -259,6 +259,11 @@ class DCCBridgeManager:
         except Exception:
             pass
 
+        # Pinned Skills 提示
+        pinned_hint = self._build_pinned_hint()
+        if pinned_hint:
+            prefix_parts.append(pinned_hint)
+
         if prefix_parts:
             prefix = "\n\n".join(prefix_parts)
             return f"{prefix}\n\n[User Message]\n{message}"
@@ -300,6 +305,27 @@ class DCCBridgeManager:
     def _on_ai_thinking(self, state: str, text: str):
         if self.signals:
             self.signals.ai_thinking.emit(state, text)
+
+    @staticmethod
+    def _build_pinned_hint() -> str:
+        """读取 pinned_skills，生成一句自然语言提示告诉 AI 优先使用这些 Skill。"""
+        try:
+            import json as _json
+            config_path = os.path.join(os.path.expanduser("~"), ".artclaw", "config.json")
+            if not os.path.exists(config_path):
+                return ""
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = _json.load(f)
+            pinned = cfg.get("pinned_skills", [])
+            if not pinned:
+                return ""
+            names = ", ".join(pinned[:5])
+            return (
+                f"[Pinned Skills] 用户钉选了以下技能: {names}。"
+                f"当用户请求涉及这些技能的功能时，请优先加载并按照对应 Skill 的操作指南执行。"
+            )
+        except Exception:
+            return ""
 
 
 # ---------------------------------------------------------------------------

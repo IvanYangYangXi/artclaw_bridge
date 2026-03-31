@@ -92,15 +92,51 @@ def _build_context_prefix() -> str:
                 lines.append(briefing)
     except Exception:
         pass
+
     return "\n".join(lines)
 
 
+def _build_pinned_hint() -> str:
+    """读取 pinned_skills，生成一句自然语言提示告诉 AI 优先使用这些 Skill。"""
+    try:
+        config_path = os.path.join(os.path.expanduser("~"), ".artclaw", "config.json")
+        if not os.path.exists(config_path):
+            return ""
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        pinned = cfg.get("pinned_skills", [])
+        if not pinned:
+            return ""
+        names = ", ".join(pinned[:5])
+        return (
+            f"[Pinned Skills] 用户钉选了以下技能: {names}。"
+            f"当用户请求涉及这些技能的功能时，请优先加载并按照对应 Skill 的操作指南执行。"
+        )
+    except Exception:
+        return ""
+
+
 def _enrich(message: str) -> str:
+    """为用户消息注入上下文。
+
+    - DCC Context + Memory Briefing: 仅首条消息注入（不变化的静态信息）
+    - Pinned Skills 提示: 每条消息都注入（用户可能中途钉/取消钉）
+    """
     global _context_injected
-    if _context_injected:
-        return message
-    _context_injected = True
-    return _build_context_prefix() + "\n\n" + message
+    parts = []
+
+    if not _context_injected:
+        _context_injected = True
+        parts.append(_build_context_prefix())
+
+    # Pinned hint 每条消息都实时读取（轻量，一句话）
+    pinned_hint = _build_pinned_hint()
+    if pinned_hint:
+        parts.append(pinned_hint)
+
+    if parts:
+        return "\n\n".join(parts) + "\n\n" + message
+    return message
 
 
 # ---------------------------------------------------------------------------

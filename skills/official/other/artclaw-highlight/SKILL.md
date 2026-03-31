@@ -1,3 +1,13 @@
+---
+name: artclaw-highlight
+description: >
+  Highlight, select, and focus actors in UE Editor viewport. Find actors by name, keyword,
+  class type, or tag, then select and pilot camera to them. Use when AI needs to: (1) locate
+  specific actors in the scene, (2) highlight/select multiple actors by filter, (3) focus
+  viewport on a target actor. UE only (Maya/Max have no equivalent highlight API).
+  Replaces old MCP tool: highlight_actors.
+---
+
 # ArtClaw Actor 高亮与定位
 
 在 UE 编辑器中高亮、选中、聚焦指定 Actor，快速定位场景中的对象。
