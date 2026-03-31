@@ -454,6 +454,9 @@ private:
 	/** 当前 Agent ID */
 	FString CurrentAgentId;
 
+	/** 按 Agent ID 缓存的会话列表 — 切换 Agent 时保存/恢复，不丢失会话 */
+	TMap<FString, TArray<FSessionEntry>> AgentSessionCache;
+
 	/** Agent 列表容器 (设置面板中) */
 	TSharedPtr<SVerticalBox> AgentListBox;
 

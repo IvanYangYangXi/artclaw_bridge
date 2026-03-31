@@ -450,15 +450,73 @@ void SUEAgentDashboard::OnAgentSelected(const FString& AgentId)
 		return; // 已经是当前 Agent
 	}
 
+	// --- 保存当前 Agent 的会话到缓存 ---
+	if (!CurrentAgentId.IsEmpty())
+	{
+		// 先把当前消息存入活跃 session entry
+		if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
+		{
+			FString CurrentKey = PlatformBridge->GetSessionKey();
+			if (!CurrentKey.IsEmpty())
+			{
+				SessionEntries[ActiveSessionIndex].SessionKey = CurrentKey;
+			}
+			SessionEntries[ActiveSessionIndex].CachedMessages = Messages;
+		}
+		AgentSessionCache.Add(CurrentAgentId, SessionEntries);
+	}
+
 	// 通过平台桥接切换 Agent
 	PlatformBridge->SetAgentId(AgentId);
+	FString PreviousAgentId = CurrentAgentId;
 	CurrentAgentId = AgentId;
 
-	// 清空所有会话（Agent 切换后旧 session 不再有效）
-	SessionEntries.Empty();
-	Messages.Empty();
-	RebuildMessageList();
-	InitFirstSession();
+	// --- 恢复目标 Agent 的会话 ---
+	TArray<FSessionEntry>* CachedSessions = AgentSessionCache.Find(AgentId);
+	if (CachedSessions && CachedSessions->Num() > 0)
+	{
+		// 恢复缓存的会话列表
+		SessionEntries = *CachedSessions;
+
+		// 找到之前活跃的 session（或默认最后一个）
+		ActiveSessionIndex = SessionEntries.Num() - 1;
+		for (int32 i = 0; i < SessionEntries.Num(); ++i)
+		{
+			if (SessionEntries[i].bIsActive)
+			{
+				ActiveSessionIndex = i;
+				break;
+			}
+		}
+		SessionEntries[ActiveSessionIndex].bIsActive = true;
+		CurrentSessionLabel = SessionEntries[ActiveSessionIndex].Label;
+
+		// 恢复消息
+		if (SessionEntries[ActiveSessionIndex].CachedMessages.Num() > 0)
+		{
+			Messages = SessionEntries[ActiveSessionIndex].CachedMessages;
+		}
+		else
+		{
+			Messages.Empty();
+		}
+		RebuildMessageList();
+
+		// 恢复 Python 端的 session key
+		FString RestoredKey = SessionEntries[ActiveSessionIndex].SessionKey;
+		if (!RestoredKey.IsEmpty())
+		{
+			PlatformBridge->SetSessionKey(RestoredKey);
+		}
+	}
+	else
+	{
+		// 目标 Agent 无缓存 — 创建新会话
+		SessionEntries.Empty();
+		Messages.Empty();
+		RebuildMessageList();
+		InitFirstSession();
+	}
 
 	// 重置 token usage
 	LastTotalTokens = 0;
