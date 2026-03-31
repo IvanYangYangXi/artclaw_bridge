@@ -436,7 +436,7 @@ def publish_skill(skill_name: str, target_layer: str = "marketplace",
     new_version = _bump_version(old_version, bump)
 
     try:
-        # 1. 更新运行时 manifest 版本号
+        # 1. 更新运行时 manifest 版本号（保留已有字段，补全缺失字段）
         manifest_path = runtime_path / "manifest.json"
         manifest = {}
         if manifest_path.exists():
@@ -444,6 +444,12 @@ def publish_skill(skill_name: str, target_layer: str = "marketplace",
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             except Exception:
                 pass
+
+        # 如果 manifest 不完整（缺少 manifest_version 等必需字段），
+        # 尝试从 SKILL.md frontmatter 补全
+        if not manifest.get("manifest_version"):
+            manifest = _build_manifest_from_skill_md(runtime_path, manifest)
+
         manifest["version"] = new_version
         manifest_path.write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False),
@@ -528,6 +534,73 @@ def _infer_dcc_from_name(skill_name: str) -> str:
         return "max"
     else:
         return "universal"
+
+
+def _build_manifest_from_skill_md(skill_dir: Path, existing: dict) -> dict:
+    """
+    从 SKILL.md frontmatter 构建完整 manifest，保留 existing 中已有的字段。
+
+    用于 publish_skill 场景：运行时 manifest.json 只有 version 字段，
+    需要从 SKILL.md 补全其他必需字段。
+
+    Args:
+        skill_dir: Skill 目录路径
+        existing: 已有的 manifest 字典（可能不完整）
+
+    Returns:
+        补全后的 manifest 字典
+    """
+    from skill_hub import _parse_yaml_frontmatter
+
+    skill_md_path = skill_dir / "SKILL.md"
+    if not skill_md_path.exists():
+        return existing
+
+    try:
+        content = skill_md_path.read_text(encoding="utf-8")
+    except Exception:
+        return existing
+
+    fm = _parse_yaml_frontmatter(content)
+    if not fm:
+        return existing
+
+    skill_name = skill_dir.name
+    fm_name = fm.get("name", skill_name).replace("-", "_")
+
+    # 推断 software
+    _software = fm.get("software", "")
+    if not _software:
+        if fm_name.startswith("ue") and len(fm_name) > 2 and fm_name[2:3].isdigit():
+            _software = "unreal_engine"
+        elif fm_name.startswith("maya"):
+            _software = "maya"
+        elif fm_name.startswith("max"):
+            _software = "3ds_max"
+        else:
+            _software = "universal"
+
+    # 构建完整 manifest，existing 的值优先
+    full = {
+        "manifest_version": "1.0",
+        "name": fm_name,
+        "display_name": fm.get("display_name", fm_name.replace("_", " ").title()),
+        "description": fm.get("description", ""),
+        "version": existing.get("version", fm.get("version", "1.0.0")),
+        "author": fm.get("author", "ArtClaw"),
+        "software": _software,
+        "category": fm.get("category", "utils"),
+        "risk_level": fm.get("risk_level", "low"),
+        "entry_point": "__init__.py",
+        "tools": [{"name": fm_name, "description": fm.get("description", "")}],
+    }
+
+    # existing 中已有的字段覆盖默认值
+    for key, val in existing.items():
+        if val and key != "version":  # version 由 bump 逻辑控制
+            full[key] = val
+
+    return full
 
 
 def _git_commit(project_root: Path, skill_name: str, layer: str,

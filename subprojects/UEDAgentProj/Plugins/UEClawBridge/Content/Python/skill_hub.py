@@ -638,10 +638,27 @@ class SkillHub:
 
             has_errors = any(e.severity == "error" for e in errors)
             if has_errors:
-                for e in errors:
-                    if e.severity == "error":
-                        UELogger.mcp_error(f"SkillHub: {skill_dir.name}: {e}")
-                return
+                if skill_md_path.exists():
+                    # manifest.json 不完整但 SKILL.md 存在 → 从 SKILL.md 构建
+                    # 常见于 publish_skill 只写了 version 字段的情况
+                    UELogger.info(
+                        f"SkillHub: {skill_dir.name}: manifest.json incomplete, "
+                        f"falling back to SKILL.md"
+                    )
+                    manifest = self._manifest_from_skill_md(skill_dir, skill_md_path)
+                    if manifest is not None:
+                        # 从 manifest.json 补充 version（SKILL.md 可能没有）
+                        try:
+                            raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+                            if raw.get("version"):
+                                manifest.version = raw["version"]
+                        except Exception:
+                            pass
+                else:
+                    for e in errors:
+                        if e.severity == "error":
+                            UELogger.mcp_error(f"SkillHub: {skill_dir.name}: {e}")
+                    return
 
             if manifest is None:
                 return
