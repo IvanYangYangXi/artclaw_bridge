@@ -36,7 +36,7 @@ _PROTOCOL_VERSION  = 3
 _CLIENT_NAME       = "cli"
 _CLIENT_VERSION    = "0.1.0"
 _CHAT_TIMEOUT      = 1800.0  # 绝对超时 30 分钟
-_IDLE_TIMEOUT      = 120.0   # 无活动超时: 收到事件后重置
+_IDLE_TIMEOUT      = 300.0   # 无活动超时 5 分钟: 收到事件后重置
 _TOOL_RESULT_LIMIT = 2000    # tool_result 内容截断字符数
 
 
@@ -370,7 +370,7 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
     if time.time() >= abs_deadline:
         timeout_text = (latest_text + "\n\n[Response truncated - absolute timeout 30min]") if latest_text else "[Error] AI response timed out (30min)"
     else:
-        timeout_text = (latest_text + "\n\n[Response truncated - idle timeout 2min]") if latest_text else "[Error] AI response timed out (no activity for 2min)"
+        timeout_text = (latest_text + "\n\n[Response truncated - idle timeout 5min]") if latest_text else "[Error] AI response timed out (no activity for 5min)"
     write_stream(stream_file, {"type": "error", "text": timeout_text}, stream_lock)
     write_response(response_file, timeout_text)
 
