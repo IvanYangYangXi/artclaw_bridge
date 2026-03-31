@@ -9,7 +9,7 @@ openclaw_ws.py — OpenClaw Gateway WebSocket 通信层
   _openclaw_response.txt           — 最终回复（出现即代表完成）
 
 stream.jsonl 事件格式:
-  {"type": "delta",       "text": "..."}
+  {"type": "delta",       "text": "..."}           ← 增量文本（仅新增 token，非累积）
   {"type": "tool_call",   "tool_name": "...", "tool_id": "...", "arguments": {}}
   {"type": "tool_result", "tool_id": "...", "content": "...", "is_error": false}
   {"type": "final",       "text": "..."}
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from typing import Optional
@@ -58,6 +59,9 @@ def write_response(response_file: str, text: str) -> None:
     try:
         with open(response_file, "w", encoding="utf-8") as f:
             f.write(text)
+        UELogger.info(f"[openclaw_ws] response written ({len(text)} chars)")
+    except Exception as exc:
+        UELogger.mcp_error(f"[openclaw_ws] response write: {exc}")
 
 
 def write_bridge_status(status_dir: str, connected: bool, mcp_ready: bool = False,
@@ -88,9 +92,6 @@ def write_bridge_status(status_dir: str, connected: bool, mcp_ready: bool = Fals
             raise
     except Exception as exc:
         UELogger.mcp_error(f"[openclaw_ws] write_bridge_status: {exc}")
-        UELogger.info(f"[openclaw_ws] response written ({len(text)} chars)")
-    except Exception as exc:
-        UELogger.mcp_error(f"[openclaw_ws] response write: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -321,8 +322,12 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
         _dispatch_tool_events(message, stream_file, stream_lock)
 
         if state == "delta" and text:
+            # Gateway 推送的 delta text 是累积全文，需要提取增量部分写入 stream
+            # C++ 端使用 += 追加，所以必须只写新增 token
+            incremental = text[len(latest_text):] if text.startswith(latest_text) else text
             latest_text = text
-            write_stream(stream_file, {"type": "delta", "text": text}, stream_lock)
+            if incremental:
+                write_stream(stream_file, {"type": "delta", "text": incremental}, stream_lock)
 
         elif state == "final":
             final_text = text or latest_text
