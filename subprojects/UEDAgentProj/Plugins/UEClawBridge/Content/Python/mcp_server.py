@@ -18,6 +18,7 @@ mcp_server.py - MCP WebSocket 通信网关
 
 import asyncio
 import json
+import os
 import socket
 from typing import Optional, Dict, Set, Any
 
@@ -101,7 +102,63 @@ INTERNAL_ERROR = -32603
 
 
 # ============================================================================
-# 3. MCPServer 核心类
+# 3. Tool 事件写入 stream.jsonl (方案 2: MCP 侧记录 tool 调用)
+# ============================================================================
+
+import threading as _threading
+
+_stream_lock = _threading.Lock()
+
+
+def _get_active_stream_file() -> str:
+    """获取当前活跃的 stream.jsonl 路径。仅在 chat 请求进行中时存在。"""
+    try:
+        import unreal
+        saved_dir = unreal.Paths.project_saved_dir()
+    except Exception:
+        return ""
+    stream_file = os.path.join(saved_dir, "UEAgent", "_openclaw_response_stream.jsonl")
+    # 只有在 chat 正在进行中时才写（response.txt 不存在 = 还在等 AI）
+    response_file = os.path.join(saved_dir, "UEAgent", "_openclaw_response.txt")
+    if os.path.exists(response_file):
+        return ""  # chat 已完成，不写
+    return stream_file
+
+
+def _write_tool_event_to_stream(event_type: str, tool_name: str, *,
+                                 arguments=None, result=None, is_error=False):
+    """将 tool 事件写入 stream.jsonl，以 tool_use_text 融入消息流。
+
+    只写轻量单行文本，不写独立卡片，减少空间占用。
+    """
+    stream_file = _get_active_stream_file()
+    if not stream_file:
+        return
+    try:
+        # 简化工具名: mcp_ue-editor-agent_run_ue_python → run_ue_python
+        short_name = tool_name.rsplit("_", 1)[-1] if "_" in tool_name else tool_name
+
+        if event_type == "start":
+            text = f"[Tool] {short_name} ..."
+        elif event_type == "done":
+            text = f"[Tool] {short_name} OK"
+        elif event_type == "error":
+            err_msg = str(result)[:80] if result else "unknown"
+            text = f"[Tool] {short_name} Error: {err_msg}"
+        else:
+            return
+
+        obj = {"type": "tool_use_text", "text": text}
+        line = json.dumps(obj, ensure_ascii=False)
+        with _stream_lock:
+            with open(stream_file, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+    except Exception as e:
+        UELogger.mcp_error(f"_write_tool_event_to_stream: {e}")
+
+
+# ============================================================================
+# 4. MCPServer 核心类
 # ============================================================================
 
 class MCPServer:
@@ -394,6 +451,10 @@ class MCPServer:
 
         UELogger.mcp(f"tools/call -> {tool_name}({arguments})")
 
+        # 写入 tool 调用开始事件到 stream.jsonl（方案 2: MCP 侧记录）
+        # 只用 tool_use_text 轻量文本，融入消息流，不占空间
+        _write_tool_event_to_stream("start", tool_name, arguments=arguments)
+
         # 查找并执行 handler
         tool_def = self._tools[tool_name]
         handler = tool_def.get("_handler")
@@ -402,6 +463,7 @@ class MCPServer:
 
         try:
             result = await handler(arguments) if asyncio.iscoroutinefunction(handler) else handler(arguments)
+            _write_tool_event_to_stream("done", tool_name)
             return {
                 "content": [
                     {"type": "text", "text": str(result)}
@@ -410,6 +472,7 @@ class MCPServer:
             }
         except Exception as e:
             UELogger.mcp_error(f"Tool execution error ({tool_name}): {e}")
+            _write_tool_event_to_stream("error", tool_name, result=str(e)[:200])
             return {
                 "content": [
                     {"type": "text", "text": f"Error: {str(e)}"}
@@ -649,7 +712,7 @@ class MCPServer:
 
 
 # ============================================================================
-# 4. asyncio 事件循环与 UE Tick 集成
+# 5a. asyncio 事件循环与 UE Tick 集成
 # ============================================================================
 
 class _UEAsyncBridge:

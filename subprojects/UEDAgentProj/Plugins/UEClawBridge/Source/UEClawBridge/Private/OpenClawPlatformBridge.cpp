@@ -17,13 +17,15 @@ void FOpenClawPlatformBridge::Connect(const FString& StatusOutFile)
 	// 检查 MCP Server 端口（仅日志，不阻断）
 	ExecPython(
 		TEXT("import socket as _s\n")
+		TEXT("from bridge_config import get_platform_defaults\n")
+		TEXT("_mcp_port = get_platform_defaults().get('mcp_port', 8080)\n")
 		TEXT("_sock = _s.socket(_s.AF_INET, _s.SOCK_STREAM)\n")
 		TEXT("_sock.settimeout(0.5)\n")
 		TEXT("try:\n")
-		TEXT("    _sock.connect(('127.0.0.1', 8080))\n")
-		TEXT("    print('[LogUEAgent] MCP Server: OK')\n")
+		TEXT("    _sock.connect(('127.0.0.1', _mcp_port))\n")
+		TEXT("    print(f'[LogUEAgent] MCP Server(:{_mcp_port}): OK')\n")
 		TEXT("except:\n")
-		TEXT("    print('[LogUEAgent] MCP Server: not ready')\n")
+		TEXT("    print(f'[LogUEAgent] MCP Server(:{_mcp_port}): not ready')\n")
 		TEXT("finally:\n")
 		TEXT("    _sock.close()\n")
 	);
@@ -110,18 +112,22 @@ void FOpenClawPlatformBridge::QueryStatus()
 {
 	ExecPython(
 		TEXT("import socket as _s\n")
+		TEXT("from bridge_config import get_gateway_config, get_platform_defaults\n")
+		TEXT("_mcp_port = get_platform_defaults().get('mcp_port', 8080)\n")
 		TEXT("_sock = _s.socket(_s.AF_INET, _s.SOCK_STREAM)\n")
 		TEXT("_sock.settimeout(0.5)\n")
 		TEXT("_mcp_ok = False\n")
 		TEXT("try:\n")
-		TEXT("    _sock.connect(('127.0.0.1', 8080))\n")
+		TEXT("    _sock.connect(('127.0.0.1', _mcp_port))\n")
 		TEXT("    _mcp_ok = True\n")
 		TEXT("except: pass\n")
 		TEXT("finally: _sock.close()\n")
 		TEXT("from openclaw_chat import connect as _oc_connect\n")
 		TEXT("_oc_ok = _oc_connect()\n")
-		TEXT("print(f'[LogUEAgent] MCP Server={\"OK\" if _mcp_ok else \"DOWN\"}, "
-		     "OpenClaw Gateway={\"Connected\" if _oc_ok else \"Disconnected\"}')\n")
+		TEXT("_gw = get_gateway_config()\n")
+		TEXT("_gw_port = _gw.get('port', 18789)\n")
+		TEXT("print(f'[LogUEAgent] MCP Server(:{_mcp_port})={\"OK\" if _mcp_ok else \"DOWN\"}, "
+		     "Gateway(:{_gw_port})={\"Connected\" if _oc_ok else \"Disconnected\"}')\n")
 	);
 }
 

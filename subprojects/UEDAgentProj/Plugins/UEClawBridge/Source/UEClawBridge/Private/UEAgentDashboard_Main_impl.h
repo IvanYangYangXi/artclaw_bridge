@@ -410,15 +410,20 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				}
 
 				// Gateway 连接状态: 轻量 socket 探测（不经过 openclaw_chat，避免日志刷屏）
+				// 端口通过 bridge_config.get_gateway_config() 读取（配置驱动，跨平台通用）
+				// 读取链路: ~/.artclaw/config.json platform.gateway_url > 平台配置文件 > _PLATFORM_DEFAULTS
 				{
 					FString GwCheck = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
 						"import socket\n"
-						"try:\n"
-						"    from bridge_config import load_artclaw_config\n"
-						"    _cfg = load_artclaw_config()\n"
-						"    _port = _cfg.get('gateway',{}).get('port', 3577)\n"
-						"except:\n"
-						"    _port = 3577\n"
+						"from bridge_config import get_gateway_config\n"
+						"_gw = get_gateway_config()\n"
+						"_port = _gw.get('port', 0)\n"
+						"if not _port:\n"
+						"    _url = _gw.get('url', '')\n"
+						"    if ':' in _url.rsplit('/', 1)[-1]:\n"
+						"        try: _port = int(_url.rsplit(':', 1)[-1])\n"
+						"        except: _port = 18789\n"
+						"    else: _port = 18789\n"
 						"_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
 						"_s.settimeout(0.3)\n"
 						"try:\n"

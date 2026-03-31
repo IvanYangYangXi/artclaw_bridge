@@ -166,6 +166,8 @@ async def do_chat(
             if status not in ("started", "streaming", "accepted", "running"):
                 # 同步回复（不经过流）
                 msg_text = _extract_text(ack.get("message", ""))
+                UELogger.info(f"[openclaw_ws] sync response: status={status!r}, "
+                              f"text_len={len(msg_text)}, keys={list(ack.keys())}")
                 if msg_text:
                     write_stream(stream_file, {"type": "final", "text": msg_text}, stream_lock)
                     write_response(response_file, msg_text)
@@ -176,7 +178,7 @@ async def do_chat(
             # 同时记录 runId 作为备用过滤维度。
             effective_session_key = ack.get("sessionKey") or session_key
             active_run_id = ack.get("runId", "")
-            UELogger.info(f"[openclaw_ws] chat.send OK, "
+            UELogger.info(f"[openclaw_ws] chat.send OK, status={status!r}, "
                           f"runId={active_run_id[:8] if active_run_id else 'N/A'}..., "
                           f"effectiveSession={effective_session_key[:50] if effective_session_key else 'N/A'}")
             await _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lock,

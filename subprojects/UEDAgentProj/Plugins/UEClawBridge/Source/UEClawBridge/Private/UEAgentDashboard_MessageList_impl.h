@@ -205,6 +205,20 @@ void SUEAgentDashboard::RebuildMessageList()
 			continue;
 		}
 
+		// --- Tool 状态消息（紧凑单行，无标签头） ---
+		if (Msg.Sender == TEXT("tool_status"))
+		{
+			MessageScrollBox->AddSlot()
+			.Padding(12.0f, 0.0f, 4.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Msg.Content))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.65f, 0.55f, 0.35f))) // 暗橙
+			];
+			continue;
+		}
+
 		// --- 普通消息 (user / assistant / system / thinking / streaming) ---
 		FString TimeStr = Msg.Timestamp.ToString(TEXT("%H:%M"));
 
@@ -230,6 +244,21 @@ void SUEAgentDashboard::RebuildMessageList()
 			SenderLabel = FUEAgentL10n::GetStr(TEXT("SenderSystem"));
 		}
 
+		// 消息内容文字颜色: 用户绿白、AI 白色、系统灰色、思考紫灰
+		FLinearColor ContentColor = FLinearColor(0.88f, 0.88f, 0.88f); // 默认近白
+		if (Msg.Sender == TEXT("user"))
+		{
+			ContentColor = FLinearColor(0.85f, 0.95f, 0.87f); // 淡绿白
+		}
+		else if (Msg.Sender == TEXT("system"))
+		{
+			ContentColor = FLinearColor(0.6f, 0.6f, 0.6f); // 灰色
+		}
+		else if (Msg.Sender == TEXT("thinking"))
+		{
+			ContentColor = FLinearColor(0.65f, 0.6f, 0.75f); // 淡紫灰
+		}
+
 		MessageScrollBox->AddSlot()
 		.Padding(4.0f, 2.0f)
 		[
@@ -246,7 +275,7 @@ void SUEAgentDashboard::RebuildMessageList()
 				[
 					SNew(STextBlock)
 					.Text(FText::FromString(SenderLabel))
-					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
 					.ColorAndOpacity(GetSenderColor(Msg.Sender))
 				]
 				+ SHorizontalBox::Slot()
@@ -265,14 +294,19 @@ void SUEAgentDashboard::RebuildMessageList()
 			.AutoHeight()
 			.Padding(8.0f, 0.0f, 0.0f, 4.0f)
 			[
-				SNew(SMultiLineEditableText)
-				.Text(FText::FromString(Msg.Content))
-				.Font(Msg.bIsCode
-					? FCoreStyle::GetDefaultFontStyle("Mono", 9)
-					: FCoreStyle::GetDefaultFontStyle("Regular", 10))
-				.AutoWrapText(true)
-				.IsReadOnly(true)
-				.AllowContextMenu(true)
+				SNew(SBorder)
+				.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
+				.ForegroundColor(FSlateColor(ContentColor))
+				[
+					SNew(SMultiLineEditableText)
+					.Text(FText::FromString(Msg.Content))
+					.Font(Msg.bIsCode
+						? FCoreStyle::GetDefaultFontStyle("Mono", 9)
+						: FCoreStyle::GetDefaultFontStyle("Regular", 10))
+					.AutoWrapText(true)
+					.IsReadOnly(true)
+					.AllowContextMenu(true)
+				]
 			]
 		];
 	}
@@ -300,27 +334,39 @@ FSlateColor SUEAgentDashboard::GetSenderColor(const FString& Sender) const
 {
 	if (Sender == TEXT("user"))
 	{
-		return FSlateColor(FLinearColor(0.85f, 0.85f, 0.85f)); // 白色
+		return FSlateColor(FLinearColor(0.3f, 0.85f, 0.55f)); // 绿色 — 用户消息醒目
 	}
 	if (Sender == TEXT("assistant"))
 	{
-		return FSlateColor(FLinearColor(0.4f, 0.75f, 1.0f)); // 蓝色
+		return FSlateColor(FLinearColor(0.4f, 0.75f, 1.0f)); // 蓝色 — AI 助手
 	}
 	if (Sender == TEXT("system"))
 	{
-		return FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)); // 灰色
+		return FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)); // 灰色 — 系统提示
 	}
 	if (Sender == TEXT("tool_call"))
 	{
-		return FSlateColor(FLinearColor(0.9f, 0.8f, 0.4f)); // 黄色
+		return FSlateColor(FLinearColor(0.85f, 0.65f, 0.3f)); // 橙色 — Tool 调用中
 	}
-	if (Sender == TEXT("tool_result") || Sender == TEXT("tool_error"))
+	if (Sender == TEXT("tool_result"))
 	{
-		return FSlateColor(FLinearColor(0.5f, 0.8f, 0.5f)); // 绿色
+		return FSlateColor(FLinearColor(0.4f, 0.75f, 0.5f)); // 暗绿 — Tool 完成
 	}
-	if (Sender == TEXT("thinking") || Sender == TEXT("streaming"))
+	if (Sender == TEXT("tool_error"))
 	{
-		return FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)); // 灰色
+		return FSlateColor(FLinearColor(0.9f, 0.35f, 0.35f)); // 红色 — Tool 出错
+	}
+	if (Sender == TEXT("tool_status"))
+	{
+		return FSlateColor(FLinearColor(0.65f, 0.55f, 0.35f)); // 暗橙 — Tool 状态
+	}
+	if (Sender == TEXT("thinking"))
+	{
+		return FSlateColor(FLinearColor(0.65f, 0.55f, 0.85f)); // 紫色 — AI 思考
+	}
+	if (Sender == TEXT("streaming"))
+	{
+		return FSlateColor(FLinearColor(0.5f, 0.7f, 0.9f)); // 浅蓝 — 流式输出中
 	}
 	return FSlateColor(FLinearColor::White);
 }
