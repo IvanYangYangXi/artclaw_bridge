@@ -236,12 +236,9 @@ class DCCBridgeManager:
                         f"当前对话环境: {sw_name} {sw_ver}\n"
                         f"当前软件工具前缀: {my_prefix}\n\n"
                         f"工具使用规则:\n"
-                        f"- 对当前软件内的场景和资产操作使用 {my_prefix}run_python\n"
-                        f"- 获取编辑器上下文请用 {my_prefix}run_python 的 get_context=true\n"
-                        f"- 如果明确要求执行其他 DCC 软件的操作，使用对应软件的工具\n"
-                        f"- 本地文件操作（读取用户提供的图片/文本/代码等）请直接读取，不需要通过 run_python\n"
-                        f"- 其他不需要当前 DCC 环境执行的任务，请根据上下文判断使用什么工具\n"
-                        f"- 其他软件工具前缀: {other_tools}"
+                        f"- {sw_name} 场景/资产的查询与操作使用 {my_prefix}run_python\n"
+                        f"- 涉及其他 DCC 软件（{other_tools}）时，使用对应软件的工具\n"
+                        f"- 本地文件读写、以及其他不依赖 {sw_name} 环境的任务，直接使用自身能力处理"
                     )
                     self._context_injected = True
             except Exception:

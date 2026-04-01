@@ -125,10 +125,9 @@ def _build_context_prefix() -> str:
     lines.append("Role: UE Editor AI Assistant")
     lines.append(
         "工具使用规则:\n"
-        "- 对 UE 内的场景和资产操作使用 run_ue_python\n"
-        "- 如果明确要求执行其他 DCC 软件的操作，使用对应软件的 run_python\n"
-        "- 本地文件操作（读取用户提供的图片/文本/代码等）请直接读取，不需要通过 run_ue_python\n"
-        "- 其他不需要 UE 环境执行的任务，请根据上下文判断使用什么工具"
+        "- UE 场景/资产的查询与操作使用 run_ue_python\n"
+        "- 涉及其他 DCC 软件（Maya/Max 等）时，使用对应软件的 run_python\n"
+        "- 本地文件读写、以及其他不依赖 UE 环境的任务，直接使用自身能力处理"
     )
     try:
         from memory_store import get_memory_manager
