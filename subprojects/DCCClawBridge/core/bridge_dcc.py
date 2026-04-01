@@ -234,16 +234,14 @@ class DCCBridgeManager:
                     prefix_parts.append(
                         f"[DCC Context - 重要]\n"
                         f"当前对话环境: {sw_name} {sw_ver}\n"
-                        f"必须使用的工具前缀: {my_prefix}\n\n"
-                        f"约束规则:\n"
-                        f"1. 场景操作（创建/修改/查询对象等）使用 {my_prefix} 前缀的工具\n"
-                        f"2. 获取编辑器上下文请用 {my_prefix}run_python 的 get_context=true\n"
-                        f"3. 读取用户提供的本地文件（图片/文本/代码等）: 使用你自身的文件读取能力，不要用 run_python\n"
-                        f"4. 当用户消息包含文件路径附件时，那是用户从本机选择的文件，直接读取即可\n"
-                        f"5. 仅在当前软件内操作时，不要调用其他软件的工具\n"
-                        f"6. 当任务涉及其他软件时（如导入导出、跨软件查看等），"
-                        f"应主动使用对应软件的工具完成跨软件协作\n"
-                        f"7. 其他软件工具前缀: {other_tools}"
+                        f"当前软件工具前缀: {my_prefix}\n\n"
+                        f"工具使用规则:\n"
+                        f"- 对当前软件内的场景和资产操作使用 {my_prefix}run_python\n"
+                        f"- 获取编辑器上下文请用 {my_prefix}run_python 的 get_context=true\n"
+                        f"- 如果明确要求执行其他 DCC 软件的操作，使用对应软件的工具\n"
+                        f"- 本地文件操作（读取用户提供的图片/文本/代码等）请直接读取，不需要通过 run_python\n"
+                        f"- 其他不需要当前 DCC 环境执行的任务，请根据上下文判断使用什么工具\n"
+                        f"- 其他软件工具前缀: {other_tools}"
                     )
                     self._context_injected = True
             except Exception:
