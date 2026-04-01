@@ -236,12 +236,14 @@ class DCCBridgeManager:
                         f"当前对话环境: {sw_name} {sw_ver}\n"
                         f"必须使用的工具前缀: {my_prefix}\n\n"
                         f"约束规则:\n"
-                        f"1. 所有操作默认使用 {my_prefix} 前缀的工具\n"
+                        f"1. 场景操作（创建/修改/查询对象等）使用 {my_prefix} 前缀的工具\n"
                         f"2. 获取编辑器上下文请用 {my_prefix}run_python 的 get_context=true\n"
-                        f"3. 仅在当前软件内操作时，不要调用其他软件的工具\n"
-                        f"4. 当任务涉及其他软件时（如导入导出、跨软件查看等），"
+                        f"3. 读取用户提供的本地文件（图片/文本/代码等）: 使用你自身的文件读取能力，不要用 run_python\n"
+                        f"4. 当用户消息包含文件路径附件时，那是用户从本机选择的文件，直接读取即可\n"
+                        f"5. 仅在当前软件内操作时，不要调用其他软件的工具\n"
+                        f"6. 当任务涉及其他软件时（如导入导出、跨软件查看等），"
                         f"应主动使用对应软件的工具完成跨软件协作\n"
-                        f"5. 其他软件工具前缀: {other_tools}"
+                        f"7. 其他软件工具前缀: {other_tools}"
                     )
                     self._context_injected = True
             except Exception:

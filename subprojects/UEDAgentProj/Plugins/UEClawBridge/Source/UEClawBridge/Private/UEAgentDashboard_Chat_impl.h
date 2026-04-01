@@ -32,7 +32,7 @@ FReply SUEAgentDashboard::OnSendClicked()
 	FString AttachmentPrefix;
 	if (PendingAttachments.Num() > 0)
 	{
-		AttachmentPrefix = TEXT("[Attachments - 用户附件，请用 read 工具读取以下文件路径]\n");
+		AttachmentPrefix = TEXT("[Attachments - 用户附件文件，请直接读取以下路径]\n");
 		for (const auto& Att : PendingAttachments)
 		{
 			// 始终发送完整路径 + MIME 类型，AI 通过 read 工具读取文件

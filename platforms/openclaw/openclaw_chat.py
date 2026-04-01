@@ -123,11 +123,13 @@ def _build_context_prefix() -> str:
     except Exception:
         lines.append("Engine: Unreal Engine")
     lines.append("Role: UE Editor AI Assistant")
-    lines.append("Constraint: 禁止调用任何其他 DCC 工具（Maya/Max 等）。UE 场景操作只允许使用 run_ue_python 工具。")
-    lines.append("Constraint: 当用户消息包含 [Attachments] 块时，其中的文件路径是用户从本机粘贴/选择的附件。"
-                 "请使用 read 工具（非 run_ue_python）读取这些文件。"
-                 "read 工具支持图片文件（jpg/png/gif/webp），会以附件形式返回图片内容。"
-                 "禁止忽略附件路径而去截取编辑器视口，用户给的是文件不是视口画面。")
+    lines.append(
+        "工具使用规则:\n"
+        "- UE 场景操作（创建/修改/查询 Actor、材质、关卡等）: 使用 run_ue_python\n"
+        "- 禁止调用其他 DCC 工具（Maya/Max 的 run_python 等）\n"
+        "- 读取用户提供的本地文件（图片/文本/代码等）: 使用你自身的文件读取能力，不要用 run_ue_python\n"
+        "- 当用户消息包含文件路径附件时，那是用户从本机选择的文件，直接读取即可，不要截取编辑器视口来替代"
+    )
     try:
         from memory_store import get_memory_manager
         mm = get_memory_manager()
