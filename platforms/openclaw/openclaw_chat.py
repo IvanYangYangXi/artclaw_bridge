@@ -123,7 +123,11 @@ def _build_context_prefix() -> str:
     except Exception:
         lines.append("Engine: Unreal Engine")
     lines.append("Role: UE Editor AI Assistant")
-    lines.append("Constraint: 禁止调用任何其他 DCC 工具（Maya/Max 等）。只允许使用 run_ue_python 工具。")
+    lines.append("Constraint: 禁止调用任何其他 DCC 工具（Maya/Max 等）。UE 场景操作只允许使用 run_ue_python 工具。")
+    lines.append("Constraint: 当用户消息包含 [Attachments] 块时，其中的文件路径是用户从本机粘贴/选择的附件。"
+                 "请使用 read 工具（非 run_ue_python）读取这些文件。"
+                 "read 工具支持图片文件（jpg/png/gif/webp），会以附件形式返回图片内容。"
+                 "禁止忽略附件路径而去截取编辑器视口，用户给的是文件不是视口画面。")
     try:
         from memory_store import get_memory_manager
         mm = get_memory_manager()
@@ -204,6 +208,10 @@ def _chat_worker(message: str, stream_file: str, response_file: str) -> None:
         cancel_flag   = _cancel_flag,
         stream_lock   = _stream_lock,
     ))
+
+    # Chat 完成后，异步查询 session token 用量并写入独立文件
+    # C++ BridgeStatusPoll 周期性读取此文件更新上下文百分比
+    _query_session_usage()
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +297,46 @@ def send_chat_async_to_file(msg_file: str, response_file: str) -> None:
 def cancel_current_request() -> None:
     _cancel_flag.set()
     UELogger.info("[openclaw_chat] cancel flag set")
+
+
+def _query_session_usage() -> None:
+    """查询当前 session 的 token 用量，写入 _session_usage.json。
+
+    C++ BridgeStatusPoll 读取此文件更新上下文百分比。
+    使用 sessions.list Gateway RPC 获取 contextTokens/totalTokens。
+    """
+    if not _session_key:
+        return
+    try:
+        result_str = asyncio.run(openclaw_ws.do_session_info(
+            session_key=_session_key,
+            gateway_url=_get_gateway_url(),
+            token=_get_token(),
+        ))
+        # 写入独立文件（C++ 轮询读取）
+        import tempfile
+        try:
+            import unreal
+            status_dir = os.path.join(unreal.Paths.project_saved_dir(), "UEAgent")
+        except Exception:
+            status_dir = os.path.join(os.path.expanduser("~"), ".artclaw")
+        os.makedirs(status_dir, exist_ok=True)
+
+        usage_path = os.path.join(status_dir, "_session_usage.json")
+        fd, tmp = tempfile.mkstemp(dir=status_dir, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(result_str)
+            os.replace(tmp, usage_path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+            raise
+        UELogger.info(f"[openclaw_chat] usage written: {result_str[:100]}")
+    except Exception as exc:
+        UELogger.warning(f"[openclaw_chat] usage query failed: {exc}")
 
 
 def reset_session() -> None:
