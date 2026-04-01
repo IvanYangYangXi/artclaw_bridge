@@ -28,9 +28,26 @@ FReply SUEAgentDashboard::OnSendClicked()
 	// 清空输入框
 	InputTextBox->SetText(FText::GetEmpty());
 
+	// --- 附件路径注入: 将待发送附件的文件路径前缀到消息 ---
+	FString AttachmentPrefix;
+	if (PendingAttachments.Num() > 0)
+	{
+		AttachmentPrefix = TEXT("[Attachments]\n");
+		for (const auto& Att : PendingAttachments)
+		{
+			// 始终发送完整路径 + MIME 类型，AI 通过 read 工具读取文件
+			AttachmentPrefix += FString::Printf(TEXT("- %s (%s): %s\n"),
+				*Att.DisplayName, *Att.MimeType, *Att.FilePath);
+		}
+		AttachmentPrefix += TEXT("[/Attachments]\n\n");
+	}
+
 	// 检查是否为 Slash 命令
 	if (InputText.StartsWith(TEXT("/")))
 	{
+		// Slash 命令不携带附件
+		ClearAttachments();
+
 		// 解析命令和参数
 		FString Command, Args;
 		if (!InputText.Split(TEXT(" "), &Command, &Args))
@@ -49,8 +66,20 @@ FReply SUEAgentDashboard::OnSendClicked()
 		return FReply::Handled();
 	}
 
-	// 添加用户消息
-	AddMessage(TEXT("user"), InputText);
+	// 添加用户消息（含附件标识 — 显示完整路径便于超链接检测）
+	FString DisplayMessage = InputText;
+	if (PendingAttachments.Num() > 0)
+	{
+		FString AttachInfo;
+		for (const auto& Att : PendingAttachments)
+		{
+			if (!AttachInfo.IsEmpty()) AttachInfo += TEXT("\n");
+			AttachInfo += FString::Printf(TEXT("[%s] %s"),
+				Att.bIsImage ? TEXT("IMG") : TEXT("FILE"), *Att.FilePath);
+		}
+		DisplayMessage = AttachInfo + TEXT("\n") + InputText;
+	}
+	AddMessage(TEXT("user"), DisplayMessage);
 
 	// --- Plan 模式: 拦截用户输入，先生成 Plan ---
 	if (bPlanMode && !CurrentPlan.IsSet())
@@ -69,14 +98,22 @@ FReply SUEAgentDashboard::OnSendClicked()
 	}
 
 	// 通过 OpenClaw Python Bridge 转发给 AI
-	SendToOpenClaw(InputText);
+	FString FinalMessage = AttachmentPrefix + InputText;
+	SendToOpenClaw(FinalMessage);
+
+	// 清空附件 (不删除临时文件 — AI 可能还需要读取)
+	PendingAttachments.Empty();
+	RebuildAttachmentPreview();
 
 	return FReply::Handled();
 }
 
 FReply SUEAgentDashboard::OnNewChatClicked()
 {
-	// 0) 取消正在执行的 Plan (任务 5.9)
+	// 0) 清空待发送附件
+	ClearAttachments();
+
+	// 0b) 取消正在执行的 Plan (任务 5.9)
 	if (CurrentPlan.IsSet())
 	{
 		if (CurrentPlan->bIsExecuting && bIsWaitingForResponse)
@@ -203,6 +240,16 @@ void SUEAgentDashboard::OnInputTextCommitted(const FText& NewText, ETextCommit::
 FReply SUEAgentDashboard::OnInputKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
+
+	// --- Ctrl+V: 优先尝试粘贴剪贴板图片/文件 ---
+	if (Key == EKeys::V && InKeyEvent.IsControlDown() && !InKeyEvent.IsShiftDown() && !InKeyEvent.IsAltDown())
+	{
+		if (TryPasteFromClipboard())
+		{
+			return FReply::Handled(); // 已处理为附件，不再粘贴文本
+		}
+		// 普通文本 → 不拦截，让 SMultiLineEditableTextBox 正常粘贴
+	}
 
 	if (Key == EKeys::Enter)
 	{
