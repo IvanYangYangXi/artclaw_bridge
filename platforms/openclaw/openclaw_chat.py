@@ -296,8 +296,29 @@ def send_chat_async_to_file(msg_file: str, response_file: str) -> None:
 
 
 def cancel_current_request() -> None:
+    """取消当前请求：设置本地 flag + 发送 Gateway chat.abort RPC。
+
+    本地 flag 让 _receive_stream 停止监听并写 [Cancelled]。
+    chat.abort RPC 让 Gateway 终止 agent 运行，避免继续消耗资源。
+    _receive_stream 内部也会发 abort（通过已有 ws 连接），这里作为安全网
+    处理 stream 尚未开始或已退出的情况。
+    """
     _cancel_flag.set()
     UELogger.info("[openclaw_chat] cancel flag set")
+
+    # 安全网: 通过独立连接发送 chat.abort
+    if _session_key:
+        def _abort_bg():
+            try:
+                asyncio.run(openclaw_ws.do_abort(
+                    session_key=_session_key,
+                    gateway_url=_get_gateway_url(),
+                    token=_get_token(),
+                ))
+            except Exception as exc:
+                UELogger.warning(f"[openclaw_chat] abort bg failed: {exc}")
+        t = threading.Thread(target=_abort_bg, daemon=True, name="OCChat-Abort")
+        t.start()
 
 
 def _query_session_usage() -> None:

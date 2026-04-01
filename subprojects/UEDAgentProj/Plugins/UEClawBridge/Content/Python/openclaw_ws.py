@@ -40,6 +40,17 @@ _IDLE_TIMEOUT      = 300.0   # 无活动超时 5 分钟: 收到事件后重置
 _TOOL_RESULT_LIMIT = 2000    # tool_result 内容截断字符数
 
 
+def _truncate_for_debug(obj, max_str_len=200):
+    """递归截断 JSON 对象中的长字符串，用于 debug dump。"""
+    if isinstance(obj, str):
+        return obj[:max_str_len] + "..." if len(obj) > max_str_len else obj
+    if isinstance(obj, dict):
+        return {k: _truncate_for_debug(v, max_str_len) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_truncate_for_debug(item, max_str_len) for item in obj[:20]]  # 最多 20 项
+    return obj
+
+
 # ---------------------------------------------------------------------------
 # 文件写入（由调用方传入 stream_lock）
 # ---------------------------------------------------------------------------
@@ -259,6 +270,20 @@ async def _wait_for_ack(ws, req_id: str, timeout: float = 15.0) -> Optional[dict
     return None
 
 
+async def _send_abort(ws, session_key: str) -> None:
+    """通过已有 ws 连接发送 chat.abort RPC（best-effort，不等响应）。"""
+    try:
+        req_id = str(uuid.uuid4())
+        await ws.send(json.dumps({
+            "type": "req", "id": req_id,
+            "method": "chat.abort",
+            "params": {"sessionKey": session_key},
+        }))
+        UELogger.info(f"[openclaw_ws] chat.abort sent for session={session_key[:50]}")
+    except Exception as exc:
+        UELogger.warning(f"[openclaw_ws] chat.abort failed: {exc}")
+
+
 async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lock,
                           session_key: str = "", run_id: str = "") -> None:
     """接收 chat 流式事件，直到 final/aborted/error。
@@ -281,6 +306,8 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
             break
         if cancel_flag.is_set():
             cancel_flag.clear()
+            # 发送 chat.abort RPC 让 Gateway 终止 agent 运行
+            await _send_abort(ws, session_key)
             result = latest_text or "[Cancelled]"
             write_stream(stream_file, {"type": "final", "text": result}, stream_lock)
             write_response(response_file, result)
@@ -331,6 +358,12 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
         message = payload.get("message", {})
         text    = _extract_text(message)
 
+        # DEBUG: 记录所有 chat 事件的 state + content block 类型
+        content_blocks = message.get("content", []) if isinstance(message, dict) else []
+        block_types = [b.get("type", "?") for b in content_blocks if isinstance(b, dict)]
+        UELogger.info(f"[openclaw_ws] chat event: state={state}, text_len={len(text)}, "
+                      f"blocks={block_types}, payload_keys={list(payload.keys())}")
+
         # --- 只处理已知 state，忽略 monitoring 等非对话状态 ---
         if state not in ("delta", "final", "aborted", "error"):
             UELogger.info(f"[openclaw_ws] skip non-chat state: {state}")
@@ -351,6 +384,23 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
 
         elif state == "final":
             final_text = text or latest_text
+            # DEBUG: 转储完整 final payload 到日志文件，帮助定位 usage 字段位置
+            try:
+                _debug_dir = os.path.dirname(stream_file)
+                _debug_path = os.path.join(_debug_dir, "_debug_final_payload.json")
+                with open(_debug_path, "w", encoding="utf-8") as _df:
+                    # 写原始 payload（截断文本内容避免文件过大）
+                    _debug_payload = {}
+                    for k, v in payload.items():
+                        if k == "message":
+                            # 截断 message content 文本，但保留结构
+                            _debug_payload[k] = _truncate_for_debug(v)
+                        else:
+                            _debug_payload[k] = v
+                    json.dump(_debug_payload, _df, ensure_ascii=False, indent=2, default=str)
+                UELogger.info(f"[openclaw_ws] final payload dumped to {_debug_path}")
+            except Exception as _de:
+                UELogger.info(f"[openclaw_ws] debug dump failed: {_de}")
             # 提取 usage 信息（Gateway 在 final 事件中携带 token 统计）
             _dispatch_usage(payload, message, stream_file, stream_lock)
             write_stream(stream_file, {"type": "final", "text": final_text}, stream_lock)
@@ -378,15 +428,28 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
 def _dispatch_usage(payload: dict, message: dict, stream_file: str, stream_lock) -> None:
     """从 final 事件中提取 token usage 并写入 stream.jsonl。
 
-    Gateway 的 usage 位置不确定（payload.usage / message.usage / payload.message.usage），
-    逐层查找，取第一个有效的。
+    Gateway 的 usage 位置不确定，按优先级逐层查找:
+    1. payload.usage
+    2. message.usage
+    3. payload.result.usage
+    4. payload.meta.usage
     """
     usage = None
-    for source in (payload, message):
+    # 多层查找 usage 对象
+    candidates = [payload, message]
+    for key in ("result", "meta"):
+        sub = payload.get(key)
+        if isinstance(sub, dict):
+            candidates.append(sub)
+
+    for source in candidates:
         if isinstance(source, dict) and isinstance(source.get("usage"), dict):
             usage = source["usage"]
             break
+
     if not usage:
+        # 调试: 记录 payload 顶层 key 帮助定位 usage 位置
+        UELogger.info(f"[openclaw_ws] final event no usage found, payload keys: {list(payload.keys())}")
         return
 
     # 统一字段名: Gateway 可能用 camelCase 或 snake_case
@@ -572,8 +635,40 @@ def _error(stream_file: str, response_file: str, msg: str, stream_lock) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 一次性 RPC 辅助: Agent 列表 / 会话历史
+# 一次性 RPC 辅助: Agent 列表 / 会话历史 / 中止请求
 # ---------------------------------------------------------------------------
+
+
+async def do_abort(session_key: str, gateway_url: str, token: str) -> bool:
+    """一次性连接 → chat.abort RPC → 终止指定 session 的所有运行中请求。"""
+    try:
+        import websockets
+    except ImportError:
+        UELogger.mcp_error("[openclaw_ws] do_abort: websockets not installed")
+        return False
+
+    try:
+        async with websockets.connect(gateway_url, open_timeout=5) as ws:
+            if not await _handshake(ws, token, session_key=session_key):
+                UELogger.mcp_error("[openclaw_ws] do_abort: handshake failed")
+                return False
+
+            req_id = str(uuid.uuid4())
+            await ws.send(json.dumps({
+                "type": "req", "id": req_id,
+                "method": "chat.abort",
+                "params": {"sessionKey": session_key},
+            }))
+            ack = await _wait_for_ack(ws, req_id, timeout=10.0)
+            if ack is not None:
+                UELogger.info(f"[openclaw_ws] do_abort OK: {ack}")
+                return True
+            UELogger.warning("[openclaw_ws] do_abort: ACK timeout")
+            return False
+
+    except Exception as exc:
+        UELogger.mcp_error(f"[openclaw_ws] do_abort: {exc}")
+        return False
 
 async def do_list_agents(gateway_url: str, token: str) -> str:
     """一次性连接 → agents.list RPC → 返回 JSON。"""
@@ -662,3 +757,52 @@ async def do_fetch_history(session_key: str, gateway_url: str, token: str) -> st
     except Exception as exc:
         UELogger.mcp_error(f"[openclaw_ws] do_fetch_history: {exc}")
         return json.dumps({"messages": [], "error": str(exc)})
+
+
+async def do_session_info(session_key: str, gateway_url: str, token: str) -> str:
+    """一次性连接 → sessions.list RPC → 提取当前 session 的 token 用量信息。
+
+    返回 JSON: {"contextTokens": N, "totalTokens": N, "model": "..."}
+    """
+    try:
+        import websockets
+    except ImportError:
+        return json.dumps({"error": "websockets not installed"})
+
+    try:
+        async with websockets.connect(gateway_url, open_timeout=5) as ws:
+            if not await _handshake(ws, token, session_key=session_key):
+                return json.dumps({"error": "handshake failed"})
+
+            req_id = str(uuid.uuid4())
+            await ws.send(json.dumps({
+                "type": "req", "id": req_id,
+                "method": "sessions.list",
+                "params": {},
+            }))
+            ack = await _wait_for_ack(ws, req_id, timeout=10.0)
+            if not ack:
+                return json.dumps({"error": "timeout"})
+
+            # sessions.list 返回 sessions 数组，找到匹配的 session
+            sessions = ack.get("sessions", [])
+            for s in sessions:
+                if not isinstance(s, dict):
+                    continue
+                s_key = s.get("key", "")
+                # 包含匹配（session_key 可能被 Gateway namespace 包装）
+                if s_key == session_key or session_key in s_key or s_key in session_key:
+                    result = {
+                        "contextTokens": s.get("contextTokens", 0),
+                        "totalTokens": s.get("totalTokens", 0),
+                        "model": s.get("model", ""),
+                    }
+                    UELogger.info(f"[openclaw_ws] session_info: {result}")
+                    return json.dumps(result, ensure_ascii=False)
+
+            UELogger.info(f"[openclaw_ws] session_info: key not found in {len(sessions)} sessions")
+            return json.dumps({"error": "session not found", "sessionCount": len(sessions)})
+
+    except Exception as exc:
+        UELogger.mcp_error(f"[openclaw_ws] do_session_info: {exc}")
+        return json.dumps({"error": str(exc)})
