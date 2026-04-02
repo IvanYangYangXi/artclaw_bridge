@@ -1,0 +1,129 @@
+{
+  "scene_overview": {
+    "scene_type": "outdoor_village | indoor | outdoor_nature | outdoor_urban | fantasy | sci-fi",
+    "style": "lowpoly | realistic | stylized | pixel | hand-painted",
+    "mood": "string — 氛围描述",
+    "dominant_colors": ["#hex1", "#hex2", "#hex3"],
+    "lighting": {
+      "direction_clock": "光源方向（时钟方位，如 10点钟）",
+      "type": "natural | artificial | mixed",
+      "intensity": "strong | medium | weak",
+      "shadow_direction_clock": "阴影投射方向（时钟方位）",
+      "color_temperature": "warm | neutral | cool"
+    }
+  },
+
+  "camera": {
+    "view_type": "top-down | isometric-45 | three-quarter | side | first-person",
+    "pitch_angle_deg": "number — 负值表示向下看，如 -45",
+    "yaw_angle_deg": "number — 方位角，0=正北/正前，顺时针增加",
+    "fov_estimate_deg": "number | 'uncertain'",
+    "horizon_position_pct": "number | null — 地平线在画面中的垂直位置百分比，不可见则 null",
+    "notes": "string — 其他相机相关观察"
+  },
+
+  "spatial_layers": {
+    "foreground": {
+      "y_range_pct": ["number — 起始%", "number — 结束%"],
+      "description": "string — 前景内容概述"
+    },
+    "midground": {
+      "y_range_pct": ["number", "number"],
+      "description": "string — 中景内容概述"
+    },
+    "background": {
+      "y_range_pct": ["number", "number"],
+      "description": "string — 远景内容概述"
+    }
+  },
+
+  "ground_plane": {
+    "polygon_pct": [{"x": "number", "y": "number"}],
+    "terrain_type": "grass | dirt | stone | sand | water | mixed",
+    "has_elevation_change": "boolean",
+    "elevation_notes": "string — 如有坡度/高差在此描述"
+  },
+
+  "objects": [
+    {
+      "id": "string — 语义化唯一标识，如 house_main, tree_01",
+      "category": "building | vegetation | terrain_feature | prop | water | path | character",
+      "subcategory": "string — 细分类型，如 cottage, conifer_tree, bush, rock, fence",
+      "bbox_pct": {
+        "x_min": "number 0-100",
+        "y_min": "number 0-100",
+        "x_max": "number 0-100",
+        "y_max": "number 0-100"
+      },
+      "center_pct": {"x": "number", "y": "number"},
+      "ground_contact_pct": {"x": "number", "y": "number"},
+      "relative_size": "large | medium | small",
+      "estimated_size_m": {"w": "number", "d": "number", "h": "number"},
+      "size_confidence": "high | medium | low",
+      "depth_layer": "foreground | midground | background",
+      "color_dominant": "#hex",
+      "color_secondary": "#hex | null",
+      "material_hint": "wood | stone | metal | grass | water | fabric | glass | mixed",
+      "rotation_hint_deg": "number — 物体Y轴旋转角度估算，0=正对相机",
+      "occlusion": ["string — 如 'partially_occluded_by: tree_02'，无遮挡则空数组"],
+      "group_id": "string | null — 所属 group 的 id",
+      "confidence": "high | medium | low",
+      "notes": "string — 其他特征"
+    }
+  ],
+
+  "groups": [
+    {
+      "group_id": "string — 如 tree_line_01",
+      "members": ["string — object id"],
+      "pattern": "linear | cluster | grid | scattered | arc",
+      "pattern_direction_pct": {
+        "from": {"x": "number", "y": "number"},
+        "to": {"x": "number", "y": "number"}
+      },
+      "spacing_hint": "even | varied",
+      "notes": "string"
+    }
+  ],
+
+  "spatial_references": {
+    "perspective_lines": [
+      {
+        "id": "string — 如 road_center",
+        "type": "road | river | fence | building_edge | wall | bridge",
+        "from_pct": {"x": "number", "y": "number"},
+        "to_pct": {"x": "number", "y": "number"},
+        "depth_cue": "string — 描述这条线如何暗示深度"
+      }
+    ],
+    "vanishing_points_pct": [
+      {
+        "x": "number",
+        "y": "number",
+        "confidence": "high | medium | low",
+        "source": "string — 由哪些线推断"
+      }
+    ],
+    "size_gradient": "string — 描述近大远小的规律",
+    "natural_boundaries": ["string — 如 '河流将场景左右分隔'"],
+    "shadow_consistency": "string — consistent/inconsistent + 描述"
+  },
+
+  "spatial_relations": [
+    {
+      "subject": "string — object id",
+      "relation": "left_of | right_of | in_front_of | behind | left_front_of | right_front_of | left_behind | right_behind | adjacent_to | on_top_of | inside",
+      "object": "string — object id",
+      "distance_hint": "close | medium | far"
+    }
+  ],
+
+  "analysis_meta": {
+    "image_dimensions": "string — 如 1920x1080 或 unknown",
+    "ui_elements_detected": "boolean",
+    "ui_notes": "string — 如检测到编辑器 UI 在此说明",
+    "total_objects_identified": "number",
+    "low_confidence_count": "number",
+    "analysis_limitations": "string — 描述分析中的限制和不确定性"
+  }
+}

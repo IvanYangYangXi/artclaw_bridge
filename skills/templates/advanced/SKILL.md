@@ -1,6 +1,19 @@
 ---
-name: TODO_skill_name
-description: "TODO: 一句话描述这个 Skill 的作用，包含使用场景和触发条件"
+name: todo-skill-name
+description: >
+  TODO: Describe what this skill does and when to use it.
+  Use when AI needs to: (1) ... (2) ...
+  NOT for: ...
+license: MIT
+metadata:
+  artclaw:
+    display_name: "TODO: 技能显示名称"
+    author: "TODO: 作者名"
+    software: unreal_engine
+    category: "TODO: scene|asset|material|lighting|render|blueprint|animation|ui|utils|integration|workflow"
+    risk_level: medium
+    version: 1.0.0
+    tags: ["TODO", "batch", "utility"]
 ---
 
 # TODO_skill_name
@@ -26,5 +39,5 @@ TODO: 详细描述 Skill 的功能和用途。
 
 ## Notes
 
-- 适用版本: Unreal Engine 5.3 - 5.5
+- 适用版本: Unreal Engine 5.3 - 5.7
 - 风险级别: medium

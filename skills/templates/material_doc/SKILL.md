@@ -5,6 +5,18 @@ description: >
   static switch), and generate a comprehensive Markdown documentation file. Use when
   AI needs to: (1) document material parameters for artists, (2) understand material
   structure, (3) generate technical reference for master materials.
+  Saves output to Saved/MaterialDocs/. Only reads material data (no modifications).
+  Requires UE Editor running with ArtClaw plugin.
+license: MIT
+metadata:
+  artclaw:
+    display_name: "生成材质使用文档"
+    author: ArtClaw
+    software: unreal_engine
+    category: material
+    risk_level: low
+    version: 1.0.0
+    tags: ["material", "documentation", "read-only"]
 ---
 
 # 生成材质使用文档
@@ -23,6 +35,5 @@ description: >
 
 ## Notes
 
-- Category: material
-- Risk level: low (只读操作)
-- 适用版本: UE 5.1 - 5.5
+- 只读操作，不修改材质
+- 适用版本: UE 5.3 - 5.7

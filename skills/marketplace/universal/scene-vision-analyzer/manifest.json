@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "scene_vision_analyzer",
+  "display_name": "Scene Vision Analyzer",
+  "description": "Analyze game scene concept art / screenshots into structured JSON for 3D reconstruction. Extracts objects, spatial layout, camera parameters, lighting, perspective lines, and depth layers. Use when: (1) user provides a scene image and wants structured analysis for 3D scene building, (2) converting 2D concept art to UE/3D engine scene layout, (3) extracting object lists, positions, and spatial relationships from game art. Triggers: \"分析场景\", \"场景原画分析\", \"scene analysis\", \"图片分析\", \"结构化分析\", \"2D to 3D\".",
+  "version": "0.0.1",
+  "author": "ArtClaw",
+  "software": "universal",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "scene_vision_analyzer",
+      "description": "Analyze game scene concept art / screenshots into structured JSON for 3D reconstruction. Extracts objects, spatial layout, camera parameters, lighting, perspective lines, and depth layers. Use when: (1) user provides a scene image and wants structured analysis for 3D scene building, (2) converting 2D concept art to UE/3D engine scene layout, (3) extracting object lists, positions, and spatial relationships from game art. Triggers: \"分析场景\", \"场景原画分析\", \"scene analysis\", \"图片分析\", \"结构化分析\", \"2D to 3D\"."
+    }
+  ]
+}

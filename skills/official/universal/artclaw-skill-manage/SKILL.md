@@ -102,7 +102,7 @@ result = rename_skill("old_skill_name", "new_skill_name")
 4. 保存到已安装目录 `~/.openclaw/skills/<skill_name>/`
 5. `publish_skill()` 发布到源码仓库
 
-### SKILL.md 模板
+### SKILL.md 模板（OpenClaw 兼容格式）
 
 ```markdown
 ---
@@ -110,8 +110,16 @@ name: my-skill-name
 description: >
   英文描述。必须包含 "Use when AI needs to:" + 编号列表。
   末尾加 "NOT for:" 说明不适用场景。
-author: ArtClaw
-software: unreal_engine
+license: MIT
+metadata:
+  artclaw:
+    display_name: "中文显示名"
+    author: ArtClaw
+    software: unreal_engine
+    category: material
+    risk_level: low
+    version: 1.0.0
+    tags: ["material", "node"]
 ---
 
 # Skill 标题
@@ -125,13 +133,39 @@ software: unreal_engine
 （代码示例）
 ```
 
-**frontmatter 必需字段**: `name`（kebab-case）、`description`（英文，含触发条件）
+### Frontmatter 字段规范
+
+**OpenClaw 允许的顶层字段**（必须遵守，否则无法发布到 ClawHub）：
+
+| 字段 | 必需 | 说明 |
+|------|------|------|
+| `name` | ✅ | kebab-case，如 `ue57-material-node-edit` |
+| `description` | ✅ | 英文，含触发条件和排除场景 |
+| `license` | 可选 | 默认 MIT |
+| `allowed-tools` | 可选 | 声明需要的 OpenClaw 工具，如 `["message"]` |
+| `metadata` | 可选 | 嵌套对象，含 `openclaw` 和 `artclaw` 子块 |
+
+**ArtClaw 专属字段**（放在 `metadata.artclaw.*` 下）：
+
+| 字段 | 说明 |
+|------|------|
+| `display_name` | 中文显示名 |
+| `author` | 作者 |
+| `software` | `unreal_engine` / `maya` / `3ds_max` / `universal` |
+| `category` | `scene` / `asset` / `material` / `lighting` / `render` / `utils` / ... |
+| `risk_level` | `low` / `medium` / `high` / `critical` |
+| `version` | semver，如 `1.0.0` |
+| `tags` | 标签数组 |
+
+> **向后兼容**: 旧格式（字段在顶层）仍可被 skill_hub 解析，但新 Skill 必须使用新格式。
 
 ## Skill 命名规范
 
-格式: `{dcc}{major_version}_{skill_name}`（snake_case）或 `{dcc}{ver}-{name}`（kebab-case）
+格式: `{dcc}{major_version}-{skill-name}`（kebab-case，OpenClaw 标准）
 
-示例: `ue57_material_node_edit`, `maya24_curve_tools`, `artclaw-memory`（通用）
+示例: `ue57-material-node-edit`, `maya24-curve-tools`, `artclaw-memory`（通用）
+
+> skill_hub 内部自动将 kebab-case 转为 snake_case（`replace("-", "_")`），MCP 工具注册和 Python 模块名使用 snake_case。
 
 ## Skill 分层
 
