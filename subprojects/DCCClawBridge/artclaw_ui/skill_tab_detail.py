@@ -95,7 +95,44 @@ def show_detail_dialog(entry, parent=None):
     btn_row.addWidget(btn_source, 1)
 
     root.addLayout(btn_row)
+
+    # 发布按钮行（仅已安装的 Skill 可发布）
+    is_installed = entry.install_status != "not_installed"
+    publish_row = QHBoxLayout()
+    publish_style = (
+        f"QPushButton {{ background: #4D80E6; color: #fff;"
+        f" border-radius: 4px; padding: 4px 12px; font-weight: bold; }}"
+        f"QPushButton:hover {{ background: #5A8DF0; }}"
+    )
+    btn_publish = QPushButton("发布到源码仓库...")
+    btn_publish.setStyleSheet(publish_style)
+    btn_publish.setEnabled(is_installed)
+    btn_publish.setToolTip("将已安装的 Skill 发布到项目源码仓库（版本递增 + git commit）")
+    btn_publish.clicked.connect(
+        lambda: _do_publish(entry, parent, dlg))
+    publish_row.addStretch()
+    publish_row.addWidget(btn_publish)
+    publish_row.addStretch()
+    root.addLayout(publish_row)
+
     dlg.exec_()
+
+
+def _do_publish(entry, skill_tab_parent, dlg):
+    """打开发布弹窗，关闭详情弹窗"""
+    try:
+        from artclaw_ui.skill_tab_publish import show_publish_dialog
+        # 收集已发现的 DCC 列表（从 parent SkillTab 获取，或提供默认值）
+        discovered_dcc = []
+        if hasattr(skill_tab_parent, '_discovered_dcc'):
+            discovered_dcc = skill_tab_parent._discovered_dcc
+        dlg.accept()  # 先关闭详情弹窗
+        show_publish_dialog(entry, discovered_dcc, parent=skill_tab_parent)
+        # 发布完成后刷新列表
+        if hasattr(skill_tab_parent, 'refresh'):
+            skill_tab_parent.refresh()
+    except Exception as ex:
+        logger.error("打开发布弹窗失败: %s", ex)
 
 
 def _open_dir(path: str):

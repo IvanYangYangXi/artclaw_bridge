@@ -45,6 +45,7 @@ CORE_MODULES = [
     "health_check.py",
     "integrity_check.py",
     "memory_core.py",
+    "skill_sync.py",
 ]
 
 # 平台 Bridge: platforms/openclaw/ → UE Content/Python/

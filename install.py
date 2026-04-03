@@ -64,7 +64,7 @@ def _get_lobster_config_path() -> str:
 
 
 # 需要打包到每个目标的共享模块
-SHARED_MODULES = ["bridge_core.py", "bridge_config.py", "bridge_diagnostics.py"]
+SHARED_MODULES = ["bridge_core.py", "bridge_config.py", "bridge_diagnostics.py", "skill_sync.py"]
 
 # 支持的平台及其默认配置（与 bridge_config.py 的 _PLATFORM_DEFAULTS 保持一致）
 PLATFORM_CONFIGS = {
