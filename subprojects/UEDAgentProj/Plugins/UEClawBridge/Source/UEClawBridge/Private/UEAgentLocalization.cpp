@@ -135,7 +135,13 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("SendBtnWaiting"),     TEXT("等待中..."),                 TEXT("Waiting..."));
 	Reg(TEXT("StopBtn"),            TEXT("停止"),                      TEXT("Stop"));
 	Reg(TEXT("StopTip"),            TEXT("停止 AI 回答"),              TEXT("Stop AI response"));
+	Reg(TEXT("ResumeBtn"),          TEXT("恢复"),                      TEXT("Resume"));
+	Reg(TEXT("ResumeTip"),          TEXT("恢复接收中断的 AI 回复"),    TEXT("Resume receiving interrupted AI response"));
 	Reg(TEXT("AIStopped"),          TEXT("已停止 AI 回答"),            TEXT("AI response stopped"));
+	Reg(TEXT("ResumeReceiving"),    TEXT("正在恢复接收..."),            TEXT("Resuming reception..."));
+	Reg(TEXT("ResumeComplete"),     TEXT("已恢复接收完毕。"),           TEXT("Reception resumed and completed."));
+	Reg(TEXT("ResumeNoData"),       TEXT("没有未接收的数据。"),         TEXT("No pending data to resume."));
+	Reg(TEXT("ResumeContinuing"),   TEXT("已恢复接收，AI 仍在回复中..."), TEXT("Reception resumed, AI still responding..."));
 	Reg(TEXT("SessionLabel"),       TEXT("对话"),                      TEXT("Chat"));
 	Reg(TEXT("ContextUsage"),       TEXT("上下文"),                    TEXT("Context"));
 
@@ -157,6 +163,15 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("LangToggleTip"),      TEXT("切换到 English"),            TEXT("Switch to 中文"));
 	Reg(TEXT("LangZh"),             TEXT("中"),                        TEXT("中"));
 	Reg(TEXT("LangEn"),             TEXT("En"),                        TEXT("En"));
+
+	// ==================================================================
+	// 附件 (剪贴板图片/文件)
+	// ==================================================================
+	Reg(TEXT("AttachBtn"),          TEXT("Attach"),                    TEXT("Attach"));
+	Reg(TEXT("AttachTip"),          TEXT("添加图片或文件附件 (也可 Ctrl+V 粘贴)"), TEXT("Add image or file attachment (or Ctrl+V to paste)"));
+	Reg(TEXT("AttachRemoveTip"),    TEXT("移除此附件"),                TEXT("Remove this attachment"));
+	Reg(TEXT("AttachTooLarge"),     TEXT("文件太大 (超过 10MB 限制)"), TEXT("File too large (exceeds 10MB limit)"));
+	Reg(TEXT("AttachFileTitle"),    TEXT("选择文件"),                  TEXT("Select File"));
 
 	// ==================================================================
 	// ChatPanel (旧面板兼容)
@@ -187,6 +202,7 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("SlashStatus"),        TEXT("显示连接状态"),              TEXT("Show connection status"));
 	Reg(TEXT("SlashClear"),         TEXT("清空聊天记录"),              TEXT("Clear chat history"));
 	Reg(TEXT("SlashCancel"),        TEXT("取消等待 AI 响应"),          TEXT("Cancel pending AI response"));
+	Reg(TEXT("SlashResume"),        TEXT("恢复接收中断的 AI 回复"),    TEXT("Resume receiving interrupted AI response"));
 	Reg(TEXT("SlashHelp"),          TEXT("显示所有可用命令"),          TEXT("Show all available commands"));
 	Reg(TEXT("SlashNew"),           TEXT("开始新会话"),                TEXT("Start new conversation"));
 	Reg(TEXT("SlashCompact"),       TEXT("压缩上下文 (释放 token 空间)"), TEXT("Compact context (free up token space)"));
@@ -317,12 +333,18 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("ConfirmTitle"),           TEXT("操作确认"),                    TEXT("Confirm Operation"));
 	Reg(TEXT("ConfirmRiskHigh"),        TEXT("⚠ 高风险操作"),               TEXT("⚠ High Risk"));
 	Reg(TEXT("ConfirmRiskMedium"),      TEXT("中风险操作"),                  TEXT("Medium Risk"));
+	Reg(TEXT("RiskHigh"),               TEXT("⚠ 高风险"),                   TEXT("⚠ High Risk"));
+	Reg(TEXT("RiskMedium"),             TEXT("中风险"),                      TEXT("Medium Risk"));
+	Reg(TEXT("ConfirmMessage"),         TEXT("AI 请求执行以下操作，是否允许？"), TEXT("AI is requesting to perform the following operations. Allow?"));
 	Reg(TEXT("ConfirmOperations"),      TEXT("将执行以下操作:"),             TEXT("The following operations will be performed:"));
 	Reg(TEXT("ConfirmCodePreview"),     TEXT("代码预览:"),                   TEXT("Code preview:"));
 	Reg(TEXT("ConfirmBatchWarning"),    TEXT("⚠ 包含循环批量操作!"),         TEXT("⚠ Contains batch loop operations!"));
 	Reg(TEXT("ConfirmApprove"),         TEXT("允许"),                        TEXT("Approve"));
+	Reg(TEXT("ConfirmAllow"),           TEXT("允许执行"),                    TEXT("Allow"));
 	Reg(TEXT("ConfirmDeny"),            TEXT("拒绝"),                        TEXT("Deny"));
-	Reg(TEXT("ConfirmSessionSilent"),   TEXT("本次会话不再提示中风险操作"),   TEXT("Don't ask again for medium risk operations this session"));
+	Reg(TEXT("ConfirmDontAsk"),         TEXT("不再提示此风险级别"),           TEXT("Don't ask again for this risk level"));
+	Reg(TEXT("ConfirmSilentEnabled"),   TEXT("已启用静默模式，后续同级别操作将自动批准"), TEXT("Silent mode enabled, future operations of this risk level will be auto-approved"));
+	Reg(TEXT("ConfirmSessionSilent"),   TEXT("静默通过"),                    TEXT("Auto-approved (silent)"));
 
 	// ==================================================================
 	// 静默模式 (阶段 5.7) — 中/高风险分开控制

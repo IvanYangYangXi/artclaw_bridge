@@ -155,7 +155,7 @@ FReply SUEAgentDashboard::OnViewLogsClicked()
 
 void SUEAgentDashboard::LoadContextWindowSize()
 {
-	FString ConfigPath = FPlatformProcess::UserDir();
+	FString ConfigPath = FPlatformProcess::UserHomeDir();
 	ConfigPath = FPaths::Combine(ConfigPath, TEXT(".artclaw"), TEXT("config.json"));
 
 	FString JsonContent;
@@ -176,7 +176,7 @@ void SUEAgentDashboard::LoadContextWindowSize()
 
 void SUEAgentDashboard::SaveContextWindowSize()
 {
-	FString ConfigPath = FPlatformProcess::UserDir();
+	FString ConfigPath = FPlatformProcess::UserHomeDir();
 	ConfigPath = FPaths::Combine(ConfigPath, TEXT(".artclaw"), TEXT("config.json"));
 
 	// 读取现有 config

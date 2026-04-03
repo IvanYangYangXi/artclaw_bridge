@@ -91,10 +91,6 @@ class OpenClawBridge:
         self.on_ai_message: Optional[Callable[[str, str], None]] = None
         # 回调: 收到 AI thinking 内容时
         self.on_ai_thinking: Optional[Callable[[str, str], None]] = None
-        # 回调: 收到工具调用时 (tool_name, tool_id, arguments_dict)
-        self.on_tool_call: Optional[Callable[[str, str, dict], None]] = None
-        # 回调: 收到工具结果时 (tool_name, tool_id, content_text, is_error)
-        self.on_tool_result: Optional[Callable[[str, str, str, bool], None]] = None
         # 回调: 收到 token usage 更新时 (usage_dict)
         self.on_usage_update: Optional[Callable[[dict], None]] = None
         # 最新的 token usage 数据
@@ -544,6 +540,18 @@ class OpenClawBridge:
                     payload = msg.get("payload", {})
 
                     if event_name == "chat":
+                        # DEBUG: 记录 chat 事件的 state 和 content block 类型
+                        _state = payload.get("state", "")
+                        _msg = payload.get("message", {})
+                        _blocks = []
+                        if isinstance(_msg, dict):
+                            _content = _msg.get("content", [])
+                            if isinstance(_content, list):
+                                _blocks = [b.get("type", "?") for b in _content if isinstance(b, dict)]
+                        self._log.info(
+                            f"OpenClaw Bridge: chat event state={_state}, "
+                            f"block_types={_blocks}"
+                        )
                         self._handle_chat_event(payload)
                     elif event_name == "agent":
                         self._handle_agent_event(payload)
@@ -597,38 +605,8 @@ class OpenClawBridge:
                             thinking_parts.append(
                                 block.get("thinking", "") or block.get("text", "")
                             )
-                        elif block_type == "toolCall":
-                            # 解析工具调用事件
-                            tool_name = block.get("name", "")
-                            tool_id = block.get("id", "")
-                            tool_args = block.get("arguments", {})
-                            if isinstance(tool_args, str):
-                                try:
-                                    tool_args = json.loads(tool_args)
-                                except (json.JSONDecodeError, ValueError):
-                                    tool_args = {"raw": tool_args}
-                            if self.on_tool_call and tool_name:
-                                self.on_tool_call(tool_name, tool_id, tool_args)
-                        elif block_type == "toolResult":
-                            # 解析工具结果事件
-                            tool_name = block.get("toolName", "")
-                            tool_id = block.get("toolCallId", "")
-                            is_error = block.get("isError", False)
-                            result_content = block.get("content", "")
-                            if isinstance(result_content, list):
-                                result_text = "\n".join(
-                                    item.get("text", "")
-                                    for item in result_content
-                                    if isinstance(item, dict)
-                                )
-                            elif isinstance(result_content, str):
-                                result_text = result_content
-                            else:
-                                result_text = str(result_content)
-                            if self.on_tool_result and tool_name:
-                                self.on_tool_result(
-                                    tool_name, tool_id, result_text, is_error
-                                )
+                        # NOTE: Gateway chat 事件不包含 toolCall/toolResult blocks，
+                        # tool 事件通过 MCP Server 侧回调推送到 UI (见 mcp_server.py)
                 text = "".join(text_parts)
                 thinking_text = "".join(thinking_parts)
             elif isinstance(content, str):
@@ -675,6 +653,13 @@ class OpenClawBridge:
             return
 
         text = data.get("text", "")
+
+        # DEBUG: 记录非 assistant/thinking 的 stream 类型，帮助诊断 tool 事件
+        if stream not in ("assistant", "thinking", "lifecycle"):
+            self._log.info(
+                f"OpenClaw Bridge: agent event stream={stream}, "
+                f"data_keys={list(data.keys())}, text_len={len(text)}"
+            )
 
         if stream == "assistant" and text:
             if self.on_ai_message:
@@ -765,7 +750,7 @@ class OpenClawBridge:
 
     async def _async_chat_send_fire_and_forget(self, message: str) -> str:
         """发送消息，拿到 run_id 后立即返回，不等 final 事件。
-        后续响应通过 on_ai_message / on_tool_call / on_tool_result 回调流式推送。
+        后续响应通过 on_ai_message / on_ai_thinking 回调流式推送。
         返回 run_id 字符串，或以 "[错误]" 开头的错误信息。
         """
         self._cancel_event = asyncio.Event()

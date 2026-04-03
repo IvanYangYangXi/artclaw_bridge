@@ -57,8 +57,12 @@ def _parse_yaml_frontmatter(content: str) -> Optional[dict]:
     """从 SKILL.md 内容中解析 YAML frontmatter。
 
     支持标准 '---' 分隔的 frontmatter 块。
-    仅做简单 key: value 解析，不依赖 PyYAML（UE Python 环境不一定有）。
-    支持多行值（用 > 或 | 标记）。
+    零依赖（不需要 PyYAML），支持:
+      - flat key: value
+      - 多行值（> 或 |）
+      - 嵌套 dict（缩进 2/4 空格，最深 3 层）
+      - 内联 JSON 对象/数组（{ ... } 或 [ ... ]）
+      - 带引号的字符串
     """
     lines = content.split("\n")
     if not lines or lines[0].strip() != "---":
@@ -74,52 +78,197 @@ def _parse_yaml_frontmatter(content: str) -> Optional[dict]:
         return None
 
     fm_lines = lines[1:end_idx]
+    return _parse_yaml_lines(fm_lines)
 
+
+def _parse_yaml_lines(lines: list, base_indent: int = 0) -> dict:
+    """递归解析 YAML 行列表为 dict，支持嵌套和内联 JSON。"""
     result: dict = {}
     current_key = None
     current_value_lines: list = []
     is_multiline = False
+    i = 0
 
-    for line in fm_lines:
+    while i < len(lines):
+        line = lines[i]
         stripped = line.strip()
+
+        # 跳过空行和注释
         if not stripped or stripped.startswith("#"):
+            if is_multiline and current_key:
+                current_value_lines.append("")
+            i += 1
             continue
 
-        # 检查是否是新的 key: value 行
-        if ":" in line and not line[0].isspace():
-            # 保存之前的多行值
-            if current_key and is_multiline:
-                result[current_key] = " ".join(current_value_lines).strip()
+        # 计算缩进层级
+        indent = len(line) - len(line.lstrip())
 
-            colon_idx = line.index(":")
-            current_key = line[:colon_idx].strip()
-            raw_value = line[colon_idx + 1:].strip()
+        # 如果缩进小于等于 base_indent 且不是第一层，说明超出了当前块
+        if indent < base_indent and base_indent > 0:
+            break
+
+        # 非缩进行（相对于 base_indent）= 新的 key
+        if indent == base_indent and ":" in stripped:
+            # 先保存之前的多行值
+            if current_key and is_multiline:
+                _flush_multiline(result, current_key, current_value_lines)
+
+            colon_idx = stripped.index(":")
+            current_key = stripped[:colon_idx].strip()
+            raw_value = stripped[colon_idx + 1:].strip()
 
             if raw_value in (">", "|", ">-", "|-"):
-                # 多行值标记
                 is_multiline = True
                 current_value_lines = []
-            elif raw_value.startswith('"') and raw_value.endswith('"'):
-                result[current_key] = raw_value[1:-1]
-                is_multiline = False
-            elif raw_value.startswith("'") and raw_value.endswith("'"):
-                result[current_key] = raw_value[1:-1]
-                is_multiline = False
-            elif raw_value:
+                i += 1
+                continue
+
+            # 内联 JSON 对象或数组
+            if raw_value.startswith("{") or raw_value.startswith("["):
+                parsed = _try_parse_inline_json(raw_value, lines, i, base_indent)
+                if parsed is not None:
+                    result[current_key] = parsed
+                    is_multiline = False
+                    # 跳过被内联 JSON 消耗的行
+                    i = _skip_inline_json_lines(lines, i, base_indent)
+                    continue
+                # JSON 解析失败，当普通字符串处理
                 result[current_key] = raw_value
                 is_multiline = False
+                i += 1
+                continue
+
+            if raw_value:
+                result[current_key] = _unquote(raw_value)
+                is_multiline = False
+                i += 1
+                continue
+
+            # 空值：检查下面是否有缩进的子块
+            child_indent = _detect_child_indent(lines, i + 1, base_indent)
+            if child_indent > base_indent:
+                # 收集子块行
+                child_lines = []
+                j = i + 1
+                while j < len(lines):
+                    cl = lines[j]
+                    cl_stripped = cl.strip()
+                    cl_indent = len(cl) - len(cl.lstrip()) if cl_stripped else child_indent
+                    if cl_stripped and cl_indent < child_indent:
+                        break
+                    child_lines.append(cl)
+                    j += 1
+                result[current_key] = _parse_yaml_lines(child_lines, child_indent)
+                is_multiline = False
+                i = j
+                continue
             else:
-                # 空值，可能是 dict 或后续缩进的多行
+                # 多行折叠值（无标记的缩进续行）
                 is_multiline = True
                 current_value_lines = []
-        elif current_key and is_multiline:
+                i += 1
+                continue
+
+        elif is_multiline and current_key:
             current_value_lines.append(stripped)
+            i += 1
+            continue
+        else:
+            i += 1
+            continue
 
     # 处理最后一个多行值
-    if current_key and is_multiline and current_value_lines:
-        result[current_key] = " ".join(current_value_lines).strip()
+    if current_key and is_multiline:
+        _flush_multiline(result, current_key, current_value_lines)
 
     return result
+
+
+def _flush_multiline(result: dict, key: str, value_lines: list) -> None:
+    """将多行值合并写入 result。"""
+    # 去掉首尾空行
+    while value_lines and not value_lines[0]:
+        value_lines.pop(0)
+    while value_lines and not value_lines[-1]:
+        value_lines.pop()
+    if value_lines:
+        result[key] = " ".join(value_lines).strip()
+
+
+def _unquote(value: str) -> str:
+    """去除首尾引号。"""
+    if len(value) >= 2:
+        if (value[0] == '"' and value[-1] == '"') or \
+           (value[0] == "'" and value[-1] == "'"):
+            return value[1:-1]
+    return value
+
+
+def _detect_child_indent(lines: list, start: int, parent_indent: int) -> int:
+    """检测下一个非空行的缩进级别。"""
+    for j in range(start, len(lines)):
+        stripped = lines[j].strip()
+        if stripped and not stripped.startswith("#"):
+            return len(lines[j]) - len(lines[j].lstrip())
+    return parent_indent
+
+
+def _try_parse_inline_json(first_value: str, lines: list, line_idx: int,
+                           base_indent: int):
+    """尝试解析内联 JSON（可能跨多行）。成功返回 parsed 对象，失败返回 None。"""
+    import json as _json
+
+    # 先试单行
+    try:
+        return _json.loads(first_value)
+    except _json.JSONDecodeError:
+        pass
+
+    # 多行收集：从当前行的 value 部分开始，收集到 JSON 完整为止
+    collected = first_value
+    for j in range(line_idx + 1, len(lines)):
+        cl = lines[j].strip()
+        if not cl:
+            continue
+        collected += " " + cl
+        try:
+            return _json.loads(collected)
+        except _json.JSONDecodeError:
+            continue
+
+    return None
+
+
+def _skip_inline_json_lines(lines: list, start_idx: int, base_indent: int) -> int:
+    """跳过被内联 JSON 消耗的行，返回下一个要处理的行索引。"""
+    import json as _json
+
+    line = lines[start_idx]
+    stripped = line.strip()
+    colon_idx = stripped.index(":")
+    first_value = stripped[colon_idx + 1:].strip()
+
+    # 单行就能解析
+    try:
+        _json.loads(first_value)
+        return start_idx + 1
+    except _json.JSONDecodeError:
+        pass
+
+    # 多行
+    collected = first_value
+    for j in range(start_idx + 1, len(lines)):
+        cl = lines[j].strip()
+        if not cl:
+            continue
+        collected += " " + cl
+        try:
+            _json.loads(collected)
+            return j + 1
+        except _json.JSONDecodeError:
+            continue
+
+    return start_idx + 1
 
 
 def _scan_ue_tools_ast(init_py: Path) -> List[dict]:
@@ -695,6 +844,10 @@ class SkillHub:
 
         读取 frontmatter 中的 name/description，然后预加载 __init__.py
         扫描 @ue_tool 装饰器以发现 tools 列表。
+
+        字段读取优先级（新格式 > 旧格式 > 默认值）:
+          - 新格式: metadata.artclaw.{field}
+          - 旧格式: 顶层 {field}（向后兼容）
         """
         try:
             content = skill_md_path.read_text(encoding="utf-8")
@@ -711,8 +864,7 @@ class SkillHub:
             return None
 
         fm_name = fm["name"].replace("-", "_")  # OpenClaw 用 kebab-case，我们用 snake_case
-        # 优先使用目录名作为规范名（frontmatter name 可能和目录名不同，如 get_material_nodes vs ue54_get_material_nodes）
-        # 这样 seen_names 去重能正确匹配目录名，避免同一 Skill 出现两条
+        # 优先使用目录名作为规范名（frontmatter name 可能和目录名不同）
         canonical_name = skill_dir.name
         if _NAME_ALIAS_MAP.get(fm_name) == canonical_name or fm_name != canonical_name:
             fm_name = canonical_name
@@ -725,15 +877,21 @@ class SkillHub:
             tools_from_ast = _scan_ue_tools_ast(init_py)
 
         if not tools_from_ast:
-            # 没有发现工具，用 skill name 作为默认 tool
             tools_from_ast = [{"name": fm_name, "description": fm_desc}]
 
-        # 从 frontmatter metadata 提取额外字段（如果有）
+        # 从 metadata.artclaw 读取 ArtClaw 专属字段，旧格式顶层 fallback
         metadata = fm.get("metadata", {})
-        oc_meta = metadata.get("openclaw", {}) if isinstance(metadata, dict) else {}
+        ac_meta = metadata.get("artclaw", {}) if isinstance(metadata, dict) else {}
 
-        # 推断 software: frontmatter > 名称前缀 > 默认 universal
-        _software = fm.get("software", "")
+        def _ac(field, default=""):
+            """优先 metadata.artclaw.{field}，fallback 顶层 fm.{field}。"""
+            val = ac_meta.get(field) if isinstance(ac_meta, dict) else None
+            if val is not None and val != "":
+                return val
+            return fm.get(field, default)
+
+        # 推断 software: metadata.artclaw > 顶层 > 名称前缀 > 默认 universal
+        _software = _ac("software", "")
         if not _software:
             if fm_name.startswith("ue") and len(fm_name) > 2 and fm_name[2:3].isdigit():
                 _software = "unreal_engine"
@@ -744,21 +902,26 @@ class SkillHub:
             else:
                 _software = "universal"
 
+        # tags 处理: 可能是 list 或逗号分隔字符串
+        _tags = _ac("tags", [])
+        if isinstance(_tags, str):
+            _tags = [t.strip() for t in _tags.split(",") if t.strip()]
+
         # 构建 SkillManifest
         from skill_manifest import SkillManifest, ToolEntry, SoftwareVersion
         manifest = SkillManifest(
             manifest_version="1.0",
             name=fm_name,
-            display_name=fm.get("display_name", fm_name.replace("_", " ").title()),
+            display_name=_ac("display_name", fm_name.replace("_", " ").title()),
             description=fm_desc,
-            version=fm.get("version", "1.0.0"),
-            author=fm.get("author", ""),
+            version=_ac("version", "1.0.0"),
+            author=_ac("author", ""),
             license=fm.get("license", "MIT"),
             software=_software,
-            category=fm.get("category", "utils"),
-            risk_level=fm.get("risk_level", "low"),
+            category=_ac("category", "utils"),
+            risk_level=_ac("risk_level", "low"),
             dependencies=[],
-            tags=fm.get("tags", []),
+            tags=_tags,
             entry_point="__init__.py",
             tools=[ToolEntry(name=t["name"], description=t["description"]) for t in tools_from_ast],
             software_version=SoftwareVersion(),

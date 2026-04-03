@@ -104,6 +104,15 @@ if Signal is not None:
         # 收到 AI thinking 文本: (state: str, text: str)
         ai_thinking = Signal(str, str)
 
+        # 工具调用: (tool_name: str, tool_id: str, arguments_json: str)
+        tool_call = Signal(str, str, str)
+
+        # 工具结果: (tool_name: str, tool_id: str, content: str, is_error: bool)
+        tool_result = Signal(str, str, str, bool)
+
+        # Token 用量更新: (used: int, total: int)
+        usage_update = Signal(int, int)
+
         # 最终响应完成: (result: str)
         response_complete = Signal(str)
 else:
@@ -158,7 +167,22 @@ class DCCBridgeManager:
             on_status_changed=self._on_status_changed,
         )
 
-        return self._bridge.start()
+        connected = self._bridge.start()
+
+        if connected:
+            # 修复旧格式 session key（local- 前缀无法接收 Gateway 事件）
+            sk = self._bridge.get_session_key()
+            if sk and not sk.startswith("agent:"):
+                self._bridge.reset_session()
+                logger.info(f"Reset legacy session key: {sk[:30]}")
+
+            # 设置持久回调 — 在整个连接生命周期内生效
+            self._bridge.on_ai_message = self._on_ai_message
+            self._bridge.on_ai_thinking = self._on_ai_thinking
+            self._bridge.on_usage_update = self._on_usage_update
+            # NOTE: tool 事件通过 MCP Server 侧回调推送 (见 mcp_server.py _connect_tool_events_to_bridge)
+
+        return connected
 
     def disconnect(self):
         """断开连接"""
@@ -171,8 +195,10 @@ class DCCBridgeManager:
 
     def send_message(self, message: str):
         """
-        异步发送消息给 AI。
-        响应通过 signals.ai_message / signals.response_complete 回传。
+        异步发送消息给 AI（后台线程阻塞等待，主线程不阻塞）。
+
+        使用 bridge_core.send_message_async()（后台线程中 send_message 阻塞等待 final）。
+        流式回调在 connect() 时一次性设置，持续生效。
         """
         if not self._bridge:
             self.connect()
@@ -184,20 +210,34 @@ class DCCBridgeManager:
                 )
             return
 
+        # 确保连接存在
+        if not self._bridge.is_connected():
+            connected = self._bridge.start()
+            if not connected:
+                if self.signals:
+                    self.signals.response_complete.emit(
+                        "[错误] 无法连接到 OpenClaw Gateway，请确认 OpenClaw 正在运行。"
+                    )
+                return
+
+        # 确保 session key 是 Gateway 格式（防止旧实例遗留的 local- 前缀）
+        sk = self._bridge.get_session_key()
+        if sk and sk.startswith("local-"):
+            self._bridge.reset_session()
+            self._context_injected = False
+
         # 记忆摘要注入
         enriched = self._enrich_with_briefing(message)
 
-        # 设置流式回调
-        self._bridge.on_ai_message = self._on_ai_message
-        self._bridge.on_ai_thinking = self._on_ai_thinking
+        # 重置流式状态
+        self._streaming_text_len = 0
 
         def _on_result(result: str):
+            """send_message 完成回调（从后台线程调用）"""
             if self.signals:
                 self.signals.response_complete.emit(result)
-            # 清理回调
-            if self._bridge:
-                self._bridge.on_ai_message = None
-                self._bridge.on_ai_thinking = None
+            # 查询 session token 用量
+            self._query_session_usage()
 
         self._bridge.send_message_async(enriched, _on_result)
 
@@ -324,17 +364,122 @@ class DCCBridgeManager:
     # --- 内部回调 ---
 
     def _on_status_changed(self, connected: bool, detail: str):
-        logger.info(f"Bridge status: {'connected' if connected else 'disconnected'} ({detail})")
+        if connected:
+            logger.info("Bridge status: connected")
+        else:
+            logger.info(f"Bridge status: disconnected ({detail})")
         if self.signals:
             self.signals.connection_changed.emit(connected, detail)
 
     def _on_ai_message(self, state: str, text: str):
-        if self.signals:
+        """处理 AI 消息回调。
+
+        bridge_core 有两条事件路径:
+        1. agent events → _handle_agent_event → on_ai_message("delta", incremental_text)
+        2. chat events  → _handle_chat_event  → on_ai_message(state, cumulative_text)
+
+        两条路径都可能触发 delta，用 _streaming_text_len 去重。
+        """
+        if not self.signals or not text:
+            return
+
+        if state == "delta":
+            text_len = len(text)
+            prev_len = getattr(self, '_streaming_text_len', 0)
+            if text_len > prev_len:
+                self._streaming_text_len = text_len
+                self.signals.ai_message.emit(state, text)
+            elif text_len == prev_len:
+                # 相同长度 — 可能是重复事件，跳过
+                pass
+            else:
+                # 新文本比之前短 — 可能是新的回复周期，重置计数
+                self._streaming_text_len = text_len
+                self.signals.ai_message.emit(state, text)
+        elif state in ("final", "error", "aborted"):
+            self._streaming_text_len = 0
             self.signals.ai_message.emit(state, text)
 
     def _on_ai_thinking(self, state: str, text: str):
         if self.signals:
             self.signals.ai_thinking.emit(state, text)
+
+    # NOTE: _on_tool_call / _on_tool_result 已移除
+    # Gateway chat 事件不包含 toolCall/toolResult blocks，
+    # tool 事件改由 MCP Server 侧回调推送 (见 mcp_server.py _connect_tool_events_to_bridge)
+
+    def _on_usage_update(self, usage: dict):
+        if self.signals:
+            # Gateway 推送的 usage 格式: {totalTokens, inputTokens, outputTokens, ...}
+            total_tokens = usage.get("totalTokens", 0) or usage.get("total_tokens", 0)
+            # 上下文窗口大小从 config 读取
+            try:
+                from artclaw_ui.utils import get_artclaw_config
+                cfg = get_artclaw_config()
+                ctx_total = cfg.get("context_window_size", 128000)
+            except Exception:
+                ctx_total = 128000
+            self.signals.usage_update.emit(total_tokens, ctx_total)
+
+    def _query_session_usage(self):
+        """响应完成后，通过 sessions.list RPC 查询 session token 用量。
+        对齐 UE 端 openclaw_chat._query_session_usage()。
+        """
+        if not self._bridge or not self._bridge.is_connected():
+            return
+
+        def _worker():
+            try:
+                import asyncio
+
+                # 构建一次性 WebSocket 连接查询 sessions.list
+                from bridge_config import get_gateway_config
+                gw = get_gateway_config()
+                port = gw.get("port", 18789)
+                token = gw.get("auth", {}).get("token", "")
+                gateway_url = f"ws://127.0.0.1:{port}"
+                session_key = self._bridge.get_session_key()
+
+                if not session_key:
+                    return
+
+                # 使用 bridge_core 的 RPC 直接查询（不需要单独的 websocket 连接）
+                # bridge_core._loop 仍在运行，通过 run_coroutine_threadsafe 调度
+                if self._bridge._loop and self._bridge._loop.is_running():
+                    import concurrent.futures
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._bridge._rpc_request("sessions.list", {}, timeout=10.0),
+                        self._bridge._loop
+                    )
+                    result = future.result(timeout=15.0)
+
+                    if isinstance(result, dict):
+                        sessions = result.get("sessions", [])
+                        for s in sessions:
+                            if not isinstance(s, dict):
+                                continue
+                            s_key = s.get("key", "")
+                            if s_key == session_key or session_key in s_key or s_key in session_key:
+                                ctx_tokens = s.get("contextTokens", 0)
+                                total_tokens = s.get("totalTokens", 0)
+                                if total_tokens > 0 and self.signals:
+                                    try:
+                                        from artclaw_ui.utils import get_artclaw_config
+                                        cfg = get_artclaw_config()
+                                        ctx_window = cfg.get("context_window_size", 128000)
+                                    except Exception:
+                                        ctx_window = 128000
+                                    # contextTokens = Gateway 报告的模型上下文窗口
+                                    # totalTokens = 本次对话实际使用 token 数
+                                    # 优先使用用户配置的上下文上限（更保守）
+                                    capacity = ctx_window if ctx_window > 0 else (ctx_tokens if ctx_tokens > 0 else 128000)
+                                    self.signals.usage_update.emit(total_tokens, capacity)
+                                    logger.info(f"Session usage: {total_tokens}/{capacity}")
+                                return
+            except Exception as exc:
+                logger.debug(f"Session usage query failed: {exc}")
+
+        threading.Thread(target=_worker, daemon=True, name="OCUsageQuery").start()
 
     @staticmethod
     def _build_pinned_hint() -> str:

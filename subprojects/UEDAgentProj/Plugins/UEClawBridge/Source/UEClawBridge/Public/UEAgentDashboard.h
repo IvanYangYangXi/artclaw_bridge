@@ -125,6 +125,7 @@ private:
 	FReply OnSendClicked();
 	FReply OnNewChatClicked();
 	FReply OnStopClicked();
+	FReply OnResumeClicked();
 
 	// --- 聊天输入回调 ---
 	void OnInputTextChanged(const FText& NewText);
@@ -153,6 +154,9 @@ private:
 	/** 工具调用折叠切换 */
 	FReply OnToggleToolCollapse(int32 MessageIndex);
 
+	/** 从文本中提取文件路径 (Windows 格式: X:\...\file.ext 或 /path/to/file) */
+	static TArray<FString> ExtractFilePaths(const FString& Text);
+
 	// --- OpenClaw Bridge 连接管理 ---
 	void ConnectOpenClawBridge();
 	void DisconnectOpenClawBridge();
@@ -169,6 +173,15 @@ private:
 	// --- 流式显示辅助 ---
 	/** 更新 "Thinking..." 消息为流式内容 */
 	void UpdateStreamingMessage(const FString& Sender, const FString& Content);
+
+	/** 恢复接收中断的 AI 回复 — 重新读取 stream.jsonl 未读内容 + 最终响应 */
+	void ResumeReceiving();
+
+	/** 解析 stream.jsonl 的单行事件并更新 UI (供轮询和恢复接收共用) */
+	void ProcessStreamEventLine(const FString& Line);
+
+	/** 读取 stream.jsonl 新增行并通过 ProcessStreamEventLine 分发 */
+	void ReadAndProcessStreamLines(const FString& StreamFilePath);
 
 	// --- 快捷输入 (Quick Inputs) ---
 
@@ -287,6 +300,60 @@ private:
 
 	/** 关闭快捷输入编辑对话框并取消 */
 	FReply OnQuickInputEditCancelClicked();
+
+	// --- 附件 (剪贴板图片/文件) ---
+
+	/** 待发送附件数据模型 */
+	struct FPendingAttachment
+	{
+		FString FilePath;      // 保存到临时目录的完整路径
+		FString DisplayName;   // 显示名称 (如 "clipboard_20260401_072500.png")
+		FString MimeType;      // "image/png", "image/jpeg", etc.
+		int64 FileSize = 0;    // 字节数
+		bool bIsImage = false; // 是否为图片
+	};
+
+	/** 待发送附件列表 */
+	TArray<FPendingAttachment> PendingAttachments;
+
+	/** 附件预览容器 (HorizontalBox in a SBorder) */
+	TSharedPtr<SHorizontalBox> AttachmentPreviewBox;
+
+	/** 附件预览栏外层 Border (控制可见性) */
+	TSharedPtr<SBorder> AttachmentPreviewBorder;
+
+	/** 尝试从剪贴板粘贴图片/文件 (Ctrl+V 时调用) */
+	bool TryPasteFromClipboard();
+
+	/** 通过文件选择器添加附件 */
+	FReply OnAttachFileClicked();
+
+	/** 移除指定索引的附件 */
+	FReply OnRemoveAttachment(int32 Index);
+
+	/** 清空所有附件 */
+	void ClearAttachments();
+
+	/** 重建附件预览 UI */
+	void RebuildAttachmentPreview();
+
+	/** 获取附件临时存储目录 */
+	FString GetAttachmentTempDir() const;
+
+	/** 从 Windows 剪贴板读取 DIB 图片数据并保存为 PNG */
+	bool SaveClipboardImageToFile(const FString& OutPath);
+
+	/** 检测文件是否为图片 (通过扩展名) */
+	static bool IsImageFile(const FString& FilePath);
+
+	/** 获取 MIME 类型 (通过扩展名) */
+	static FString GetMimeType(const FString& FilePath);
+
+	/** 格式化文件大小为人类可读字符串 */
+	static FString FormatFileSize(int64 Bytes);
+
+	/** 附件大小限制 (10MB) */
+	static constexpr int64 MaxAttachmentBytes = 10 * 1024 * 1024;
 
 	/** 当前会话名称标签 (任务 5.4) */
 	FString CurrentSessionLabel;
@@ -495,4 +562,7 @@ private:
 	TSharedPtr<SUEAgentManagePanel> ManagePanelWidget;
 
 	static constexpr int32 MaxMessages = 500;
+
+	/** 析构保护标记 — ticker lambda 检查此标记避免在析构过程中执行 */
+	bool bIsBeingDestroyed = false;
 };

@@ -160,22 +160,196 @@ void SUEAgentDashboard::ShowConfirmationDialog(const FString& RiskLevel,
 	const TArray<TSharedPtr<FJsonValue>>& Operations,
 	const FString& CodePreview)
 {
-	FString Title = FUEAgentL10n::GetStr(TEXT("ConfirmTitle"));
-	FString Message = FUEAgentL10n::GetStr(TEXT("ConfirmMessage"));
-	Message += TEXT("\n\nRisk Level: ") + RiskLevel;
+	auto Self = SharedThis(this);
+	FString CapturedRiskLevel = RiskLevel;
 
-	if (!CodePreview.IsEmpty())
+	// 构建操作列表文本
+	FString OpsText;
+	for (const auto& OpVal : Operations)
 	{
-		Message += TEXT("\n\nCode Preview:\n") + CodePreview.Left(500);
+		const TSharedPtr<FJsonObject>* OpObj = nullptr;
+		if (OpVal->TryGetObject(OpObj) && OpObj)
+		{
+			FString OpType = (*OpObj)->GetStringField(TEXT("type"));
+			FString OpPath = (*OpObj)->GetStringField(TEXT("path"));
+			OpsText += FString::Printf(TEXT("  %s: %s\n"), *OpType, *OpPath);
+		}
 	}
 
-	// 显示确认对话框
-	EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo, FText::FromString(Message), FText::FromString(Title));
+	// 风险级别颜色和标签
+	FLinearColor RiskColor = RiskLevel == TEXT("high")
+		? FLinearColor(0.9f, 0.2f, 0.2f)
+		: FLinearColor(0.9f, 0.7f, 0.2f);
+	FString RiskLabel = RiskLevel == TEXT("high")
+		? FUEAgentL10n::GetStr(TEXT("RiskHigh"))
+		: FUEAgentL10n::GetStr(TEXT("RiskMedium"));
 
-	// 写入响应文件
-	FString ResponseFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_confirm_response.json");
-	FString Response = (Result == EAppReturnType::Yes) ? TEXT("yes") : TEXT("no");
-	FFileHelper::SaveStringToFile(Response, *ResponseFile);
+	// "Don't ask again" 状态
+	TSharedPtr<bool> bDontAskAgain = MakeShared<bool>(false);
+
+	// 构建自定义确认窗口
+	TSharedRef<SWindow> ConfirmWindowRef = SNew(SWindow)
+		.Title(FText::FromString(FUEAgentL10n::GetStr(TEXT("ConfirmTitle"))))
+		.ClientSize(FVector2D(450.0f, 340.0f))
+		.SupportsMinimize(false)
+		.SupportsMaximize(false)
+		.IsTopmostWindow(true);
+
+	// 用 TWeakPtr 避免循环引用
+	TWeakPtr<SWindow> WeakConfirmWindow = ConfirmWindowRef;
+
+	ConfirmWindowRef->SetContent(
+		SNew(SBorder)
+		.Padding(16.0f)
+		.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
+		[
+			SNew(SVerticalBox)
+
+			// 风险级别标签
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(RiskLabel))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
+				.ColorAndOpacity(FSlateColor(RiskColor))
+			]
+
+			// 说明文本
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(FUEAgentL10n::GetStr(TEXT("ConfirmMessage"))))
+				.AutoWrapText(true)
+			]
+
+			// 操作列表
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(OpsText.IsEmpty() ? TEXT("") : OpsText))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.7f, 0.7f)))
+			]
+
+			// 代码预览
+			+ SVerticalBox::Slot()
+			.FillHeight(1.0f)
+			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				SNew(SBorder)
+				.BorderImage(FCoreStyle::Get().GetBrush("ToolPanel.GroupBorder"))
+				.Padding(6.0f)
+				.Visibility(CodePreview.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+				[
+					SNew(SScrollBox)
+					+ SScrollBox::Slot()
+					[
+						SNew(STextBlock)
+						.Text(FText::FromString(CodePreview.Left(800)))
+						.Font(FCoreStyle::GetDefaultFontStyle("Mono", 8))
+						.AutoWrapText(true)
+					]
+				]
+			]
+
+			// 分隔线
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 8.0f)
+			[
+				SNew(SSeparator)
+			]
+
+			// "不再提示此风险级别" 复选框
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 8.0f)
+			[
+				SNew(SCheckBox)
+				.OnCheckStateChanged_Lambda([bDontAskAgain](ECheckBoxState NewState)
+				{
+					*bDontAskAgain = (NewState == ECheckBoxState::Checked);
+				})
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(
+						FUEAgentL10n::GetStr(TEXT("ConfirmDontAsk")) + TEXT(" (") + RiskLabel + TEXT(")")
+					))
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				]
+			]
+
+			// 按钮行
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Right)
+			[
+				SNew(SHorizontalBox)
+				// 拒绝按钮
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 8.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(FText::FromString(FUEAgentL10n::GetStr(TEXT("ConfirmDeny"))))
+					.ContentPadding(FMargin(16.0f, 4.0f))
+					.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.25f, 0.25f)))
+					.OnClicked_Lambda([WeakConfirmWindow]()
+					{
+						FString ResponseFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_confirm_response.json");
+						FFileHelper::SaveStringToFile(TEXT("no"), *ResponseFile);
+						if (TSharedPtr<SWindow> Win = WeakConfirmWindow.Pin())
+						{
+							Win->RequestDestroyWindow();
+						}
+						return FReply::Handled();
+					})
+				]
+				// 批准按钮
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(FText::FromString(FUEAgentL10n::GetStr(TEXT("ConfirmAllow"))))
+					.ContentPadding(FMargin(16.0f, 4.0f))
+					.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.2f, 0.5f, 0.3f)))
+					.OnClicked_Lambda([Self, CapturedRiskLevel, bDontAskAgain, WeakConfirmWindow]()
+					{
+						FString ResponseFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_confirm_response.json");
+						FFileHelper::SaveStringToFile(TEXT("yes"), *ResponseFile);
+
+						if (*bDontAskAgain)
+						{
+							if (CapturedRiskLevel == TEXT("medium"))
+							{
+								Self->bSilentMedium = true;
+							}
+							else if (CapturedRiskLevel == TEXT("high"))
+							{
+								Self->bSilentHigh = true;
+							}
+							Self->SaveSilentModeToConfig();
+							Self->AddMessage(TEXT("system"),
+								FUEAgentL10n::GetStr(TEXT("ConfirmSilentEnabled")));
+						}
+
+						if (TSharedPtr<SWindow> Win = WeakConfirmWindow.Pin())
+						{
+							Win->RequestDestroyWindow();
+						}
+						return FReply::Handled();
+					})
+				]
+			]
+		]
+	);
+
+	FUEAgentManageUtils::AddChildWindow(ConfirmWindowRef);
 }
 
 // ==================================================================
@@ -184,22 +358,19 @@ void SUEAgentDashboard::ShowConfirmationDialog(const FString& RiskLevel,
 
 void SUEAgentDashboard::LoadSilentModeFromConfig()
 {
-	// 读取 ~/.artclaw/config.json 中的静默模式配置
-	FString ConfigPath = FPaths::ProjectSavedDir() / TEXT("UEAgent/config.json");
+	// 读取 ~/.artclaw/config.json（与 SaveContextWindowSize 同一配置文件）
+	FString ConfigPath = FPlatformProcess::UserHomeDir();
+	ConfigPath = FPaths::Combine(ConfigPath, TEXT(".artclaw"), TEXT("config.json"));
 	if (!FPaths::FileExists(ConfigPath))
 	{
 		return;
 	}
 
 	FString JsonContent;
-	TArray<uint8> RawBytes;
-	if (!FFileHelper::LoadFileToArray(RawBytes, *ConfigPath))
+	if (!FFileHelper::LoadFileToString(JsonContent, *ConfigPath))
 	{
 		return;
 	}
-
-	FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
-	JsonContent = FString(Converter.Length(), Converter.Get());
 
 	TSharedPtr<FJsonObject> JsonObj;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
@@ -208,26 +379,43 @@ void SUEAgentDashboard::LoadSilentModeFromConfig()
 		return;
 	}
 
-	JsonObj->TryGetBoolField(TEXT("silentMedium"), bSilentMedium);
-	JsonObj->TryGetBoolField(TEXT("silentHigh"), bSilentHigh);
+	JsonObj->TryGetBoolField(TEXT("silent_mode_medium"), bSilentMedium);
+	JsonObj->TryGetBoolField(TEXT("silent_mode_high"), bSilentHigh);
 }
 
 void SUEAgentDashboard::SaveSilentModeToConfig()
 {
-	// 更新 ~/.artclaw/config.json 中的静默模式配置
-	FString ConfigPath = FPaths::ProjectSavedDir() / TEXT("UEAgent/config.json");
-	FString TempDir = FPaths::GetPath(ConfigPath);
-	IFileManager::Get().MakeDirectory(*TempDir, true);
+	// 读取 → 合并 → 写回（不覆盖其他字段）
+	FString ConfigPath = FPlatformProcess::UserHomeDir();
+	ConfigPath = FPaths::Combine(ConfigPath, TEXT(".artclaw"), TEXT("config.json"));
 
 	TSharedPtr<FJsonObject> JsonObj = MakeShared<FJsonObject>();
-	JsonObj->SetBoolField(TEXT("silentMedium"), bSilentMedium);
-	JsonObj->SetBoolField(TEXT("silentHigh"), bSilentHigh);
 
-	FString JsonStr;
-	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonStr);
+	// 先读取现有内容
+	FString JsonContent;
+	if (FFileHelper::LoadFileToString(JsonContent, *ConfigPath))
+	{
+		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
+		TSharedPtr<FJsonObject> ExistingObj;
+		if (FJsonSerializer::Deserialize(Reader, ExistingObj) && ExistingObj.IsValid())
+		{
+			JsonObj = ExistingObj;
+		}
+	}
+
+	// 合并静默模式字段
+	JsonObj->SetBoolField(TEXT("silent_mode_medium"), bSilentMedium);
+	JsonObj->SetBoolField(TEXT("silent_mode_high"), bSilentHigh);
+
+	// 写回
+	FString Dir = FPaths::GetPath(ConfigPath);
+	IFileManager::Get().MakeDirectory(*Dir, true);
+
+	FString OutputStr;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputStr);
 	FJsonSerializer::Serialize(JsonObj.ToSharedRef(), Writer);
 
-	FFileHelper::SaveStringToFile(JsonStr, *ConfigPath);
+	FFileHelper::SaveStringToFile(OutputStr, *ConfigPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 }
 
 FReply SUEAgentDashboard::OnToggleSilentMediumClicked()

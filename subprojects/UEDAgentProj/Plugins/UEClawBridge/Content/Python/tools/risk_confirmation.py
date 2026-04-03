@@ -115,45 +115,70 @@ def assess_operation_risk(code: str, context: dict = None) -> dict:
 
 def request_confirmation(risk_info: dict, code_preview: str = "") -> bool:
     """
-    弹出确认对话框。
+    请求确认。
+
+    1. 先检查静默模式（读 ~/.artclaw/config.json）— 如果已静默则直接通过
+    2. 否则弹 UE 原生对话框（同步，不阻塞 Slate tick）
+
+    注意: 不能用文件轮询等待 C++ 响应，因为 MCP handler 运行在 Slate tick
+    驱动的 asyncio 中，time.sleep 会阻塞主线程导致死锁。
 
     宪法约束:
       - 开发路线图 §2.3: 强制触发物理确认
       - 核心机制 §4: 混合 UI 交互
-
-    当前使用 unreal.EditorDialog.show_message 实现。
     """
+    import os
+
     level = risk_info.get("level", "unknown")
     reasons = risk_info.get("reasons", [])
     affected = risk_info.get("affected_count_estimate", 0)
 
-    # 构建消息文本
-    title = f"AI Agent - {level.upper()} Risk Operation"
-
-    reason_text = "\n".join(f"  • {r}" for r in reasons)
-    code_short = code_preview[:200] + ("..." if len(code_preview) > 200 else "")
-
-    message = (
-        f"Risk Level: {level.upper()}\n"
-        f"Estimated affected objects: {affected}\n\n"
-        f"Reasons:\n{reason_text}\n\n"
-        f"Code preview:\n{code_short}\n\n"
-        f"Do you want to proceed?"
-    )
-
     UELogger.warning(f"[Risk Confirmation] {level.upper()}: {reasons}")
 
+    # --- 静默模式检查: 读 config.json ---
     try:
-        # 使用 UE 原生对话框
+        config_path = os.path.join(os.path.expanduser("~"), ".artclaw", "config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            silent_medium = cfg.get("silent_mode_medium", False)
+            silent_high = cfg.get("silent_mode_high", False)
+
+            if level == "medium" and silent_medium:
+                UELogger.info(f"[Risk Confirmation] Auto-approved (silent mode medium)")
+                return True
+            if level == "high" and silent_high:
+                UELogger.info(f"[Risk Confirmation] Auto-approved (silent mode high)")
+                return True
+            if level == "critical" and silent_high:
+                # critical 也受 high 静默控制
+                UELogger.info(f"[Risk Confirmation] Auto-approved (silent mode high covers critical)")
+                return True
+    except Exception as e:
+        UELogger.warning(f"[Risk Confirmation] Config read error: {e}")
+
+    # --- 非静默: 弹 UE 原生对话框 (同步，不阻塞 Slate tick) ---
+    reason_text = "\n".join(f"  - {r}" for r in reasons)
+    code_short = code_preview[:300] + ("..." if len(code_preview) > 300 else "")
+
+    message = (
+        f"Risk: {level.upper()}\n"
+        f"Affected: ~{affected} objects\n\n"
+        f"Reasons:\n{reason_text}\n\n"
+        f"Code:\n{code_short}\n\n"
+        f"Proceed?"
+    )
+
+    try:
         result = unreal.EditorDialog.show_message(
-            title,
+            f"AI Agent - {level.upper()} Risk",
             message,
             unreal.AppMsgType.YES_NO,
-            unreal.AppReturnType.NO,  # 默认选中 NO（安全）
+            unreal.AppReturnType.NO,
         )
         confirmed = (result == unreal.AppReturnType.YES)
     except Exception as e:
-        UELogger.warning(f"Dialog fallback: auto-reject ({e})")
+        UELogger.warning(f"[Risk Confirmation] Dialog error, auto-reject: {e}")
         confirmed = False
 
     if confirmed:

@@ -220,6 +220,12 @@ FReply SUEAgentDashboard::OnStopClicked()
 	return FReply::Handled();
 }
 
+FReply SUEAgentDashboard::OnResumeClicked()
+{
+	ResumeReceiving();
+	return FReply::Handled();
+}
+
 // ==================================================================
 // 聊天输入回调
 // ==================================================================
@@ -330,6 +336,7 @@ void SUEAgentDashboard::InitSlashCommands()
 		MakeCmd(TEXT("/status"),     TEXT("SlashStatus"), true),
 		MakeCmd(TEXT("/clear"),      TEXT("SlashClear"), true),
 		MakeCmd(TEXT("/cancel"),     TEXT("SlashCancel"), true),
+		MakeCmd(TEXT("/resume"),     TEXT("SlashResume"), true),
 		MakeCmd(TEXT("/help"),       TEXT("SlashHelp"), true),
 		MakeCmd(TEXT("/plan"),       TEXT("SlashPlan"), true),
 
@@ -508,6 +515,10 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 	{
 		ConnectOpenClawBridge();
 	}
+	else if (Command == TEXT("/resume"))
+	{
+		ResumeReceiving();
+	}
 	else if (Command == TEXT("/disconnect"))
 	{
 		DisconnectOpenClawBridge();
@@ -546,6 +557,7 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 		HelpText += FUEAgentL10n::GetStr(TEXT("HelpSectionChat")) + TEXT("\n");
 		HelpText += FString::Printf(TEXT("    /clear       %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashClear")));
 		HelpText += FString::Printf(TEXT("    /cancel      %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashCancel")));
+		HelpText += FString::Printf(TEXT("    /resume      %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashResume")));
 		HelpText += FString::Printf(TEXT("    /help        %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashHelp")));
 		HelpText += FString::Printf(TEXT("    /plan        %s\n"), *FUEAgentL10n::GetStr(TEXT("SlashPlan")));
 		HelpText += FUEAgentL10n::GetStr(TEXT("HelpSectionAI")) + TEXT("\n");

@@ -595,6 +595,10 @@ def _build_manifest_from_skill_md(skill_dir: Path, existing: dict) -> dict:
     用于 publish_skill 场景：运行时 manifest.json 只有 version 字段，
     需要从 SKILL.md 补全其他必需字段。
 
+    字段读取优先级（新格式 > 旧格式 > 默认值）:
+      - 新格式: metadata.artclaw.{field}
+      - 旧格式: 顶层 {field}（向后兼容）
+
     Args:
         skill_dir: Skill 目录路径
         existing: 已有的 manifest 字典（可能不完整）
@@ -620,8 +624,19 @@ def _build_manifest_from_skill_md(skill_dir: Path, existing: dict) -> dict:
     skill_name = skill_dir.name
     fm_name = fm.get("name", skill_name).replace("-", "_")
 
+    # 从 metadata.artclaw 读取 ArtClaw 专属字段，旧格式顶层 fallback
+    metadata = fm.get("metadata", {})
+    ac_meta = metadata.get("artclaw", {}) if isinstance(metadata, dict) else {}
+
+    def _ac(field, default=""):
+        """优先 metadata.artclaw.{field}，fallback 顶层 fm.{field}。"""
+        val = ac_meta.get(field) if isinstance(ac_meta, dict) else None
+        if val is not None and val != "":
+            return val
+        return fm.get(field, default)
+
     # 推断 software
-    _software = fm.get("software", "")
+    _software = _ac("software", "")
     if not _software:
         if fm_name.startswith("ue") and len(fm_name) > 2 and fm_name[2:3].isdigit():
             _software = "unreal_engine"
@@ -636,13 +651,13 @@ def _build_manifest_from_skill_md(skill_dir: Path, existing: dict) -> dict:
     full = {
         "manifest_version": "1.0",
         "name": fm_name,
-        "display_name": fm.get("display_name", fm_name.replace("_", " ").title()),
+        "display_name": _ac("display_name", fm_name.replace("_", " ").title()),
         "description": fm.get("description", ""),
-        "version": existing.get("version", fm.get("version", "1.0.0")),
-        "author": fm.get("author", "ArtClaw"),
+        "version": existing.get("version", _ac("version", "1.0.0")),
+        "author": _ac("author", "ArtClaw"),
         "software": _software,
-        "category": fm.get("category", "utils"),
-        "risk_level": fm.get("risk_level", "low"),
+        "category": _ac("category", "utils"),
+        "risk_level": _ac("risk_level", "low"),
         "entry_point": "__init__.py",
         "tools": [{"name": fm_name, "description": fm.get("description", "")}],
     }

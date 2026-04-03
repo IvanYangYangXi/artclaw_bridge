@@ -136,15 +136,51 @@ def _write_tool_event_to_stream(event_type: str, tool_name: str, *,
         return
     try:
         # 简化工具名: mcp_ue-editor-agent_run_ue_python → run_ue_python
-        short_name = tool_name.rsplit("_", 1)[-1] if "_" in tool_name else tool_name
+        # rsplit("_", 2) 取最后两段以保留有意义的名称，避免只剩 "python"
+        if "_" in tool_name:
+            parts = tool_name.split("_")
+            # 取最后两个有意义的部分（如 run_ue_python → run_ue_python）
+            # 规则：跳过 "mcp" 前缀和 server name，保留实际工具名
+            prefix_end = 0
+            for i, p in enumerate(parts):
+                if p in ("mcp",):
+                    prefix_end = i + 1
+                    continue
+                # server name 部分（如 ue-editor-agent）通常包含 "-"
+                if "-" in p:
+                    prefix_end = i + 1
+                    continue
+                break
+            short_name = "_".join(parts[prefix_end:]) if prefix_end < len(parts) else tool_name
+        else:
+            short_name = tool_name
 
         if event_type == "start":
-            text = f"[Tool] {short_name} ..."
+            # 参数摘要: 取第一个关键字段
+            arg_preview = ""
+            if arguments and isinstance(arguments, dict):
+                for k in ("code", "query", "command", "path", "file_path", "action", "message"):
+                    v = arguments.get(k)
+                    if v and isinstance(v, str):
+                        v = v.strip().replace("\n", " ")
+                        if len(v) > 50:
+                            v = v[:47] + "..."
+                        arg_preview = f" ({k}: {v})"
+                        break
+            text = f"🔧 {short_name}{arg_preview}"
         elif event_type == "done":
-            text = f"[Tool] {short_name} OK"
+            # 结果摘要: 取返回值第一行，截断 80 字符
+            result_preview = ""
+            if result is not None:
+                result_str = str(result).strip().replace("\n", " ")
+                if len(result_str) > 80:
+                    result_str = result_str[:77] + "..."
+                if result_str:
+                    result_preview = f" → {result_str}"
+            text = f"✅ {short_name}{result_preview}"
         elif event_type == "error":
             err_msg = str(result)[:80] if result else "unknown"
-            text = f"[Tool] {short_name} Error: {err_msg}"
+            text = f"❌ {short_name}: {err_msg}"
         else:
             return
 
@@ -463,7 +499,7 @@ class MCPServer:
 
         try:
             result = await handler(arguments) if asyncio.iscoroutinefunction(handler) else handler(arguments)
-            _write_tool_event_to_stream("done", tool_name)
+            _write_tool_event_to_stream("done", tool_name, result=result)
             return {
                 "content": [
                     {"type": "text", "text": str(result)}

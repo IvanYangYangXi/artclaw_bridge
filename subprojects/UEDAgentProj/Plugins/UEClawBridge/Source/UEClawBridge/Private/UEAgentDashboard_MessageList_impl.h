@@ -292,7 +292,7 @@ void SUEAgentDashboard::RebuildMessageList()
 			// Content
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(8.0f, 0.0f, 0.0f, 4.0f)
+			.Padding(8.0f, 0.0f, 0.0f, 0.0f)
 			[
 				SNew(SBorder)
 				.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
@@ -309,6 +309,50 @@ void SUEAgentDashboard::RebuildMessageList()
 				]
 			]
 		];
+
+		// --- 文件路径超链接 (Content 中检测到的路径) ---
+		{
+			TArray<FString> FilePaths = ExtractFilePaths(Msg.Content);
+			if (FilePaths.Num() > 0)
+			{
+				TSharedPtr<SVerticalBox> LinksBox = SNew(SVerticalBox);
+
+				for (const FString& Path : FilePaths)
+				{
+					FString DisplayName = FPaths::GetCleanFilename(Path);
+					FString DisplayText = FString::Printf(TEXT("  %s"), *DisplayName);
+					FString CapturedPath = Path;
+
+					LinksBox->AddSlot()
+					.AutoHeight()
+					.Padding(0.0f, 1.0f)
+					[
+						SNew(SButton)
+						.ButtonStyle(&FCoreStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder"))
+						.ContentPadding(FMargin(0.0f))
+						.OnClicked_Lambda([CapturedPath]() -> FReply
+						{
+							FPlatformProcess::LaunchFileInDefaultExternalApplication(*CapturedPath);
+							return FReply::Handled();
+						})
+						.ToolTipText(FText::FromString(Path))
+						.Cursor(EMouseCursor::Hand)
+						[
+							SNew(STextBlock)
+							.Text(FText::FromString(DisplayText))
+							.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+							.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.7f, 1.0f)))
+						]
+					];
+				}
+
+				MessageScrollBox->AddSlot()
+				.Padding(8.0f, 0.0f, 4.0f, 4.0f)
+				[
+					LinksBox.ToSharedRef()
+				];
+			}
+		}
 	}
 
 	// 延迟一帧再滚到底部，确保 Slate layout pass 完成后尺寸已知
@@ -328,6 +372,115 @@ void SUEAgentDashboard::RebuildMessageList()
 			return EActiveTimerReturnType::Stop;
 		}
 	));
+}
+
+// ==================================================================
+// 文件路径提取
+// ==================================================================
+
+TArray<FString> SUEAgentDashboard::ExtractFilePaths(const FString& Text)
+{
+	TArray<FString> Paths;
+	TSet<FString> Seen;
+
+	// 按行扫描，匹配 Windows 绝对路径 (X:\...) 和 UNC 路径 (\\server\...)
+	// 也匹配被引号包裹的路径
+	TArray<FString> Lines;
+	Text.ParseIntoArrayLines(Lines);
+
+	for (const FString& Line : Lines)
+	{
+		FString Working = Line.TrimStartAndEnd();
+
+		// 跳过太短的行
+		if (Working.Len() < 4) continue;
+
+		// 检查是否包含盘符模式 (X:\ or X:/)
+		int32 SearchStart = 0;
+		while (SearchStart < Working.Len() - 2)
+		{
+			// 查找盘符 "X:\" 或 "X:/"
+			int32 ColonPos = INDEX_NONE;
+			for (int32 j = SearchStart; j < Working.Len(); ++j)
+			{
+				if (Working[j] == TEXT(':') && j > 0
+					&& FChar::IsAlpha(Working[j - 1])
+					&& j + 1 < Working.Len()
+					&& (Working[j + 1] == TEXT('\\') || Working[j + 1] == TEXT('/')))
+				{
+					ColonPos = j;
+					break;
+				}
+			}
+
+			if (ColonPos == INDEX_NONE) break;
+
+			// 路径起始: 盘符前一个字符
+			int32 PathStart = ColonPos - 1;
+
+			// 跳过前面的引号/空格
+			if (PathStart > 0 && (Working[PathStart - 1] == TEXT('"') || Working[PathStart - 1] == TEXT('\'')))
+			{
+				// 路径被引号包裹，不调整 PathStart
+			}
+
+			// 路径结束: 找到空格、引号、或行末
+			int32 PathEnd = ColonPos + 2;
+			while (PathEnd < Working.Len())
+			{
+				TCHAR Ch = Working[PathEnd];
+				if (Ch == TEXT('"') || Ch == TEXT('\'') || Ch == TEXT('\n') || Ch == TEXT('\r'))
+				{
+					break;
+				}
+				// 空格在路径中可能合法 (如 "Program Files")，但在尾部终止
+				// 简单策略: 遇到空格+非路径字符时终止
+				if (Ch == TEXT(' '))
+				{
+					// 向前看: 如果空格后面紧跟非路径起始字符，则终止
+					if (PathEnd + 1 >= Working.Len()) break;
+					TCHAR Next = Working[PathEnd + 1];
+					if (Next == TEXT('-') || Next == TEXT('(') || Next == TEXT('[')
+						|| Next == TEXT('\n') || Next == TEXT('\r'))
+					{
+						break;
+					}
+				}
+				PathEnd++;
+			}
+
+			FString Candidate = Working.Mid(PathStart, PathEnd - PathStart).TrimEnd();
+
+			// 去掉尾部的标点符号 (, ; : ) ] 等)
+			while (Candidate.Len() > 3)
+			{
+				TCHAR Last = Candidate[Candidate.Len() - 1];
+				if (Last == TEXT(',') || Last == TEXT(';') || Last == TEXT(')')
+					|| Last == TEXT(']') || Last == TEXT('>'))
+				{
+					Candidate.LeftChopInline(1);
+				}
+				else
+				{
+					break;
+				}
+			}
+
+			// 验证: 必须存在且不重复
+			if (Candidate.Len() > 3 && !Seen.Contains(Candidate))
+			{
+				if (FPaths::FileExists(Candidate) || FPaths::DirectoryExists(Candidate))
+				{
+					Seen.Add(Candidate);
+					Paths.Add(Candidate);
+				}
+			}
+
+			SearchStart = PathEnd;
+		}
+	}
+
+	return Paths;
 }
 
 FSlateColor SUEAgentDashboard::GetSenderColor(const FString& Sender) const

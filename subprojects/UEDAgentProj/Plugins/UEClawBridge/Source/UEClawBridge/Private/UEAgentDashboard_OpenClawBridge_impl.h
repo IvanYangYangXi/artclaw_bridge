@@ -189,6 +189,124 @@ void SUEAgentDashboard::SendEnvironmentContext()
 }
 
 // ==================================================================
+// 流式事件行解析 (供轮询和恢复接收共用)
+// ==================================================================
+
+void SUEAgentDashboard::ProcessStreamEventLine(const FString& Line)
+{
+	if (Line.IsEmpty()) return;
+
+	TSharedPtr<FJsonObject> JsonObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Line);
+	if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
+	{
+		return;
+	}
+
+	FString EventType = JsonObj->GetStringField(TEXT("type"));
+
+	if (EventType == TEXT("thinking"))
+	{
+		FString EventText = JsonObj->GetStringField(TEXT("text"));
+		if (!EventText.IsEmpty())
+		{
+			UpdateStreamingMessage(TEXT("thinking"), EventText);
+		}
+	}
+	else if (EventType == TEXT("delta"))
+	{
+		FString EventText = JsonObj->GetStringField(TEXT("text"));
+		if (!EventText.IsEmpty())
+		{
+			UpdateStreamingMessage(TEXT("assistant"), EventText);
+		}
+	}
+	else if (EventType == TEXT("tool_call"))
+	{
+		FString ToolName = JsonObj->GetStringField(TEXT("tool_name"));
+		FString ToolId   = JsonObj->GetStringField(TEXT("tool_id"));
+
+		// 序列化 arguments 对象为字符串
+		FString ArgsStr;
+		const TSharedPtr<FJsonObject>* ArgsObj = nullptr;
+		if (JsonObj->TryGetObjectField(TEXT("arguments"), ArgsObj) && ArgsObj)
+		{
+			TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ArgsStr);
+			FJsonSerializer::Serialize(ArgsObj->ToSharedRef(), Writer);
+		}
+
+		if (!ToolName.IsEmpty())
+		{
+			AddToolCallMessage(ToolName, ToolId, ArgsStr);
+		}
+	}
+	else if (EventType == TEXT("tool_result"))
+	{
+		FString ToolName = JsonObj->GetStringField(TEXT("tool_name"));
+		FString ToolId   = JsonObj->GetStringField(TEXT("tool_id"));
+		FString Content  = JsonObj->GetStringField(TEXT("content"));
+		bool bIsError    = JsonObj->GetBoolField(TEXT("is_error"));
+
+		if (!ToolId.IsEmpty())
+		{
+			AddToolResultMessage(ToolName, ToolId, Content, bIsError);
+		}
+	}
+	else if (EventType == TEXT("usage"))
+	{
+		const TSharedPtr<FJsonObject>* UsageObj = nullptr;
+		if (JsonObj->TryGetObjectField(TEXT("usage"), UsageObj) && UsageObj)
+		{
+			int32 TotalTokens = 0;
+			if ((*UsageObj)->TryGetNumberField(TEXT("totalTokens"), TotalTokens) && TotalTokens > 0)
+			{
+				LastTotalTokens = TotalTokens;
+			}
+		}
+	}
+	else if (EventType == TEXT("tool_use_text"))
+	{
+		FString EventText = JsonObj->GetStringField(TEXT("text"));
+		if (!EventText.IsEmpty())
+		{
+			AddMessage(TEXT("tool_status"), EventText);
+		}
+	}
+	else if (EventType == TEXT("session_key"))
+	{
+		FString Key = JsonObj->GetStringField(TEXT("key"));
+		if (!Key.IsEmpty() && SessionEntries.IsValidIndex(ActiveSessionIndex))
+		{
+			SessionEntries[ActiveSessionIndex].SessionKey = Key;
+			SaveLastSession();
+		}
+	}
+}
+
+// ==================================================================
+// 读取 stream.jsonl 新增行并通过 ProcessStreamEventLine 分发
+// ==================================================================
+
+void SUEAgentDashboard::ReadAndProcessStreamLines(const FString& StreamFilePath)
+{
+	if (!FPaths::FileExists(StreamFilePath)) return;
+
+	TArray<uint8> RawBytes;
+	if (!FFileHelper::LoadFileToArray(RawBytes, *StreamFilePath)) return;
+
+	FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
+	FString StreamContent = FString(Converter.Length(), Converter.Get());
+	TArray<FString> Lines;
+	StreamContent.ParseIntoArrayLines(Lines);
+
+	for (int32 i = StreamLinesRead; i < Lines.Num(); i++)
+	{
+		ProcessStreamEventLine(Lines[i]);
+	}
+	StreamLinesRead = Lines.Num();
+}
+
+// ==================================================================
 // OpenClaw Gateway 通信 (阶段 3) — 通过 Python Bridge
 // ==================================================================
 
@@ -231,124 +349,13 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 	PollTimerHandle = FTSTicker::GetCoreTicker().AddTicker(
 		FTickerDelegate::CreateLambda([Self, CapturedResponseFile, CapturedStreamFile](float DeltaTime) -> bool
 		{
-			if (!Self->bIsWaitingForResponse)
+			if (Self->bIsBeingDestroyed || !Self->bIsWaitingForResponse)
 			{
 				return false;
 			}
 
 			// --- 流式文件轮询: 读取新增行并实时显示 ---
-			if (FPaths::FileExists(CapturedStreamFile))
-			{
-				// 用 UTF-8 读取流式文件（Python 以 UTF-8 写入）
-				FString StreamContent;
-				TArray<uint8> RawBytes;
-				if (FFileHelper::LoadFileToArray(RawBytes, *CapturedStreamFile))
-				{
-					// 手动从 UTF-8 转换为 FString
-					FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
-					StreamContent = FString(Converter.Length(), Converter.Get());
-					TArray<FString> Lines;
-					StreamContent.ParseIntoArrayLines(Lines);
-
-					// 只处理新增的行
-					for (int32 i = Self->StreamLinesRead; i < Lines.Num(); i++)
-					{
-						const FString& Line = Lines[i];
-						if (Line.IsEmpty()) continue;
-
-						// 使用 UE JSON 解析器，比手工字符串操作更可靠
-						TSharedPtr<FJsonObject> JsonObj;
-						TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Line);
-						if (FJsonSerializer::Deserialize(Reader, JsonObj) && JsonObj.IsValid())
-						{
-							FString EventType = JsonObj->GetStringField(TEXT("type"));
-
-							if (EventType == TEXT("thinking"))
-							{
-								FString EventText = JsonObj->GetStringField(TEXT("text"));
-								if (!EventText.IsEmpty())
-								{
-									Self->UpdateStreamingMessage(TEXT("thinking"), EventText);
-								}
-							}
-							else if (EventType == TEXT("delta"))
-							{
-								FString EventText = JsonObj->GetStringField(TEXT("text"));
-								if (!EventText.IsEmpty())
-								{
-									Self->UpdateStreamingMessage(TEXT("assistant"), EventText);
-								}
-							}
-							else if (EventType == TEXT("tool_call"))
-							{
-								FString ToolName = JsonObj->GetStringField(TEXT("tool_name"));
-								FString ToolId = JsonObj->GetStringField(TEXT("tool_id"));
-
-								// 序列化 arguments 对象为字符串
-								FString ArgsStr;
-								const TSharedPtr<FJsonObject>* ArgsObj = nullptr;
-								if (JsonObj->TryGetObjectField(TEXT("arguments"), ArgsObj) && ArgsObj)
-								{
-									TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ArgsStr);
-									FJsonSerializer::Serialize(ArgsObj->ToSharedRef(), Writer);
-								}
-
-								if (!ToolName.IsEmpty())
-								{
-									Self->AddToolCallMessage(ToolName, ToolId, ArgsStr);
-								}
-							}
-							else if (EventType == TEXT("tool_result"))
-							{
-								FString ToolName = JsonObj->GetStringField(TEXT("tool_name"));
-								FString ToolId = JsonObj->GetStringField(TEXT("tool_id"));
-								FString Content = JsonObj->GetStringField(TEXT("content"));
-								bool bIsError = JsonObj->GetBoolField(TEXT("is_error"));
-
-								// 用 ToolId 判断有效性（ToolName 可能为空，但 ToolId 不会）
-								if (!ToolId.IsEmpty())
-								{
-									Self->AddToolResultMessage(ToolName, ToolId, Content, bIsError);
-								}
-							}
-							else if (EventType == TEXT("usage"))
-							{
-								// 解析 token usage 信息 (任务 5.5)
-								const TSharedPtr<FJsonObject>* UsageObj = nullptr;
-								if (JsonObj->TryGetObjectField(TEXT("usage"), UsageObj) && UsageObj)
-								{
-									int32 TotalTokens = 0;
-									if ((*UsageObj)->TryGetNumberField(TEXT("totalTokens"), TotalTokens) && TotalTokens > 0)
-									{
-										Self->LastTotalTokens = TotalTokens;
-									}
-								}
-							}
-							else if (EventType == TEXT("tool_use_text"))
-							{
-								// Tool 状态消息 — 紧凑单行，融入消息流
-								FString EventText = JsonObj->GetStringField(TEXT("text"));
-								if (!EventText.IsEmpty())
-								{
-									Self->AddMessage(TEXT("tool_status"), EventText);
-								}
-							}
-							else if (EventType == TEXT("session_key"))
-							{
-								// Session key 回传 — Python 端生成 key 后通知 C++
-								FString Key = JsonObj->GetStringField(TEXT("key"));
-								if (!Key.IsEmpty() && Self->SessionEntries.IsValidIndex(Self->ActiveSessionIndex))
-								{
-									Self->SessionEntries[Self->ActiveSessionIndex].SessionKey = Key;
-									// 实时保存 — 确保即使崩溃也能恢复会话
-									Self->SaveLastSession();
-								}
-							}
-						}
-					}
-					Self->StreamLinesRead = Lines.Num();
-				}
-			}
+			Self->ReadAndProcessStreamLines(CapturedStreamFile);
 
 			// --- 最终响应文件轮询 ---
 			if (!FPaths::FileExists(CapturedResponseFile))
@@ -431,4 +438,80 @@ void SUEAgentDashboard::UpdateStreamingMessage(const FString& Sender, const FStr
 	Msg.Timestamp = FDateTime::Now();
 	Messages.Add(MoveTemp(Msg));
 	RebuildMessageList();
+}
+
+// ==================================================================
+// 恢复接收中断的 AI 回复
+// ==================================================================
+
+void SUEAgentDashboard::ResumeReceiving()
+{
+	// 如果当前已经在正常轮询中，不需要恢复
+	if (bIsWaitingForResponse && PollTimerHandle.IsValid())
+	{
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("StillWaiting")));
+		return;
+	}
+
+	// 确保停止旧的轮询状态
+	if (PollTimerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(PollTimerHandle);
+		PollTimerHandle.Reset();
+	}
+	bIsWaitingForResponse = false;
+	bHasStreamingMessage = false;
+	StreamLinesRead = 0;
+
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString StreamFile   = TempDir / TEXT("_openclaw_response_stream.jsonl");
+	FString ResponseFile = TempDir / TEXT("_openclaw_response.txt");
+
+	// --- 快速路径: response.txt 已存在 → AI 已回复完，直接读取 ---
+	if (FPaths::FileExists(ResponseFile))
+	{
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ResumeReceiving")));
+
+		// 先读流式内容（tool 调用等中间信息）
+		ReadAndProcessStreamLines(StreamFile);
+
+		TArray<uint8> RespBytes;
+		if (FFileHelper::LoadFileToArray(RespBytes, *ResponseFile))
+		{
+			FUTF8ToTCHAR RespConverter(reinterpret_cast<const ANSICHAR*>(RespBytes.GetData()), RespBytes.Num());
+			FString ResponseContent = FString(RespConverter.Length(), RespConverter.Get());
+
+			IFileManager::Get().Delete(*ResponseFile, false, false, true);
+			IFileManager::Get().Delete(*StreamFile,   false, false, true);
+
+			HandlePythonResponse(ResponseContent);
+			AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ResumeComplete")));
+		}
+		return;
+	}
+
+	// --- 通用路径: 从 Gateway 拉取完整会话历史 ---
+	// 清理残留的临时文件（避免下次误判）
+	IFileManager::Get().Delete(*StreamFile, false, false, true);
+
+	FString SessionKey;
+	if (SessionEntries.IsValidIndex(ActiveSessionIndex))
+	{
+		SessionKey = SessionEntries[ActiveSessionIndex].SessionKey;
+	}
+	if (SessionKey.IsEmpty())
+	{
+		SessionKey = PlatformBridge->GetSessionKey();
+	}
+	if (SessionKey.IsEmpty())
+	{
+		AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("ResumeNoData")));
+		return;
+	}
+
+	// 清空当前消息，用 Gateway 完整历史替换
+	Messages.Empty();
+	RebuildMessageList();
+	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("LoadingHistory")));
+	LoadSessionHistory(SessionKey);
 }

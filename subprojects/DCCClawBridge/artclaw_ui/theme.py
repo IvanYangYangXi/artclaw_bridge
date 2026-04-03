@@ -69,40 +69,41 @@ INSTALL_NOT_INSTALLED = "#994D66"
 
 DCC_THEMES: dict[str, dict[str, str]] = {
     "maya": {
-        "bg_primary": "#3C3C3C",
-        "bg_secondary": "#4A4A4A",
-        "bg_tertiary": "#333333",
-        "bg_input": "#3C3C3C",
-        "bg_message": "#2B2B2B",
-        "bg_message_user": "#2E3D35",
-        "bg_message_assistant": "#2B3040",
-        "bg_message_tool": "#3D3520",
-        "bg_code": "#1E1E1E",
-        "bg_card": "#383838",
-        "bg_card_header": "#404040",
-        "bg_hover": "#505050",
-        "accent": "#5285A6",
-        "accent_hover": "#6295B6",
-        "accent_pressed": "#4275A6",
+        # Blender-inspired dark theme — 低对比度、柔和暗色
+        "bg_primary": "#303030",
+        "bg_secondary": "#3D3D3D",
+        "bg_tertiary": "#282828",
+        "bg_input": "#353535",
+        "bg_message": "#252525",
+        "bg_message_user": "#2A3530",
+        "bg_message_assistant": "#282C38",
+        "bg_message_tool": "#38321E",
+        "bg_code": "#1D1D1D",
+        "bg_card": "#353535",
+        "bg_card_header": "#3A3A3A",
+        "bg_hover": "#4A4A4A",
+        "accent": "#4B7BAC",
+        "accent_hover": "#5B8BBC",
+        "accent_pressed": "#3B6B9C",
         "text": "#E0E0E0",
-        "text_dim": "#888888",
-        "text_muted": "#666666",
-        "text_user": "#7CB3F2",
-        "text_assistant": "#C0C0C0",
-        "text_system": "#888888",
-        "border": "#555555",
-        "border_focus": "#6295B6",
-        "scrollbar": "#555555",
-        "scrollbar_hover": "#6A6A6A",
-        "status_ok": "#4CAF50",
-        "status_error": "#F44336",
-        "status_warn": "#FF9800",
-        "btn_primary_bg": "#5285A6",
-        "btn_primary_hover": "#6295B6",
-        "btn_danger_bg": "#A64242",
-        "btn_danger_hover": "#C05050",
-        "btn_secondary_bg": "#505050",
-        "btn_secondary_hover": "#606060",
+        "text_dim": "#9A9A9A",
+        "text_muted": "#686868",
+        "text_user": "#8CC5FF",
+        "text_assistant": "#B8B8B8",
+        "text_system": "#808080",
+        "border": "#484848",
+        "border_focus": "#5B8BBC",
+        "scrollbar": "#484848",
+        "scrollbar_hover": "#5A5A5A",
+        "status_ok": "#71B345",
+        "status_error": "#E05555",
+        "status_warn": "#DBA040",
+        "btn_primary_bg": "#4B7BAC",
+        "btn_primary_hover": "#5B8BBC",
+        "btn_danger_bg": "#A04040",
+        "btn_danger_hover": "#B85050",
+        "btn_secondary_bg": "#454545",
+        "btn_secondary_hover": "#525252",
     },
     "max": {
         "bg_primary": "#3F3F3F",
@@ -188,13 +189,49 @@ def get_theme(dcc_name: str = "maya") -> dict[str, str]:
 # 模块级默认主题（供 from artclaw_ui.theme import COLORS 使用）
 # ---------------------------------------------------------------------------
 # 初始值为 maya 主题；init_theme() 可按实际 DCC 重新设置。
-COLORS: dict[str, str] = DCC_THEMES["maya"]
+
+# 将独立颜色常量合并到 COLORS 中，使模块统一通过 COLORS["key"] 访问
+_EXTRA_COLORS: dict[str, str] = {
+    # Skill 层级
+    "layer_official": BADGE_OFFICIAL,
+    "layer_marketplace": BADGE_MARKETPLACE,
+    "layer_user": BADGE_USER,
+    "layer_custom": BADGE_CUSTOM,
+    "layer_platform": BADGE_PLATFORM,
+    # 安装状态
+    "install_installed": INSTALL_INSTALLED,
+    "install_not_installed": INSTALL_NOT_INSTALLED,
+    # Sender / 消息类型
+    "sender_user": SENDER_USER,
+    "sender_assistant": SENDER_ASSISTANT,
+    "sender_system": SENDER_SYSTEM,
+    "sender_thinking": SENDER_THINKING,
+    "sender_streaming": SENDER_STREAMING,
+    "sender_tool_call": SENDER_TOOL_CALL,
+    "sender_tool_result": SENDER_TOOL_RESULT,
+    "sender_tool_error": SENDER_TOOL_ERROR,
+    "sender_tool_status": SENDER_TOOL_STATUS,
+    # 连接状态
+    "status_connected": STATUS_CONNECTED,
+    "status_disconnected": STATUS_DISCONNECTED,
+    # Plan
+    "plan_pending": PLAN_PENDING,
+    "plan_running": PLAN_RUNNING,
+    "plan_done": PLAN_DONE,
+    "plan_failed": PLAN_FAILED,
+    "plan_skipped": PLAN_SKIPPED,
+    # 风险
+    "risk_high": RISK_HIGH,
+    "risk_medium": RISK_MEDIUM,
+}
+
+COLORS: dict[str, str] = {**DCC_THEMES["maya"], **_EXTRA_COLORS}
 
 
 def init_theme(dcc_name: str = "maya") -> dict[str, str]:
     """根据当前 DCC 初始化模块级 COLORS 并返回。应在插件启动时调用一次。"""
     global COLORS
-    COLORS = get_theme(dcc_name)
+    COLORS = {**get_theme(dcc_name), **_EXTRA_COLORS}
     return COLORS
 
 

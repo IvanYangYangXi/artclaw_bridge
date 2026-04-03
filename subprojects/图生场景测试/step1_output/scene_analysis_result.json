@@ -1,0 +1,574 @@
+{
+  "scene_overview": {
+    "scene_type": "outdoor_nature",
+    "style": "stylized",
+    "mood": "轻松愉快的夏日度假氛围，色彩明快活泼，类似微缩模型/立体书风格",
+    "dominant_colors": ["#4A90D9", "#E8C890", "#E63946", "#F4D03F", "#FFFFFF"],
+    "lighting": {
+      "direction_clock": "2 点钟",
+      "type": "artificial",
+      "intensity": "strong",
+      "shadow_direction_clock": "8 点钟",
+      "color_temperature": "warm"
+    }
+  },
+
+  "camera": {
+    "view_type": "isometric-45",
+    "pitch_angle_deg": -35,
+    "yaw_angle_deg": 45,
+    "fov_estimate_deg": "uncertain",
+    "horizon_position_pct": null,
+    "notes": "场景为封闭式立体模型，背景有垂直墙面作为天空背景，无自然地平线"
+  },
+
+  "spatial_layers": {
+    "foreground": {
+      "y_range_pct": [60, 100],
+      "description": "前景包含沙滩平台边缘、几何体块装饰、球体、台阶、岩石"
+    },
+    "midground": {
+      "y_range_pct": [40, 75],
+      "description": "中景包含沙滩主区域、遮阳伞、躺椅、人物、海水区域"
+    },
+    "background": {
+      "y_range_pct": [5, 55],
+      "description": "远景包含天空背景墙、太阳、云朵、灯塔及岩石基座"
+    }
+  },
+
+  "ground_plane": {
+    "polygon_pct": [
+      {"x": 8, "y": 55},
+      {"x": 65, "y": 75},
+      {"x": 65, "y": 85},
+      {"x": 8, "y": 75}
+    ],
+    "terrain_type": "sand",
+    "has_elevation_change": true,
+    "elevation_notes": "沙滩平台为多层台阶式结构，有约 2-3 级台阶的高差变化"
+  },
+
+  "objects": [
+    {
+      "id": "umbrella_01",
+      "category": "prop",
+      "subcategory": "beach_umbrella",
+      "bbox_pct": {"x_min": 18, "y_min": 32, "x_max": 38, "y_max": 62},
+      "center_pct": {"x": 28, "y": 47},
+      "ground_contact_pct": {"x": 28, "y": 60},
+      "relative_size": "medium",
+      "estimated_size_m": {"w": 1.5, "d": 1.5, "h": 2.2},
+      "size_confidence": "medium",
+      "depth_layer": "midground",
+      "color_dominant": "#E63946",
+      "color_secondary": "#FFFFFF",
+      "material_hint": "fabric",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": null,
+      "confidence": "high",
+      "notes": "红白放射状条纹伞面，圆锥形，木质伞杆"
+    },
+    {
+      "id": "chair_01",
+      "category": "prop",
+      "subcategory": "beach_chair",
+      "bbox_pct": {"x_min": 12, "y_min": 48, "x_max": 25, "y_max": 65},
+      "center_pct": {"x": 18.5, "y": 56.5},
+      "ground_contact_pct": {"x": 18, "y": 64},
+      "relative_size": "small",
+      "estimated_size_m": {"w": 0.6, "d": 1.2, "h": 0.8},
+      "size_confidence": "medium",
+      "depth_layer": "midground",
+      "color_dominant": "#4A90D9",
+      "color_secondary": "#E63946",
+      "material_hint": "fabric",
+      "rotation_hint_deg": 15,
+      "occlusion": [],
+      "group_id": "chair_group",
+      "confidence": "high",
+      "notes": "左侧躺椅，蓝橙白条纹织物"
+    },
+    {
+      "id": "chair_02",
+      "category": "prop",
+      "subcategory": "beach_chair",
+      "bbox_pct": {"x_min": 33, "y_min": 43, "x_max": 45, "y_max": 58},
+      "center_pct": {"x": 39, "y": 50.5},
+      "ground_contact_pct": {"x": 38, "y": 57},
+      "relative_size": "small",
+      "estimated_size_m": {"w": 0.6, "d": 1.2, "h": 0.8},
+      "size_confidence": "medium",
+      "depth_layer": "midground",
+      "color_dominant": "#F4D03F",
+      "color_secondary": "#4A90D9",
+      "material_hint": "fabric",
+      "rotation_hint_deg": -10,
+      "occlusion": [],
+      "group_id": "chair_group",
+      "confidence": "high",
+      "notes": "右侧躺椅，黄蓝条纹织物"
+    },
+    {
+      "id": "character_01",
+      "category": "character",
+      "subcategory": "sitting_person",
+      "bbox_pct": {"x_min": 38, "y_min": 55, "x_max": 48, "y_max": 72},
+      "center_pct": {"x": 43, "y": 63.5},
+      "ground_contact_pct": {"x": 43, "y": 70},
+      "relative_size": "small",
+      "estimated_size_m": {"w": 0.5, "d": 0.5, "h": 1.0},
+      "size_confidence": "medium",
+      "depth_layer": "midground",
+      "color_dominant": "#E63946",
+      "color_secondary": "#4A90D9",
+      "material_hint": "mixed",
+      "rotation_hint_deg": 90,
+      "occlusion": [],
+      "group_id": null,
+      "confidence": "high",
+      "notes": "坐姿人物，红色上衣蓝色短裤，位于伞下"
+    },
+    {
+      "id": "character_02",
+      "category": "character",
+      "subcategory": "walking_person",
+      "bbox_pct": {"x_min": 55, "y_min": 50, "x_max": 65, "y_max": 72},
+      "center_pct": {"x": 60, "y": 61},
+      "ground_contact_pct": {"x": 60, "y": 71},
+      "relative_size": "small",
+      "estimated_size_m": {"w": 0.5, "d": 0.4, "h": 1.1},
+      "size_confidence": "medium",
+      "depth_layer": "midground",
+      "color_dominant": "#F4A506",
+      "color_secondary": "#4A90D9",
+      "material_hint": "mixed",
+      "rotation_hint_deg": 45,
+      "occlusion": [],
+      "group_id": null,
+      "confidence": "high",
+      "notes": "行走姿态人物，橙色上衣蓝色短裤红色帽子，朝向水边"
+    },
+    {
+      "id": "ball_01",
+      "category": "prop",
+      "subcategory": "beach_ball",
+      "bbox_pct": {"x_min": 26, "y_min": 62, "x_max": 33, "y_max": 72},
+      "center_pct": {"x": 29.5, "y": 67},
+      "ground_contact_pct": {"x": 29.5, "y": 71},
+      "relative_size": "small",
+      "estimated_size_m": {"w": 0.3, "d": 0.3, "h": 0.3},
+      "size_confidence": "high",
+      "depth_layer": "midground",
+      "color_dominant": "#E63946",
+      "color_secondary": "#FFFFFF",
+      "material_hint": "mixed",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": "ball_group",
+      "confidence": "high",
+      "notes": "红白相间条纹沙滩球"
+    },
+    {
+      "id": "lighthouse_01",
+      "category": "building",
+      "subcategory": "lighthouse",
+      "bbox_pct": {"x_min": 78, "y_min": 8, "x_max": 88, "y_max": 42},
+      "center_pct": {"x": 83, "y": 25},
+      "ground_contact_pct": {"x": 83, "y": 40},
+      "relative_size": "medium",
+      "estimated_size_m": {"w": 2.5, "d": 2.5, "h": 8.0},
+      "size_confidence": "medium",
+      "depth_layer": "background",
+      "color_dominant": "#E63946",
+      "color_secondary": "#FFFFFF",
+      "material_hint": "stone",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": null,
+      "confidence": "high",
+      "notes": "红白水平条纹灯塔，灰色塔顶，位于岩石基座上"
+    },
+    {
+      "id": "rock_base_01",
+      "category": "terrain_feature",
+      "subcategory": "rock_formation",
+      "bbox_pct": {"x_min": 70, "y_min": 35, "x_max": 92, "y_max": 52},
+      "center_pct": {"x": 81, "y": 43.5},
+      "ground_contact_pct": {"x": 81, "y": 51},
+      "relative_size": "medium",
+      "estimated_size_m": {"w": 6.0, "d": 5.0, "h": 3.0},
+      "size_confidence": "low",
+      "depth_layer": "background",
+      "color_dominant": "#4A4A4A",
+      "color_secondary": null,
+      "material_hint": "stone",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": null,
+      "confidence": "high",
+      "notes": "灯塔基座，深灰色低多边形岩石，多面体几何造型"
+    },
+    {
+      "id": "sun_01",
+      "category": "terrain_feature",
+      "subcategory": "celestial_body",
+      "bbox_pct": {"x_min": 45, "y_min": 8, "x_max": 58, "y_max": 25},
+      "center_pct": {"x": 51.5, "y": 16.5},
+      "ground_contact_pct": {"x": 51.5, "y": 25},
+      "relative_size": "medium",
+      "estimated_size_m": {"w": 0.5, "d": 0.5, "h": 0.5},
+      "size_confidence": "low",
+      "depth_layer": "background",
+      "color_dominant": "#F4D03F",
+      "color_secondary": null,
+      "material_hint": "mixed",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": null,
+      "confidence": "high",
+      "notes": "纯黄色球体，附着于背景墙面，装饰性太阳"
+    },
+    {
+      "id": "cloud_01",
+      "category": "terrain_feature",
+      "subcategory": "cloud",
+      "bbox_pct": {"x_min": 25, "y_min": 15, "x_max": 42, "y_max": 30},
+      "center_pct": {"x": 33.5, "y": 22.5},
+      "ground_contact_pct": {"x": 33.5, "y": 30},
+      "relative_size": "small",
+      "estimated_size_m": {"w": 0.3, "d": 0.2, "h": 0.2},
+      "size_confidence": "low",
+      "depth_layer": "background",
+      "color_dominant": "#FFFFFF",
+      "color_secondary": "#D0D0D0",
+      "material_hint": "mixed",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": "cloud_group",
+      "confidence": "high",
+      "notes": "背景墙面装饰云，白色/浅灰色几何块状"
+    },
+    {
+      "id": "cloud_02",
+      "category": "terrain_feature",
+      "subcategory": "cloud",
+      "bbox_pct": {"x_min": 58, "y_min": 10, "x_max": 72, "y_max": 25},
+      "center_pct": {"x": 65, "y": 17.5},
+      "ground_contact_pct": {"x": 65, "y": 25},
+      "relative_size": "small",
+      "estimated_size_m": {"w": 0.3, "d": 0.2, "h": 0.2},
+      "size_confidence": "low",
+      "depth_layer": "background",
+      "color_dominant": "#FFFFFF",
+      "color_secondary": "#D0D0D0",
+      "material_hint": "mixed",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": "cloud_group",
+      "confidence": "high",
+      "notes": "背景墙面装饰云"
+    },
+    {
+      "id": "water_01",
+      "category": "water",
+      "subcategory": "ocean_stylized",
+      "bbox_pct": {"x_min": 42, "y_min": 40, "x_max": 98, "y_max": 88},
+      "center_pct": {"x": 70, "y": 64},
+      "ground_contact_pct": {"x": 70, "y": 85},
+      "relative_size": "large",
+      "estimated_size_m": {"w": 15.0, "d": 12.0, "h": 2.0},
+      "size_confidence": "low",
+      "depth_layer": "midground",
+      "color_dominant": "#4A90D9",
+      "color_secondary": "#2E5C8A",
+      "material_hint": "glass",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": null,
+      "confidence": "high",
+      "notes": "半透明蓝色几何波浪，多层叠加，低多边形风格化海浪"
+    },
+    {
+      "id": "platform_01",
+      "category": "terrain_feature",
+      "subcategory": "sand_platform",
+      "bbox_pct": {"x_min": 8, "y_min": 45, "x_max": 65, "y_max": 85},
+      "center_pct": {"x": 36.5, "y": 65},
+      "ground_contact_pct": {"x": 36.5, "y": 85},
+      "relative_size": "large",
+      "estimated_size_m": {"w": 12.0, "d": 10.0, "h": 1.5},
+      "size_confidence": "medium",
+      "depth_layer": "midground",
+      "color_dominant": "#E8C890",
+      "color_secondary": "#D0B070",
+      "material_hint": "stone",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": null,
+      "confidence": "high",
+      "notes": "沙黄色木质纹理平台，多层台阶式结构"
+    },
+    {
+      "id": "backdrop_01",
+      "category": "terrain_feature",
+      "subcategory": "sky_wall",
+      "bbox_pct": {"x_min": 5, "y_min": 3, "x_max": 75, "y_max": 50},
+      "center_pct": {"x": 40, "y": 26.5},
+      "ground_contact_pct": {"x": 40, "y": 50},
+      "relative_size": "large",
+      "estimated_size_m": {"w": 20.0, "d": 0.2, "h": 10.0},
+      "size_confidence": "low",
+      "depth_layer": "background",
+      "color_dominant": "#4A90D9",
+      "color_secondary": "#87CEEB",
+      "material_hint": "mixed",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": null,
+      "confidence": "high",
+      "notes": "垂直背景墙面，蓝色渐变，绘有几何山脉图案"
+    },
+    {
+      "id": "geo_blocks_01",
+      "category": "prop",
+      "subcategory": "decorative_blocks",
+      "bbox_pct": {"x_min": 40, "y_min": 70, "x_max": 55, "y_max": 90},
+      "center_pct": {"x": 47.5, "y": 80},
+      "ground_contact_pct": {"x": 47.5, "y": 89},
+      "relative_size": "small",
+      "estimated_size_m": {"w": 1.0, "d": 1.0, "h": 1.0},
+      "size_confidence": "low",
+      "depth_layer": "foreground",
+      "color_dominant": "#4A90D9",
+      "color_secondary": "#FFFFFF",
+      "material_hint": "mixed",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": "geo_group",
+      "confidence": "high",
+      "notes": "前景装饰性几何体，蓝色/白色/灰色立方体和球体"
+    },
+    {
+      "id": "stairs_01",
+      "category": "terrain_feature",
+      "subcategory": "steps",
+      "bbox_pct": {"x_min": 8, "y_min": 55, "x_max": 20, "y_max": 75},
+      "center_pct": {"x": 14, "y": 65},
+      "ground_contact_pct": {"x": 14, "y": 75},
+      "relative_size": "small",
+      "estimated_size_m": {"w": 2.0, "d": 1.5, "h": 1.0},
+      "size_confidence": "medium",
+      "depth_layer": "midground",
+      "color_dominant": "#E8C890",
+      "color_secondary": null,
+      "material_hint": "stone",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": null,
+      "confidence": "high",
+      "notes": "沙滩平台左侧台阶"
+    },
+    {
+      "id": "ball_02",
+      "category": "prop",
+      "subcategory": "small_ball",
+      "bbox_pct": {"x_min": 48, "y_min": 60, "x_max": 53, "y_max": 66},
+      "center_pct": {"x": 50.5, "y": 63},
+      "ground_contact_pct": {"x": 50.5, "y": 65},
+      "relative_size": "small",
+      "estimated_size_m": {"w": 0.15, "d": 0.15, "h": 0.15},
+      "size_confidence": "low",
+      "depth_layer": "midground",
+      "color_dominant": "#4A90D9",
+      "color_secondary": null,
+      "material_hint": "mixed",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": "ball_group",
+      "confidence": "medium",
+      "notes": "散落在沙滩上的蓝色小球"
+    },
+    {
+      "id": "rock_01",
+      "category": "terrain_feature",
+      "subcategory": "decorative_rock",
+      "bbox_pct": {"x_min": 55, "y_min": 80, "x_max": 70, "y_max": 98},
+      "center_pct": {"x": 62.5, "y": 89},
+      "ground_contact_pct": {"x": 62.5, "y": 97},
+      "relative_size": "small",
+      "estimated_size_m": {"w": 1.5, "d": 1.0, "h": 1.0},
+      "size_confidence": "low",
+      "depth_layer": "foreground",
+      "color_dominant": "#4A4A4A",
+      "color_secondary": null,
+      "material_hint": "stone",
+      "rotation_hint_deg": 0,
+      "occlusion": [],
+      "group_id": null,
+      "confidence": "high",
+      "notes": "前景装饰岩石，深灰色多面体"
+    }
+  ],
+
+  "groups": [
+    {
+      "group_id": "chair_group",
+      "members": ["chair_01", "chair_02"],
+      "pattern": "linear",
+      "pattern_direction_pct": {
+        "from": {"x": 18, "y": 64},
+        "to": {"x": 38, "y": 57}
+      },
+      "spacing_hint": "even",
+      "notes": "两把沙滩椅沿平台边缘线性排列"
+    },
+    {
+      "group_id": "cloud_group",
+      "members": ["cloud_01", "cloud_02"],
+      "pattern": "scattered",
+      "pattern_direction_pct": {
+        "from": {"x": 33, "y": 22},
+        "to": {"x": 65, "y": 17}
+      },
+      "spacing_hint": "varied",
+      "notes": "云朵在背景墙面上分散分布"
+    },
+    {
+      "group_id": "ball_group",
+      "members": ["ball_01", "ball_02"],
+      "pattern": "scattered",
+      "pattern_direction_pct": {
+        "from": {"x": 29, "y": 71},
+        "to": {"x": 50, "y": 65}
+      },
+      "spacing_hint": "varied",
+      "notes": "球体散落在沙滩上"
+    },
+    {
+      "group_id": "geo_group",
+      "members": ["geo_blocks_01"],
+      "pattern": "cluster",
+      "pattern_direction_pct": {
+        "from": {"x": 47, "y": 89},
+        "to": {"x": 48, "y": 80}
+      },
+      "spacing_hint": "varied",
+      "notes": "前景几何体块聚集摆放"
+    }
+  ],
+
+  "spatial_references": {
+    "perspective_lines": [
+      {
+        "id": "platform_edge_front",
+        "type": "building_edge",
+        "from_pct": {"x": 8, "y": 55},
+        "to_pct": {"x": 65, "y": 75},
+        "depth_cue": "沙滩平台前边缘线向右下方延伸，形成深度感"
+      },
+      {
+        "id": "water_wave_layers",
+        "type": "river",
+        "from_pct": {"x": 42, "y": 45},
+        "to_pct": {"x": 95, "y": 85},
+        "depth_cue": "波浪块体由近及远逐渐变小，形成深度梯度"
+      },
+      {
+        "id": "backdrop_bottom",
+        "type": "wall",
+        "from_pct": {"x": 5, "y": 50},
+        "to_pct": {"x": 75, "y": 50},
+        "depth_cue": "背景墙底部水平线，定义场景后边界"
+      }
+    ],
+    "vanishing_points_pct": [
+      {
+        "x": 85,
+        "y": 60,
+        "confidence": "medium",
+        "source": "由平台边缘线和波浪层次线推断"
+      }
+    ],
+    "size_gradient": "近景物体（前景几何体、岩石）占据画面比例较大，背景物体（灯塔、太阳）相对较小，符合近大远小透视规律。等轴测视角下尺寸梯度较为温和。",
+    "natural_boundaries": [
+      "沙滩与海水的交界线（约 x:42-65, y:65-75）",
+      "背景墙面与沙滩平台的垂直交界",
+      "海水区域的右边界（画面右边缘）"
+    ],
+    "shadow_consistency": "consistent — 所有物体阴影均投向左下方（约 8 点钟方向），符合单一光源（右上方 2 点钟方向）设定，阴影方向一致无异常"
+  },
+
+  "spatial_relations": [
+    {
+      "subject": "chair_01",
+      "relation": "left_of",
+      "object": "umbrella_01",
+      "distance_hint": "close"
+    },
+    {
+      "subject": "chair_02",
+      "relation": "right_of",
+      "object": "umbrella_01",
+      "distance_hint": "close"
+    },
+    {
+      "subject": "character_01",
+      "relation": "in_front_of",
+      "object": "umbrella_01",
+      "distance_hint": "close"
+    },
+    {
+      "subject": "character_02",
+      "relation": "right_front_of",
+      "object": "character_01",
+      "distance_hint": "medium"
+    },
+    {
+      "subject": "ball_01",
+      "relation": "left_front_of",
+      "object": "character_01",
+      "distance_hint": "close"
+    },
+    {
+      "subject": "lighthouse_01",
+      "relation": "on_top_of",
+      "object": "rock_base_01",
+      "distance_hint": "close"
+    },
+    {
+      "subject": "water_01",
+      "relation": "right_of",
+      "object": "platform_01",
+      "distance_hint": "adjacent"
+    },
+    {
+      "subject": "geo_blocks_01",
+      "relation": "in_front_of",
+      "object": "platform_01",
+      "distance_hint": "close"
+    },
+    {
+      "subject": "rock_01",
+      "relation": "right_front_of",
+      "object": "geo_blocks_01",
+      "distance_hint": "close"
+    },
+    {
+      "subject": "backdrop_01",
+      "relation": "behind",
+      "object": "platform_01",
+      "distance_hint": "medium"
+    }
+  ],
+
+  "analysis_meta": {
+    "image_dimensions": "unknown",
+    "ui_elements_detected": false,
+    "ui_notes": "未检测到编辑器 UI 或 HUD 元素，画面为纯场景内容",
+    "total_objects_identified": 18,
+    "low_confidence_count": 5,
+    "analysis_limitations": "1. 图片分辨率未知，坐标估算基于百分比；2. 装饰性几何体块的具体功能不确定；3. 背景墙面装饰元素（太阳、云朵）为 2D 贴图为 3D 几何体无法完全确定；4. 场景为风格化低多边形模型，真实尺寸估算置信度较低"
+  }
+}

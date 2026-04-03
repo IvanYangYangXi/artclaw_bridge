@@ -1,0 +1,462 @@
+{
+  "step": "step3+4_combined",
+  "version": 3,
+  "image_size": {
+    "w": 838,
+    "h": 456
+  },
+  "coordinate_system": {
+    "origin": "platform_01 ground_contact",
+    "origin_screen_pct": {
+      "x": 36.5,
+      "y": 85
+    },
+    "units": "meters",
+    "axes": {
+      "X": "right",
+      "Y": "depth (screen upper-right = +Y)",
+      "Z": "up"
+    }
+  },
+  "projection": {
+    "type": "isometric_orthographic",
+    "rotation_order": "Rx(pitch) @ Rz(yaw)",
+    "pitch_deg": -35.0,
+    "yaw_deg": 45.0,
+    "proj_x": [
+      0.7071067811865476,
+      -0.7071067811865476,
+      0.0
+    ],
+    "proj_y": [
+      -0.5792279653395692,
+      -0.5792279653395692,
+      -0.573576436351046
+    ],
+    "scale_px_per_m": 108.41,
+    "anchor": {
+      "id": "umbrella_01",
+      "height_m": 2.2,
+      "bbox_h_px": 136.8
+    }
+  },
+  "camera": {
+    "type": "orthographic",
+    "position_m": {
+      "x": -8.6,
+      "y": -10.07,
+      "z": 8.6
+    },
+    "look_at_m": {
+      "x": 2.01,
+      "y": 0.53,
+      "z": 0
+    },
+    "look_direction_xy": {
+      "x": 0.7071,
+      "y": 0.7071
+    },
+    "rotation_deg": {
+      "pitch": -35.0,
+      "yaw": 45.0,
+      "roll": 0
+    },
+    "ortho_width_m": 7.73
+  },
+  "visible_area": {
+    "corners_world": [
+      {
+        "x": 1.09,
+        "y": 5.08
+      },
+      {
+        "x": 6.56,
+        "y": -0.38
+      },
+      {
+        "x": -2.54,
+        "y": 1.45
+      },
+      {
+        "x": 2.93,
+        "y": -4.02
+      }
+    ],
+    "x_range_m": [
+      -2.54,
+      6.56
+    ],
+    "y_range_m": [
+      -4.02,
+      5.08
+    ]
+  },
+  "objects_3d": [
+    {
+      "id": "umbrella_01",
+      "category": "prop",
+      "position_m": {
+        "x": 0.44,
+        "y": 1.37,
+        "z": 1.1
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 1.5,
+        "d": 1.5,
+        "h": 2.2
+      },
+      "rotation_deg": 0,
+      "is_backdrop": false,
+      "is_anchor": true,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "chair_01",
+      "category": "prop",
+      "position_m": {
+        "x": -0.25,
+        "y": 1.77,
+        "z": 0.4
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 0.6,
+        "d": 1.2,
+        "h": 0.8
+      },
+      "rotation_deg": 15,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "chair_02",
+      "category": "prop",
+      "position_m": {
+        "x": 1.1,
+        "y": 0.93,
+        "z": 0.4
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 0.6,
+        "d": 1.2,
+        "h": 0.8
+      },
+      "rotation_deg": -10,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "character_01",
+      "category": "character",
+      "position_m": {
+        "x": 0.9,
+        "y": 0.19,
+        "z": 0.5
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 0.5,
+        "d": 0.5,
+        "h": 1.0
+      },
+      "rotation_deg": 90,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "character_02",
+      "category": "character",
+      "position_m": {
+        "x": 1.79,
+        "y": -0.78,
+        "z": 0.55
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 0.5,
+        "d": 0.4,
+        "h": 1.1
+      },
+      "rotation_deg": 45,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "ball_01",
+      "category": "prop",
+      "position_m": {
+        "x": 0.13,
+        "y": 0.89,
+        "z": 0.15
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 0.3,
+        "d": 0.3,
+        "h": 0.3
+      },
+      "rotation_deg": 0,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "lighthouse_01",
+      "category": "building",
+      "position_m": {
+        "x": 4.18,
+        "y": -0.91,
+        "z": 4.0
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 2.5,
+        "d": 2.5,
+        "h": 8.0
+      },
+      "rotation_deg": 0,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "rock_base_01",
+      "category": "terrain_feature",
+      "position_m": {
+        "x": 3.67,
+        "y": -1.2,
+        "z": 1.5
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 6.0,
+        "d": 5.0,
+        "h": 3.0
+      },
+      "rotation_deg": 0,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "sun_01",
+      "category": "terrain_feature",
+      "position_m": {
+        "x": 3.0,
+        "y": 1.36,
+        "z": 0.25
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 0.5,
+        "d": 0.5,
+        "h": 0.5
+      },
+      "rotation_deg": 0,
+      "is_backdrop": true,
+      "is_anchor": false,
+      "confidence": "low",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "cloud_01",
+      "category": "terrain_feature",
+      "position_m": {
+        "x": 1.83,
+        "y": 2.16,
+        "z": 0.1
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 0.3,
+        "d": 0.2,
+        "h": 0.2
+      },
+      "rotation_deg": 0,
+      "is_backdrop": true,
+      "is_anchor": false,
+      "confidence": "low",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "cloud_02",
+      "category": "terrain_feature",
+      "position_m": {
+        "x": 3.74,
+        "y": 0.62,
+        "z": 0.1
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 0.3,
+        "d": 0.2,
+        "h": 0.2
+      },
+      "rotation_deg": 0,
+      "is_backdrop": true,
+      "is_anchor": false,
+      "confidence": "low",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "water_01",
+      "category": "water",
+      "position_m": {
+        "x": 1.83,
+        "y": -1.83,
+        "z": 1.0
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 15.0,
+        "d": 12.0,
+        "h": 2.0
+      },
+      "rotation_deg": 0,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "platform_01",
+      "category": "terrain_feature",
+      "position_m": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.75
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 12.0,
+        "d": 10.0,
+        "h": 1.5
+      },
+      "rotation_deg": 0,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "backdrop_01",
+      "category": "terrain_feature",
+      "position_m": {
+        "x": 1.46,
+        "y": 1.08,
+        "z": 5.0
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 20.0,
+        "d": 0.2,
+        "h": 10.0
+      },
+      "rotation_deg": 0,
+      "is_backdrop": true,
+      "is_anchor": false,
+      "confidence": "low",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "geo_blocks_01",
+      "category": "prop",
+      "position_m": {
+        "x": 0.46,
+        "y": -0.75,
+        "z": 0.5
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 1.0,
+        "d": 1.0,
+        "h": 1.0
+      },
+      "rotation_deg": 0,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "stairs_01",
+      "category": "terrain_feature",
+      "position_m": {
+        "x": -1.11,
+        "y": 1.35,
+        "z": 1.0
+      },
+      "ground_z_m": 0.5,
+      "size_m": {
+        "w": 2.0,
+        "d": 1.5,
+        "h": 1.0
+      },
+      "rotation_deg": 0,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "ball_02",
+      "category": "prop",
+      "position_m": {
+        "x": 1.49,
+        "y": -0.04,
+        "z": 0.07
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 0.15,
+        "d": 0.15,
+        "h": 0.15
+      },
+      "rotation_deg": 0,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    },
+    {
+      "id": "rock_01",
+      "category": "terrain_feature",
+      "position_m": {
+        "x": 0.99,
+        "y": -1.86,
+        "z": 0.5
+      },
+      "ground_z_m": 0.0,
+      "size_m": {
+        "w": 1.5,
+        "d": 1.0,
+        "h": 1.0
+      },
+      "rotation_deg": 0,
+      "is_backdrop": false,
+      "is_anchor": false,
+      "confidence": "high",
+      "reprojection_error_pct": 0.0
+    }
+  ],
+  "validation": {
+    "mean_reprojection_error_pct": 0.0,
+    "max_reprojection_error_pct": 0.0,
+    "total_ground_objects": 14,
+    "total_backdrop_objects": 4
+  }
+}

@@ -312,6 +312,18 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			.ToolTipText(FUEAgentL10n::Get(TEXT("ManageTip")))
 			.ContentPadding(FMargin(6.0f, 2.0f))
 		]
+		// 附件按钮 — 靠左，紧跟管理按钮
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+		[
+			SNew(SButton)
+			.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("AttachBtn")); })
+			.OnClicked(this, &SUEAgentDashboard::OnAttachFileClicked)
+			.ToolTipText(FUEAgentL10n::Get(TEXT("AttachTip")))
+			.ContentPadding(FMargin(6.0f, 2.0f))
+		]
 		+ SHorizontalBox::Slot()
 		.FillWidth(1.0f)
 		[
@@ -328,6 +340,19 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			.IsEnabled_Lambda([this]() { return bIsWaitingForResponse; })
 			.ContentPadding(FMargin(6.0f, 2.0f))
 			.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.3f, 0.3f)))
+		]
+		// 恢复接收按钮 — 非等待状态时显示（与停止按钮互斥）
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(SButton)
+			.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ResumeBtn")); })
+			.OnClicked(this, &SUEAgentDashboard::OnResumeClicked)
+			.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("ResumeTip")); })
+			.IsEnabled_Lambda([this]() { return !bIsWaitingForResponse; })
+			.ContentPadding(FMargin(6.0f, 2.0f))
+			.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.3f, 0.6f, 0.3f)))
 		]
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
@@ -347,6 +372,25 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					? FSlateColor(FLinearColor(0.4f, 0.4f, 0.2f))
 					: FSlateColor(FLinearColor(0.15f, 0.45f, 0.75f));
 			})
+		]
+	];
+
+	// --- 附件预览栏 (默认隐藏，有附件时显示) ---
+	MainVBox->AddSlot()
+	.AutoHeight()
+	.Padding(4.0f, 0.0f)
+	[
+		SAssignNew(AttachmentPreviewBorder, SBorder)
+		.BorderImage(FCoreStyle::Get().GetBrush("ToolPanel.GroupBorder"))
+		.Padding(FMargin(4.0f, 2.0f))
+		.Visibility(EVisibility::Collapsed)
+		[
+			SNew(SScrollBox)
+			.Orientation(Orient_Horizontal)
+			+ SScrollBox::Slot()
+			[
+				SAssignNew(AttachmentPreviewBox, SHorizontalBox)
+			]
 		]
 	];
 
@@ -425,6 +469,12 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		BridgeStatusPollHandle = FTSTicker::GetCoreTicker().AddTicker(
 			FTickerDelegate::CreateLambda([Self](float) -> bool
 			{
+				// 引擎关闭或 Widget 正在析构时跳过 — 防止访问已销毁的 Python/Slate 子系统
+				if (Self->bIsBeingDestroyed || IsEngineExitRequested() || !FSlateApplication::IsInitialized())
+				{
+					return false; // 停止轮询
+				}
+
 				// MCP 状态: 直接查询 Python MCP Server 运行状态（纯内存查询）
 				{
 					FString McpCheck = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
@@ -494,6 +544,46 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					}
 				}
 
+				// Session token 用量: 读取 _session_usage.json（Python chat 完成后写入）
+				// Python 子线程无法 import unreal，会写到 ~/.artclaw/ 而非 ProjectSavedDir
+				{
+					FString UsagePath;
+					FString Path1 = FPaths::ProjectSavedDir() / TEXT("UEAgent") / TEXT("_session_usage.json");
+					FString Path2 = FPaths::Combine(FPlatformProcess::UserHomeDir(), TEXT(".artclaw"), TEXT("_session_usage.json"));
+					if (FPaths::FileExists(Path1))
+					{
+						UsagePath = Path1;
+					}
+					else if (FPaths::FileExists(Path2))
+					{
+						UsagePath = Path2;
+					}
+
+					if (!UsagePath.IsEmpty())
+					{
+						FString UsageContent;
+						if (FFileHelper::LoadFileToString(UsageContent, *UsagePath))
+						{
+							TSharedPtr<FJsonObject> UsageObj;
+							TSharedRef<TJsonReader<>> UsageReader = TJsonReaderFactory<>::Create(UsageContent);
+							if (FJsonSerializer::Deserialize(UsageReader, UsageObj) && UsageObj.IsValid())
+							{
+								int32 ContextTokens = 0;
+								int32 TotalTokens = 0;
+								UsageObj->TryGetNumberField(TEXT("contextTokens"), ContextTokens);
+								UsageObj->TryGetNumberField(TEXT("totalTokens"), TotalTokens);
+								// contextTokens = 上下文窗口上限 (Gateway 返回)
+								// totalTokens = 本次对话实际使用的 token 数
+								// 用 totalTokens 作为已使用量
+								if (TotalTokens > 0)
+								{
+									Self->LastTotalTokens = TotalTokens;
+								}
+							}
+						}
+					}
+				}
+
 				return true; // 持续轮询
 			}),
 			2.0f // 每 2 秒检查一次
@@ -506,6 +596,10 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		ConfirmPollHandle = FTSTicker::GetCoreTicker().AddTicker(
 			FTickerDelegate::CreateLambda([Self](float) -> bool
 			{
+				if (Self->bIsBeingDestroyed || IsEngineExitRequested())
+				{
+					return false;
+				}
 				Self->PollConfirmationRequests();
 				return true; // 持续轮询
 			}),
@@ -516,52 +610,72 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 
 SUEAgentDashboard::~SUEAgentDashboard()
 {
-	// 保存当前会话状态 — 下次启动恢复
-	SaveLastSession();
-	// 停止聊天响应轮询 — 必须最先清理，防止 lambda 捕获的 Self 在析构后触发
-	if (PollTimerHandle.IsValid())
-	{
-		FTSTicker::GetCoreTicker().RemoveTicker(PollTimerHandle);
-		PollTimerHandle.Reset();
-	}
-	bIsWaitingForResponse = false;
+	// 设置析构标记 — ticker lambda 检查此标记避免在析构过程中执行
+	bIsBeingDestroyed = true;
 
-	// 停止 bridge 状态轮询
+	// 【最先】停止所有 Ticker 轮询 — 防止析构过程中 lambda 仍触发
+	// 特别是 BridgeStatusPoll 会调 RunPythonAndCapture + SetConnectionStatus，
+	// 后者 Broadcast 会触发 HandleConnectionStatusChanged → AddMessage → RebuildMessageList，
+	// 如果 Slate/Python 子系统已销毁则崩溃
 	if (BridgeStatusPollHandle.IsValid())
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(BridgeStatusPollHandle);
 		BridgeStatusPollHandle.Reset();
 	}
-
-	// 停止确认弹窗轮询 (阶段 5.6)
+	if (PollTimerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(PollTimerHandle);
+		PollTimerHandle.Reset();
+	}
 	if (ConfirmPollHandle.IsValid())
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(ConfirmPollHandle);
 		ConfirmPollHandle.Reset();
 	}
+	bIsWaitingForResponse = false;
 
+	// 断开委托 — 防止 Subsystem 在我们析构后仍回调
 	if (CachedSubsystem.IsValid())
 	{
 		CachedSubsystem->OnConnectionStatusChangedNative.RemoveAll(this);
 	}
+	CachedSubsystem.Reset();
+
+	// 保存当前会话状态 — 纯文件 I/O，不调 Python，安全
+	SaveLastSession();
 
 	// 主动清空消息列表 Widget — 必须在 Slate 还活着时执行，否则 STextBlock /
 	// SButton 子 Widget 在析构链中会访问已关闭的 Slate 字体/渲染服务导致崩溃
-	// (STextBlock::~STextBlock → TextLayoutCache → 访问 null 渲染器)
 	if (MessageScrollBox.IsValid() && FSlateApplication::IsInitialized())
 	{
 		MessageScrollBox->ClearChildren();
 	}
 	MessageScrollBox.Reset();
 
-	// 关闭管理面板窗口，防止 Dashboard 销毁后窗口仍引用无效 Widget
-	// 注意：关机阶段 Slate 可能已被销毁，必须先检查 FSlateApplication::IsInitialized()
+	// 关闭管理面板窗口
 	if (ManageWindow.IsValid() && FSlateApplication::IsInitialized())
 	{
 		ManageWindow->RequestDestroyWindow();
 		ManageWindow.Reset();
 		ManagePanelWidget.Reset();
 	}
+
+	// 释放设置面板窗口
+	if (SettingsWindow.IsValid() && FSlateApplication::IsInitialized())
+	{
+		SettingsWindow->RequestDestroyWindow();
+		SettingsWindow.Reset();
+	}
+
+	// 释放快捷输入编辑窗口
+	if (QuickInputEditWindow.IsValid() && FSlateApplication::IsInitialized())
+	{
+		QuickInputEditWindow->RequestDestroyWindow();
+		QuickInputEditWindow.Reset();
+	}
+
+	// 释放 PlatformBridge — 可能持有 Python 资源
+	PlatformBridge.Reset();
 }
 
 // ==================================================================

@@ -18,13 +18,6 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 	// 窗口已被用户关闭（X 按钮），清理悬垂引用
 	SettingsWindow.Reset();
 
-	// 记录当前状态（用于取消时恢复）
-	const bool OrigSilentMedium = bSilentMedium;
-	const bool OrigSilentHigh = bSilentHigh;
-	const bool OrigPlanMode = bPlanMode;
-	const bool OrigEnterToSend = bEnterToSend;
-	const int32 OrigContextWindowSize = ContextWindowSize;
-
 	auto Self = SharedThis(this);
 
 	SettingsWindow = SNew(SWindow)
@@ -135,7 +128,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 					{
 						return FText::FromString(Self->ContextWindowSize == 128000 ? TEXT("[128K]") : TEXT("128K"));
 					})
-					.OnClicked_Lambda([Self]() { Self->ContextWindowSize = 128000; return FReply::Handled(); })
+					.OnClicked_Lambda([Self]() { Self->ContextWindowSize = 128000; Self->SaveContextWindowSize(); return FReply::Handled(); })
 					.ContentPadding(FMargin(6.0f, 2.0f))
 					.ButtonColorAndOpacity_Lambda([Self]() -> FSlateColor
 					{
@@ -154,7 +147,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 					{
 						return FText::FromString(Self->ContextWindowSize == 200000 ? TEXT("[200K]") : TEXT("200K"));
 					})
-					.OnClicked_Lambda([Self]() { Self->ContextWindowSize = 200000; return FReply::Handled(); })
+					.OnClicked_Lambda([Self]() { Self->ContextWindowSize = 200000; Self->SaveContextWindowSize(); return FReply::Handled(); })
 					.ContentPadding(FMargin(6.0f, 2.0f))
 					.ButtonColorAndOpacity_Lambda([Self]() -> FSlateColor
 					{
@@ -173,7 +166,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 					{
 						return FText::FromString(Self->ContextWindowSize == 500000 ? TEXT("[500K]") : TEXT("500K"));
 					})
-					.OnClicked_Lambda([Self]() { Self->ContextWindowSize = 500000; return FReply::Handled(); })
+					.OnClicked_Lambda([Self]() { Self->ContextWindowSize = 500000; Self->SaveContextWindowSize(); return FReply::Handled(); })
 					.ContentPadding(FMargin(6.0f, 2.0f))
 					.ButtonColorAndOpacity_Lambda([Self]() -> FSlateColor
 					{
@@ -259,6 +252,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 					.OnClicked_Lambda([Self]()
 					{
 						Self->bSilentMedium = !Self->bSilentMedium;
+						Self->SaveSilentModeToConfig();
 						return FReply::Handled();
 					})
 					.ToolTipText(FUEAgentL10n::Get(TEXT("SilentMediumTip")))
@@ -286,6 +280,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 					.OnClicked_Lambda([Self]()
 					{
 						Self->bSilentHigh = !Self->bSilentHigh;
+						Self->SaveSilentModeToConfig();
 						return FReply::Handled();
 					})
 					.ToolTipText(FUEAgentL10n::Get(TEXT("SilentHighTip")))
@@ -365,21 +360,9 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 			[
 				SNew(SButton)
 				.Text(FUEAgentL10n::Get(TEXT("SettingsCloseBtn")))
-				.OnClicked_Lambda([Self, OrigSilentMedium, OrigSilentHigh, OrigPlanMode, OrigEnterToSend, OrigContextWindowSize]()
+				.OnClicked_Lambda([Self]()
 				{
-					// 保存静默模式配置（仅在变更时）
-					if (Self->bSilentMedium != OrigSilentMedium || Self->bSilentHigh != OrigSilentHigh)
-					{
-						Self->SaveSilentModeToConfig();
-					}
-
-					// 保存上下文窗口大小（仅在变更时）
-					if (Self->ContextWindowSize != OrigContextWindowSize)
-					{
-						Self->SaveContextWindowSize();
-					}
-
-					// 关闭窗口
+					// 关闭窗口（设置已在操作时即时保存，无需延迟保存）
 					if (Self->SettingsWindow.IsValid())
 					{
 						Self->SettingsWindow->RequestDestroyWindow();
@@ -393,7 +376,8 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 		];
 
 	// 显示窗口，作为模态窗口
-	SettingsWindow->SetOnWindowClosed(FOnWindowClosed::CreateLambda([Self](const TSharedRef<SWindow>&)
+	SettingsWindow->SetOnWindowClosed(FOnWindowClosed::CreateLambda(
+		[Self](const TSharedRef<SWindow>&)
 	{
 		Self->SettingsWindow.Reset();
 	}));

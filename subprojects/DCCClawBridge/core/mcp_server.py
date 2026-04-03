@@ -108,6 +108,12 @@ class MCPServer:
         # 主线程执行器（由外部注入，如 adapter.execute_on_main_thread）
         self._main_thread_executor: Optional[Callable] = None
 
+        # 工具调用事件回调（供 UI 层展示 tool call/result）
+        # on_tool_call(tool_name, tool_id, arguments_dict)
+        self.on_tool_call: Optional[Callable] = None
+        # on_tool_result(tool_name, tool_id, content_text, is_error)
+        self.on_tool_result: Optional[Callable] = None
+
     # --- 属性 ---
 
     @property
@@ -256,6 +262,17 @@ class MCPServer:
 
         logger.info(f"tools/call -> {tool_name}")
 
+        # 生成唯一 tool_id 用于 UI 追踪
+        import uuid as _uuid
+        tool_id = f"mcp_{_uuid.uuid4().hex[:12]}"
+
+        # 通知 UI: 工具调用开始
+        if self.on_tool_call:
+            try:
+                self.on_tool_call(tool_name, tool_id, arguments)
+            except Exception:
+                pass
+
         tool_def = self._tools[tool_name]
         handler = tool_def.get("_handler")
         if handler is None:
@@ -272,17 +289,50 @@ class MCPServer:
 
             # 标准化结果
             if isinstance(result, dict) and "content" in result:
-                return result  # 已经是 MCP 格式
-            return {
-                "content": [{"type": "text", "text": str(result)}],
-                "isError": False,
-            }
+                mcp_result = result
+            else:
+                mcp_result = {
+                    "content": [{"type": "text", "text": str(result)}],
+                    "isError": False,
+                }
+
+            # 通知 UI: 工具执行完成
+            if self.on_tool_result:
+                try:
+                    is_error = mcp_result.get("isError", False)
+                    content_text = self._extract_result_text(mcp_result)
+                    self.on_tool_result(tool_name, tool_id, content_text, is_error)
+                except Exception:
+                    pass
+
+            return mcp_result
         except Exception as e:
             logger.error(f"Tool execution error ({tool_name}): {e}")
-            return {
+            error_result = {
                 "content": [{"type": "text", "text": f"执行错误: {str(e)}"}],
                 "isError": True,
             }
+            # 通知 UI: 工具执行出错
+            if self.on_tool_result:
+                try:
+                    self.on_tool_result(tool_name, tool_id, str(e), True)
+                except Exception:
+                    pass
+            return error_result
+
+    @staticmethod
+    def _extract_result_text(mcp_result: dict) -> str:
+        """从 MCP 结果中提取文本内容"""
+        content = mcp_result.get("content", [])
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    parts.append(item.get("text", ""))
+            return "\n".join(parts)
+        elif isinstance(content, str):
+            return content
+        return str(content)
 
     async def _execute_on_main_thread(self, handler: Callable, arguments: dict) -> Any:
         """在 DCC 主线程执行工具 handler（通过 Future 等待结果）"""
@@ -463,7 +513,40 @@ def start_mcp_server(adapter=None, port: int = DEFAULT_PORT) -> bool:
     # 启动 Skill 运行时
     _init_skill_runtime(_mcp_server, adapter)
 
+    # 连接 tool call/result 事件到 Bridge UI 信号
+    _connect_tool_events_to_bridge(_mcp_server)
+
     return _mcp_server.start()
+
+
+def _connect_tool_events_to_bridge(server: MCPServer) -> None:
+    """将 MCP Server 的 tool call/result 事件连接到 DCCBridgeManager 的 Qt 信号。
+
+    Gateway 的 chat 事件流不包含 toolCall/toolResult 块（只有 text），
+    但 MCP Server 可以直接感知工具调用，通过此桥接函数将事件推送到 UI。
+    """
+    try:
+        from core.bridge_dcc import DCCBridgeManager
+        manager = DCCBridgeManager.instance()
+        if not manager.signals:
+            return
+
+        import json as _json
+
+        def _on_mcp_tool_call(tool_name: str, tool_id: str, arguments: dict):
+            args_str = _json.dumps(arguments, ensure_ascii=False) if isinstance(arguments, dict) else str(arguments)
+            manager.signals.tool_call.emit(tool_name, tool_id, args_str)
+
+        def _on_mcp_tool_result(tool_name: str, tool_id: str, content: str, is_error: bool):
+            # 截断过长内容
+            truncated = content[:2000] if len(content) > 2000 else content
+            manager.signals.tool_result.emit(tool_name, tool_id, truncated, is_error)
+
+        server.on_tool_call = _on_mcp_tool_call
+        server.on_tool_result = _on_mcp_tool_result
+        logger.info("MCP tool events connected to Bridge UI signals")
+    except Exception as e:
+        logger.debug(f"Bridge UI signal connection skipped: {e}")
 
 
 def _register_builtin_tools(server: MCPServer, adapter=None) -> None:

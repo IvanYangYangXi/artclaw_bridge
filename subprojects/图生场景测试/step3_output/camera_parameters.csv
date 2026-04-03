@@ -1,0 +1,13 @@
+﻿Parameter,Value
+Type,orthographic
+Position X(m),-8.6
+Position Y(m),-10.07
+Position Z(m),8.6
+LookAt X(m),2.01
+LookAt Y(m),0.53
+Pitch,-35.0
+Yaw,45.0
+Roll,0
+OrthoWidth(m),7.73
+Scale(px/m),108.41
+Projection,Rx(pitch) @ Rz(yaw)

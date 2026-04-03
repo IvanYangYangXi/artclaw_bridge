@@ -45,6 +45,18 @@
 #include "Misc/Guid.h"
 #include "Misc/FileHelper.h"
 #include "HAL/PlatformProcess.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "DesktopPlatformModule.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
+
+// Windows clipboard API (剪贴板图片读取)
+#if PLATFORM_WINDOWS
+#include "Windows/AllowWindowsPlatformTypes.h"
+#include <Windows.h>
+#include <shellapi.h>
+#include "Windows/HideWindowsPlatformTypes.h"
+#endif
 
 #define LOCTEXT_NAMESPACE "UEAgentDashboard"
 
@@ -59,6 +71,7 @@
 #include "UEAgentDashboard_Plan_impl.h"
 #include "UEAgentDashboard_System_impl.h"
 #include "UEAgentDashboard_Settings_impl.h"
+#include "UEAgentDashboard_Attachment_impl.h"
 #include "UEAgentDashboard_Main_impl.h"
 
 #undef LOCTEXT_NAMESPACE
