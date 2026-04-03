@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "ue57_camera_transform",
+  "display_name": "Ue57 Camera Transform",
+  "description": "Set, get, and animate UE Editor viewport camera and CameraActor transforms safely. Prevents the common Rotator positional-argument trap (roll,pitch,yaw vs pitch,yaw,roll). Use when AI needs to: (1) move or rotate the viewport camera, (2) set a CameraActor's transform, (3) look-at a target location, (4) orbit around an object, (5) interpolate camera between two poses. NOT for: runtime game camera (PlayerCameraManager), Sequencer camera cuts, Maya/Max cameras.",
+  "version": "0.0.1",
+  "author": "ArtClaw",
+  "software": "unreal_engine",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "ue57_camera_transform",
+      "description": "Set, get, and animate UE Editor viewport camera and CameraActor transforms safely. Prevents the common Rotator positional-argument trap (roll,pitch,yaw vs pitch,yaw,roll). Use when AI needs to: (1) move or rotate the viewport camera, (2) set a CameraActor's transform, (3) look-at a target location, (4) orbit around an object, (5) interpolate camera between two poses. NOT for: runtime game camera (PlayerCameraManager), Sequencer camera cuts, Maya/Max cameras."
+    }
+  ]
+}
