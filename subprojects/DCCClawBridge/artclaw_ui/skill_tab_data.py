@@ -101,15 +101,15 @@ def query_all_skills() -> List[dict]:
             if not os.path.isdir(sd) or not os.path.isfile(sm):
                 continue
             seen.add(name)
-            desc = _read_skill_desc(sm)
+            desc, author, version = _read_skill_metadata(sd)
             src_info = source_map.get(name, {})
             layer = src_info.get("layer", "platform")
             sw = src_info.get("dcc", "universal")
             result.append({
                 "name": name, "display_name": name,
-                "description": desc, "version": "",
+                "description": desc, "version": version,
                 "layer": layer, "software": sw,
-                "category": "general", "risk_level": "low", "author": "",
+                "category": "general", "risk_level": "low", "author": author,
                 "has_code": False, "has_skill_md": True,
                 "install_status": "installed",
                 "installed_dir": sd,
@@ -118,7 +118,7 @@ def query_all_skills() -> List[dict]:
                 "pinned": name in pinned,
             })
 
-    # 3) 未安装 + 可更新
+    # 3) 未安装 + 可更新 + 有修改
     try:
         from skill_sync import compare_source_vs_runtime
         diff = compare_source_vs_runtime()
@@ -138,6 +138,7 @@ def query_all_skills() -> List[dict]:
                     "enabled": True, "pinned": False,
                 })
             updatable = {i["name"] for i in diff.get("updatable", [])}
+            modified = {i["name"] for i in diff.get("modified", [])}
             for s in result:
                 if s["name"] in updatable:
                     s["updatable"] = True
@@ -145,6 +146,8 @@ def query_all_skills() -> List[dict]:
                         if u["name"] == s["name"]:
                             s["source_version"] = u.get("version", "")
                             break
+                if s["name"] in modified:
+                    s["modified"] = True
     except Exception:
         pass
 
@@ -175,8 +178,86 @@ def _scan_source_skills(project_root: str) -> dict:
     return source_map
 
 
+def _read_skill_metadata(skill_dir: str) -> tuple:
+    """从 Skill 目录读取 description, author, version。
+    优先从 manifest.json，不足时从 SKILL.md frontmatter 补充。
+    返回: (description, author, version)
+    """
+    desc = ""
+    author = ""
+    version = ""
+
+    # 1) 从 manifest.json 读取
+    manifest_path = os.path.join(skill_dir, "manifest.json")
+    if os.path.isfile(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                m = json.load(f)
+            desc = m.get("description", "")[:120]
+            author = m.get("author", "")
+            version = m.get("version", "")
+        except Exception:
+            pass
+
+    # 2) 从 SKILL.md frontmatter 补充
+    skill_md_path = os.path.join(skill_dir, "SKILL.md")
+    if os.path.isfile(skill_md_path):
+        try:
+            with open(skill_md_path, "r", encoding="utf-8") as f:
+                raw = f.read(4096)
+        except Exception:
+            raw = ""
+
+        if raw.startswith("---"):
+            end = raw.find("---", 3)
+            if end > 0:
+                fm_block = raw[3:end]
+                fm_desc = ""
+                fm_author = ""
+                fm_version = ""
+                in_artclaw = False
+                for line in fm_block.split("\n"):
+                    stripped = line.strip()
+                    indent = len(line) - len(line.lstrip())
+                    if indent == 0:
+                        in_artclaw = False
+                    if stripped.startswith("description:"):
+                        val = stripped[12:].strip()
+                        if val and val != ">" and val != "|":
+                            fm_desc = val[:120]
+                    elif stripped.startswith("author:"):
+                        if in_artclaw or indent >= 4:
+                            fm_author = stripped[7:].strip()
+                        elif indent == 0:
+                            fm_author = stripped[7:].strip()
+                    elif stripped.startswith("version:"):
+                        if in_artclaw or indent >= 4:
+                            fm_version = stripped[8:].strip()
+                        elif indent == 0:
+                            fm_version = stripped[8:].strip()
+                    elif stripped == "artclaw:":
+                        in_artclaw = True
+
+                if not author and fm_author:
+                    author = fm_author
+                if not version and fm_version:
+                    version = fm_version
+                if not desc and fm_desc:
+                    desc = fm_desc
+
+        # 如果还没有 desc，取 SKILL.md 正文第一行
+        if not desc:
+            for line in raw.split("\n"):
+                line = line.strip()
+                if line and not line.startswith("#") and not line.startswith("---"):
+                    desc = line[:120]
+                    break
+
+    return desc, author, version
+
+
 def _read_skill_desc(skill_md_path: str) -> str:
-    """从 SKILL.md 读取第一行有效描述"""
+    """从 SKILL.md 读取第一行有效描述（保留向后兼容）"""
     try:
         with open(skill_md_path, "r", encoding="utf-8") as f:
             raw = f.read(2048)

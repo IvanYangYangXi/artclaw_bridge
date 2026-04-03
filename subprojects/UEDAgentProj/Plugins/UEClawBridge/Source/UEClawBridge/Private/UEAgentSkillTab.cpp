@@ -230,17 +230,17 @@ TSharedRef<SWidget> SUEAgentSkillTab::BuildContent()
 
 		+ SHorizontalBox::Slot().FillWidth(0.05f)[ SNew(SSpacer) ]
 
-		// 一键同步 (Phase 4)
+		// 一键同步 (Phase 4) — 只计 updatable，不含 not_installed
 		+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)
 		[
 			SNew(SButton)
-			.Text_Lambda([UpdatableCount, NotInstalledCount]() {
+			.Text_Lambda([UpdatableCount]() {
 				return FText::Format(
 					FUEAgentL10n::Get(TEXT("ManageSyncBtn")),
-					FText::AsNumber(NotInstalledCount + UpdatableCount));
+					FText::AsNumber(UpdatableCount));
 			})
 			.OnClicked(this, &SUEAgentSkillTab::OnSyncAllClicked)
-			.IsEnabled(NotInstalledCount + UpdatableCount > 0)
+			.IsEnabled(UpdatableCount > 0)
 			.ContentPadding(FMargin(6, 2))
 		]
 	]
@@ -424,13 +424,13 @@ TSharedRef<ITableRow> SUEAgentSkillTab::GenerateRow(
 			.ContentPadding(FMargin(4, 1))
 		]
 
-		// 已安装 → [发布]（所有已安装 Skill 都可发布）
+		// 已安装且有未发布修改 → [发布]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(2)
 		[
 			SNew(SButton)
 			.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ManagePublishBtn")); })
 			.OnClicked(FOnClicked::CreateSP(this, &SUEAgentSkillTab::OnPublishClicked, Item))
-			.Visibility(bIsInstalled ? EVisibility::Visible : EVisibility::Collapsed)
+			.Visibility(bIsInstalled && Item->bModified ? EVisibility::Visible : EVisibility::Collapsed)
 			.ContentPadding(FMargin(4, 1))
 		]
 

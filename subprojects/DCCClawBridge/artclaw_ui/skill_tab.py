@@ -71,6 +71,7 @@ class SkillEntry:
     installed_dir: str = ""
     source_version: str = ""
     updatable: bool = False
+    modified: bool = False  # 运行时有未发布修改
 
 
 if HAS_QT:
@@ -291,10 +292,13 @@ if HAS_QT:
 
             updatable = sum(1 for s in self._all_skills if s.updatable)
             not_inst = sum(1 for s in self._all_skills if s.install_status == "not_installed")
-            total_sync = updatable + not_inst
             self._count_label.setText(f"显示 {len(self._filtered)}/{len(self._all_skills)}")
-            self._btn_sync.setText(f"全量更新 ({total_sync})")
-            self._btn_sync.setEnabled(total_sync > 0)
+            self._btn_sync.setText(f"全量更新 ({updatable})")
+            self._btn_sync.setEnabled(updatable > 0)
+            self._btn_sync.setToolTip(
+                f"更新 {updatable} 个 + 未安装 {not_inst} 个" if not_inst
+                else f"更新 {updatable} 个"
+            )
 
         # ==============================================================
         # List rendering
@@ -374,6 +378,10 @@ if HAS_QT:
                 ver = QLabel(f"v{s.version}")
                 ver.setStyleSheet(f"background: transparent; color: {t['text_dim']}; font-size: 10px;")
                 top_row.addWidget(ver)
+            if s.author:
+                author_lbl = QLabel(f"by {s.author}")
+                author_lbl.setStyleSheet(f"background: transparent; color: {t['text_dim']}; font-size: 10px; opacity: 0.7;")
+                top_row.addWidget(author_lbl)
             top_row.addStretch()
             name_l.addLayout(top_row)
 
@@ -421,6 +429,16 @@ if HAS_QT:
                 b = QPushButton("卸载")
                 b.setStyleSheet(btn_style)
                 b.clicked.connect(lambda checked=False, e=s: self._on_uninstall(e))
+                h.addWidget(b)
+            if is_inst and s.modified:
+                publish_style = (
+                    f"QPushButton {{ background: #4D80E6; color: #fff;"
+                    f" border: none; border-radius: 3px; padding: 2px 8px; font-size: 10px; }}"
+                    f"QPushButton:hover {{ background: #5A8DF0; }}"
+                )
+                b = QPushButton("发布")
+                b.setStyleSheet(publish_style)
+                b.clicked.connect(lambda checked=False, e=s: self._on_publish(e))
                 h.addWidget(b)
 
             det = QPushButton("···")

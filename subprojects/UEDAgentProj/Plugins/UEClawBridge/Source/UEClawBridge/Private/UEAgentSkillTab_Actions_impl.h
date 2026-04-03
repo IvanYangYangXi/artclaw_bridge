@@ -65,13 +65,18 @@ FReply SUEAgentSkillTab::OnDetailClicked(FSkillEntryPtr Item)
 
 	FString CapturedInstDir = Item->InstalledDir;
 	FString CapturedSrcDir = Item->SourceDir;
+	bool bIsInstalled = (Item->InstallStatus != EInstallStatus::NotInstalled);
+	FSkillEntryPtr CapturedItem = Item;
 
 	TSharedRef<SWindow> Win = SNew(SWindow)
 		.Title(FText::FromString(Item->DisplayName))
 		.ClientSize(FVector2D(480, 420))
-		.SupportsMinimize(false).SupportsMaximize(false)
-		[
-			SNew(SVerticalBox)
+		.SupportsMinimize(false).SupportsMaximize(false);
+
+	TWeakPtr<SWindow> WeakWin = Win;
+
+	Win->SetContent(
+		SNew(SVerticalBox)
 			+ SVerticalBox::Slot()
 			.FillHeight(1.0f)
 			[
@@ -117,13 +122,54 @@ FReply SUEAgentSkillTab::OnDetailClicked(FSkillEntryPtr Item)
 					.HAlign(HAlign_Center)
 				]
 			]
+			// 发布按钮行（仅已安装 Skill 可用，即使无修改也能手动发布）
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(12.0f, 2.0f, 12.0f, 2.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f)[ SNew(SSpacer) ]
+				+ SHorizontalBox::Slot().AutoWidth()
+				[
+					SNew(SButton)
+					.Text(FText::FromString(FUEAgentL10n::GetStr(TEXT("ManagePublishBtn"))))
+					.OnClicked_Lambda([this, CapturedItem, WeakWin = TWeakPtr<SWindow>(Win)]() -> FReply
+					{
+						if (WeakWin.IsValid())
+							WeakWin.Pin()->RequestDestroyWindow();
+						OnPublishClicked(CapturedItem);
+						return FReply::Handled();
+					})
+					.IsEnabled(bIsInstalled)
+					.ContentPadding(FMargin(8, 3))
+					.ToolTipText(FText::FromString(TEXT("将已安装的 Skill 发布到项目源码仓库（版本递增 + git commit）")))
+				]
+				+ SHorizontalBox::Slot().FillWidth(1.0f)[ SNew(SSpacer) ]
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(12.0f, 4.0f, 12.0f, 4.0f)
+			[
+				SNew(SButton)
+				.Text(FText::FromString(FUEAgentL10n::GetStr(TEXT("ManagePublishBtn"))))
+				.OnClicked_Lambda([this, CapturedItem, WeakWin]() -> FReply
+				{
+					if (WeakWin.IsValid())
+						WeakWin.Pin()->RequestDestroyWindow();
+					OnPublishClicked(CapturedItem);
+					return FReply::Handled();
+				})
+				.IsEnabled(bIsInstalled)
+				.HAlign(HAlign_Center)
+				.ToolTipText(FText::FromString(TEXT("Publish to source repo (version bump + git commit)")))
+			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			.Padding(12.0f, 0.0f, 12.0f, 8.0f)
 			[
 				SNew(SSpacer).Size(FVector2D(0, 4))
 			]
-		];
+		);
 	FUEAgentManageUtils::AddChildWindow(Win);
 	return FReply::Handled();
 }

@@ -42,6 +42,7 @@ private:
 		FString InstalledDir;   // 安装运行时路径
 		FString SourceVersion;  // 源码版本号（可更新时有值）
 		bool bUpdatable = false;
+		bool bModified = false;  // 运行时有未发布修改
 	};
 	typedef TSharedPtr<FSkillEntry> FSkillEntryPtr;
 

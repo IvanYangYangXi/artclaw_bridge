@@ -27,6 +27,119 @@ logger = logging.getLogger("artclaw.skill_sync")
 
 
 # ============================================================================
+# 轻量 SKILL.md Frontmatter 解析
+# ============================================================================
+
+def _parse_frontmatter_light(skill_md_path: Path) -> dict:
+    """
+    轻量解析 SKILL.md YAML frontmatter，只提取顶层和 metadata.artclaw.* key-value。
+
+    不依赖 skill_hub 或 PyYAML，零外部依赖。
+
+    返回: {"name": ..., "description": ..., "version": ..., "author": ..., ...}
+    （author/version 会合并 metadata.artclaw.* 的值）
+    """
+    try:
+        raw = skill_md_path.read_text(encoding="utf-8")[:4096]
+    except Exception:
+        return {}
+
+    if not raw.startswith("---"):
+        return {}
+
+    end = raw.find("---", 3)
+    if end < 0:
+        return {}
+
+    fm_block = raw[3:end]
+    result = {}
+    ac_meta = {}
+    in_metadata = False
+    in_artclaw = False
+    in_multiline = False
+    multiline_key = ""
+    multiline_val = ""
+
+    for line in fm_block.split("\n"):
+        stripped = line.strip()
+
+        # 跳过空行和注释
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        # 处理多行值（description: > 的后续行）
+        if in_multiline:
+            if line.startswith("  ") or line.startswith("\t"):
+                multiline_val += " " + stripped
+                continue
+            else:
+                # 多行结束
+                result[multiline_key] = multiline_val.strip()
+                in_multiline = False
+                # 继续解析当前行
+
+        # 检测缩进层级
+        indent = len(line) - len(line.lstrip())
+
+        if indent == 0:
+            in_metadata = False
+            in_artclaw = False
+
+        if ":" not in stripped:
+            continue
+
+        key, _, val = stripped.partition(":")
+        key = key.strip()
+        val = val.strip()
+
+        if indent == 0:
+            if key == "metadata":
+                in_metadata = True
+                continue
+            if val == ">" or val == "|":
+                # 多行值
+                in_multiline = True
+                multiline_key = key
+                multiline_val = ""
+                continue
+            result[key] = val.strip('"').strip("'")
+        elif indent <= 4 and in_metadata:
+            if key == "artclaw":
+                in_artclaw = True
+                continue
+            if in_artclaw and indent >= 4:
+                ac_meta[key] = val.strip('"').strip("'")
+            elif not in_artclaw:
+                in_metadata = (key == "artclaw")  # 其他 metadata 子 key 忽略
+        elif in_artclaw:
+            ac_meta[key] = val.strip('"').strip("'")
+
+    if in_multiline:
+        result[multiline_key] = multiline_val.strip()
+
+    # 合并: metadata.artclaw.* 的值覆盖顶层 fallback
+    for k in ("author", "version", "software", "category", "risk_level", "display_name"):
+        if k in ac_meta and ac_meta[k]:
+            result[k] = ac_meta[k]
+
+    return result
+
+
+# ============================================================================
+# 版本比较
+# ============================================================================
+
+def _version_gt(a: str, b: str) -> bool:
+    """a 是否严格大于 b？用 tuple 数值比较。"""
+    def _parse(v):
+        try:
+            return tuple(int(x) for x in v.split("."))
+        except (ValueError, AttributeError):
+            return (0, 0, 0)
+    return _parse(a) > _parse(b)
+
+
+# ============================================================================
 # 配置
 # ============================================================================
 
@@ -117,12 +230,22 @@ def _scan_source_skills(project_root: Path) -> Dict[str, dict]:
                     continue
 
                 version = ""
+                author = ""
                 if manifest_path.exists():
                     try:
                         m = json.loads(manifest_path.read_text(encoding="utf-8"))
                         version = m.get("version", "")
+                        author = m.get("author", "")
                     except Exception:
                         pass
+
+                # manifest.json 没有 version/author 时，从 SKILL.md frontmatter 补充
+                if skill_md_path.exists() and (not version or not author):
+                    fm = _parse_frontmatter_light(skill_md_path)
+                    if not version:
+                        version = fm.get("version", "")
+                    if not author:
+                        author = fm.get("author", "")
 
                 skills[skill_dir.name] = {
                     "name": skill_dir.name,
@@ -132,6 +255,7 @@ def _scan_source_skills(project_root: Path) -> Dict[str, dict]:
                     "has_code": init_path.exists(),
                     "has_skill_md": skill_md_path.exists(),
                     "version": version,
+                    "author": author,
                     "content_hash": _dir_content_hash(skill_dir),
                 }
 
@@ -183,18 +307,29 @@ def _add_skill_entry(skills: dict, skill_dir: Path, layer: str) -> None:
         return
 
     version = ""
+    author = ""
     if has_manifest:
         try:
             m = json.loads((skill_dir / "manifest.json").read_text(encoding="utf-8"))
             version = m.get("version", "")
+            author = m.get("author", "")
         except Exception:
             pass
+
+    # manifest.json 没有 version/author 时，从 SKILL.md frontmatter 补充
+    if has_skill_md and (not version or not author):
+        fm = _parse_frontmatter_light(skill_dir / "SKILL.md")
+        if not version:
+            version = fm.get("version", "")
+        if not author:
+            author = fm.get("author", "")
 
     skills[skill_dir.name] = {
         "name": skill_dir.name,
         "layer": layer,
         "path": str(skill_dir),
         "version": version,
+        "author": author,
         "content_hash": _dir_content_hash(skill_dir),
     }
 
@@ -239,7 +374,8 @@ def compare_source_vs_runtime() -> dict:
     {
         "available": [...],      # 源码中有但运行时没有（可安装）
         "installed": [...],      # 运行时已安装
-        "updatable": [...],      # 两边都有但版本不同（可更新）
+        "updatable": [...],      # 源码比运行时新（可更新）
+        "modified": [...],       # 运行时比源码新（有未发布修改，可发布）
         "orphaned": [...],       # 运行时有但源码没有（可卸载）
         "project_root": "...",
         "error": null
@@ -248,7 +384,8 @@ def compare_source_vs_runtime() -> dict:
     project_root = _get_project_root()
     if not project_root:
         return {
-            "available": [], "installed": [], "updatable": [], "orphaned": [],
+            "available": [], "installed": [], "updatable": [],
+            "modified": [], "orphaned": [],
             "project_root": None,
             "error": "project_root 未配置。运行 install.bat 或在 ~/.artclaw/config.json 中设置。"
         }
@@ -258,6 +395,7 @@ def compare_source_vs_runtime() -> dict:
 
     available = []
     updatable = []
+    modified = []
     installed = []
     orphaned = []
 
@@ -267,18 +405,34 @@ def compare_source_vs_runtime() -> dict:
             rt = runtime[name]
             installed.append({**info, "runtime_version": rt["version"],
                               "runtime_path": rt["path"]})
-            # 判断是否可更新：版本号不同 或 无版本号时 hash 不同
+
             src_ver = info.get("version", "")
             rt_ver = rt.get("version", "")
-            if src_ver and rt_ver and src_ver != rt_ver:
-                updatable.append({**info, "runtime_version": rt_ver})
-            elif not (src_ver and rt_ver):
-                # 无版本号的 Skill，用 content hash 对比
-                src_hash = info.get("content_hash", "")
-                rt_hash = rt.get("content_hash", "")
-                if src_hash and rt_hash and src_hash != rt_hash:
-                    updatable.append({**info, "runtime_version": rt_ver,
-                                      "reason": "content_changed"})
+            src_hash = info.get("content_hash", "")
+            rt_hash = rt.get("content_hash", "")
+
+            if src_hash == rt_hash:
+                # 内容完全一致，无需更新也无需发布
+                continue
+
+            # hash 不同，判断方向
+            if src_ver and rt_ver:
+                # 有版本号: 按版本判断方向
+                if _version_gt(src_ver, rt_ver):
+                    # 源码版本更高 → 可更新
+                    updatable.append({**info, "runtime_version": rt_ver})
+                elif _version_gt(rt_ver, src_ver):
+                    # 运行时版本更高 → 有未发布修改
+                    modified.append({**info, "runtime_version": rt_ver,
+                                     "reason": "version_ahead"})
+                else:
+                    # 版本相同但 hash 不同 → 运行时有未发布修改
+                    modified.append({**info, "runtime_version": rt_ver,
+                                     "reason": "content_changed"})
+            else:
+                # 无版本号: hash 不同 → 假定运行时有修改（用户更可能编辑运行时）
+                modified.append({**info, "runtime_version": rt_ver,
+                                 "reason": "content_changed"})
         else:
             available.append(info)
 
@@ -294,6 +448,7 @@ def compare_source_vs_runtime() -> dict:
         "available": available,
         "installed": installed,
         "updatable": updatable,
+        "modified": modified,
         "orphaned": orphaned,
         "project_root": str(project_root),
         "error": None,
@@ -427,7 +582,7 @@ def update_all() -> dict:
 # ============================================================================
 
 def sync_all() -> dict:
-    """一键同步：安装未安装的 + 更新版本不一致的。"""
+    """一键同步：安装未安装的 + 更新版本不一致的。不包含 modified (有未发布修改的不会被覆盖)。"""
     diff = compare_source_vs_runtime()
     if diff["error"]:
         return {"ok": False, "message": diff["error"], "installed": [], "updated": []}
@@ -529,11 +684,12 @@ def publish_skill(skill_name: str, target_layer: str = "marketplace",
         )
         logger.info(f"Skill published to source: {target_layer}/{target_dcc}/{skill_name} v{new_version}")
 
-        # 4. 更新平台已安装 Skills 目录（SKILL.md + 代码）
+        # 4. 更新平台已安装 Skills 目录（确保 hash 一致）
+        #    发布后源码和运行时都来自同一份数据(runtime_path → source → oc_dir)
+        #    但 manifest.json 已在 runtime_path 更新过 version，需要同步到 oc_dir
         oc_dir = _get_openclaw_skills_dir() / skill_name
         if oc_dir != runtime_path:
             oc_dir.mkdir(parents=True, exist_ok=True)
-            # 同步整个目录内容
             if oc_dir.exists():
                 shutil.rmtree(oc_dir)
             shutil.copytree(
@@ -541,11 +697,21 @@ def publish_skill(skill_name: str, target_layer: str = "marketplace",
                 ignore=shutil.ignore_patterns("__pycache__"),
             )
 
-        # 5. git add + commit
+        # 5. 回写源码的 manifest.json（确保源码和运行时版本一致）
+        source_manifest = source_target / "manifest.json"
+        if source_manifest.exists() or manifest_path.exists():
+            try:
+                source_manifest.write_text(
+                    manifest_path.read_text(encoding="utf-8"),
+                    encoding="utf-8")
+            except Exception:
+                pass
+
+        # 6. git add + commit
         _git_commit(project_root, skill_name, target_layer, new_version, changelog,
                     dcc=target_dcc)
 
-        _notify_skill_hub()
+        _notify_skill_hub(force=True)
 
         return {
             "ok": True,
@@ -776,8 +942,8 @@ def rename_skill(old_name: str, new_name: str,
         return {"ok": False, "message": f"重命名失败: {e}"}
 
 
-def _notify_skill_hub() -> None:
-    """通知 skill_hub 重新扫描"""
+def _notify_skill_hub(force: bool = False) -> None:
+    """通知 skill_hub 重新扫描。force=True 时强制重扫（发布后需要刷新缓存的 version）。"""
     try:
         from skill_hub import get_skill_hub
         hub = get_skill_hub()
