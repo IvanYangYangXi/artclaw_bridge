@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "max_operation_rules",
+  "display_name": "Max Operation Rules",
+  "description": "3ds Max 操作通用规则和最佳实践。所有涉及 Max 场景修改的操作都必须遵守。 AI 在执行任何 3ds Max 场景操作任务前应先读取此 Skill。 包含：坐标系、撤销管理、脚本输出等强制规则。 Use when AI needs to: (1) perform any 3ds Max scene modification, (2) check post-operation best practices, (3) understand 3ds Max coordinate system. 3ds Max only (run_python).",
+  "version": "0.0.1",
+  "author": "ArtClaw",
+  "software": "3ds_max",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "max_operation_rules",
+      "description": "3ds Max 操作通用规则和最佳实践。所有涉及 Max 场景修改的操作都必须遵守。 AI 在执行任何 3ds Max 场景操作任务前应先读取此 Skill。 包含：坐标系、撤销管理、脚本输出等强制规则。 Use when AI needs to: (1) perform any 3ds Max scene modification, (2) check post-operation best practices, (3) understand 3ds Max coordinate system. 3ds Max only (run_python)."
+    }
+  ]
+}
