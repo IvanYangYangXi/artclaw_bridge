@@ -58,10 +58,56 @@ _INPUT_MAX_HEIGHT = 80
 
 
 class _InputTextEdit(QTextEdit):
-    """内部 QTextEdit，覆写 keyPressEvent 以拦截 Enter / Tab / Ctrl+V 等。"""
+    """内部 QTextEdit，覆写 keyPressEvent 以拦截 Enter / Tab / Ctrl+V 等。
+
+    获焦时临时禁用 Maya 的 Ctrl+C/V/Z 等热键，避免被 MEL cutCopyPaste 截获。
+    """
 
     # 由父 Widget 注入
     _owner: "ChatInputWidget"
+    _maya_hotkeys_suspended = False
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self._suspend_maya_hotkeys()
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self._restore_maya_hotkeys()
+
+    def _suspend_maya_hotkeys(self):
+        """获焦时挂起 Maya 全局热键，防止 Ctrl+V 被 MEL 截获"""
+        if self._maya_hotkeys_suspended:
+            return
+        try:
+            import maya.cmds as cmds
+            # 保存当前热键集，切换到空集
+            self._saved_hotkey_set = cmds.hotkeySet(q=True, current=True)
+            if not cmds.hotkeySet("ArtClawTemp", q=True, exists=True):
+                cmds.hotkeySet("ArtClawTemp", source=self._saved_hotkey_set)
+                # 解绑常见冲突热键
+                for key, name in [("v", "PasteSelected"), ("c", "CopySelected"),
+                                  ("z", "Undo_hotkey"), ("x", "CutSelected")]:
+                    try:
+                        cmds.hotkey(keyShortcut=key, ctrlModifier=True, name="", releaseName="")
+                    except Exception:
+                        pass
+            cmds.hotkeySet("ArtClawTemp", edit=True, current=True)
+            self._maya_hotkeys_suspended = True
+        except Exception:
+            pass
+
+    def _restore_maya_hotkeys(self):
+        """失焦时恢复 Maya 热键"""
+        if not self._maya_hotkeys_suspended:
+            return
+        try:
+            import maya.cmds as cmds
+            saved = getattr(self, '_saved_hotkey_set', 'Maya_Default')
+            cmds.hotkeySet(saved, edit=True, current=True)
+            self._maya_hotkeys_suspended = False
+        except Exception:
+            self._maya_hotkeys_suspended = False
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # type: ignore[override]
         owner = self._owner

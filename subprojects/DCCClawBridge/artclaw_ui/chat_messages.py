@@ -145,7 +145,12 @@ if HAS_QT:
         def _adjust_height(self):
             """根据内容自动调整高度"""
             doc = self.document()
-            doc.setTextWidth(self.viewport().width() if self.viewport().width() > 0 else 380)
+            vw = self.viewport().width() if self.viewport() and self.viewport().width() > 10 else 0
+            if vw <= 0 and self.parent():
+                vw = self.parent().width() - 20
+            if vw <= 0:
+                vw = 380
+            doc.setTextWidth(vw)
             height = int(doc.size().height()) + 4
             # 限制最大高度 800px，避免超长消息撑爆
             height = min(height, 800)
@@ -532,8 +537,19 @@ if HAS_QT:
                         old_w.deleteLater()
                         self._widgets[i] = new_w
             self._streaming_widget = None
+            # 延迟重新计算所有 widget 高度，避免 replaceWidget 后宽度为 0 导致高度偏大
+            if had:
+                QTimer.singleShot(100, self._readjust_heights)
             self._scroll()
             return had
+
+        def _readjust_heights(self):
+            """重新计算所有消息 widget 的高度"""
+            for w in self._widgets:
+                if hasattr(w, '_content_widget') and w._content_widget:
+                    cw = w._content_widget
+                    if hasattr(cw, '_adjust_height'):
+                        cw._adjust_height()
 
         def remove_system_message(self, content: str) -> None:
             """移除特定内容的系统消息（如"思考中..."）"""

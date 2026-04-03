@@ -785,16 +785,100 @@ void SUEAgentDashboard::OnPlatformSelected(const FString& PlatformType)
 
 	// 5. 重置 session（新平台的 agent 列表可能不同）
 	PlatformBridge->ResetSession();
+	SessionEntries.Empty();
+	AgentSessionCache.Empty();
 	Messages.Empty();
 	RebuildMessageList();
 	InitFirstSession();
 
-	AddMessage(TEXT("system"),
-		FString::Printf(TEXT("%s %s"),
-			*FUEAgentL10n::GetStr(TEXT("PlatformSwitched")),
-			*DisplayName));
+	// 6. 刷新 Agent 列表并自动切换到第一个可用 Agent
+	{
+		FString AgentResultFile = TempDir / TEXT("_platform_switch_agents.json");
+		IFileManager::Get().Delete(*AgentResultFile, false, false, true);
+		PlatformBridge->ListAgents(AgentResultFile);
 
-	// 6. 刷新 UI
+		auto Self = SharedThis(this);
+		FString CapturedAgentFile = AgentResultFile;
+		FString CapturedDisplayName = DisplayName;
+		FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateLambda([Self, CapturedAgentFile, CapturedDisplayName](float) -> bool
+			{
+				if (!FPaths::FileExists(CapturedAgentFile))
+				{
+					return true; // 继续等待
+				}
+
+				TArray<uint8> RawBytes;
+				if (!FFileHelper::LoadFileToArray(RawBytes, *CapturedAgentFile))
+				{
+					IFileManager::Get().Delete(*CapturedAgentFile, false, false, true);
+					return false;
+				}
+
+				FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(RawBytes.GetData()), RawBytes.Num());
+				FString JsonContent(Converter.Length(), Converter.Get());
+				IFileManager::Get().Delete(*CapturedAgentFile, false, false, true);
+
+				TSharedPtr<FJsonObject> JsonObj;
+				TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
+				if (FJsonSerializer::Deserialize(Reader, JsonObj) && JsonObj.IsValid())
+				{
+					Self->CachedAgents.Empty();
+					const TArray<TSharedPtr<FJsonValue>>* AgentsArray = nullptr;
+					if (JsonObj->TryGetArrayField(TEXT("agents"), AgentsArray) && AgentsArray)
+					{
+						for (const auto& Val : *AgentsArray)
+						{
+							const TSharedPtr<FJsonObject>* AgentObj = nullptr;
+							if (Val->TryGetObject(AgentObj) && AgentObj)
+							{
+								FAgentEntry Entry;
+								Entry.Id = (*AgentObj)->GetStringField(TEXT("id"));
+								Entry.Name = (*AgentObj)->GetStringField(TEXT("name"));
+								Entry.Emoji = (*AgentObj)->GetStringField(TEXT("emoji"));
+								Self->CachedAgents.Add(MoveTemp(Entry));
+							}
+						}
+					}
+
+					// 自动选第一个 Agent
+					if (Self->CachedAgents.Num() > 0)
+					{
+						const FAgentEntry& First = Self->CachedAgents[0];
+						Self->CurrentAgentId = First.Id;
+						Self->PlatformBridge->SetAgentId(First.Id);
+					}
+
+					Self->RebuildAgentListUI();
+				}
+
+				Self->AddMessage(TEXT("system"),
+					FString::Printf(TEXT("%s %s"),
+						*FUEAgentL10n::GetStr(TEXT("PlatformSwitched")),
+						*CapturedDisplayName));
+
+				return false;
+			}),
+			0.5f
+		);
+	}
+
+	// 7. 刷新 Skill 安装目录（不同平台 Skills 路径不同）
+	{
+		FString SkillReloadCmd = TEXT(
+			"try:\n"
+			"    from skill_hub import get_skill_hub\n"
+			"    _hub = get_skill_hub()\n"
+			"    if _hub:\n"
+			"        _count = _hub.reload_skills_dir()\n"
+			"        print(f'Skills reloaded after platform switch: {_count}')\n"
+			"except Exception as _e:\n"
+			"    print(f'Skill reload failed: {_e}')\n"
+		);
+		IPythonScriptPlugin::Get()->ExecPythonCommand(*SkillReloadCmd);
+	}
+
+	// 8. 刷新平台 UI
 	RebuildPlatformListUI();
 }
 

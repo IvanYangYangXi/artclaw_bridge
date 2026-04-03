@@ -205,6 +205,9 @@ class ChatPanelActionsMixin:
         if self._bridge:
             self._session_mgr.save_last_session(self._bridge)
 
+        # 6) 刷新会话菜单
+        self._refresh_session_menu()
+
     def _on_manage(self):
         from artclaw_ui.manage_panel import ManagePanel
         ManagePanel.show_as_window(parent=self)
@@ -286,7 +289,7 @@ class ChatPanelActionsMixin:
             self._msg_list.add_message("system", "Language changed to English")
 
     def _on_platform_changed(self, platform_type: str):
-        """平台切换 — 断开旧连接，重连新平台 Gateway。"""
+        """平台切换 → 断开并重连到新平台 Gateway。"""
         if not self._bridge:
             return
 
@@ -302,22 +305,53 @@ class ChatPanelActionsMixin:
         self._msg_list.add_message("system",
             f"正在切换到 {display_name}...")
 
-        # 断开旧连接 + 重连
+        # 断开并重连 + 重置
         self._bridge.disconnect()
         self._bridge._context_injected = False
         connected = self._bridge.connect()
 
         if connected:
+            # 从新平台查询 agent 列表并切换到第一个可用 agent
+            try:
+                agents = self._bridge.list_agents()
+                if agents:
+                    first_agent = agents[0]
+                    agent_id = first_agent.get("id", "")
+                    if agent_id:
+                        self._bridge.set_agent(agent_id)
+                        self._status_bar.set_agent_label(
+                            first_agent.get("emoji", ""),
+                            first_agent.get("name", agent_id))
+                        logger.info(f"Platform switch: agent set to {agent_id}")
+            except Exception as e:
+                logger.warning(f"Failed to query agents after platform switch: {e}")
+
+            # 重置 session（新平台 = 全新开始，清空旧会话列表）
+            self._bridge.reset_session()
+            self._session_mgr.entries.clear()
+            self._session_mgr.agent_session_cache.clear()
+            self._session_mgr.init_first_session()
+            self._status_bar.set_session_label(self._session_mgr.get_active_label())
+
+            self._msg_list.clear()
             self._msg_list.add_message("system",
                 f"已切换到 {display_name}")
-            # 重置 session（新平台的 agent 列表可能不同）
-            self._bridge.reset_session()
-            self._session_mgr.init_first_session()
+
+            # 刷新 Skill 安装目录（不同平台 Skills 路径不同）
+            try:
+                from core.skill_runtime import get_skill_runtime
+                rt = get_skill_runtime()
+                if rt:
+                    count = rt.reload_skills_dir()
+                    logger.info(f"Skills reloaded after platform switch: {count}")
+            except Exception as e:
+                logger.warning(f"Failed to reload skills after platform switch: {e}")
         else:
             self._msg_list.add_message("system",
-                f"切换到 {display_name} 失败，Gateway 未响应")
+                f"切换到 {display_name} 失败：Gateway 未响应")
 
         # 更新状态栏
+        self._status_bar.update_connection(connected)
         if hasattr(self._status_bar, 'refresh_language'):
             self._status_bar.refresh_language()
 

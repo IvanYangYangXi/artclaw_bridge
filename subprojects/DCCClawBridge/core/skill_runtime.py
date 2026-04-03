@@ -237,6 +237,30 @@ class SkillRuntime:
             if os.environ.get("ARTCLAW_LEGACY_MCP", "").lower() == "true":
                 register_fn(self._server)
 
+    # --- 目录热切换 ---
+
+    def reload_skills_dir(self) -> int:
+        """重新从 config 读取 Skills 安装目录并重新扫描注册。
+
+        平台切换后调用，使 SkillRuntime 感知新的 skills 路径。
+
+        Returns:
+            重新注册的 Skill 数量
+        """
+        old_dir = str(self._skills_dir)
+        self._skills_dir = self._resolve_skills_dir()
+        new_dir = str(self._skills_dir)
+
+        if old_dir != new_dir:
+            logger.info(f"SkillRuntime: skills dir changed: {old_dir} -> {new_dir}")
+
+        # 清除旧注册
+        self._skills.clear()
+        self._disabled = self._load_disabled_skills()
+
+        # 重新扫描
+        return self.scan_and_register()
+
     # --- 查询接口 ---
 
     def get_skill_list(self) -> List[dict]:

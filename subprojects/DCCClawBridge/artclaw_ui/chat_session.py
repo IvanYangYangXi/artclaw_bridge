@@ -305,9 +305,21 @@ class SessionMenuWidget(QWidget):
     ) -> None:
         super().__init__(parent)
         self._session_manager = session_manager
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setAutoFillBackground(True)
         self._build_ui()
         self._apply_styles()
         self.refresh()
+
+    def focusOutEvent(self, event):
+        """点击菜单外部时自动隐藏"""
+        super().focusOutEvent(event)
+        self.hide()
+
+    def showEvent(self, event):
+        """显示时自动获取焦点"""
+        super().showEvent(event)
+        self.setFocus()
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -367,12 +379,13 @@ class SessionMenuWidget(QWidget):
                 border: 1px solid {border};
                 border-radius: 6px;
             }}
-            QLabel#menuTitle {{
+            SessionMenuWidget QLabel#menuTitle {{
+                background: {bg};
                 color: {text};
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: bold;
             }}
-            QPushButton#newSessionBtn {{
+            SessionMenuWidget QPushButton#newSessionBtn {{
                 background: {accent};
                 color: white;
                 border: none;
@@ -380,18 +393,19 @@ class SessionMenuWidget(QWidget):
                 font-size: 11px;
                 padding: 2px 8px;
             }}
-            QPushButton#newSessionBtn:hover {{
+            SessionMenuWidget QPushButton#newSessionBtn:hover {{
                 background: {accent}CC;
             }}
-            QFrame#menuSep {{
+            SessionMenuWidget QFrame#menuSep {{
                 color: {border};
                 max-height: 1px;
             }}
-            QScrollArea {{
-                background: transparent;
+            SessionMenuWidget QScrollArea {{
+                background: {bg};
+                border: none;
             }}
-            QWidget {{
-                background: transparent;
+            SessionMenuWidget QScrollArea > QWidget > QWidget {{
+                background: {bg};
             }}
         """)
 
@@ -424,23 +438,23 @@ class SessionMenuWidget(QWidget):
         # Style active vs inactive
         if entry.is_active:
             lbl.setStyleSheet(
-                "QPushButton { color: #FFFFFF; background: rgba(82,133,166,0.4); "
+                "QPushButton { color: #FFFFFF; background: #3A6080; "
                 "border: none; font-size: 12px; text-align: left; padding: 0 6px; border-radius: 3px; }"
-                "QPushButton:hover { background: rgba(82,133,166,0.6); }"
+                "QPushButton:hover { background: #4A7090; }"
             )
         else:
             lbl.setStyleSheet(
-                "QPushButton { color: #C0C0C0; background: transparent; "
+                "QPushButton { color: #C0C0C0; background: #4A4A4A; "
                 "border: none; font-size: 12px; text-align: left; padding: 0 6px; border-radius: 3px; }"
-                "QPushButton:hover { background: rgba(255,255,255,0.08); }"
+                "QPushButton:hover { background: #555555; }"
             )
 
         del_btn = QPushButton("✕")
         del_btn.setFixedSize(20, 20)
         del_btn.setToolTip("删除此会话")
         del_btn.setStyleSheet(
-            "QPushButton { color: #888; background: transparent; border: none; font-size: 11px; }"
-            "QPushButton:hover { color: #F44336; }"
+            "QPushButton { color: #888; background: #4A4A4A; border: none; font-size: 11px; }"
+            "QPushButton:hover { color: #F44336; background: #4A4A4A; }"
         )
 
         # Capture index by default arg

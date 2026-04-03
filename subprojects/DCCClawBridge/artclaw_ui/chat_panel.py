@@ -133,6 +133,7 @@ class ChatPanel(ChatPanelActionsMixin, QWidget):
         self._status_bar.disconnect_clicked.connect(self._on_disconnect)
         self._status_bar.diagnose_clicked.connect(self._on_diagnose)
         self._status_bar.settings_clicked.connect(self._on_settings)
+        self._status_bar.session_menu_clicked.connect(self._on_session_menu)
 
         # Quick input
         self._quick_input.input_selected.connect(self._input.set_text)
@@ -289,6 +290,7 @@ class ChatPanel(ChatPanelActionsMixin, QWidget):
     def _on_send_clicked(self):
         text = self._input.get_text().strip()
         if text:
+            self._input.clear()
             self._on_send_message(text)
 
     def _on_send_message(self, text: str):
@@ -439,6 +441,7 @@ class ChatPanel(ChatPanelActionsMixin, QWidget):
 
         if self._bridge:
             self._session_mgr.save_last_session(self._bridge)
+            self._refresh_session_menu()
 
         # 更新 session entry 的 session key（可能在首次发送后由 Gateway 分配）
         if self._bridge and self._bridge._bridge:
@@ -452,6 +455,114 @@ class ChatPanel(ChatPanelActionsMixin, QWidget):
     # ==============================================================
     # Cleanup
     # ==============================================================
+
+    # ==============================================================
+    # Session Menu
+    # ==============================================================
+
+    def _cache_current_messages(self):
+        """将当前消息列表缓存到 active session entry"""
+        entry = self._session_mgr.active_entry
+        if entry and hasattr(self._msg_list, '_messages'):
+            entry.cached_messages = [
+                {"sender": m.sender, "content": m.content}
+                for m in self._msg_list._messages
+            ]
+
+    def _on_session_menu(self):
+        """点击会话按钮 → 弹出独立弹窗式会话列表"""
+        from artclaw_ui.chat_session import SessionMenuWidget
+        if hasattr(self, '_session_menu') and self._session_menu and self._session_menu.isVisible():
+            self._session_menu.close()
+            self._session_menu = None
+            return
+
+        self._session_menu = SessionMenuWidget(self._session_mgr, parent=None)
+        self._session_menu.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self._session_menu.setAttribute(Qt.WA_DeleteOnClose, False)
+        self._session_menu.session_selected.connect(self._on_session_selected)
+        self._session_menu.session_deleted.connect(self._on_session_deleted)
+        self._session_menu.new_session_clicked.connect(self._on_session_menu_new)
+
+        # 用屏幕绝对坐标定位在 session 按钮下方
+        btn = self._status_bar._session_btn
+        global_pos = btn.mapToGlobal(btn.rect().bottomLeft())
+        menu_width = min(300, self.width() - 20)
+        menu_height = min(400, max(150, len(self._session_mgr.entries) * 30 + 60))
+        self._session_menu.setFixedSize(menu_width, menu_height)
+        self._session_menu.move(global_pos.x(), global_pos.y() + 2)
+        self._session_menu.show()
+
+    def _on_session_selected(self, index: int):
+        """会话列表中选择某个会话"""
+        if not self._bridge:
+            return
+
+        # 先缓存当前消息
+        self._cache_current_messages()
+
+        entry = self._session_mgr.switch_session(index, self._bridge)
+        if entry is None:
+            return
+
+        # 更新 UI
+        self._msg_list.clear()
+        self._bridge._context_injected = False
+
+        # 优先从 Gateway 恢复历史
+        restored = False
+        if entry.session_key and not entry.session_key.startswith("local-") and not entry.session_key == "":
+            messages = self._session_mgr.fetch_history(entry.session_key, self._bridge)
+            if messages:
+                for m in messages:
+                    self._msg_list.add_message(m.get("sender", "system"), m.get("content", ""))
+                restored = True
+
+        # 否则用缓存消息
+        if not restored and entry.cached_messages:
+            for m in entry.cached_messages:
+                self._msg_list.add_message(m.get("sender", "system"), m.get("content", ""))
+
+        self._status_bar.set_session_label(self._session_mgr.get_active_label())
+
+        if hasattr(self, '_session_menu') and self._session_menu:
+            self._session_menu.hide()
+
+    def _on_session_deleted(self, index: int):
+        """删除某个会话"""
+        is_active = (index == self._session_mgr.active_index)
+        self._session_mgr.delete_session(index)
+
+        if is_active and self._session_mgr.entries:
+            # 切到新的 active
+            new_entry = self._session_mgr.active_entry
+            if new_entry and self._bridge:
+                self._bridge.set_session_key(new_entry.session_key)
+                self._msg_list.clear()
+                for m in new_entry.cached_messages:
+                    self._msg_list.add_message(m.get("sender", "system"), m.get("content", ""))
+        elif not self._session_mgr.entries:
+            # 没有会话了，创建一个新的
+            self._session_mgr.init_first_session()
+            self._msg_list.clear()
+            if self._bridge:
+                self._bridge.reset_session()
+
+        self._status_bar.set_session_label(self._session_mgr.get_active_label())
+
+        if hasattr(self, '_session_menu') and self._session_menu:
+            self._session_menu.refresh()
+
+    def _on_session_menu_new(self):
+        """从会话菜单点击"新对话" """
+        if hasattr(self, '_session_menu') and self._session_menu:
+            self._session_menu.hide()
+        self._on_new_chat()
+
+    def _refresh_session_menu(self):
+        """刷新会话菜单（如果打开了的话）"""
+        if hasattr(self, '_session_menu') and self._session_menu and self._session_menu.isVisible():
+            self._session_menu.refresh()
 
     def closeEvent(self, event):
         if hasattr(self, '_status_timer') and self._status_timer:

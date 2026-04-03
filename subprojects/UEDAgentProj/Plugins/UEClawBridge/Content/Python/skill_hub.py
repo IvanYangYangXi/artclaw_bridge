@@ -1018,6 +1018,42 @@ class SkillHub:
         UELogger.info("SkillHub: stopped watching")
 
     # ------------------------------------------------------------------
+    # 目录热切换
+    # ------------------------------------------------------------------
+
+    def reload_skills_dir(self) -> int:
+        """重新从 config 读取 Skills 安装目录并重新扫描注册。
+
+        平台切换后调用，使 SkillHub 感知新的 skills 路径。
+
+        Returns:
+            注册的 Skill 数量
+        """
+        old_dir = str(self._skills_dir)
+        self._skills_dir = self._resolve_skills_dir()
+        new_dir = str(self._skills_dir)
+
+        if old_dir != new_dir:
+            UELogger.info(f"SkillHub: skills dir changed: {old_dir} -> {new_dir}")
+
+            # 更新 sys.path
+            if old_dir in sys.path:
+                sys.path.remove(old_dir)
+            skills_str = str(self._skills_dir)
+            if skills_str not in sys.path:
+                sys.path.insert(0, skills_str)
+
+        # 确保分层目录存在
+        self._ensure_layer_dirs()
+
+        # 重新加载 disabled 列表
+        self._disabled_skills = self._load_disabled_skills()
+        self._conflict_detector = ConflictDetector(self._disabled_skills)
+
+        # 重新扫描
+        return self.scan_and_register()
+
+    # ------------------------------------------------------------------
     # 查询接口
     # ------------------------------------------------------------------
 
