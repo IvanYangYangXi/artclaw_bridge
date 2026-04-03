@@ -519,6 +519,34 @@ private:
 	/** 设置面板窗口 */
 	TSharedPtr<SWindow> SettingsWindow;
 
+	// --- 平台切换 ---
+
+	/** 平台条目数据模型 */
+	struct FPlatformEntry
+	{
+		FString Type;        // "openclaw", "lobster", etc.
+		FString DisplayName; // "OpenClaw", "LobsterAI", etc.
+		FString GatewayUrl;
+	};
+
+	/** 可用平台列表 */
+	TArray<FPlatformEntry> AvailablePlatforms;
+
+	/** 当前平台类型 */
+	FString CurrentPlatformType;
+
+	/** 平台列表容器 (设置面板中) */
+	TSharedPtr<SHorizontalBox> PlatformListBox;
+
+	/** 加载可用平台列表 (config.json) */
+	void LoadAvailablePlatforms();
+
+	/** 选中平台 — 热切换 */
+	void OnPlatformSelected(const FString& PlatformType);
+
+	/** 重建平台按钮列表 UI */
+	void RebuildPlatformListUI();
+
 	// --- Agent 切换 ---
 
 	/** Agent 条目数据模型 */

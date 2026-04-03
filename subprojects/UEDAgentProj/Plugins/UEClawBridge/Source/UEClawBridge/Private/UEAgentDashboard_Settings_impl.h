@@ -32,6 +32,30 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 			[
 				SNew(SVerticalBox)
 
+			// --- AI 平台 ---
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.Text(FUEAgentL10n::Get(TEXT("SettingsPlatform")))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				SAssignNew(Self->PlatformListBox, SHorizontalBox)
+			]
+
+			// --- 分隔线 ---
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 8.0f, 0.0f, 8.0f)
+			[
+				SNew(SSeparator)
+			]
+
 			// --- 语言切换 ---
 			+ SVerticalBox::Slot()
 			.AutoHeight()
@@ -387,6 +411,9 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 	// Agent 列表 UI 构建（必须在 AgentListBox 已赋值之后）
 	RebuildAgentListUI();
 
+	// 平台列表 UI 构建
+	RebuildPlatformListUI();
+
 	return FReply::Handled();
 }
 
@@ -668,6 +695,160 @@ void SUEAgentDashboard::RebuildAgentListUI()
 			})
 			.ButtonColorAndOpacity(FSlateColor(BtnColor))
 			.ContentPadding(FMargin(8.0f, 4.0f))
+		];
+	}
+}
+
+// ==================================================================
+// 平台切换
+// ==================================================================
+
+void SUEAgentDashboard::LoadAvailablePlatforms()
+{
+	// 通过 Python bridge_config.get_available_platforms() 获取平台列表
+	FString ResultJson = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
+		"import json\n"
+		"from bridge_config import get_available_platforms, get_platform_type\n"
+		"_platforms = get_available_platforms()\n"
+		"_result = {'platforms': _platforms, 'current': get_platform_type()}\n"
+	));
+
+	AvailablePlatforms.Empty();
+	CurrentPlatformType.Empty();
+
+	TSharedPtr<FJsonObject> JsonObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ResultJson);
+	if (FJsonSerializer::Deserialize(Reader, JsonObj) && JsonObj.IsValid())
+	{
+		CurrentPlatformType = JsonObj->GetStringField(TEXT("current"));
+
+		const TArray<TSharedPtr<FJsonValue>>* PlatArray = nullptr;
+		if (JsonObj->TryGetArrayField(TEXT("platforms"), PlatArray) && PlatArray)
+		{
+			for (const auto& Val : *PlatArray)
+			{
+				const TSharedPtr<FJsonObject>* PlatObj = nullptr;
+				if (Val->TryGetObject(PlatObj) && PlatObj)
+				{
+					FPlatformEntry Entry;
+					Entry.Type = (*PlatObj)->GetStringField(TEXT("type"));
+					Entry.DisplayName = (*PlatObj)->GetStringField(TEXT("display_name"));
+					Entry.GatewayUrl = (*PlatObj)->GetStringField(TEXT("gateway_url"));
+					AvailablePlatforms.Add(MoveTemp(Entry));
+				}
+			}
+		}
+	}
+}
+
+void SUEAgentDashboard::OnPlatformSelected(const FString& PlatformType)
+{
+	if (PlatformType == CurrentPlatformType)
+	{
+		return;
+	}
+
+	// 1. 调用 Python bridge_config.switch_platform() 写入 config
+	FString EscapedType = PlatformType;
+	EscapedType.ReplaceInline(TEXT("'"), TEXT("\\'"));
+	FString SwitchCmd = FString::Printf(
+		TEXT("from bridge_config import switch_platform\n")
+		TEXT("switch_platform('%s')\n"),
+		*EscapedType
+	);
+	IPythonScriptPlugin::Get()->ExecPythonCommand(*SwitchCmd);
+
+	// 2. 断开旧连接
+	PlatformBridge->Disconnect();
+
+	// 3. 重新连接（Python 端会重新读 config，拿到新 gateway url/token）
+	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	IFileManager::Get().MakeDirectory(*TempDir, true);
+	FString StatusFile = TempDir / TEXT("_connect_status.txt");
+	IFileManager::Get().Delete(*StatusFile, false, false, true);
+	PlatformBridge->Connect(StatusFile);
+
+	// 4. 更新 UI 状态
+	FString PreviousType = CurrentPlatformType;
+	CurrentPlatformType = PlatformType;
+
+	// 找到显示名称
+	FString DisplayName = PlatformType;
+	for (const auto& P : AvailablePlatforms)
+	{
+		if (P.Type == PlatformType)
+		{
+			DisplayName = P.DisplayName;
+			break;
+		}
+	}
+
+	// 5. 重置 session（新平台的 agent 列表可能不同）
+	PlatformBridge->ResetSession();
+	Messages.Empty();
+	RebuildMessageList();
+	InitFirstSession();
+
+	AddMessage(TEXT("system"),
+		FString::Printf(TEXT("%s %s"),
+			*FUEAgentL10n::GetStr(TEXT("PlatformSwitched")),
+			*DisplayName));
+
+	// 6. 刷新 UI
+	RebuildPlatformListUI();
+}
+
+void SUEAgentDashboard::RebuildPlatformListUI()
+{
+	if (!PlatformListBox.IsValid())
+	{
+		return;
+	}
+
+	// 加载最新平台列表
+	LoadAvailablePlatforms();
+
+	PlatformListBox->ClearChildren();
+
+	if (AvailablePlatforms.Num() == 0)
+	{
+		PlatformListBox->AddSlot()
+		.AutoWidth()
+		.Padding(4.0f)
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(TEXT("(No platforms)")))
+			.Font(FCoreStyle::GetDefaultFontStyle("Italic", 9))
+			.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
+		];
+		return;
+	}
+
+	auto Self = SharedThis(this);
+
+	for (const FPlatformEntry& Plat : AvailablePlatforms)
+	{
+		const bool bIsCurrent = (Plat.Type == CurrentPlatformType);
+		FString CapturedType = Plat.Type;
+		FString BtnText = Plat.DisplayName;
+
+		FLinearColor BtnColor = bIsCurrent
+			? FLinearColor(0.2f, 0.45f, 0.7f)   // 蓝色高亮
+			: FLinearColor(0.22f, 0.22f, 0.22f);  // 默认灰
+
+		PlatformListBox->AddSlot()
+		.AutoWidth()
+		.Padding(2.0f, 0.0f)
+		[
+			SNew(SButton)
+			.Text(FText::FromString(BtnText))
+			.OnClicked_Lambda([Self, CapturedType]() -> FReply
+			{
+				Self->OnPlatformSelected(CapturedType);
+				return FReply::Handled();
+			})
+			.ButtonColorAndOpacity(FSlateColor(BtnColor))
+			.ContentPadding(FMargin(10.0f, 4.0f))
 		];
 	}
 }

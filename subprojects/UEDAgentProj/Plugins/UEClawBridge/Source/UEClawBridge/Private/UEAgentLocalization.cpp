@@ -372,6 +372,10 @@ void FUEAgentL10n::Initialize()
 	// 上下文窗口大小
 	Reg(TEXT("SettingsContextWindow"),  TEXT("最大上下文窗口"),             TEXT("Max Context Window"));
 
+	// 平台切换
+	Reg(TEXT("SettingsPlatform"),        TEXT("AI 平台"),                    TEXT("AI Platform"));
+	Reg(TEXT("PlatformSwitched"),        TEXT("已切换到平台: "),              TEXT("Switched to platform: "));
+
 	// Agent 切换
 	Reg(TEXT("SettingsAgent"),          TEXT("当前 Agent"),                 TEXT("Current Agent"));
 	Reg(TEXT("AgentRefreshBtn"),        TEXT("刷新列表"),                   TEXT("Refresh List"));
