@@ -46,6 +46,23 @@ BRIDGE_MODULES_SRC = ROOT_DIR / "core"
 PLATFORMS_DIR = ROOT_DIR / "platforms"
 SKILLS_SRC = ROOT_DIR / "skills"
 
+
+def _get_lobster_skills_path() -> str:
+    """获取 LobsterAI 的 Skills 安装目录"""
+    appdata = os.environ.get("APPDATA", "")
+    if not appdata:
+        appdata = os.path.expanduser("~/AppData/Roaming")
+    return os.path.join(appdata, "LobsterAI", "SKILLs")
+
+
+def _get_lobster_config_path() -> str:
+    """获取 LobsterAI 的 openclaw.json 路径"""
+    appdata = os.environ.get("APPDATA", "")
+    if not appdata:
+        appdata = os.path.expanduser("~/AppData/Roaming")
+    return os.path.join(appdata, "LobsterAI", "openclaw", "state", "openclaw.json")
+
+
 # 需要打包到每个目标的共享模块
 SHARED_MODULES = ["bridge_core.py", "bridge_config.py", "bridge_diagnostics.py"]
 
@@ -80,6 +97,16 @@ PLATFORM_CONFIGS = {
         "bridge_file": "claude_bridge.py",
         "has_gateway": False,
         "has_setup_config": False,
+    },
+    "lobster": {
+        "gateway_url": "ws://127.0.0.1:18790",
+        "mcp_port": 8080,
+        "skills_installed_path": _get_lobster_skills_path(),
+        "mcp_config_path": _get_lobster_config_path(),
+        "mcp_config_key": "plugins.entries.mcp-bridge.config.servers",
+        "bridge_file": "",  # LobsterAI 客户端操作，无需 DCC 内嵌 bridge
+        "has_gateway": False,  # Gateway 内置于 LobsterAI
+        "has_setup_config": True,
     },
 }
 
@@ -656,11 +683,15 @@ def install_openclaw(platform_type: str = "openclaw"):
     # 写入 ~/.artclaw/config.json
     write_artclaw_config(platform_type)
 
-    # 运行平台特定配置脚本（如 setup_openclaw_config.py）
+    # 运行平台特定配置脚本（如 setup_openclaw_config.py / setup_lobster_config.py）
     if pcfg.get("has_setup_config"):
-        config_script = platform_src / "setup_openclaw_config.py"
-        if config_script.exists():
-            cprint("配置", "运行 setup_openclaw_config.py...")
+        # 动态查找平台目录下的 setup_*_config.py
+        config_script = None
+        for f in platform_src.glob("setup_*_config.py"):
+            config_script = f
+            break
+        if config_script and config_script.exists():
+            cprint("配置", f"运行 {config_script.name}...")
             try:
                 subprocess.run(
                     [sys.executable, str(config_script), "--ue", "--maya", "--max"],
@@ -670,6 +701,8 @@ def install_openclaw(platform_type: str = "openclaw"):
             except Exception as e:
                 cprint("警告", f"配置脚本失败: {e}", "yellow")
                 cprint("提示", f"请手动运行: python {config_script}", "yellow")
+        else:
+            cprint("警告", f"平台 {platform_type} 的配置脚本不存在", "yellow")
     else:
         cprint("跳过", f"平台 {platform_type} 无配置脚本", "yellow")
 
@@ -695,13 +728,13 @@ def print_summary(installed: list[str], uninstalled: list[str]):
     if installed:
         print("  已安装:")
         for item in installed:
-            print(f"    ✅ {item}")
+            print(f"    [OK] {item}")
         print()
 
     if uninstalled:
         print("  已卸载:")
         for item in uninstalled:
-            print(f"    🗑️  {item}")
+            print(f"    [DEL] {item}")
         print()
         cprint("提示", "OpenClaw 配置中的 server 条目需手动移除 (可能有其他 DCC 在用)", "yellow")
         print()

@@ -26,6 +26,22 @@ CLIENT_VERSION = "0.1.0"
 # 平台默认路径映射
 # ---------------------------------------------------------------------------
 
+def _get_lobster_config_path() -> str:
+    """获取 LobsterAI 的 openclaw.json 路径（惰性计算）"""
+    appdata = os.environ.get("APPDATA", "")
+    if not appdata:
+        appdata = os.path.expanduser("~/AppData/Roaming")
+    return os.path.join(appdata, "LobsterAI", "openclaw", "state", "openclaw.json")
+
+
+def _get_lobster_skills_path() -> str:
+    """获取 LobsterAI 的 Skills 安装目录"""
+    appdata = os.environ.get("APPDATA", "")
+    if not appdata:
+        appdata = os.path.expanduser("~/AppData/Roaming")
+    return os.path.join(appdata, "LobsterAI", "SKILLs")
+
+
 _PLATFORM_DEFAULTS = {
     "openclaw": {
         "gateway_url": "ws://127.0.0.1:18789",
@@ -47,6 +63,13 @@ _PLATFORM_DEFAULTS = {
         "skills_installed_path": "~/.claude/skills",
         "mcp_config_path": "~/.claude/config.json",
         "mcp_config_key": "mcpServers",
+    },
+    "lobster": {
+        "gateway_url": "ws://127.0.0.1:18790",
+        "mcp_port": 8080,
+        "skills_installed_path": _get_lobster_skills_path(),
+        "mcp_config_path": _get_lobster_config_path(),
+        "mcp_config_key": "plugins.entries.mcp-bridge.config.servers",
     },
 }
 

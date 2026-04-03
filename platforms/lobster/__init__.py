@@ -1,0 +1,1 @@
+# LobsterAI platform adapter
