@@ -12,7 +12,7 @@ setlocal EnableDelayedExpansion
 ::    - 安装 UE 插件到 UE 项目
 ::    - 安装 Maya 插件到 Maya scripts 目录 (幂等追加 userSetup.py)
 ::    - 安装 3ds Max 插件到 Max scripts 目录 (幂等注入 startup)
-::    - 配置平台 (OpenClaw / WorkBuddy / Claude)
+::    - 配置平台 (OpenClaw / WorkBuddy / Claude / LobsterAI)
 ::    - 自动打包 bridge_core 共享模块（自包含部署）
 ::    - 卸载已安装的插件
 ::
@@ -71,7 +71,8 @@ if not "%PLATFORM_INPUT%"=="" (
     if /I "%PLATFORM_INPUT%"=="openclaw" set "PLATFORM=openclaw"
     if /I "%PLATFORM_INPUT%"=="workbuddy" set "PLATFORM=workbuddy"
     if /I "%PLATFORM_INPUT%"=="claude" set "PLATFORM=claude"
-    if /I not "%PLATFORM_INPUT%"=="openclaw" if /I not "%PLATFORM_INPUT%"=="workbuddy" if /I not "%PLATFORM_INPUT%"=="claude" (
+    if /I "%PLATFORM_INPUT%"=="lobster" set "PLATFORM=lobster"
+    if /I not "%PLATFORM_INPUT%"=="openclaw" if /I not "%PLATFORM_INPUT%"=="workbuddy" if /I not "%PLATFORM_INPUT%"=="claude" if /I not "%PLATFORM_INPUT%"=="lobster" (
         echo [警告] 未知平台: %PLATFORM_INPUT%，使用默认 openclaw
         set "PLATFORM=openclaw"
     )

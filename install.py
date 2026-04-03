@@ -18,7 +18,7 @@ ArtClaw Bridge — 跨平台安装器
     python install.py --uninstall --maya                  # 卸载 Maya 插件
     python install.py --uninstall --max                   # 卸载 Max 插件
     python install.py --uninstall --ue --ue-project "C:\\path\\to\\proj"  # 卸载 UE 插件
-    python install.py --platform workbuddy --maya         # 安装 Maya 并配置 WorkBuddy 平台
+    python install.py --platform workbuddy --maya          # 安装 Maya 并配置 WorkBuddy 平台`n  python install.py --platform lobster --maya          # 安装 Maya 并配置 LobsterAI平台         # 安装 Maya 并配置 WorkBuddy 平台
     python install.py --force                             # 跳过覆盖确认
 """
 
@@ -787,7 +787,7 @@ def main():
   python install.py --uninstall --maya                   卸载 Maya 插件
   python install.py --uninstall --maya --max             卸载 Maya + Max
   python install.py --force --maya --max                 跳过覆盖确认
-  python install.py --platform workbuddy --maya          安装 Maya 并配置 WorkBuddy 平台
+  python install.py --platform workbuddy --maya          # 安装 Maya 并配置 WorkBuddy 平台`n  python install.py --platform lobster --maya          # 安装 Maya 并配置 LobsterAI平台          安装 Maya 并配置 WorkBuddy 平台
         """,
     )
 

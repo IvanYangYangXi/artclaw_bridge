@@ -1,64 +1,128 @@
-# LobsterAI (有道龙虾) 平台适配
+# LobsterAI平台适配层
 
-ArtClaw Bridge 的 LobsterAI 平台适配。LobsterAI 底层基于 OpenClaw，
-通过内置的 mcp-bridge 插件连接 DCC MCP Server。
+**状态**: ✅ Phase 10.1-10.2 已完成  
+**日期**: 2026-04-03
 
-## 架构
+---
+
+## 快速开始
+
+### 安装
+
+```bash
+# 安装时指定 LobsterAI平台
+python install.py --platform lobster
+```
+
+### 配置 MCP Server
+
+```bash
+# 自动配置 LobsterAI MCP Server
+python platforms/lobster/setup_lobster_mcp.py
+```
+
+或手动配置：
+1. 打开 LobsterAI 客户端
+2. 设置 → MCP 服务
+3. 添加 MCP 服务
+   - 名称：`artclaw-ue`
+   - 传输类型：`stdio`
+   - 命令：`python`
+   - 参数：`D:\MyProject_D\artclaw_bridge\platforms\common\artclaw_stdio_bridge.py --port 8080`
+4. 保存并重启 LobsterAI
+
+### 测试
+
+在 LobsterAI 聊天中：
+```
+使用 run_ue_python 执行：print("Hello from ArtClaw!")
+```
+
+---
+
+## 平台切换
+
+### 查看当前平台
+
+```bash
+python platforms/common/switch_platform.py --status
+```
+
+### 切换到 LobsterAI
+
+```bash
+python platforms/common/switch_platform.py --to lobster
+```
+
+### 切换到 OpenClaw
+
+```bash
+python platforms/common/switch_platform.py --to openclaw
+```
+
+---
+
+## 目录结构
+
+```
+platforms/lobster/
+├── README.md                          # 本文件
+├── __init__.py                        # Python 包标记
+├── setup_lobster_mcp.py               # MCP 配置注入脚本
+└── lobster_chat.py                    # LobsterAI 聊天桥接层
+
+platforms/common/                      # 公共组件（所有平台共享）
+├── artclaw_stdio_bridge.py            # stdio→WebSocket MCP 桥接器
+└── switch_platform.py                 # 平台切换脚本
+```
+
+---
+
+## 配置说明
+
+### bridge_config.py 配置
+
+```python
+"lobster": {
+    "gateway_url": "http://127.0.0.1:18790",
+    "mcp_port": 8080,
+    "skills_installed_path": "~/.openclaw/skills",
+    "mcp_config_path": "%APPDATA%/LobsterAI/openclaw/state/openclaw.json",
+    "mcp_config_via_ui": True,  # 需通过客户端界面配置
+},
+```
+
+### MCP 连接方式
 
 ```
 LobsterAI 客户端
-  └── 内置 OpenClaw Gateway (端口 18790)
-        └── mcp-bridge 插件 (内置)
-              └── WebSocket → DCC MCP Server (8080/8081/8082)
-                    └── run_ue_python / run_python
+  ↓ stdio
+artclaw_stdio_bridge.py
+  ↓ WebSocket (ws://127.0.0.1:8080)
+UE MCP Server
 ```
 
-## 与 OpenClaw 的区别
+---
 
-| 特性 | OpenClaw | LobsterAI |
-|------|----------|-----------|
-| 配置根目录 | `~/.openclaw/` | `%APPDATA%/LobsterAI/openclaw/` |
-| 配置文件 | `~/.openclaw/openclaw.json` | `%APPDATA%/LobsterAI/openclaw/state/openclaw.json` |
-| Gateway 端口 | 18789 | 18790 |
-| Skills 目录 | `~/.openclaw/skills/` | `%APPDATA%/LobsterAI/SKILLs/` |
-| mcp-bridge | 需手动部署插件 | 已内置 |
-| 聊天面板 | DCC 内嵌 | LobsterAI 客户端窗口 |
-| 默认模型 | 可配置 | qwen3.5-plus-YoudaoInner |
+## 已知问题
 
-## 安装
+1. **配置同步**：LobsterAI 使用集中式 MCP 管理，直接编辑配置文件可能无效
+2. **插件 ID 警告**：启动时有 `plugin id mismatch` 警告（不影响功能）
+3. **DCC 内嵌面板**：当前只能在 LobsterAI 客户端操作，DCC 内嵌面板未集成
 
-```bash
-# 安装 Maya 插件 + LobsterAI 平台配置
-python install.py --maya --openclaw --platform lobster
+---
 
-# 安装 UE 插件 + LobsterAI 平台配置
-python install.py --ue --ue-project "C:\path\to\proj" --openclaw --platform lobster
+## 参考文档
 
-# 全部安装
-python install.py --all --ue-project "C:\path\to\proj" --platform lobster
-```
+- [LobsterAI-MCP-配置指南.md](../../docs/features/LobsterAI-MCP-配置指南.md)
+- [LobsterAI平台接入方案.md](../../docs/features/LobsterAI平台接入方案.md)
+- [Phase 10 问题诊断与修正方案.md](../../docs/features/Phase 10 问题诊断与修正方案.md)
 
-## 配置注入
+---
 
-`setup_lobster_config.py` 会自动向 LobsterAI 的 openclaw.json 注入：
-1. mcp-bridge servers 配置（UE/Maya/Max 的 WebSocket 地址）
-2. Agent tools.allow 通配符（确保 AI 能调用 MCP 工具）
+## 变更记录
 
-## MCP 端口复用
-
-LobsterAI 和 OpenClaw 连接同一组 DCC MCP Server 端口（8080/8081/8082）。
-WebSocket 是多连接兼容的，JSON-RPC 请求-响应通过 id 匹配，两个 Gateway
-同时连接同一个 MCP Server 不会冲突。
-
-## Skills 独立安装
-
-LobsterAI 的 Skills 安装到 `%APPDATA%/LobsterAI/SKILLs/`，不与 OpenClaw
-的 `~/.openclaw/skills/` 共享。LobsterAI 通过 `skills.load.extraDirs` 配置
-扫描该目录。
-
-## 文件说明
-
-| 文件 | 说明 |
-|------|------|
-| `setup_lobster_config.py` | 自动配置 LobsterAI 的 openclaw.json |
-| `README.md` | 本文档 |
+| 日期 | 版本 | 说明 |
+|------|------|------|
+| 2026-04-03 | v1.0 | 初始版本 |
+| 2026-04-03 | v1.1 | Phase 10.1-10.2 完成，添加配置和切换脚本 |

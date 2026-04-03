@@ -1,4 +1,4 @@
-﻿# Project Adapter
+# Project Adapter
 
 Use this file to map generic skill workflow to a concrete project.
 

@@ -2,17 +2,17 @@
   "mcpServers": {
     "artclaw-ue": {
       "command": "python",
-      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/claude/artclaw_stdio_bridge.py", "--port", "8080"],
+      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/common/artclaw_stdio_bridge.py", "--port", "8080"],
       "env": {}
     },
     "artclaw-maya": {
       "command": "python",
-      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/claude/artclaw_stdio_bridge.py", "--port", "8081"],
+      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/common/artclaw_stdio_bridge.py", "--port", "8081"],
       "env": {}
     },
     "artclaw-max": {
       "command": "python",
-      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/claude/artclaw_stdio_bridge.py", "--port", "8082"],
+      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/common/artclaw_stdio_bridge.py", "--port", "8082"],
       "env": {}
     }
   }

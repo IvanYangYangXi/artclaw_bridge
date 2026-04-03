@@ -2,6 +2,9 @@
 # 全局通用忽略
 # ============================================
 
+# LobsterAI / OpenClaw 用户配置 (位于 %APPDATA%，不在项目目录内)
+# 注意：~/.openclaw/openclaw.json 和 ~/.artclaw/config.json 是用户特定配置，不应提交
+
 # IDE / 编辑器配置
 .vscode/
 .idea/
@@ -36,6 +39,12 @@ venv/
 # Node.js
 node_modules/
 package-lock.json
+
+# Tests / 临时文件
+tests/
+*.tmp
+*.bak
+*.backup*
 
 # ============================================
 # Unreal Engine - 通用规则 (递归匹配所有 UE 子项目)
@@ -124,3 +133,13 @@ subprojects/UEDAgentProj/Saved/
 # ============================================
 *.rdc
 *.cap
+
+
+# lobster
+memory/
+AGENTS.md
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
