@@ -219,6 +219,7 @@ class ChatPanelActionsMixin:
         dlg.context_window_changed.connect(self._on_context_window_changed)
         dlg.silent_mode_changed.connect(self._on_silent_mode_changed)
         dlg.language_changed.connect(self._on_language_changed)
+        dlg.platform_changed.connect(self._on_platform_changed)
         dlg.exec_()
 
     def _open_manage_from_settings(self, settings_dlg):
@@ -283,6 +284,42 @@ class ChatPanelActionsMixin:
             self._msg_list.add_message("system", "语言已切换为中文")
         else:
             self._msg_list.add_message("system", "Language changed to English")
+
+    def _on_platform_changed(self, platform_type: str):
+        """平台切换 — 断开旧连接，重连新平台 Gateway。"""
+        if not self._bridge:
+            return
+
+        # 显示切换中状态
+        try:
+            from bridge_config import get_available_platforms
+            name_map = {p["type"]: p.get("display_name", p["type"])
+                        for p in get_available_platforms()}
+            display_name = name_map.get(platform_type, platform_type)
+        except Exception:
+            display_name = platform_type
+
+        self._msg_list.add_message("system",
+            f"正在切换到 {display_name}...")
+
+        # 断开旧连接 + 重连
+        self._bridge.disconnect()
+        self._bridge._context_injected = False
+        connected = self._bridge.connect()
+
+        if connected:
+            self._msg_list.add_message("system",
+                f"已切换到 {display_name}")
+            # 重置 session（新平台的 agent 列表可能不同）
+            self._bridge.reset_session()
+            self._session_mgr.init_first_session()
+        else:
+            self._msg_list.add_message("system",
+                f"切换到 {display_name} 失败，Gateway 未响应")
+
+        # 更新状态栏
+        if hasattr(self._status_bar, 'refresh_language'):
+            self._status_bar.refresh_language()
 
     def _on_attach_file(self):
         self._attach_mgr.add_from_file_dialog(self)

@@ -85,13 +85,21 @@ def _get_gateway_config() -> dict:
 
 
 def _get_gateway_url() -> str:
-    gw = _get_gateway_config()
-    return f"ws://127.0.0.1:{gw.get('port', _GATEWAY_PORT)}"
+    try:
+        from bridge_config import get_gateway_url
+        return get_gateway_url()
+    except ImportError:
+        gw = _get_gateway_config()
+        return f"ws://127.0.0.1:{gw.get('port', _GATEWAY_PORT)}"
 
 
 def _get_token() -> str:
-    gw = _get_gateway_config()
-    return gw.get("auth", {}).get("token", _DEFAULT_TOKEN)
+    try:
+        from bridge_config import get_gateway_token
+        return get_gateway_token()
+    except ImportError:
+        gw = _get_gateway_config()
+        return gw.get("auth", {}).get("token", _DEFAULT_TOKEN)
 
 
 # ---------------------------------------------------------------------------

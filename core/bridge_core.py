@@ -28,6 +28,8 @@ from bridge_config import (
     CLIENT_NAME,
     CLIENT_VERSION,
     load_config,
+    get_gateway_url as _cfg_get_gateway_url,
+    get_gateway_token as _cfg_get_gateway_token,
 )
 
 
@@ -70,9 +72,9 @@ class OpenClawBridge:
         config = load_config()
         gw_config = config.get("gateway", {})
 
-        self.gateway_url = gateway_url or f"ws://127.0.0.1:{gw_config.get('port', 18789)}"
+        self.gateway_url = gateway_url or _cfg_get_gateway_url()
         self.agent_id = agent_id or DEFAULT_AGENT_ID
-        self.token = token or gw_config.get("auth", {}).get("token", DEFAULT_TOKEN)
+        self.token = token or _cfg_get_gateway_token()
         self.client_id = client_id or "ue-editor"  # 默认 UE，DCC 覆盖
 
         self._log = logger or BridgeLogger()

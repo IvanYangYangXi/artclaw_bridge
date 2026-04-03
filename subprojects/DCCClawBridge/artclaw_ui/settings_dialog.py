@@ -61,6 +61,7 @@ class SettingsDialog(QDialog):
     manage_requested = Signal()
     context_window_changed = Signal(int)
     silent_mode_changed = Signal(str, bool)
+    platform_changed = Signal(str)  # platform_type
 
     def __init__(self, bridge_manager=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -71,6 +72,7 @@ class SettingsDialog(QDialog):
         self._silent_high = False
         self._ctx_buttons: List[QPushButton] = []
         self._agent_buttons: List[QPushButton] = []
+        self._platform_buttons: List[QPushButton] = []
         self._current_agent_id: Optional[str] = None
 
         self.setWindowTitle("设置")
@@ -103,6 +105,15 @@ class SettingsDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         scroll.setWidget(content)
         root.addWidget(scroll)
+
+        # Platform switch
+        layout.addWidget(_section_label("AI 平台 / Platform"))
+        platform_row = QHBoxLayout()
+        platform_row.setSpacing(6)
+        self._platform_row = platform_row
+        platform_row.addStretch()
+        layout.addLayout(platform_row)
+        layout.addWidget(_separator())
 
         # Language
         layout.addWidget(_section_label("语言 / Language"))
@@ -235,6 +246,7 @@ class SettingsDialog(QDialog):
 
         self._current_agent_id = cfg.get("current_agent_id")
         self._refresh_agents()
+        self._refresh_platforms()
 
     def _set_active_ctx_button(self, size: int):
         for btn in self._ctx_buttons:
@@ -376,3 +388,80 @@ class SettingsDialog(QDialog):
     def _on_manage_clicked(self):
         self.manage_requested.emit()
         logger.info("Manage skills/MCP requested")
+
+    # ------------------------------------------------------------------ #
+    # Platform Switch                                                       #
+    # ------------------------------------------------------------------ #
+
+    def _refresh_platforms(self):
+        """Load available platforms from config and build toggle buttons."""
+        for btn in self._platform_buttons:
+            btn.deleteLater()
+        self._platform_buttons.clear()
+
+        try:
+            import sys, os
+            _core_dir = os.path.dirname(os.path.abspath(__file__))
+            _parent = os.path.normpath(os.path.join(_core_dir, "..", "core"))
+            if _parent not in sys.path:
+                sys.path.insert(0, _parent)
+            from bridge_config import get_available_platforms, get_platform_type
+            platforms = get_available_platforms()
+            current = get_platform_type()
+        except Exception as exc:
+            logger.warning("Failed to load platforms: %s", exc)
+            platforms = []
+            current = "openclaw"
+
+        for plat in platforms:
+            p_type = plat.get("type", "")
+            p_name = plat.get("display_name", p_type)
+            is_current = p_type == current
+            btn = QPushButton(p_name)
+            btn.setFixedHeight(28)
+            btn.setCheckable(True)
+            btn.setChecked(is_current)
+            btn.setProperty("platform_type", p_type)
+            if is_current:
+                btn.setStyleSheet(
+                    f"background-color: {COLORS.get('accent_blue', '#1e90ff')}; color: white;"
+                )
+            btn.clicked.connect(self._on_platform_clicked)
+            # Insert before the stretch
+            self._platform_row.insertWidget(self._platform_row.count() - 1, btn)
+            self._platform_buttons.append(btn)
+
+    def _on_platform_clicked(self):
+        btn = self.sender()
+        if not btn:
+            return
+        platform_type = btn.property("platform_type")
+
+        try:
+            from bridge_config import get_platform_type
+            if platform_type == get_platform_type():
+                return  # already on this platform
+        except Exception:
+            pass
+
+        try:
+            from bridge_config import switch_platform
+            ok = switch_platform(platform_type)
+            if not ok:
+                logger.warning("Platform switch failed: %s", platform_type)
+                return
+        except Exception as exc:
+            logger.warning("Platform switch error: %s", exc)
+            return
+
+        # Update button styles
+        for b in self._platform_buttons:
+            is_active = b.property("platform_type") == platform_type
+            b.setChecked(is_active)
+            b.setStyleSheet(
+                f"background-color: {COLORS.get('accent_blue', '#1e90ff')}; color: white;"
+                if is_active else ""
+            )
+
+        self.platform_changed.emit(platform_type)
+        logger.info("Platform switched to: %s", platform_type)

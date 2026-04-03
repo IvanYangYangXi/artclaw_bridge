@@ -69,6 +69,7 @@ SHARED_MODULES = ["bridge_core.py", "bridge_config.py", "bridge_diagnostics.py"]
 # 支持的平台及其默认配置（与 bridge_config.py 的 _PLATFORM_DEFAULTS 保持一致）
 PLATFORM_CONFIGS = {
     "openclaw": {
+        "display_name": "OpenClaw",
         "gateway_url": "ws://127.0.0.1:18789",
         "mcp_port": 8080,
         "skills_installed_path": "~/.openclaw/skills",
@@ -79,6 +80,7 @@ PLATFORM_CONFIGS = {
         "has_setup_config": True,
     },
     "workbuddy": {
+        "display_name": "WorkBuddy",
         "gateway_url": "ws://127.0.0.1:18789",
         "mcp_port": 8080,
         "skills_installed_path": "~/.workbuddy/skills",
@@ -89,6 +91,7 @@ PLATFORM_CONFIGS = {
         "has_setup_config": False,
     },
     "claude": {
+        "display_name": "Claude Desktop",
         "gateway_url": "",
         "mcp_port": 8080,
         "skills_installed_path": "~/.claude/skills",
@@ -99,6 +102,7 @@ PLATFORM_CONFIGS = {
         "has_setup_config": False,
     },
     "lobster": {
+        "display_name": "LobsterAI",
         "gateway_url": "ws://127.0.0.1:18790",
         "mcp_port": 8080,
         "skills_installed_path": _get_lobster_skills_path(),
@@ -231,6 +235,19 @@ def write_artclaw_config(platform_type: str):
         "config_path": pcfg["mcp_config_path"],
         "config_key": pcfg["mcp_config_key"],
     }
+
+    # 写入 platforms_registry（所有已知平台，供 UI ComboBox 使用）
+    registry = []
+    for ptype, pconf in PLATFORM_CONFIGS.items():
+        gw = pconf.get("gateway_url", "")
+        if gw:  # 排除无 gateway 的平台
+            registry.append({
+                "type": ptype,
+                "display_name": pconf.get("display_name", ptype.title()),
+                "gateway_url": gw,
+            })
+    if registry:
+        existing["platforms_registry"] = registry
 
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(existing, f, indent=2, ensure_ascii=False)
