@@ -1,0 +1,149 @@
+{
+  "manifest_version": "1.0",
+  "name": "ue57_viewport_capture",
+  "display_name": "UE Viewport Capture & Analysis",
+  "description": "Capture UE viewport screenshots (color/depth/normal) and build AI analysis context for scene composition, lighting, performance review.",
+  "version": "1.0.1",
+  "author": "ArtClaw",
+  "software": "unreal_engine",
+  "category": "viewport",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "ue57_viewport_capture",
+      "description": "Capture UE viewport screenshots (color, depth, normal buffers) and build AI analysis context. Use when AI needs to: (1) take a screenshot of the current viewport, (2) capture depth/normal maps alongside color, (3) analyze scene composition/lighting/performance visually, (4) get viewport image + camera transform for scene analysis. NOT for: runtime game screenshots, cinematic rendering, Sequencer captures."
+    }
+  ],
+  "engine_version": "5.7",
+  "functions": [
+    {
+      "name": "quick_capture",
+      "description": "Quick viewport capture with default settings",
+      "params": {
+        "buffers": {
+          "type": "list",
+          "default": [
+            "color"
+          ],
+          "description": "Buffer types: color, base_color, depth, normal, hdr"
+        }
+      }
+    },
+    {
+      "name": "quick_analyze",
+      "description": "Capture + build analysis context in one call",
+      "params": {
+        "mode": {
+          "type": "string",
+          "default": "general",
+          "description": "Analysis mode: general, composition, lighting, performance, color, custom"
+        },
+        "buffers": {
+          "type": "list",
+          "default": [
+            "color"
+          ],
+          "description": "Buffer types to capture"
+        },
+        "custom_prompt": {
+          "type": "string",
+          "default": null,
+          "description": "Custom analysis prompt (when mode=custom)"
+        }
+      }
+    },
+    {
+      "name": "capture_viewport_scenecapture",
+      "description": "Full control viewport capture using SceneCapture2D",
+      "params": {
+        "resolution": {
+          "type": "tuple",
+          "default": [
+            1920,
+            1080
+          ],
+          "description": "Capture resolution (width, height)"
+        },
+        "buffers": {
+          "type": "list",
+          "default": [
+            "color"
+          ],
+          "description": "Buffer types to capture"
+        },
+        "output_dir": {
+          "type": "string",
+          "default": null,
+          "description": "Output directory path"
+        },
+        "filename_prefix": {
+          "type": "string",
+          "default": null,
+          "description": "Output filename prefix"
+        }
+      }
+    },
+    {
+      "name": "capture_viewport_highres",
+      "description": "Capture using take_high_res_screenshot (async, color only)",
+      "params": {
+        "resolution": {
+          "type": "tuple",
+          "default": [
+            1920,
+            1080
+          ]
+        },
+        "output_dir": {
+          "type": "string",
+          "default": null
+        },
+        "filename": {
+          "type": "string",
+          "default": null
+        },
+        "camera_actor": {
+          "type": "object",
+          "default": null
+        }
+      }
+    },
+    {
+      "name": "build_analysis_context",
+      "description": "Build AI analysis context from capture result",
+      "params": {
+        "capture_result": {
+          "type": "dict",
+          "description": "Return value from capture functions"
+        },
+        "mode": {
+          "type": "string",
+          "default": "general"
+        },
+        "custom_prompt": {
+          "type": "string",
+          "default": null
+        },
+        "include_stats": {
+          "type": "bool",
+          "default": true
+        },
+        "analysis_max_size": {
+          "type": "int",
+          "default": 1024
+        }
+      }
+    },
+    {
+      "name": "cleanup_captures",
+      "description": "Clean up old capture files",
+      "params": {
+        "max_age_hours": {
+          "type": "int",
+          "default": 24
+        }
+      }
+    }
+  ]
+}
