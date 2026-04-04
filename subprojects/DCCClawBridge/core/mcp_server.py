@@ -114,6 +114,18 @@ class MCPServer:
         # on_tool_result(tool_name, tool_id, content_text, is_error)
         self.on_tool_result: Optional[Callable] = None
 
+        # RetryTracker: 追踪工具调用重试模式
+        self._retry_tracker = None
+        try:
+            from core.retry_tracker import RetryTracker
+            self._retry_tracker = RetryTracker()
+        except ImportError:
+            try:
+                from retry_tracker import RetryTracker
+                self._retry_tracker = RetryTracker()
+            except ImportError:
+                pass
+
     # --- 属性 ---
 
     @property
@@ -278,6 +290,9 @@ class MCPServer:
         if handler is None:
             raise ValueError(f"Tool '{tool_name}' has no handler")
 
+        # 提取代码（用于 RetryTracker）
+        code = arguments.get("code", "")
+
         try:
             # 如果设置了主线程执行器且 handler 需要主线程，在主线程执行
             if tool_def.get("_main_thread", False) and self._main_thread_executor:
@@ -296,11 +311,25 @@ class MCPServer:
                     "isError": False,
                 }
 
+            # RetryTracker: 追踪结果并注入记忆提示
+            is_error = mcp_result.get("isError", False)
+            content_text = self._extract_result_text(mcp_result)
+            
+            if self._retry_tracker and code:
+                error_msg = content_text if is_error else ""
+                memory_hint = self._retry_tracker.on_tool_result(
+                    tool_name, code, is_error, error_msg, content_text
+                )
+                if memory_hint:
+                    # 追加记忆提示到 tool result 末尾
+                    mcp_result["content"].append({
+                        "type": "text",
+                        "text": f"\n\n{memory_hint}",
+                    })
+
             # 通知 UI: 工具执行完成
             if self.on_tool_result:
                 try:
-                    is_error = mcp_result.get("isError", False)
-                    content_text = self._extract_result_text(mcp_result)
                     self.on_tool_result(tool_name, tool_id, content_text, is_error)
                 except Exception:
                     pass
@@ -308,8 +337,21 @@ class MCPServer:
             return mcp_result
         except Exception as e:
             logger.error(f"Tool execution error ({tool_name}): {e}")
+            error_text = f"执行错误: {str(e)}"
+            
+            # RetryTracker: 追踪异常
+            memory_hint = None
+            if self._retry_tracker and code:
+                memory_hint = self._retry_tracker.on_tool_result(
+                    tool_name, code, True, str(e), error_text
+                )
+            
+            error_content = [{"type": "text", "text": error_text}]
+            if memory_hint:
+                error_content.append({"type": "text", "text": f"\n\n{memory_hint}"})
+            
             error_result = {
-                "content": [{"type": "text", "text": f"执行错误: {str(e)}"}],
+                "content": error_content,
                 "isError": True,
             }
             # 通知 UI: 工具执行出错
@@ -709,7 +751,12 @@ def _init_skill_runtime(server: MCPServer, adapter=None) -> None:
                 get_data_dir(adapter.get_software_name(), adapter.get_software_version()),
                 "memory"
             )
-        init_memory_store(server, data_dir=data_dir)
+        memory_store = init_memory_store(server, data_dir=data_dir)
+        
+        # 绑定 RetryTracker 到记忆管理器
+        if server._retry_tracker and memory_store:
+            server._retry_tracker.set_memory_manager(memory_store.manager)
+            logger.info("RetryTracker: 已绑定记忆管理器")
     except Exception as e:
         logger.warning(f"Memory store init failed: {e}")
 

@@ -319,6 +319,15 @@ class DCCBridgeManager:
         # 清空 session key，下次发消息时生成新的带时间戳 key = 新 session
         self._bridge.reset_session()
         self._context_injected = False
+        
+        # 清空 RetryTracker 状态（新对话不继承旧对话的重试计数）
+        try:
+            from core.mcp_server import get_mcp_server
+            server = get_mcp_server()
+            if server and server._retry_tracker:
+                server._retry_tracker.clear()
+        except Exception:
+            pass
 
     def get_session_key(self) -> str:
         """获取当前 session key"""

@@ -45,6 +45,7 @@ CORE_MODULES = [
     "health_check.py",
     "integrity_check.py",
     "memory_core.py",
+    "retry_tracker.py",
     "skill_sync.py",
 ]
 
