@@ -256,21 +256,26 @@ class MemoryManagerV2:
         
         return ""
 
+    # 每个团队记忆文件的规则条数上限
+    _TEAM_MEMORY_LIMITS = {
+        "crash_rules.md": 15,
+        "gotchas.md": 20,
+        "conventions.md": 10,
+        "platform_differences.md": 8,
+    }
+
     def _load_team_memory(self):
         """加载团队记忆文件 (只读 Markdown)
         
-        按当前 DCC 过滤规则: 只加载 [All] 和 [当前DCC] 标签的规则。
+        处理流程:
+          1. 按当前 DCC 过滤规则 (只加载 [All] 和 [当前DCC] 标签)
+          2. 语义去重 (SequenceMatcher > 0.75 视为重复)
+          3. 取最后 N 条 (新规则追加在文件末尾，最新的优先保留)
+          4. 反转为最新在前的顺序
         """
         team_dir = self._resolve_team_memory_path()
         if not team_dir:
             return
-        
-        target_files = [
-            "crash_rules.md",
-            "gotchas.md",
-            "conventions.md",
-            "platform_differences.md",
-        ]
         
         # DCC 名称到标签的映射
         dcc_lower = self.dcc_name.lower()
@@ -282,41 +287,88 @@ class MemoryManagerV2:
             "max": ["[Max]", "[All]"],
         }
         allowed_tags = _DCC_TAG_MAP.get(dcc_lower, ["[All]"])
-        # 也允许不带标签的通用规则
         filter_by_dcc = dcc_lower in _DCC_TAG_MAP
+        all_dcc_tags = ["[UE]", "[Maya]", "[Max]", "[All]", "[Python]", "[Windows]"]
+        universal_tags = ["[Python]", "[Windows]"]
         
         loaded = 0
-        for fname in target_files:
+        for fname, max_rules in self._TEAM_MEMORY_LIMITS.items():
             fpath = os.path.join(team_dir, fname)
-            if os.path.isfile(fpath):
-                try:
-                    with open(fpath, "r", encoding="utf-8") as f:
-                        content = f.read()
-                    # 只保留规则行 (以 - 开头的行)
-                    rules = []
-                    for line in content.split("\n"):
-                        stripped = line.strip()
-                        if not stripped.startswith("- "):
+            if not os.path.isfile(fpath):
+                continue
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    content = f.read()
+                
+                # Step 1: 提取规则行 + DCC 过滤
+                raw_rules = []
+                for line in content.split("\n"):
+                    stripped = line.strip()
+                    if not stripped.startswith("- "):
+                        continue
+                    rule_text = stripped[2:]
+                    if filter_by_dcc:
+                        has_tag = any(tag in rule_text for tag in all_dcc_tags)
+                        if has_tag and not any(tag in rule_text for tag in allowed_tags + universal_tags):
                             continue
-                        rule_text = stripped[2:]  # 去掉 "- " 前缀
-                        # 按 DCC 标签过滤
-                        if filter_by_dcc:
-                            has_tag = any(tag in rule_text for tag in ["[UE]", "[Maya]", "[Max]", "[All]",
-                                                                       "[Python]", "[Windows]"])
-                            if has_tag and not any(tag in rule_text for tag in allowed_tags + ["[Python]", "[Windows]"]):
-                                continue  # 有标签但不匹配当前 DCC，跳过
-                        rules.append(rule_text)
-                    if rules:
-                        self._team_memory_cache[fname] = rules
-                        loaded += len(rules)
-                except Exception as e:
-                    self.logger.warning(f"加载团队记忆失败 {fname}: {e}")
+                    raw_rules.append(rule_text)
+                
+                if not raw_rules:
+                    continue
+                
+                # Step 2: 语义去重 (保留后出现的版本，因为更新)
+                deduped = self._dedup_rules(raw_rules)
+                
+                # Step 3: 取最后 N 条 (最新的优先)
+                if len(deduped) > max_rules:
+                    deduped = deduped[-max_rules:]
+                
+                # Step 4: 反转为最新在前
+                deduped.reverse()
+                
+                self._team_memory_cache[fname] = deduped
+                loaded += len(deduped)
+                
+            except Exception as e:
+                self.logger.warning(f"加载团队记忆失败 {fname}: {e}")
         
         if loaded:
             self.logger.info(f"已加载团队记忆: {loaded} 条规则 (DCC={self.dcc_name}) from {team_dir}")
         
-        # 缓存路径供后续使用
         self._team_memory_path = team_dir
+
+    @staticmethod
+    def _dedup_rules(rules: List[str], threshold: float = 0.75) -> List[str]:
+        """对规则列表做语义去重
+        
+        相似度 > threshold 的规则只保留后出现的版本（更新的覆盖旧的）。
+        使用 SequenceMatcher 比较去掉标签后的纯文本。
+        """
+        if len(rules) <= 1:
+            return rules
+        
+        import re
+        tag_pattern = re.compile(r'\[(?:UE|Maya|Max|All|Python|Windows)\]\s*')
+        
+        def strip_tags(text: str) -> str:
+            return tag_pattern.sub('', text).strip().lower()
+        
+        # 从后往前扫描，后出现的优先保留
+        kept = []
+        kept_texts = []
+        for rule in reversed(rules):
+            clean = strip_tags(rule)
+            is_dup = False
+            for existing in kept_texts:
+                if SequenceMatcher(None, clean, existing).ratio() > threshold:
+                    is_dup = True
+                    break
+            if not is_dup:
+                kept.append(rule)
+                kept_texts.append(clean)
+        
+        kept.reverse()  # 恢复原始顺序
+        return kept
 
     def search_team_memory(self, query: str, limit: int = 3) -> List[str]:
         """搜索团队记忆中的相关规则
