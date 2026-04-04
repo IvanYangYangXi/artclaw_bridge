@@ -664,6 +664,9 @@ def publish_skill(skill_name: str, target_layer: str = "marketplace",
             json.dumps(manifest, indent=2, ensure_ascii=False),
             encoding="utf-8")
 
+        # 1b. 同步更新 SKILL.md frontmatter 中的 version 字段
+        _update_skill_md_version(runtime_path / "SKILL.md", new_version)
+
         # 2. 确定目标路径 & 清理项目源码中旧位置（如果换了层级或 DCC 目录）
         source_target = project_root / "skills" / target_layer / target_dcc / skill_name
         skills_root = project_root / "skills"
@@ -742,6 +745,101 @@ def _bump_version(version: str, bump: str) -> str:
         return f"{major}.{minor + 1}.0"
     else:  # patch
         return f"{major}.{minor}.{patch + 1}"
+
+
+def _update_skill_md_version(skill_md_path: Path, new_version: str) -> bool:
+    """
+    更新 SKILL.md frontmatter 中的 version 字段。
+
+    支持两种格式:
+    1. metadata.artclaw.version: X.Y.Z (OpenClaw 兼容格式)
+    2. 顶层 version: X.Y.Z (旧格式 fallback)
+
+    如果 frontmatter 中不存在 version 字段，在 metadata.artclaw 块中插入。
+    如果没有 frontmatter，不修改文件。
+
+    返回: True 如果成功更新
+    """
+    if not skill_md_path.exists():
+        return False
+
+    try:
+        raw = skill_md_path.read_text(encoding="utf-8")
+    except Exception:
+        return False
+
+    if not raw.startswith("---"):
+        return False
+
+    end = raw.find("---", 3)
+    if end < 0:
+        return False
+
+    fm_block = raw[3:end]
+    body = raw[end:]  # includes closing "---" and everything after
+
+    lines = fm_block.split("\n")
+    new_lines = []
+    version_updated = False
+    in_metadata = False
+    in_artclaw = False
+    artclaw_indent = ""
+
+    for line in lines:
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+
+        # 追踪 metadata / artclaw 块层级
+        if indent == 0 and stripped and not stripped.startswith("#"):
+            in_metadata = stripped == "metadata:"
+            in_artclaw = False
+        elif in_metadata and indent >= 2 and stripped == "artclaw:":
+            in_artclaw = True
+            artclaw_indent = " " * (indent + 2)
+
+        # 替换 version 字段
+        if stripped.startswith("version:"):
+            if in_artclaw and indent >= 4:
+                # metadata.artclaw.version
+                new_lines.append(f"{line[:indent]}version: {new_version}")
+                version_updated = True
+                continue
+            elif indent == 0 and not in_metadata:
+                # 顶层 version（旧格式）
+                new_lines.append(f"version: {new_version}")
+                version_updated = True
+                continue
+
+        new_lines.append(line)
+
+    # 如果没找到 version 字段，尝试插入到 metadata.artclaw 块
+    if not version_updated:
+        inserted = False
+        final_lines = []
+        for i, line in enumerate(new_lines):
+            final_lines.append(line)
+            stripped = line.strip()
+            # 找到 artclaw: 行后，在下一行插入 version
+            if stripped == "artclaw:" and not inserted:
+                # 计算缩进
+                ac_indent = len(line) - len(line.lstrip()) + 2
+                final_lines.append(f"{' ' * ac_indent}version: {new_version}")
+                inserted = True
+                version_updated = True
+        if inserted:
+            new_lines = final_lines
+
+    if not version_updated:
+        return False
+
+    try:
+        result = "---" + "\n".join(new_lines) + body
+        skill_md_path.write_text(result, encoding="utf-8")
+        logger.info(f"Updated SKILL.md version to {new_version}: {skill_md_path}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to update SKILL.md version: {e}")
+        return False
 
 
 def _infer_dcc_from_name(skill_name: str) -> str:

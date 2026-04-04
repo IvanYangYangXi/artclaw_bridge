@@ -219,6 +219,8 @@ if HAS_QT:
             sep_lbl = QLabel("|")
             sep_lbl.setStyleSheet(f"color: {t['border']}; padding: 0 4px;")
             self._layer_row.insertWidget(self._layer_row.count(), sep_lbl)
+            inst_btn = self._make_filter_btn("已安装", "installed", "install")
+            self._layer_row.insertWidget(self._layer_row.count(), inst_btn)
             ni_btn = self._make_filter_btn("未安装", "not_installed", "install")
             self._layer_row.insertWidget(self._layer_row.count(), ni_btn)
 
@@ -279,6 +281,8 @@ if HAS_QT:
                     continue
                 if self._install_filter == "not_installed" and s.install_status != "not_installed":
                     continue
+                if self._install_filter == "installed" and s.install_status == "not_installed":
+                    continue
                 if self._dcc_filter != "all":
                     norm = "unreal" if s.software == "unreal_engine" else s.software
                     if norm != self._dcc_filter:
@@ -320,24 +324,26 @@ if HAS_QT:
         def _make_skill_row(self, s: SkillEntry) -> QWidget:
             t = self._t
             row = QWidget()
-            row.setMinimumHeight(56)
+            row.setMinimumHeight(48)
+            row.setMaximumHeight(56)
             row.setStyleSheet(
                 f"QWidget {{ background: {t['bg_secondary']}; border-radius: 4px; }}"
             )
             h = QHBoxLayout(row)
-            h.setContentsMargins(8, 6, 8, 6)
-            h.setSpacing(6)
+            h.setContentsMargins(6, 4, 6, 4)
+            h.setSpacing(4)
 
             is_inst = s.install_status != "not_installed"
+            dim = "" if (is_inst and s.enabled) else "opacity: 0.5;"
 
-            # Pin star
+            # Pin star (compact)
             star = QPushButton("\u2605" if s.pinned else "\u2606")
-            star.setFixedSize(24, 24)
+            star.setFixedSize(20, 20)
             star.setCursor(Qt.PointingHandCursor)
             star_color = "#F2BF0F" if s.pinned else t['text_dim']
             star.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {star_color};"
-                f" border: none; font-size: 14px; }}"
+                f" border: none; font-size: 12px; }}"
             )
             star.setEnabled(is_inst)
             star.clicked.connect(lambda checked=False, entry=s: self._on_pin(entry))
@@ -350,107 +356,115 @@ if HAS_QT:
             cb.stateChanged.connect(lambda state, entry=s: self._on_enable(entry, state))
             h.addWidget(cb)
 
-            # Name + description block
+            # Name + meta + description block (stretches to fill)
             name_w = QWidget()
             name_w.setStyleSheet("background: transparent;")
+            name_w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             name_l = QVBoxLayout(name_w)
             name_l.setContentsMargins(0, 0, 0, 0)
-            name_l.setSpacing(2)
+            name_l.setSpacing(1)
 
+            # Row 1: name + layer badge + version + author
             top_row = QHBoxLayout()
-            top_row.setSpacing(6)
+            top_row.setSpacing(4)
             disp_text = s.display_name or s.name
             disp = QLabel(disp_text)
-            dim = "" if (is_inst and s.enabled) else "opacity: 0.5;"
-            disp.setStyleSheet(f"background: transparent; color: {t['text']}; font-weight: bold; font-size: 12px; {dim}")
+            disp.setStyleSheet(
+                f"background: transparent; color: {t['text']};"
+                f" font-weight: bold; font-size: 11px; {dim}"
+            )
             top_row.addWidget(disp)
 
-            # Layer badge (inline)
+            # Layer badge (compact)
             lc = _LAYER_COLORS.get(s.layer, COLORS["layer_platform"])
             layer_lbl = QLabel(_LAYER_NAMES.get(s.layer, s.layer))
             layer_lbl.setStyleSheet(
                 f"background: {lc}33; color: {lc}; font-size: 9px;"
-                f" padding: 1px 4px; border-radius: 2px;"
+                f" padding: 0px 3px; border-radius: 2px;"
             )
             top_row.addWidget(layer_lbl)
 
             if s.version:
                 ver = QLabel(f"v{s.version}")
-                ver.setStyleSheet(f"background: transparent; color: {t['text_dim']}; font-size: 10px;")
+                ver.setStyleSheet(f"background: transparent; color: {t['text_dim']}; font-size: 9px;")
                 top_row.addWidget(ver)
             if s.author:
-                author_lbl = QLabel(f"by {s.author}")
-                author_lbl.setStyleSheet(f"background: transparent; color: {t['text_dim']}; font-size: 10px; opacity: 0.7;")
+                author_lbl = QLabel(s.author)
+                author_lbl.setStyleSheet(
+                    f"background: transparent; color: {t['text_dim']}; font-size: 9px;"
+                )
                 top_row.addWidget(author_lbl)
             top_row.addStretch()
             name_l.addLayout(top_row)
 
-            # Description line (truncated)
-            desc_text = s.description[:80] if s.description else s.name
+            # Row 2: description (single line, elided)
+            desc_text = (s.description or s.name)[:60]
             desc = QLabel(desc_text)
-            desc.setStyleSheet(f"background: transparent; color: {t['text_dim']}; font-size: 10px;")
+            desc.setStyleSheet(
+                f"background: transparent; color: {t['text_dim']}; font-size: 9px;"
+            )
             desc.setWordWrap(False)
             name_l.addWidget(desc)
             h.addWidget(name_w, 1)
 
-            # Install badge
-            if is_inst:
-                ic, il = COLORS["install_installed"], "已安装"
-            else:
-                ic, il = COLORS["install_not_installed"], "未安装"
-            inst_lbl = QLabel(il)
-            inst_lbl.setStyleSheet(
-                f"background: {ic}33; color: {ic}; font-size: 10px;"
-                f" padding: 1px 6px; border-radius: 2px;"
-            )
-            h.addWidget(inst_lbl)
+            # Action buttons (fixed-width, never pushed off)
+            btn_area = QWidget()
+            btn_area.setStyleSheet("background: transparent;")
+            btn_area.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+            btn_h = QHBoxLayout(btn_area)
+            btn_h.setContentsMargins(0, 0, 0, 0)
+            btn_h.setSpacing(3)
 
-            # Action buttons
             btn_style = (
                 f"QPushButton {{ background: {t['btn_secondary_bg']}; color: {t['text']};"
-                f" border: 1px solid {t['border']}; border-radius: 3px; padding: 2px 8px; font-size: 10px; }}"
+                f" border: 1px solid {t['border']}; border-radius: 3px;"
+                f" padding: 1px 6px; font-size: 10px; }}"
                 f"QPushButton:hover {{ background: {t['btn_secondary_hover']}; }}"
             )
+            accent_btn_style = (
+                f"QPushButton {{ background: {t['accent']}; color: #fff;"
+                f" border: none; border-radius: 3px; padding: 1px 6px; font-size: 10px; }}"
+                f"QPushButton:hover {{ background: {t['accent_hover']}; }}"
+            )
+            publish_style = (
+                f"QPushButton {{ background: #4D80E6; color: #fff;"
+                f" border: none; border-radius: 3px; padding: 1px 6px; font-size: 10px; }}"
+                f"QPushButton:hover {{ background: #5A8DF0; }}"
+            )
+
             if not is_inst:
                 b = QPushButton("安装")
-                b.setStyleSheet(btn_style)
+                b.setStyleSheet(accent_btn_style)
                 b.clicked.connect(lambda checked=False, e=s: self._on_install(e))
-                h.addWidget(b)
+                btn_h.addWidget(b)
             if s.updatable:
                 b = QPushButton("更新")
-                b.setStyleSheet(
-                    f"QPushButton {{ background: {t['accent']}; color: #fff;"
-                    f" border: none; border-radius: 3px; padding: 2px 8px; font-size: 10px; }}"
-                    f"QPushButton:hover {{ background: {t['accent_hover']}; }}"
-                )
+                b.setStyleSheet(accent_btn_style)
                 b.clicked.connect(lambda checked=False, e=s: self._on_update(e))
-                h.addWidget(b)
+                btn_h.addWidget(b)
             if is_inst and s.layer in ("user", "custom", "marketplace"):
                 b = QPushButton("卸载")
                 b.setStyleSheet(btn_style)
                 b.clicked.connect(lambda checked=False, e=s: self._on_uninstall(e))
-                h.addWidget(b)
+                btn_h.addWidget(b)
             if is_inst and s.modified:
-                publish_style = (
-                    f"QPushButton {{ background: #4D80E6; color: #fff;"
-                    f" border: none; border-radius: 3px; padding: 2px 8px; font-size: 10px; }}"
-                    f"QPushButton:hover {{ background: #5A8DF0; }}"
-                )
                 b = QPushButton("发布")
                 b.setStyleSheet(publish_style)
                 b.clicked.connect(lambda checked=False, e=s: self._on_publish(e))
-                h.addWidget(b)
+                btn_h.addWidget(b)
 
-            det = QPushButton("···")
-            det.setFixedSize(28, 28)
+            det = QPushButton("...")
+            det.setFixedSize(24, 24)
             det.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {t['text_dim']};"
-                f" border: none; font-size: 14px; }}"
+                f" border: none; font-size: 13px; }}"
                 f"QPushButton:hover {{ color: {t['text']}; background: {t['bg_hover']}; border-radius: 3px; }}"
             )
-            det.setToolTip("详情 / 发布")
+            det.setToolTip("详情")
             det.clicked.connect(lambda checked=False, e=s: self._on_detail(e))
-            h.addWidget(det)
+            btn_h.addWidget(det)
+
+            h.addWidget(btn_area)
 
             return row
 

@@ -29,4 +29,4 @@ A dummy skill for testing the Skill management panel's install/update/publish/un
 ## Usage
 
 This skill does nothing. It is a test fixture.
-修改测试
+修改测试+1

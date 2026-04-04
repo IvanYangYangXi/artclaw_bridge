@@ -251,6 +251,7 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("ManageFilterDccMaya"), TEXT("Maya"),                      TEXT("Maya"));
 	Reg(TEXT("ManageFilterDccMax"),  TEXT("Max"),                       TEXT("Max"));
 	Reg(TEXT("ManageFilterDccUniversal"), TEXT("通用"),                 TEXT("Universal"));
+	Reg(TEXT("ManageFilterInstalled"),    TEXT("已安装"),               TEXT("Installed"));
 	Reg(TEXT("ManageFilterNotInstalled"), TEXT("未安装"),               TEXT("Not Installed"));
 
 	// ==================================================================

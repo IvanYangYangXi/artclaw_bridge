@@ -156,6 +156,11 @@ TSharedRef<SWidget> SUEAgentSkillTab::BuildContent()
 	];
 	LayerRow->AddSlot().AutoWidth().Padding(2, 0)
 	[
+		MakeFilterBtn(FUEAgentL10n::GetStr(TEXT("ManageFilterInstalled")),
+			TEXT("installed"), TEXT("install"), FLinearColor(0.2f, 0.65f, 0.5f))
+	];
+	LayerRow->AddSlot().AutoWidth().Padding(2, 0)
+	[
 		MakeFilterBtn(FUEAgentL10n::GetStr(TEXT("ManageFilterNotInstalled")),
 			TEXT("notinstalled"), TEXT("install"), FLinearColor(0.85f, 0.5f, 0.2f))
 	];
