@@ -97,17 +97,23 @@ class MemoryEntry:
 class MemoryManagerV2:
     """ArtClaw 记忆管理器 v2"""
     
-    def __init__(self, storage_path: str, dcc_name: str = "unknown", config: dict = None):
+    def __init__(self, storage_path: str, dcc_name: str = "unknown", config: dict = None,
+                 team_memory_path: str = ""):
         """初始化记忆管理器
         
         Args:
             storage_path: 存储文件路径
             dcc_name: DCC 软件名称标识
             config: 配置覆盖项
+            team_memory_path: 团队记忆目录路径 (team_memory/)，为空则自动检测
         """
         self.storage_path = storage_path
         self.dcc_name = dcc_name
         self.config = {**DEFAULT_CONFIG, **(config or {})}
+        
+        # 团队记忆 (只读)
+        self._team_memory_path = team_memory_path
+        self._team_memory_cache: Dict[str, str] = {}  # filename -> content
         
         # 线程安全锁
         self._lock = threading.RLock()
@@ -180,6 +186,9 @@ class MemoryManagerV2:
         # 加载现有数据
         self._load()
         
+        # 加载团队记忆
+        self._load_team_memory()
+        
         self.logger.info(f"记忆管理器 v2 已初始化: {dcc_name}, 存储路径: {storage_path}")
 
     def _load(self):
@@ -219,6 +228,100 @@ class MemoryManagerV2:
                     self.logger.info(f"已备份损坏文件到: {backup_path}")
                 except Exception as be:
                     self.logger.error(f"备份损坏文件失败: {be}")
+
+    def _resolve_team_memory_path(self) -> str:
+        """解析团队记忆目录路径
+        
+        优先级:
+          1. 构造函数传入的 team_memory_path
+          2. config.json 的 project_root + /team_memory/
+          3. 空字符串（不加载）
+        """
+        if self._team_memory_path and os.path.isdir(self._team_memory_path):
+            return self._team_memory_path
+        
+        # 从 config.json 读取 project_root
+        try:
+            config_path = os.path.join(os.path.expanduser("~"), ".artclaw", "config.json")
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                project_root = cfg.get("project_root", "")
+                if project_root:
+                    candidate = os.path.join(project_root, "team_memory")
+                    if os.path.isdir(candidate):
+                        return candidate
+        except Exception:
+            pass
+        
+        return ""
+
+    def _load_team_memory(self):
+        """加载团队记忆文件 (只读 Markdown)"""
+        team_dir = self._resolve_team_memory_path()
+        if not team_dir:
+            return
+        
+        target_files = [
+            "crash_rules.md",
+            "gotchas.md",
+            "conventions.md",
+            "platform_differences.md",
+        ]
+        
+        loaded = 0
+        for fname in target_files:
+            fpath = os.path.join(team_dir, fname)
+            if os.path.isfile(fpath):
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    # 只保留规则行 (以 - 开头的行)
+                    rules = []
+                    for line in content.split("\n"):
+                        stripped = line.strip()
+                        if stripped.startswith("- "):
+                            rules.append(stripped[2:])  # 去掉 "- " 前缀
+                    if rules:
+                        self._team_memory_cache[fname] = rules
+                        loaded += len(rules)
+                except Exception as e:
+                    self.logger.warning(f"加载团队记忆失败 {fname}: {e}")
+        
+        if loaded:
+            self.logger.info(f"已加载团队记忆: {loaded} 条规则 from {team_dir}")
+        
+        # 缓存路径供后续使用
+        self._team_memory_path = team_dir
+
+    def search_team_memory(self, query: str, limit: int = 3) -> List[str]:
+        """搜索团队记忆中的相关规则
+        
+        Args:
+            query: 搜索关键词
+            limit: 最大返回条数
+            
+        Returns:
+            匹配的规则文本列表
+        """
+        if not self._team_memory_cache:
+            return []
+        
+        query_lower = query.lower()
+        results = []
+        
+        # 优先搜索 crash_rules 和 gotchas
+        priority_order = ["crash_rules.md", "gotchas.md", "conventions.md", "platform_differences.md"]
+        
+        for fname in priority_order:
+            rules = self._team_memory_cache.get(fname, [])
+            for rule in rules:
+                if query_lower in rule.lower():
+                    results.append(rule)
+                    if len(results) >= limit:
+                        return results
+        
+        return results
 
     def _save(self):
         """保存记忆数据到磁盘"""
@@ -1271,11 +1374,14 @@ class MemoryManagerV2:
 
     # === 导出和统计 ===
     
-    def export_briefing(self, max_tokens: int = 1500) -> str:
+    def export_briefing(self, max_tokens: int = 1500, include_team: bool = True,
+                        first_message: bool = True) -> str:
         """导出记忆简报
         
         Args:
             max_tokens: 最大token数量
+            include_team: 是否包含团队记忆
+            first_message: 是否为首条消息（首条消息包含 conventions/platform_diff）
             
         Returns:
             格式化的记忆简报文本
@@ -1305,7 +1411,27 @@ class MemoryManagerV2:
                 sections.append(section_text)
                 current_tokens += estimate_tokens(section_text)
             
-            # P0: 崩溃规则 (全量)
+            # === 团队记忆 (P0, 优先级最高) ===
+            if include_team and self._team_memory_cache:
+                # P0: 团队 crash rules (每次必读)
+                team_crashes = self._team_memory_cache.get("crash_rules.md", [])
+                add_section("TEAM CRASH RULES", team_crashes[:15], "\u26a0\ufe0f")
+                
+                # P0: 团队 gotchas (每次必读)
+                team_gotchas = self._team_memory_cache.get("gotchas.md", [])
+                add_section("TEAM GOTCHAS", team_gotchas[:20], "\u26a0\ufe0f")
+                
+                # P1: 仅首条消息
+                if first_message:
+                    team_conventions = self._team_memory_cache.get("conventions.md", [])
+                    add_section("TEAM CONVENTIONS", team_conventions[:10], "\U0001f4d0")
+                    
+                    team_platform = self._team_memory_cache.get("platform_differences.md", [])
+                    add_section("PLATFORM DIFFERENCES", team_platform[:10], "\U0001f310")
+            
+            # === 个人记忆 ===
+            
+            # P2: 个人崩溃规则
             crash_entries = []
             for layer_name in ["long_term", "mid_term", "short_term"]:
                 layer_storage = self._get_layer_by_name(layer_name)
@@ -1315,9 +1441,27 @@ class MemoryManagerV2:
                         if rule:
                             crash_entries.append(f"{entry.value.get('tool', 'unknown')}: {rule}")
             
-            add_section("CRASH RULES", crash_entries[:10], "\u26a0\ufe0f")
+            add_section("PERSONAL CRASH RULES", crash_entries[:10], "\u26a0\ufe0f")
             
-            # P1: 约定规则 (全量)  
+            # P3: 个人 pattern (反直觉行为/经验教训)
+            pattern_entries = []
+            for layer_name in ["long_term", "mid_term", "short_term"]:
+                layer_storage = self._get_layer_by_name(layer_name)
+                for key, entry in sorted(layer_storage.items(),
+                                       key=lambda x: x[1].importance, reverse=True):
+                    if entry.tag == "pattern":
+                        if isinstance(entry.value, dict):
+                            # RetryTracker 自动提取的 pattern
+                            val = entry.value.get("fix", str(entry.value))[:80]
+                        else:
+                            val = str(entry.value)[:80]
+                        pattern_entries.append(f"{entry.key}: {val}")
+                        if len(pattern_entries) >= 8:
+                            break
+            
+            add_section("LEARNED PATTERNS", pattern_entries[:6], "\U0001f4a1")
+            
+            # P4: 约定规则
             convention_entries = []
             for layer_name in ["long_term", "mid_term", "short_term"]:
                 layer_storage = self._get_layer_by_name(layer_name)
@@ -1328,20 +1472,7 @@ class MemoryManagerV2:
             
             add_section("CONVENTIONS", convention_entries[:10], "\U0001f4d0")
             
-            # P2: 事实 (前N条)
-            fact_entries = []
-            for layer_name in ["long_term", "mid_term", "short_term"]:
-                layer_storage = self._get_layer_by_name(layer_name)
-                for key, entry in sorted(layer_storage.items(), key=lambda x: x[1].importance, reverse=True):
-                    if entry.tag == "fact":
-                        value_str = str(entry.value)[:80]
-                        fact_entries.append(f"{entry.key}: {value_str}")
-                        if len(fact_entries) >= 10:
-                            break
-            
-            add_section("FACTS", fact_entries[:8], "\U0001f4cc")
-            
-            # P3: 偏好 (前N条)
+            # P5: 偏好 (前N条)
             preference_entries = []
             for layer_name in ["long_term", "mid_term", "short_term"]:
                 layer_storage = self._get_layer_by_name(layer_name)
@@ -1353,28 +1484,6 @@ class MemoryManagerV2:
                             break
             
             add_section("PREFERENCES", preference_entries[:6], "\U0001f3a8")
-            
-            # P4: 高重要性操作 (前5条)
-            operation_entries = []
-            for layer_name in ["long_term", "mid_term", "short_term"]:
-                layer_storage = self._get_layer_by_name(layer_name)
-                for key, entry in sorted(layer_storage.items(), 
-                                       key=lambda x: (x[1].importance, x[1].last_accessed), reverse=True):
-                    if entry.tag == "operation" and entry.importance >= 0.6:
-                        if isinstance(entry.value, dict):
-                            if "type" in entry.value and entry.value["type"] == "operation_summary":
-                                op_desc = f"{entry.value.get('tool', 'unknown')}.{entry.value.get('action', 'unknown')} (执行{entry.value.get('total_executions', 0)}次, 成功率{entry.value.get('success_rate', 0):.1%})"
-                            else:
-                                status = "成功" if entry.value.get("success", False) else "失败"
-                                op_desc = f"{entry.value.get('tool', 'unknown')}.{entry.value.get('action', 'unknown')} ({status})"
-                        else:
-                            op_desc = f"{entry.key}: {str(entry.value)[:60]}"
-                        
-                        operation_entries.append(op_desc)
-                        if len(operation_entries) >= 5:
-                            break
-            
-            add_section("RECENT OPS", operation_entries[:5], "\U0001f527")
             
             # 组装最终简报
             if sections:
@@ -1713,7 +1822,7 @@ def test_memory_manager():
         print("=== 测试导出功能 ===")
         
         # 导出简报
-        briefing = manager.export_briefing(max_tokens=800)
+        briefing = manager.export_briefing(max_tokens=800, include_team=True)
         print(f"记忆简报:\n{briefing}")
         
         # 获取统计信息

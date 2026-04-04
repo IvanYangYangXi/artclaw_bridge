@@ -138,3 +138,46 @@ finally:
 print("✅ 操作完成")
 # 提示：可用 Ctrl+Z 撤销
 ```
+
+---
+
+## 🧠 规则 6：记忆系统集成
+
+### 反复出错时主动查记忆 (强制)
+
+当同一类操作**连续失败 2 次以上**时，必须先搜索记忆再继续尝试：
+
+```python
+from core.memory_store import get_memory_store
+mm = get_memory_store()
+if mm:
+    hints = mm.manager.search("相关关键词", tag="crash", limit=3)
+    hints += mm.manager.search("相关关键词", tag="pattern", limit=3)
+    team = mm.manager.search_team_memory("相关关键词", limit=3)
+```
+
+### 多次尝试后成功时提炼教训 (强制)
+
+经过 2 次以上尝试或用户纠正后才正确完成操作时，**必须**提炼规则并写入记忆：
+
+```python
+mm.manager.record(
+    key="pattern:简短问题描述",
+    value="一句话规则：什么情况 + 正确做法",
+    tag="pattern",
+    importance=0.8,
+    source="retry_learned"
+)
+```
+
+### 发现反直觉行为时记录 (强制)
+
+```python
+mm.manager.record(
+    key="pattern:API或行为描述",
+    value="实际行为 vs 预期行为，正确用法",
+    tag="pattern",
+    importance=0.9,
+    source="gotcha"
+)
+```
