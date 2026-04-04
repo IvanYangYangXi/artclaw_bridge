@@ -20,3 +20,4 @@
 - [UE] bridge_core _handle_chat_event 必须按 session key 过滤，否则多 DCC 串消息
 - [All] session key 必须全局唯一，用时间戳后缀 agent/client:timestamp
 - [All] tools.allow 必须用通配符 mcp_xxx_*，精确列举会漏掉新增工具
+
