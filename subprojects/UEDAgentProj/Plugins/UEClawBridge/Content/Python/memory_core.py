@@ -399,6 +399,185 @@ class MemoryManagerV2:
         
         return results
 
+    # === 团队记忆写入 ===
+
+    # 规则类型到目标文件的映射
+    _TEAM_FILE_MAP = {
+        "crash": "crash_rules.md",
+        "gotcha": "gotchas.md",
+        "pattern": "gotchas.md",
+        "convention": "conventions.md",
+        "platform": "platform_differences.md",
+    }
+
+    def propose_team_rule(self, rule_text: str, category: str = "gotcha",
+                          dcc_tag: str = "") -> dict:
+        """提议一条新的团队记忆规则
+        
+        检查是否与已有规则重复，如果不重复则追加到对应文件。
+        
+        Args:
+            rule_text: 规则内容（不含 "- " 前缀和 DCC 标签）
+            category: 规则类别 (crash/gotcha/pattern/convention/platform)
+            dcc_tag: DCC 标签，如 "[UE]"、"[Maya]"、"[All]"，为空则不加标签
+            
+        Returns:
+            {"accepted": bool, "reason": str, "file": str}
+        """
+        team_dir = self._resolve_team_memory_path()
+        if not team_dir:
+            return {"accepted": False, "reason": "team_memory 目录未找到", "file": ""}
+        
+        target_file = self._TEAM_FILE_MAP.get(category, "gotchas.md")
+        fpath = os.path.join(team_dir, target_file)
+        
+        # 构建完整规则行
+        if dcc_tag and not dcc_tag.startswith("["):
+            dcc_tag = f"[{dcc_tag}]"
+        full_rule = f"{dcc_tag} {rule_text}".strip() if dcc_tag else rule_text.strip()
+        
+        # 检查与已有规则的重复
+        existing_rules = self._team_memory_cache.get(target_file, [])
+        # 也读取文件中未被 DCC 过滤的全部规则（缓存可能只有当前 DCC 的子集）
+        all_file_rules = self._read_all_rules_from_file(fpath)
+        
+        import re
+        tag_pattern = re.compile(r'\[(?:UE|Maya|Max|All|Python|Windows)\]\s*')
+        clean_new = tag_pattern.sub('', full_rule).strip().lower()
+        
+        for existing in all_file_rules:
+            clean_old = tag_pattern.sub('', existing).strip().lower()
+            if SequenceMatcher(None, clean_new, clean_old).ratio() > 0.75:
+                return {
+                    "accepted": False,
+                    "reason": f"与已有规则重复: {existing[:60]}...",
+                    "file": target_file,
+                }
+        
+        # 追加到文件末尾
+        try:
+            with open(fpath, "a", encoding="utf-8") as f:
+                f.write(f"\n- {full_rule}")
+            
+            # 更新缓存
+            if target_file not in self._team_memory_cache:
+                self._team_memory_cache[target_file] = []
+            self._team_memory_cache[target_file].append(full_rule)
+            
+            self.logger.info(f"团队记忆新增: [{category}] {full_rule[:60]}")
+            return {
+                "accepted": True,
+                "reason": "已追加到团队记忆",
+                "file": target_file,
+            }
+        except Exception as e:
+            self.logger.error(f"写入团队记忆失败: {e}")
+            return {"accepted": False, "reason": f"写入失败: {e}", "file": target_file}
+
+    @staticmethod
+    def _read_all_rules_from_file(fpath: str) -> List[str]:
+        """从文件中读取全部规则行（不做 DCC 过滤）"""
+        if not os.path.isfile(fpath):
+            return []
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                lines = f.read().split("\n")
+            return [line.strip()[2:] for line in lines if line.strip().startswith("- ")]
+        except Exception:
+            return []
+
+    def promote_to_team(self, min_importance: float = 0.7,
+                        tags: tuple = ("crash", "pattern", "convention"),
+                        dry_run: bool = True) -> List[dict]:
+        """从个人记忆中筛选高价值条目，提炼为团队规则
+        
+        Args:
+            min_importance: 最低重要性阈值
+            tags: 要扫描的标签
+            dry_run: True=只返回候选列表不写入, False=实际写入
+            
+        Returns:
+            候选/写入结果列表 [{"key": str, "rule": str, "category": str, "result": dict}]
+        """
+        candidates = []
+        
+        # 从 long_term 和 mid_term 中筛选
+        for layer_name in ["long_term", "mid_term"]:
+            layer_storage = self._get_layer_by_name(layer_name)
+            for key, entry in layer_storage.items():
+                if entry.tag not in tags:
+                    continue
+                if entry.importance < min_importance:
+                    continue
+                
+                # 提炼规则文本
+                rule_text = self._extract_rule_text(entry)
+                if not rule_text:
+                    continue
+                
+                # 推断 DCC 标签
+                dcc_tag = self._infer_dcc_tag(entry)
+                
+                # 推断类别
+                category = "crash" if entry.tag == "crash" else (
+                    "convention" if entry.tag == "convention" else "gotcha"
+                )
+                
+                candidate = {
+                    "key": key,
+                    "rule": rule_text,
+                    "dcc_tag": dcc_tag,
+                    "category": category,
+                    "importance": entry.importance,
+                }
+                
+                if not dry_run:
+                    result = self.propose_team_rule(rule_text, category, dcc_tag)
+                    candidate["result"] = result
+                
+                candidates.append(candidate)
+        
+        return candidates
+
+    @staticmethod
+    def _extract_rule_text(entry: 'MemoryEntry') -> str:
+        """从记忆条目中提取精简规则文本"""
+        value = entry.value
+        
+        if isinstance(value, dict):
+            # crash 类型: 用 avoidance_rule
+            if entry.tag == "crash":
+                rule = value.get("avoidance_rule", "").strip()
+                if rule:
+                    tool = value.get("tool", "")
+                    return f"{tool}: {rule}" if tool else rule
+            # pattern 类型 (RetryTracker 自动提取的)
+            if "fix" in value:
+                return str(value["fix"])[:100]
+            # operation summary
+            if value.get("type") == "operation_summary":
+                return ""  # 操作摘要不适合提炼为规则
+            # 通用 dict
+            return str(value)[:100]
+        
+        return str(value)[:100] if value else ""
+
+    @staticmethod
+    def _infer_dcc_tag(entry: 'MemoryEntry') -> str:
+        """从记忆条目推断 DCC 标签"""
+        source = entry.source.lower()
+        key = entry.key.lower()
+        text = str(entry.value).lower()
+        combined = f"{source} {key} {text}"
+        
+        if "unreal" in combined or "ue" in combined or "slate" in combined:
+            return "[UE]"
+        if "maya" in combined or "cmds" in combined:
+            return "[Maya]"
+        if "max" in combined or "pymxs" in combined:
+            return "[Max]"
+        return "[All]"
+
     def _save(self):
         """保存记忆数据到磁盘"""
         # 频率控制：距离上次保存少于5秒则跳过

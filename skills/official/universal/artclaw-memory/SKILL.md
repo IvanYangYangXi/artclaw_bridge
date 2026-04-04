@@ -154,11 +154,13 @@ mgr = mm.manager  # MemoryManagerV2 实例
 
 | 方法 | 用途 |
 |------|------|
-| `mgr.record(key, value, tag, importance)` | 写入记忆 |
+| `mgr.record(key, value, tag, importance)` | 写入个人记忆 |
 | `mgr.get(key)` | 精确读取 |
 | `mgr.search(query, tag, limit)` | 搜索个人记忆 |
 | `mgr.search_team_memory(query, limit)` | 搜索团队记忆 |
-| `mgr.delete(key)` | 删除记忆 |
+| `mgr.propose_team_rule(rule, category, dcc_tag)` | 提议写入团队记忆 |
+| `mgr.promote_to_team(min_importance, dry_run)` | 批量提炼个人→团队 |
+| `mgr.delete(key)` | 删除个人记忆 |
 | `mgr.record_crash(...)` | 记录崩溃 |
 | `mgr.check_operation(tool, action_hint)` | 检查操作历史 |
 | `mgr.maintain(full=True)` | 触发维护 |
@@ -198,3 +200,31 @@ mgr = mm.manager  # MemoryManagerV2 实例
 | platform_differences.md | 跨平台差异 | 仅首条消息 |
 
 团队记忆通过 `search_team_memory()` 搜索，通过 briefing 自动注入。
+
+### 写入团队记忆
+
+当你认为一条经验教训有**团队级价值**（其他人也会踩同样的坑）时，提议写入团队记忆：
+
+```python
+result = mgr.propose_team_rule(
+    rule_text="Rotator 构造参数顺序是 Pitch,Yaw,Roll，不是 Roll,Pitch,Yaw",
+    category="gotcha",   # crash/gotcha/pattern/convention/platform
+    dcc_tag="[UE]"       # [UE]/[Maya]/[Max]/[All]，为空则不加标签
+)
+# result = {"accepted": True/False, "reason": "...", "file": "gotchas.md"}
+```
+
+- 自动去重: 与已有规则相似度 >75% 会被拒绝
+- 写入后追加到 .md 文件末尾，需要用户 Git commit 才能共享给团队
+
+### 从个人记忆批量提炼
+
+```python
+# 预览候选规则（不实际写入）
+candidates = mgr.promote_to_team(min_importance=0.7, dry_run=True)
+for c in candidates:
+    print(f"[{c['category']}] {c['dcc_tag']} {c['rule']}")
+
+# 实际写入
+results = mgr.promote_to_team(min_importance=0.7, dry_run=False)
+```
