@@ -78,29 +78,27 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max 等数字内容创作（DCC）
 - 共享模块同步校验（`verify_sync.py` 对比 MD5，防止多副本漂移）
 - 长任务超时保护 + 活跃事件重置
 
-## ⚠️ 验证状态
+## 🎯 已支持的引擎、DCC 和 Agent 平台
 
-| 组件 | 验证状态 | 说明 |
-|------|----------|------|
-| **OpenClaw** | ✅ 已验证 | 主力开发平台，所有功能均在此验证 |
-| **LobsterAI** | ✅ 已验证 | 基础连接与对话功能已验证 |
-| **Unreal Engine 5.7** | ✅ 已验证 | C++ + Python，完整功能验证 |
-| **Maya 2023** | ✅ 已验证 | Python 3.9.7 + PySide2，完整功能验证 |
-| **3ds Max** | ⚠️ 未验证 | 代码已实现，与 Maya 共享 DCC 插件，未进行实际测试 |
-| **Claude Desktop** | ⚠️ POC | stdio→WebSocket 桥接概念验证，未深度集成 |
-| **其他 Maya / UE 版本** | ⚠️ 未验证 | 理论兼容 Maya 2022+ / UE 5.3+，但未实际测试 |
-| **本地知识库** | ⚠️ 未验证 | 功能已实现，未进行完整功能验证 |
+目前已完成 **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023** 的验证工作，其他组合理论兼容但未实际测试，欢迎社区反馈。
 
-> 目前所有开发和测试均基于 **OpenClaw + UE 5.7 + Maya 2023** 环境。其他组合理论兼容但未实际验证，欢迎社区反馈。
+### 引擎 & DCC 软件
 
-## 🎯 支持的 DCC 软件
-
-| 软件 | 状态 | 插件 | MCP 端口 | 说明 |
-|------|------|------|----------|------|
-| **Unreal Engine 5.7** | ✅ 已实现 | UEClawBridge | 8080 | C++ + Python，Slate UI 对话面板 |
-| **Maya 2023** | ✅ 已实现 | DCCClawBridge | 8081 | Python + PySide2，Qt 对话面板 |
-| **3ds Max 2024+** | ✅ 已实现（未测试） | DCCClawBridge | 8082 | Python + PySide2，与 Maya 共享插件 |
+| 软件 | 验证状态 | 插件 | MCP 端口 | 说明 |
+|------|----------|------|----------|------|
+| **Unreal Engine 5.7** | ✅ 已验证 | UEClawBridge | 8080 | C++ + Python，Slate UI 对话面板 |
+| **Maya 2023** | ✅ 已验证 | DCCClawBridge | 8081 | Python 3.9.7 + PySide2，Qt 对话面板 |
+| **3ds Max 2024+** | ⚠️ 未验证 | DCCClawBridge | 8082 | 代码已实现，与 Maya 共享插件，未实际测试 |
+| **其他 UE / Maya 版本** | ⚠️ 未验证 | — | — | 理论兼容 UE 5.3+ / Maya 2022+，未实际测试 |
 | **Blender** | 💡 规划中 | — | — | 框架已预留扩展接口 |
+
+### Agent 平台
+
+| 平台 | 验证状态 | 说明 |
+|------|----------|------|
+| **OpenClaw** | ✅ 已验证 | 主力开发平台，通过 mcp-bridge 插件集成，所有功能均在此验证 |
+| **LobsterAI（有道龙虾）** | ✅ 已验证 | OpenClaw 二次封装，Gateway 端口 18790，基础功能已验证 |
+| **Claude Desktop** | ⚠️ POC | stdio→WebSocket 桥接概念验证，未深度集成 |
 
 ## 🏗️ 架构
 
