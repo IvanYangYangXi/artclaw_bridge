@@ -148,23 +148,6 @@ FReply SUEAgentSkillTab::OnDetailClicked(FSkillEntryPtr Item)
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(12.0f, 4.0f, 12.0f, 4.0f)
-			[
-				SNew(SButton)
-				.Text(FText::FromString(FUEAgentL10n::GetStr(TEXT("ManagePublishBtn"))))
-				.OnClicked_Lambda([this, CapturedItem, WeakWin]() -> FReply
-				{
-					if (WeakWin.IsValid())
-						WeakWin.Pin()->RequestDestroyWindow();
-					OnPublishClicked(CapturedItem);
-					return FReply::Handled();
-				})
-				.IsEnabled(bIsInstalled)
-				.HAlign(HAlign_Center)
-				.ToolTipText(FText::FromString(TEXT("Publish to source repo (version bump + git commit)")))
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
 			.Padding(12.0f, 0.0f, 12.0f, 8.0f)
 			[
 				SNew(SSpacer).Size(FVector2D(0, 4))
