@@ -257,7 +257,10 @@ class MemoryManagerV2:
         return ""
 
     def _load_team_memory(self):
-        """加载团队记忆文件 (只读 Markdown)"""
+        """加载团队记忆文件 (只读 Markdown)
+        
+        按当前 DCC 过滤规则: 只加载 [All] 和 [当前DCC] 标签的规则。
+        """
         team_dir = self._resolve_team_memory_path()
         if not team_dir:
             return
@@ -268,6 +271,19 @@ class MemoryManagerV2:
             "conventions.md",
             "platform_differences.md",
         ]
+        
+        # DCC 名称到标签的映射
+        dcc_lower = self.dcc_name.lower()
+        _DCC_TAG_MAP = {
+            "ue": ["[UE]", "[All]"],
+            "unreal": ["[UE]", "[All]"],
+            "maya": ["[Maya]", "[All]"],
+            "3dsmax": ["[Max]", "[All]"],
+            "max": ["[Max]", "[All]"],
+        }
+        allowed_tags = _DCC_TAG_MAP.get(dcc_lower, ["[All]"])
+        # 也允许不带标签的通用规则
+        filter_by_dcc = dcc_lower in _DCC_TAG_MAP
         
         loaded = 0
         for fname in target_files:
@@ -280,8 +296,16 @@ class MemoryManagerV2:
                     rules = []
                     for line in content.split("\n"):
                         stripped = line.strip()
-                        if stripped.startswith("- "):
-                            rules.append(stripped[2:])  # 去掉 "- " 前缀
+                        if not stripped.startswith("- "):
+                            continue
+                        rule_text = stripped[2:]  # 去掉 "- " 前缀
+                        # 按 DCC 标签过滤
+                        if filter_by_dcc:
+                            has_tag = any(tag in rule_text for tag in ["[UE]", "[Maya]", "[Max]", "[All]",
+                                                                       "[Python]", "[Windows]"])
+                            if has_tag and not any(tag in rule_text for tag in allowed_tags + ["[Python]", "[Windows]"]):
+                                continue  # 有标签但不匹配当前 DCC，跳过
+                        rules.append(rule_text)
                     if rules:
                         self._team_memory_cache[fname] = rules
                         loaded += len(rules)
@@ -289,7 +313,7 @@ class MemoryManagerV2:
                     self.logger.warning(f"加载团队记忆失败 {fname}: {e}")
         
         if loaded:
-            self.logger.info(f"已加载团队记忆: {loaded} 条规则 from {team_dir}")
+            self.logger.info(f"已加载团队记忆: {loaded} 条规则 (DCC={self.dcc_name}) from {team_dir}")
         
         # 缓存路径供后续使用
         self._team_memory_path = team_dir
@@ -1379,9 +1403,14 @@ class MemoryManagerV2:
         """导出记忆简报
         
         Args:
-            max_tokens: 最大token数量
+            max_tokens: 最大token数量（硬上限，超出截断）
             include_team: 是否包含团队记忆
             first_message: 是否为首条消息（首条消息包含 conventions/platform_diff）
+            
+        Token 预算分配:
+            - 团队 crash_rules + gotchas: ~500 token (按 DCC 过滤后)
+            - 团队 conventions + platform_diff: ~300 token (仅首条消息)
+            - 个人记忆: 剩余 budget
             
         Returns:
             格式化的记忆简报文本
