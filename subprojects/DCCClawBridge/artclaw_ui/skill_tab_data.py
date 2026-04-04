@@ -59,6 +59,12 @@ def query_all_skills() -> List[dict]:
 
     seen = set()
 
+    def _mark_seen(n: str):
+        """标记名称及其 kebab/snake 变体为已见，防止重复"""
+        seen.add(n)
+        seen.add(n.replace("-", "_"))
+        seen.add(n.replace("_", "-"))
+
     # 1) skill_hub manifests
     if hub:
         try:
@@ -66,7 +72,7 @@ def query_all_skills() -> List[dict]:
                 name = m.name
                 if name in seen:
                     continue
-                seen.add(name)
+                _mark_seen(name)
                 src_info = source_map.get(name, {})
                 layer = src_info.get("layer", getattr(m, "source_layer", "custom"))
                 sw = src_info.get("dcc", "") or getattr(m, "software", "universal")
@@ -100,7 +106,7 @@ def query_all_skills() -> List[dict]:
             sm = os.path.join(sd, "SKILL.md")
             if not os.path.isdir(sd) or not os.path.isfile(sm):
                 continue
-            seen.add(name)
+            _mark_seen(name)
             desc, author, version = _read_skill_metadata(sd)
             src_info = source_map.get(name, {})
             layer = src_info.get("layer", "platform")
@@ -127,7 +133,7 @@ def query_all_skills() -> List[dict]:
                 n = info["name"]
                 if n in seen:
                     continue
-                seen.add(n)
+                _mark_seen(n)
                 result.append({
                     "name": n, "display_name": n,
                     "description": "", "version": info.get("version", ""),
