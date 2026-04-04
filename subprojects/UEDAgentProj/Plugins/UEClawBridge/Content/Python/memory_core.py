@@ -114,6 +114,9 @@ class MemoryManagerV2:
         # 团队记忆 (只读)
         self._team_memory_path = team_memory_path
         self._team_memory_cache: Dict[str, str] = {}  # filename -> content
+        self._team_rule_hits: Dict[str, int] = {}  # rule_hash -> hit_count
+        self._team_hits_path = ""  # 命中计数文件路径，_load_team_memory 后设置
+        self._team_hits_dirty = False
         
         # 线程安全锁
         self._lock = threading.RLock()
@@ -336,6 +339,9 @@ class MemoryManagerV2:
             self.logger.info(f"已加载团队记忆: {loaded} 条规则 (DCC={self.dcc_name}) from {team_dir}")
         
         self._team_memory_path = team_dir
+        
+        # 加载命中计数
+        self._load_team_hits(team_dir)
 
     @staticmethod
     def _dedup_rules(rules: List[str], threshold: float = 0.75) -> List[str]:
@@ -370,8 +376,53 @@ class MemoryManagerV2:
         kept.reverse()  # 恢复原始顺序
         return kept
 
+    def _load_team_hits(self, team_dir: str):
+        """加载团队规则命中计数"""
+        # 存储在个人目录（不同用户各自的计数）
+        storage_dir = os.path.dirname(self.storage_path)
+        self._team_hits_path = os.path.join(storage_dir, "team_hits.json")
+        
+        if os.path.isfile(self._team_hits_path):
+            try:
+                with open(self._team_hits_path, "r", encoding="utf-8") as f:
+                    self._team_rule_hits = json.load(f)
+                self.logger.debug(f"已加载团队规则命中计数: {len(self._team_rule_hits)} 条")
+            except Exception:
+                self._team_rule_hits = {}
+
+    def _save_team_hits(self):
+        """保存团队规则命中计数"""
+        if not self._team_hits_dirty or not self._team_hits_path:
+            return
+        try:
+            os.makedirs(os.path.dirname(self._team_hits_path), exist_ok=True)
+            with open(self._team_hits_path, "w", encoding="utf-8") as f:
+                json.dump(self._team_rule_hits, f, ensure_ascii=False)
+            self._team_hits_dirty = False
+        except Exception as e:
+            self.logger.warning(f"保存团队命中计数失败: {e}")
+
+    @staticmethod
+    def _rule_hash(rule: str) -> str:
+        """生成规则的短 hash 作为计数 key"""
+        import hashlib
+        return hashlib.md5(rule.strip().lower().encode("utf-8")).hexdigest()[:12]
+
+    def _record_team_hits(self, rules: List[str]):
+        """记录被命中的规则"""
+        for rule in rules:
+            h = self._rule_hash(rule)
+            self._team_rule_hits[h] = self._team_rule_hits.get(h, 0) + 1
+            self._team_hits_dirty = True
+
+    def _get_team_hit_count(self, rule: str) -> int:
+        """获取规则的命中次数"""
+        return self._team_rule_hits.get(self._rule_hash(rule), 0)
+
     def search_team_memory(self, query: str, limit: int = 3) -> List[str]:
         """搜索团队记忆中的相关规则
+        
+        命中的规则自动 +1 计数，用于排序优化。
         
         Args:
             query: 搜索关键词
@@ -395,7 +446,14 @@ class MemoryManagerV2:
                 if query_lower in rule.lower():
                     results.append(rule)
                     if len(results) >= limit:
-                        return results
+                        break
+            if len(results) >= limit:
+                break
+        
+        # 记录命中
+        if results:
+            self._record_team_hits(results)
+            self._save_team_hits()
         
         return results
 
@@ -639,6 +697,7 @@ class MemoryManagerV2:
         if self._dirty:
             self._last_save_time = 0  # 重置频率控制，确保写入
             self._save()
+        self._save_team_hits()
 
     def start_maintenance_timer(self):
         """启动定时维护后台线程
@@ -1673,20 +1732,24 @@ class MemoryManagerV2:
             
             # === 团队记忆 (P0, 优先级最高) ===
             if include_team and self._team_memory_cache:
+                # 按命中次数排序的辅助函数（高频在前，同频保持原序）
+                def _sort_by_hits(rules: List[str]) -> List[str]:
+                    return sorted(rules, key=lambda r: self._get_team_hit_count(r), reverse=True)
+                
                 # P0: 团队 crash rules (每次必读)
-                team_crashes = self._team_memory_cache.get("crash_rules.md", [])
+                team_crashes = _sort_by_hits(self._team_memory_cache.get("crash_rules.md", []))
                 add_section("TEAM CRASH RULES", team_crashes[:15], "\u26a0\ufe0f")
                 
                 # P0: 团队 gotchas (每次必读)
-                team_gotchas = self._team_memory_cache.get("gotchas.md", [])
+                team_gotchas = _sort_by_hits(self._team_memory_cache.get("gotchas.md", []))
                 add_section("TEAM GOTCHAS", team_gotchas[:20], "\u26a0\ufe0f")
                 
                 # P1: 仅首条消息
                 if first_message:
-                    team_conventions = self._team_memory_cache.get("conventions.md", [])
+                    team_conventions = _sort_by_hits(self._team_memory_cache.get("conventions.md", []))
                     add_section("TEAM CONVENTIONS", team_conventions[:10], "\U0001f4d0")
                     
-                    team_platform = self._team_memory_cache.get("platform_differences.md", [])
+                    team_platform = _sort_by_hits(self._team_memory_cache.get("platform_differences.md", []))
                     add_section("PLATFORM DIFFERENCES", team_platform[:10], "\U0001f310")
             
             # === 个人记忆 ===
