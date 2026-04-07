@@ -69,9 +69,15 @@ import substance_painter.layerstack
 def print_layer_tree(nodes, indent=0):
     """递归打印层树"""
     prefix = "  " * indent
+    # 获取第一个可用通道用于查询透明度
+    ch = substance_painter.textureset.ChannelType.BaseColor
     for node in nodes:
         name = node.get_name()
-        opacity = node.get_opacity()
+        # get_opacity 需要传 channel_type（mask 层除外）
+        try:
+            opacity = node.get_opacity(ch)
+        except Exception:
+            opacity = node.get_opacity()  # mask 层不需要 channel
         node_type = type(node).__name__
         print(f"{prefix}├─ {name} ({node_type}, opacity={opacity:.0%})")
         # 如果是组层，递归打印子层
@@ -111,9 +117,10 @@ else:
     for ts in all_ts:
         print(f"\n=== 纹理集: {ts.name()} ===")
         stack = substance_painter.textureset.Stack.from_name(ts.name())
+        # all_channels() 返回 Dict[ChannelType, Channel]
         channels = stack.all_channels()
-        for ch in channels:
-            print(f"  通道: {ch.type().name}")
+        for channel_type, channel in channels.items():
+            print(f"  通道: {channel_type.name}")
 ```
 
 ---
@@ -145,10 +152,10 @@ def get_full_context():
         res = ts.get_resolution()
         print(f"  {ts.name()} — {res.width}x{res.height}")
 
-        # 3. 通道
+        # 3. 通道 — all_channels() 返回 Dict[ChannelType, Channel]
         stack = substance_painter.textureset.Stack.from_name(ts.name())
         channels = stack.all_channels()
-        ch_names = [ch.type().name for ch in channels]
+        ch_names = [ct.name for ct in channels.keys()]
         print(f"    通道: {', '.join(ch_names)}")
 
         # 4. 层栈概览（仅根层）

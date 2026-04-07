@@ -129,12 +129,15 @@ for layer in root_layers:
 
 ### 常用层操作
 
-- **添加层**: `substance_painter.layerstack.insert_layer(...)`
-- **删除层**: `layer_node.delete()`
-- **移动层**: `layer_node.move(...)` 
-- **复制层**: `layer_node.duplicate()`
-- **设置透明度**: `layer_node.set_opacity(0.5)`
-- **设置混合模式**: `layer_node.set_blending_mode(...)`
+- **添加填充层**: `substance_painter.layerstack.insert_fill(pos)`
+- **添加绘画层**: `substance_painter.layerstack.insert_paint(pos)`
+- **添加组层**: `substance_painter.layerstack.insert_group(pos)`
+- **删除层**: `substance_painter.layerstack.delete_node(layer)` — 模块级函数
+- **设置透明度**: `layer_node.set_opacity(0.5, channel_type)` — 必须传 channel
+- **设置混合模式**: `layer_node.set_blending_mode(BlendingMode.Normal, channel_type)` — 必须传 channel
+- **获取透明度**: `layer_node.get_opacity(channel_type)` — 必须传 channel
+
+> ⚠️ SP API 不支持 `layer.move()` 和 `layer.duplicate()`
 
 ---
 
@@ -171,9 +174,9 @@ for ts in all_ts:
 ```python
 import substance_painter.export
 
-# 使用导出预设导出纹理
-config = substance_painter.export.get_default_export_config()
-substance_painter.export.export_project_textures(config)
+# 使用 JSON 配置（dict 格式）导出纹理，不存在 ExportConfig 类
+result = substance_painter.export.export_project_textures(json_config)
+# result.textures 是 Dict[Tuple[str,str], List[str]]
 ```
 
 ### 贴图烘焙
@@ -181,8 +184,10 @@ substance_painter.export.export_project_textures(config)
 ```python
 import substance_painter.baking
 
-# 烘焙所有纹理集的贴图
-substance_painter.baking.bake_all_texture_sets()
+# 异步烘焙所有已选中的纹理集贴图
+substance_painter.baking.bake_selected_textures_async()
+# 异步烘焙指定纹理集
+# substance_painter.baking.bake_async(ts)
 ```
 
 ---

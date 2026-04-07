@@ -20,14 +20,20 @@ metadata:
 
 ## 前置条件
 
-```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdproperty import SDPropertyCategory
+`run_python` 已预注入以下变量，**直接使用，无需 import**：
 
-app = SDApplication.getApplication()
+- `sd`, `app`, `graph`, `S`, `W`, `L`
+- `SDPropertyCategory`, `float2`, `float3`, `float4`, `ColorRGBA`
+- `SDValueFloat`, `SDValueInt`, `SDValueBool`, `SDValueString`
+
+```python
+# ✅ 直接使用预注入变量
 pkg_mgr = app.getPackageMgr()
 ui_mgr = app.getUIMgr()
+
+# ❌ 禁止在 exec 中 import sd.api 子模块（会超时死锁）
+# from sd.api.sdapplication import SDApplication  # 禁止！
+# from sd.api.sdproperty import SDPropertyCategory  # 禁止！
 ```
 
 ---
@@ -37,10 +43,6 @@ ui_mgr = app.getUIMgr()
 列出当前加载的所有用户包（排除系统/库包）：
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-
-app = SDApplication.getApplication()
 pkg_mgr = app.getPackageMgr()
 
 user_packages = pkg_mgr.getUserPackages()
@@ -68,10 +70,6 @@ if not result:
 列出指定包的所有子图（Substance Graph）：
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-
-app = SDApplication.getApplication()
 pkg_mgr = app.getPackageMgr()
 
 # 获取第一个用户包
@@ -92,13 +90,6 @@ else:
 ## 3. 获取当前图信息
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdproperty import SDPropertyCategory
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
-
 if graph is None:
     print("没有打开的图")
 else:
@@ -120,13 +111,6 @@ else:
 ## 4. 获取当前图的节点列表
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdproperty import SDPropertyCategory
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
-
 if graph is None:
     print("没有打开的图")
 else:
@@ -150,13 +134,6 @@ else:
 查看节点的所有输入参数及其当前值：
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdproperty import SDPropertyCategory
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
-
 if graph is None:
     print("没有打开的图")
 else:
@@ -197,13 +174,6 @@ else:
 查看节点之间的输入/输出连接：
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdproperty import SDPropertyCategory
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
-
 if graph is None:
     print("没有打开的图")
 else:
@@ -220,12 +190,16 @@ else:
             input_props = node.getProperties(SDPropertyCategory.Input)
             if input_props:
                 for prop in input_props:
-                    connections = prop.getConnections()
-                    if connections:
-                        for conn in connections:
-                            src_node = conn.getNode()
+                    conns = node.getPropertyConnections(prop)
+                    if conns and conns.getSize() > 0:
+                        for ci in range(conns.getSize()):
+                            conn = conns.getItem(ci)
+                            # ⚠️ SDConnection 方向语义（反直觉但实测确认）：
+                            # getInputPropertyNode()  → 源节点
+                            # getInputProperty()      → 源端口
+                            src_node = conn.getInputPropertyNode()
                             src_node_id = src_node.getIdentifier() if src_node else "?"
-                            src_prop_id = conn.getId()
+                            src_prop_id = conn.getInputProperty().getId()
                             print(f"  {src_node_id}.{src_prop_id} --> {node_id}.{prop.getId()}")
 ```
 
@@ -236,13 +210,6 @@ else:
 找到图中所有 Output 类型节点及其 usage：
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdproperty import SDPropertyCategory
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
-
 if graph is None:
     print("没有打开的图")
 else:
@@ -256,15 +223,21 @@ else:
             if definition and "output" in definition.getId().lower():
                 node_id = node.getIdentifier()
                 
-                # 尝试获取 usage 属性
+                # 尝试获取 usage 属性（使用便捷 API）
                 usage = "unknown"
-                anno_props = node.getProperties(SDPropertyCategory.Annotation)
-                if anno_props:
-                    for prop in anno_props:
-                        if prop.getId() == "identifier":
-                            val = node.getPropertyValue(prop)
-                            if val:
-                                usage = str(val)
+                try:
+                    val = node.getAnnotationPropertyValueFromId("identifier")
+                    if val:
+                        usage = str(val)
+                except Exception:
+                    # 回退：遍历注解属性
+                    anno_props = node.getProperties(SDPropertyCategory.Annotation)
+                    if anno_props:
+                        for prop in anno_props:
+                            if prop.getId() == "identifier":
+                                val = node.getPropertyValue(prop)
+                                if val:
+                                    usage = str(val)
                 
                 output_nodes.append({"id": node_id, "usage": usage})
                 print(f"输出节点: {node_id} | Usage: {usage}")

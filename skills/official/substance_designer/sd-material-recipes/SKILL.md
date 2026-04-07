@@ -39,17 +39,9 @@ metadata:
 以下辅助函数用于所有配方：
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdproperty import SDPropertyCategory
-from sd.api.sdvaluefloat import SDValueFloat
-from sd.api.sdvaluefloat4 import SDValueFloat4
-from sd.api.sdvalueint import SDValueInt
-from sd.api.sdvaluestring import SDValueString
-from sd.api.sdbasetypes import float2, float4
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
+# ✅ 直接使用预注入变量：sd, app, graph, SDPropertyCategory,
+# float2, float4, SDValueFloat, SDValueInt, SDValueString, SDValueFloat4 等
+# ❌ 禁止 import sd.api 子模块（会超时死锁）
 
 
 def create_node(definition_id, x, y, label=None):
@@ -65,21 +57,13 @@ def create_node(definition_id, x, y, label=None):
 
 
 def connect(src_node, src_port, dst_node, dst_port):
-    """连接两个节点的端口"""
-    src_prop = src_node.getPropertyFromId(src_port, SDPropertyCategory.Output)
-    dst_prop = dst_node.getPropertyFromId(dst_port, SDPropertyCategory.Input)
-    if src_prop and dst_prop:
-        src_prop.connect(dst_prop)
-        return True
-    else:
-        # 回退：尝试第一个输出/输入
-        src_props = src_node.getProperties(SDPropertyCategory.Output)
-        dst_props = dst_node.getProperties(SDPropertyCategory.Input)
-        if src_props and dst_props:
-            src_props[0].connect(dst_props[0])
-            return True
-    print(f"  连接失败: {src_node.getIdentifier()} -> {dst_node.getIdentifier()}")
-    return False
+    """连接两个节点"""
+    try:
+        conn = src_node.newPropertyConnectionFromId(src_port, dst_node, dst_port)
+        return conn is not None
+    except Exception as e:
+        print(f"连接失败: {e}")
+        return False
 
 
 def set_param(node, param_id, value):

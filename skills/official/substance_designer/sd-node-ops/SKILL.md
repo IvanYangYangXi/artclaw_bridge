@@ -145,10 +145,10 @@ SD 的连接 API 在 **SDNode** 上，不在 SDProperty 上：
 - **`src_node.newPropertyConnectionFromId(out_port_id, dst_node, in_port_id)`** — 通过端口 ID 连接（推荐）
 - **`src_node.newPropertyConnection(out_prop, dst_node, in_prop)`** — 通过属性对象连接
 - **`node.getPropertyConnections(prop)`** — 查询某端口的连接
-- **`node.deletePropertyConnections(prop)`** — 删除某端口的所有连接
-- **`connection.disconnect()`** — 删除单个连接
+- **`node.deletePropertyConnections(prop)`** — 删除某端口的所有连接（推荐）
 
 > ❌ **`prop.connect()` 不存在！** SDProperty 没有 connect 方法。
+> ⛔ **`connection.disconnect()` 会导致 SD 挂起 5-10 分钟！** 改用 `deletePropertyConnections`。
 
 ### 方式 1：通过端口 ID 连接（推荐）
 
@@ -211,16 +211,15 @@ def connect_by_id(src_node, src_port_id, dst_node, dst_port_id):
 ### 查询已有连接
 
 ```python
-# 检查节点某个端口的连接
+# 检查节点某个 Input 端口连了什么
 prop = node.getPropertyFromId("input1", SDPropertyCategory.Input)
 if prop:
     conns = node.getPropertyConnections(prop)
     if conns and conns.getSize() > 0:
         for i in range(conns.getSize()):
             c = conns.getItem(i)
-            src = c.getOutputPropertyNode()
-            src_port = c.getOutputProperty()
-            print(f"  <- [{src.getIdentifier()}].{src_port.getId()}")
+            # ⚠️ SDConnection 方向会随查询端口翻转，不要依赖绝对方向
+            # 推荐：只用 deletePropertyConnections 管理，避免解析方向
 ```
 
 ---
@@ -328,10 +327,8 @@ else:
 ### 手动设置位置（推荐）
 
 ```python
-from sd.api.sdbasetypes import float2
-
 # ⚠️ 不要使用 arrange_nodes() — 会破坏连接！
-# 使用 setPosition 手动布局
+# 使用 setPosition 手动布局（float2 已预注入，无需 import）
 
 # 标准布局间距
 SPACING_X = 250  # 水平间距
@@ -363,14 +360,15 @@ def disconnect_input(node, input_port_id):
         node.deletePropertyConnections(prop)
         print(f"已断开 {node.getIdentifier()}.{input_port_id} 的所有连接")
 
-# 断开单个连接
+# 断开指定端口的连接（安全方式）
 def disconnect_one(node, port_id, category):
-    """断开指定端口的某个连接"""
+    """断开指定端口的连接"""
+    # ⚠️ 不要使用 connection.disconnect() — 会导致 SD 挂起 5-10 分钟！
+    # 使用 deletePropertyConnections 代替
     prop = node.getPropertyFromId(port_id, category)
     if prop:
-        conns = node.getPropertyConnections(prop)
-        if conns and conns.getSize() > 0:
-            conns.getItem(0).disconnect()  # 断开第一个连接
+        node.deletePropertyConnections(prop)
+        print(f"已断开 {node.getIdentifier()}.{port_id} 的连接")
 
 # 删除节点
 def delete_node(graph, node):

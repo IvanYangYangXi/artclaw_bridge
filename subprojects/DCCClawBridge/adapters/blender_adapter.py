@@ -272,6 +272,8 @@ class BlenderAdapter(BaseDCCAdapter):
             S = 选中对象列表 (list[bpy.types.Object])
             W = 当前场景文件路径 (str)
             L = bpy 模块（类比 Maya 的 cmds）
+            C = bpy.context（Blender 惯例快捷变量）
+            D = bpy.data（Blender 惯例快捷变量）
         """
         bpy = _require_blender()
 
@@ -282,6 +284,8 @@ class BlenderAdapter(BaseDCCAdapter):
             "S": list(bpy.context.selected_objects),
             "W": bpy.data.filepath or "",
             "L": bpy,
+            "C": bpy.context,
+            "D": bpy.data,
         }
 
         if context:

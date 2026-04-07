@@ -3,10 +3,9 @@ name: blender-operation-rules
 description: >
   Blender 操作通用规则和最佳实践。所有涉及 Blender 场景修改的操作都必须遵守。
   AI 在执行任何 Blender 场景操作任务前应先读取此 Skill。
-  包含：坐标系、撤销管理、脚本输出、上下文检查、破坏性操作确认等强制规则。
+  包含：坐标系、Undo 管理、预注入变量、Blender 5.x API 变化、上下文覆盖等强制规则。
   Use when AI needs to: (1) perform any Blender scene modification,
-  (2) check post-operation best practices,
-  (3) understand Blender coordinate system.
+  (2) check post-operation best practices, (3) understand Blender coordinate system.
   Blender only (run_python).
 metadata:
   artclaw:
@@ -16,262 +15,259 @@ metadata:
 
 # Blender 操作通用规则
 
-所有涉及 Blender 场景修改的操作都必须遵守以下规则。
-
-> ⚠️ **仅适用于 Blender** — 通过 `run_python` 执行
+> **强制要求**：所有涉及 Blender 场景修改的 AI 操作都必须遵守以下规则。
 
 ---
 
-## 🌐 规则 0：坐标系
+## 规则 0：预注入变量
 
-Blender 使用 **Z-Up 右手坐标系**：
+`mcp_blender-editor_run_python` 执行代码时，以下变量已自动注入，**无需手动 import 或赋值**：
 
-| 轴 | 方向 | 说明 |
-|---|---|---|
-| **X** | 右 (Right) | 屏幕右侧 |
-| **Y** | 前 (Forward) | 指向屏幕里（远离观察者） |
-| **Z** | 上 (Up) | 垂直向上 |
+| 变量 | 值 | 说明 |
+|------|------|------|
+| `bpy` | `bpy` 模块 | Blender Python API |
+| `S` | `list(bpy.context.selected_objects)` | 选中对象列表（执行时快照） |
+| `W` | `bpy.data.filepath` | 当前文件路径（未保存则为空字符串） |
+| `L` | `bpy` 模块 | 标准 Library 引用（与其他 DCC 统一命名） |
+| `C` | `bpy.context` | 上下文（Blender 惯例快捷变量） |
+| `D` | `bpy.data` | 数据管理器（Blender 惯例快捷变量） |
 
-**右手系判定**：右手拇指指向 X（右），食指指向 Y（前/屏幕里），中指指向 Z（上）。
-
-**与其他 DCC 的换算**：
-- **导出到 UE (Z-Up 左手系)**：Blender Y → UE X，Blender X → UE Y（近似，FBX 导出时勾选 "Apply Transform" 会自动处理轴转换）
-- **导出到 Maya (Y-Up 右手系)**：Blender Z → Maya Y，Blender Y → Maya -Z
-- **导出到 3ds Max (Z-Up 右手系)**：坐标系一致，但注意 Max 默认面法线朝向可能不同
-- **FBX 导出**：Blender FBX exporter 默认 Apply Scalings = "FBX All"，Forward = "-Y Forward"，Up = "Z Up"
-
-```python
-import bpy
-
-# Blender 坐标示例
-obj = bpy.context.active_object
-if obj:
-    obj.location = (10, 5, 3)       # X=右10, Y=前5, Z=上3
-    obj.rotation_euler = (0.785, 0, 0)  # 绕 X 轴旋转约 45°（弧度）
-```
+- 将返回值赋给 `result` 变量，框架会自动提取并返回。
+- `C` 和 `D` 是 Blender 自带 Python 控制台的标准惯例。
 
 ---
 
-## 🔄 规则 1：Undo 管理
+## 规则 1：坐标系
 
-Blender 的 Python 脚本操作默认**不自动创建 Undo 步骤**（除非通过 `bpy.ops` 调用）。对于直接修改数据的操作，需要手动推送 Undo 点。
-
-### 使用 `bpy.ops.ed.undo_push`
-
-```python
-import bpy
-
-# 在修改操作前推送 Undo 点
-bpy.ops.ed.undo_push(message='ArtClaw: 操作描述')
-
-# ... 执行修改操作 ...
-
-# 操作完成后告知用户
-print("✅ 操作完成（Ctrl+Z 可撤销）")
-```
-
-### 注意事项
-- `bpy.ops.ed.undo_push()` 在**执行时**保存当前状态快照，之后的修改可被撤销
-- 如果操作全部通过 `bpy.ops.*` 完成（如 `bpy.ops.mesh.primitive_cube_add()`），Blender 会自动管理 Undo，无需手动推送
-- 直接操作 `bpy.data` 或对象属性时（如 `obj.location = ...`）才需要手动 Undo 推送
-- 始终告知用户操作支持 **Ctrl+Z 撤销**
-
----
-
-## 🖨️ 规则 2：使用 print 输出
-
-Blender Python 控制台和系统控制台显示 `print` 输出。所有需要用户可见的信息必须用 `print`。
+- Blender 使用 **Z-up 右手坐标系**
+- 正面朝 **-Y 方向**（相机默认看向 -Z）
+- 旋转单位为 **弧度**，使用 `math.radians()` 转换：
 
 ```python
-# ✅ 用户可见（Blender Python 控制台 / 系统控制台）
-print("操作完成：已移动 5 个对象")
-
-# ⚠️ logging 也可用，但不如 print 直观
-import logging
-logging.info("操作完成")  # 需要配置 handler 才能在控制台显示
-```
-
-> **提示**：Blender 有两个控制台 — Python 控制台（编辑器区域类型）和系统控制台（Window → Toggle System Console）。`print` 输出在两者中都可见。
-
----
-
-## ⚙️ 规则 3：上下文注意
-
-很多 `bpy.ops` 操作依赖当前上下文（激活对象、编辑模式、区域类型等）。操作前必须确认上下文正确。
-
-### 检查和切换模式
-
-```python
-import bpy
-
-# 检查当前模式
-current_mode = bpy.context.mode  # 'OBJECT', 'EDIT_MESH', 'SCULPT', etc.
-
-# 确保在物体模式
-if bpy.context.mode != 'OBJECT':
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-# 切换到编辑模式（需要有激活对象）
-if bpy.context.active_object:
-    bpy.ops.object.mode_set(mode='EDIT')
-```
-
-### 检查激活对象
-
-```python
-import bpy
-
-active = bpy.context.active_object
-if active is None:
-    print("⚠️ 没有激活对象，请先选择一个对象")
-else:
-    print(f"激活对象: {active.name} (类型: {active.type})")
-```
-
-### 常见上下文问题
-- `bpy.ops.object.*` 需要在 `OBJECT` 模式下
-- `bpy.ops.mesh.*` 需要在 `EDIT` 模式下且激活对象为 Mesh
-- `bpy.ops.transform.*` 需要有选中的对象
-- 某些操作需要特定的 `area.type`（如 `VIEW_3D`）。在脚本中可以用上下文覆盖：
-
-```python
-# 上下文覆盖示例（当不在 3D 视口中时）
-for area in bpy.context.screen.areas:
-    if area.type == 'VIEW_3D':
-        with bpy.context.temp_override(area=area):
-            bpy.ops.view3d.snap_cursor_to_center()
-        break
-```
-
----
-
-## ⚠️ 规则 4：操作前确认（破坏性操作）
-
-以下操作执行前应向用户确认：
-- **删除物体**（`bpy.data.objects.remove()` / `bpy.ops.object.delete()`）
-- **删除数据块**（`bpy.data.meshes.remove()` 等）
-- **清空场景**（删除所有对象）
-- **批量修改**（超过 10 个对象的批量操作）
-- **清除 Orphan Data**（`bpy.ops.outliner.orphans_purge()`）
-
-非破坏性操作（调整参数、移动位置、添加修改器等）可以直接执行。
-
----
-
-## 📝 规则 5：常用快捷代码
-
-```python
-import bpy
 import math
+obj.rotation_euler = (math.radians(90), 0, 0)  # 绕 X 轴旋转 90°
+```
 
-# ===== 选择 =====
-selected = bpy.context.selected_objects      # 所有选中物体
-active = bpy.context.active_object           # 激活物体（绿色高亮）
+---
 
-# 通过名称获取物体
-obj = bpy.data.objects.get('Cube')           # 返回 None 如果不存在
+## 规则 2：Undo 管理
 
-# 选中/取消选中
-obj.select_set(True)                         # 选中
-obj.select_set(False)                        # 取消选中
-bpy.context.view_layer.objects.active = obj  # 设为激活物体
+- `execute_code` 执行前会自动调用 `bpy.ops.ed.undo_push(message="ArtClaw AI")`
+- 用户可通过单次 **Ctrl+Z** 撤销 AI 的操作
+- **破坏性操作前**（删除对象、清空场景等），建议先打印当前状态以便确认：
 
-# 全选 / 取消全选
-bpy.ops.object.select_all(action='SELECT')   # 全选
-bpy.ops.object.select_all(action='DESELECT') # 取消全选
+```python
+# 删除前先记录
+print(f"即将删除 {len(S)} 个对象: {[o.name for o in S]}")
+```
 
-# ===== 创建物体 =====
+---
+
+## 规则 3：Blender 5.x Layered Action 系统（Breaking Change）
+
+> **关键变化**：Blender 5.1+ 中，`action.fcurves` 属性已移除。
+
+- 新版 Action 默认使用 Layered Action 系统：`action.is_action_layered == True`
+- FCurves 必须通过分层路径访问：`action.layers[].strips[].channelbags[].fcurves`
+
+### 正确的 FCurves 遍历方式
+
+```python
+def get_all_fcurves(action):
+    """兼容 Blender 5.x 的 FCurves 获取"""
+    fcurves = []
+    if hasattr(action, 'is_action_layered') and action.is_action_layered:
+        # Blender 5.x Layered Action
+        for layer in action.layers:
+            for strip in layer.strips:
+                for channelbag in strip.channelbags:
+                    fcurves.extend(channelbag.fcurves)
+    else:
+        # Legacy Action（Blender 4.x 及更早）
+        fcurves.extend(action.fcurves)
+    return fcurves
+```
+
+### 错误示例（会在 5.x 报错）
+
+```python
+# ❌ 错误：action.fcurves 在 5.x 中不存在
+for fc in action.fcurves:
+    print(fc.data_path)
+```
+
+---
+
+## 规则 4：Principled BSDF 输入名变化（Blender 5.x）
+
+Blender 5.x 中部分 Principled BSDF 输入名已更改：
+
+| 旧名称（4.x） | 新名称（5.x） |
+|---------------|---------------|
+| `Specular` | `Specular IOR Level` |
+| `Transmission` | `Transmission Weight` |
+
+### 新增输入
+
+- `Thin Film Thickness`
+- `Thin Film IOR`
+- `Diffuse Roughness`
+
+### 完整 Principled BSDF 输入列表（5.x）
+
+`Base Color`, `Metallic`, `Roughness`, `IOR`, `Alpha`,
+`Normal`, `Weight`, `Diffuse Roughness`,
+`Subsurface Weight`, `Subsurface Radius`, `Subsurface Scale`, `Subsurface IOR`, `Subsurface Anisotropy`,
+`Specular IOR Level`, `Specular Tint`,
+`Anisotropic`, `Anisotropic Rotation`, `Tangent`,
+`Transmission Weight`,
+`Coat Weight`, `Coat Roughness`, `Coat IOR`, `Coat Tint`, `Coat Normal`,
+`Sheen Weight`, `Sheen Roughness`, `Sheen Tint`,
+`Thin Film Thickness`, `Thin Film IOR`,
+`Emission Color`, `Emission Strength`
+
+### 安全获取输入的方式
+
+```python
+# ✅ 安全：先检查输入是否存在
+node = mat.node_tree.nodes.get("Principled BSDF")
+if node:
+    for input_name in ["Specular IOR Level", "Specular"]:
+        inp = node.inputs.get(input_name)
+        if inp is not None:
+            inp.default_value = 0.5
+            break
+```
+
+---
+
+## 规则 5：中文版 Blender 注意事项
+
+- 中文版 Blender 的默认对象名为中文：`立方体`、`球体`、`灯光` 等
+- **不要硬编码英文名**（`Cube`、`Sphere`），会找不到对象
+
+### 正确做法
+
+```python
+# ✅ 通过上下文获取（不依赖名称）
+obj = C.active_object
+selected = S  # 预注入的选中对象列表
+
+# ✅ 创建后立即获取引用
 bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0, 0))
-bpy.ops.mesh.primitive_uv_sphere_add(radius=1, location=(3, 0, 0))
-bpy.ops.mesh.primitive_plane_add(size=10, location=(0, 0, 0))
-bpy.ops.mesh.primitive_cylinder_add(radius=0.5, depth=2, location=(0, 3, 0))
+new_cube = C.active_object  # 刚创建的对象自动成为 active
+new_cube.name = "MyCube"    # 可以立即重命名
+```
 
-# ===== 变换 =====
-obj.location = (1, 2, 3)                             # 位置
-obj.rotation_euler = (math.radians(45), 0, 0)         # 旋转（欧拉角，弧度）
-obj.rotation_euler.x = math.radians(90)               # 单轴旋转
-obj.scale = (2, 2, 2)                                 # 缩放
+### 错误示例
 
-# ===== 材质 =====
-mat = bpy.data.materials.new(name="MyMaterial")
-mat.use_nodes = True
-obj.data.materials.append(mat)                        # 添加材质到物体
-
-# ===== 修改器 =====
-mod = obj.modifiers.new(name="Subdiv", type='SUBSURF')
-mod.levels = 2                                        # 视口细分级别
-mod.render_levels = 3                                  # 渲染细分级别
-
-# ===== 父子关系 =====
-child_obj.parent = parent_obj
-child_obj.matrix_parent_inverse = parent_obj.matrix_world.inverted()
-
-# ===== 集合 =====
-collection = bpy.data.collections.new("MyCollection")
-bpy.context.scene.collection.children.link(collection)
-collection.objects.link(obj)                           # 将物体加入集合
+```python
+# ❌ 错误：中文版中不存在 "Cube"
+obj = D.objects["Cube"]
 ```
 
 ---
 
-## 🧠 规则 6：记忆系统集成
+## 规则 6：上下文覆盖（Context Override）
 
-### 反复出错时主动查记忆（强制）
+很多 `bpy.ops` 操作需要特定的上下文（如 3D Viewport 的 area 和 region）。
+通过 MCP 远程执行时，可能缺少正确的上下文环境。
 
-当同一类操作**连续失败 2 次以上**时，必须先搜索记忆再继续尝试：
+### 使用 `temp_override()` 构建上下文
 
 ```python
-from core.memory_store import get_memory_store
-mm = get_memory_store()
-if mm:
-    hints = mm.manager.search("相关关键词", tag="crash", limit=3)
-    hints += mm.manager.search("相关关键词", tag="pattern", limit=3)
-    team = mm.manager.search_team_memory("相关关键词", limit=3)
+def get_3d_viewport_context():
+    """获取 3D Viewport 上下文用于 bpy.ops 调用"""
+    for window in C.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == 'VIEW_3D':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        return {
+                            'window': window,
+                            'screen': window.screen,
+                            'area': area,
+                            'region': region,
+                        }
+    return None
+
+# 使用示例
+ctx = get_3d_viewport_context()
+if ctx:
+    with C.temp_override(**ctx):
+        bpy.ops.view3d.snap_cursor_to_center()
 ```
 
-### 多次尝试后成功时提炼教训（强制）
+### 常见需要上下文覆盖的操作
 
-经过 2 次以上尝试或用户纠正后才正确完成操作时，**必须**提炼规则并写入记忆：
+- `bpy.ops.view3d.*` — 3D 视口操作
+- `bpy.ops.object.mode_set()` — 模式切换
+- `bpy.ops.mesh.*` — 编辑模式下的网格操作
+- `bpy.ops.uv.*` — UV 操作
+
+---
+
+## 规则 7：禁止高开销操作
+
+以下操作在 MCP exec 环境中**禁止或应避免**：
+
+### 禁止
+
+- ❌ `addon_utils.modules()` — 遍历所有插件模块，会导致长时间阻塞（10s+）
+- ❌ `bpy.ops.wm.open_mainfile()` — 在 exec 中打开文件会导致状态不一致
+
+### 应避免
+
+- ⚠️ 单次执行中串联过多 `bpy.ops` 调用（每个 ops 调用都有开销）
+- ⚠️ 大量对象操作时应分批处理（每批 100-500 个）
+- ⚠️ 避免在循环中反复调用 `bpy.ops.object.select_all()`
+
+### 大量对象的推荐做法
 
 ```python
-mm.manager.record(
-    key="pattern:简短问题描述",
-    value="一句话规则：什么情况 + 正确做法",
-    tag="pattern",
-    importance=0.8,
-    source="retry_learned"
-)
-```
+# ✅ 批量创建对象时使用低级 API
+import bmesh
 
-### 发现反直觉行为时记录（强制）
+mesh = D.meshes.new("BatchMesh")
+obj = D.objects.new("BatchObj", mesh)
+C.collection.objects.link(obj)
 
-```python
-mm.manager.record(
-    key="pattern:API或行为描述",
-    value="实际行为 vs 预期行为，正确用法",
-    tag="pattern",
-    importance=0.9,
-    source="gotcha"
-)
+# 使用 bmesh 进行批量几何操作
+bm = bmesh.new()
+# ... 操作 ...
+bm.to_mesh(mesh)
+bm.free()
 ```
 
 ---
 
-## 🔧 标准操作收尾模板
+## 标准操作模板
 
 ```python
-import bpy
+# 预注入变量已可用: bpy, S, W, L, C, D
+# 无需 import bpy
 
-bpy.ops.ed.undo_push(message='ArtClaw_Operation')
-
-# ========== 所有操作代码 ==========
-
-# ... 在此编写具体操作 ...
-
-# ========== 操作结束 ==========
-
-print("✅ 操作完成")
-# 提示：可用 Ctrl+Z 撤销
+if not D.objects:
+    result = "场景中没有对象"
+else:
+    try:
+        # 你的操作代码
+        obj = C.active_object
+        if obj:
+            result = f"当前活动对象: {obj.name} (类型: {obj.type})"
+        else:
+            result = f"场景共 {len(D.objects)} 个对象，无活动对象"
+    except Exception as e:
+        result = f"操作失败: {e}"
 ```
 
-> **注意**：如果操作全部通过 `bpy.ops.*` 完成，可省略 `undo_push` 行，因为 `bpy.ops` 调用自带 Undo 管理。
+---
+
+## 附录：与其他 DCC 的坐标系对比
+
+| DCC | Up 轴 | 前方 | 旋转单位 | 手性 |
+|-----|--------|------|----------|------|
+| **Blender** | Z | -Y | 弧度 | 右手 |
+| UE | Z | X | 度 | 左手 |
+| Maya | Y | Z | 度 | 右手 |
+| 3ds Max | Z | Y | 度 | 右手 |

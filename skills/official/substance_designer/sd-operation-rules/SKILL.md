@@ -85,9 +85,17 @@ from sd.api.sdproperty import SDPropertyCategory  # 会超时！
 
 - **SD API 严格单线程**，所有调用必须在主线程中串行执行
 - **每次工具调用的代码要尽量简短**（<30 行），避免超时
+- **单次调用安全上限**：≤3 个节点创建 + ≤3 条连接，超过应分多次调用
 - 复杂操作分多次调用完成，每次完成一个步骤
 - **禁止**在 exec 代码中使用 `threading`、`asyncio`
 - **禁止**在 exec 代码中 `import sd.api.*` 子模块（用预注入变量代替）
+
+### ⛔ 超时恢复
+
+**一旦单次调用超时，SD 的 MCP 连接会永久失效**——后续所有 API 调用都会超时。
+唯一恢复方式：**用户手动重启 Substance Designer**。
+
+因此必须严格控制单次调用的操作量，宁可多调几次也不要一次做太多。
 
 ---
 
@@ -135,6 +143,7 @@ if resource:
 |------|------|------|
 | `graph.newNode("不存在的id")` | **SD 永久挂起** | 创建前必须验证 definition_id |
 | `SDUsage.sNew()` | **SD 永久挂起** | **绝对禁止** |
+| `connection.disconnect()` | **SD 挂起 5-10 分钟** | 改用 `node.deletePropertyConnections(prop)` |
 | `graph.getNodeDefinitions()` | 可能极慢/超时 | 避免在工具调用中使用 |
 
 ### 常用原子节点定义 ID
@@ -181,22 +190,27 @@ conn = src_node.newPropertyConnection(out_prop, dst_node, in_prop)
 # out_prop.connect(in_prop)  # 不存在！会 AttributeError
 ```
 
-### 查询/删除连接
+### 查询连接
 
 ```python
-# 查询连接
+# 查询某端口的连接
 prop = node.getPropertyFromId("input1", SDPropertyCategory.Input)
 conns = node.getPropertyConnections(prop)  # -> SDArray[SDConnection]
 if conns and conns.getSize() > 0:
     c = conns.getItem(0)
-    src_node = c.getOutputPropertyNode()
-    src_port = c.getOutputProperty()
+    # ⚠️ SDConnection 方向会随查询端口翻转！不要依赖 getInput/OutputPropertyNode 的绝对方向
+    # 从 Input 端口查: getInputPropertyNode()=对面(源), getOutputPropertyNode()=自己(目标)
+    # 从 Output 端口查: getInputPropertyNode()=对面(目标), getOutputPropertyNode()=自己(源)
+    # 推荐: 只用 deletePropertyConnections 管理连接，避免解析 SDConnection 方向
+```
 
-# 删除某端口所有连接
+### 删除连接
+
+```python
+# ✅ 推荐：删除某端口的所有连接（安全可靠）
 node.deletePropertyConnections(prop)
 
-# 删除单个连接
-conn.disconnect()
+# ⛔ 禁止使用 connection.disconnect() — 会导致 SD 挂起 5-10 分钟！
 ```
 
 ### 常见端口 ID
@@ -230,6 +244,26 @@ node.setPosition(float2(100.0, 200.0))
 ```
 
 **⚠️ SD 12: 对 float 参数传 SDValueInt2/3/4 会静默崩溃** — 类型必须匹配。
+
+---
+
+## 规则 6.5：便捷 API
+
+常用但不常见的 API，补充参考：
+
+```python
+# 通过 ID 精确查找节点（不需遍历）
+node = graph.getNodeFromId("1234567890")
+
+# 获取图中所有输出节点
+output_nodes = graph.getOutputNodes()
+
+# 快捷读写注解属性（identifier、label、description 等）
+node.setAnnotationPropertyValueFromId("identifier", SDValueString.sNew("basecolor"))
+value = node.getAnnotationPropertyValueFromId("identifier")
+# ⚠️ 返回的是 SDValueString 对象，需 .get() 提取字符串:
+# actual_str = value.get()
+```
 
 ---
 
