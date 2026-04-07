@@ -1,4 +1,4 @@
-"""
+﻿"""
 mcp_tab.py - ArtClaw DCC MCP Server 管理 Tab
 ================================================
 
@@ -15,16 +15,8 @@ import socket
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-try:
-    from PySide2.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-        QLineEdit, QScrollArea, QFrame, QCheckBox, QSizePolicy,
-        QSpacerItem, QDialog, QComboBox,
-    )
-    from PySide2.QtCore import Qt, Signal
-    HAS_QT = True
-except ImportError:
-    HAS_QT = False
+from artclaw_ui.qt_compat import *  # noqa: F401,F403
+HAS_QT = True
 
 from artclaw_ui.theme import COLORS, get_theme
 from artclaw_ui.utils import get_artclaw_config, get_openclaw_config_path

@@ -1,6 +1,6 @@
 # UE 全能力 C++ API 开发清单
 
-> 状态图例: ⬜ 未开始 | 🔄 进行中 | ✅ 已完成 | ⏸️ 暂缓
+> 状态图例: ✅ 未开始 | 🔄 进行中 | ✅ 已完成 | ⏸️ 暂缓
 
 ## 架构规范
 
@@ -69,13 +69,13 @@ result = json.loads(result_json)
 
 ## Phase 0: 基础设施（前置依赖）
 
-### 0.1 ⬜ 创建 UEClawBridgeAPI 模块骨架
+### 0.1 ✅ 创建 UEClawBridgeAPI 模块骨架
 - [ ] UEClawBridgeAPI.Build.cs（依赖声明）
 - [ ] UEClawBridgeAPI.h / UEClawBridgeAPIModule.cpp（模块注册）
 - [ ] .uplugin 添加新模块
 - [ ] 编译验证
 
-### 0.2 ⬜ 移植通用工具类
+### 0.2 ✅ 移植通用工具类
 - [ ] PropertySerializer.h/.cpp — 属性序列化/反序列化（移植自 BridgePropertySerializer，~700行→拆2文件）
   - SerializePropertyValue(): FProperty → FJsonValue
   - DeserializePropertyValue(): FJsonValue → FProperty
@@ -100,7 +100,7 @@ result = json.loads(result_json)
 
 ## Phase 1: Blueprint 图操作（P0 最高优先级）
 
-### 1.1 ⬜ Blueprint 图查询
+### 1.1 ✅ Blueprint 图查询
 **文件: BlueprintGraphQuery.cpp (~400 行)**
 - [ ] QueryBlueprintGraph(AssetPath, GraphName, GraphType, NodeGuid, Search, bIncludePositions) → JSON
   - 列出所有图（Event/Function/Macro/Interface）
@@ -113,7 +113,7 @@ result = json.loads(result_json)
 
 **来源: 移植 QueryBlueprintGraphTool.cpp + QueryBlueprintTool.cpp**
 
-### 1.2 ⬜ Blueprint 图查询 — AnimBlueprint 扩展
+### 1.2 ✅ Blueprint 图查询 — AnimBlueprint 扩展
 **文件: AnimBlueprintQuery.cpp (~300 行)**
 - [ ] AnimBlueprint 特化查询
   - AnimGraph / StateMachine / State / Transition / BlendStack 图类型
@@ -123,7 +123,7 @@ result = json.loads(result_json)
 
 **来源: 移植 QueryBlueprintGraphTool.cpp 的 AnimBP 部分**
 
-### 1.3 ⬜ Blueprint 节点增删
+### 1.3 ✅ Blueprint 节点增删
 **文件: BlueprintGraphEdit.cpp (~400 行)**
 - [ ] AddGraphNode(AssetPath, NodeClass, GraphName, Position, AutoPosition, ConnectToNode, Properties) → JSON
   - Blueprint 节点：K2Node_CallFunction / K2Node_VariableGet / K2Node_Event 等
@@ -137,7 +137,7 @@ result = json.loads(result_json)
 
 **来源: 移植 AddGraphNodeTool.cpp + RemoveGraphNodeTool.cpp + SetNodePositionTool.cpp**
 
-### 1.4 ⬜ Blueprint 节点连接
+### 1.4 ✅ Blueprint 节点连接
 **文件: BlueprintGraphConnect.cpp (~350 行)**
 - [ ] ConnectGraphPins(AssetPath, SourceNode, SourcePin, TargetNode, TargetPin) → JSON
   - Blueprint Pin 连接（含 Schema 验证）
@@ -149,7 +149,7 @@ result = json.loads(result_json)
 
 **来源: 移植 ConnectGraphPinsTool.cpp + DisconnectGraphPinTool.cpp + InsertGraphNodeTool.cpp**
 
-### 1.5 ⬜ Blueprint 属性与编译
+### 1.5 ✅ Blueprint 属性与编译
 **文件: BlueprintNodeProperty.cpp (~300 行)**
 - [ ] SetNodeProperty(AssetPath, NodeGuid, Properties{}) → JSON
   - 通过 GUID 设置节点 UPROPERTY
@@ -162,7 +162,7 @@ result = json.loads(result_json)
 
 **来源: 移植 SetNodePropertyTool.cpp + CompileBlueprintTool.cpp + ModifyInterfaceTool.cpp**
 
-### 1.6 ⬜ OpenClaw Skill: ue57_blueprint_graph
+### 1.6 ✅ OpenClaw Skill: ue57_blueprint_graph
 - [ ] SKILL.md — Blueprint 图查询/编辑操作指南
 - [ ] 安装到 ~/.openclaw/skills/
 
@@ -170,7 +170,7 @@ result = json.loads(result_json)
 
 ## Phase 2: PIE 控制（P0）
 
-### 2.1 ⬜ PIE 会话管理
+### 2.1 ✅ PIE 会话管理
 **文件: PIEControlAPI.cpp (~350 行)**
 - [ ] PIEStart(Mode, MapPath, Timeout) → JSON
   - 启动 PIE（viewport/new_window/standalone）
@@ -185,7 +185,7 @@ result = json.loads(result_json)
 
 **来源: 移植 PieSessionTool.cpp**
 
-### 2.2 ⬜ 输入注入
+### 2.2 ✅ 输入注入
 **文件: InputInjectionAPI.cpp (~250 行)**
 - [ ] TriggerKeyInput(Key, Action) → JSON
   - 发送按键事件到 PIE
@@ -194,14 +194,14 @@ result = json.loads(result_json)
 
 **来源: 移植 TriggerInputTool.cpp**
 
-### 2.3 ⬜ OpenClaw Skill: ue57_pie_control
+### 2.3 ✅ OpenClaw Skill: ue57_pie_control
 - [ ] SKILL.md — PIE 控制 + 输入注入 + 自动化测试指南
 
 ---
 
 ## Phase 3: 通用反射与 Actor 操作（P1）
 
-### 3.1 ⬜ 通用反射调用
+### 3.1 ✅ 通用反射调用
 **文件: ActorReflectionAPI.cpp (~400 行)**
 - [ ] CallFunction(ActorName, FunctionName, Args{}) → JSON
   - 调用任意 BlueprintCallable UFUNCTION
@@ -215,7 +215,7 @@ result = json.loads(result_json)
 
 **来源: 移植 CallFunctionTool.cpp + GetPropertyTool.cpp + SetPropertyTool.cpp**
 
-### 3.2 ⬜ 高级 Actor 操作
+### 3.2 ✅ 高级 Actor 操作
 **文件: ActorOpsAPI.cpp (~350 行)**
 - [ ] SpawnActorAdvanced(Class, Location, Rotation, Properties{}, WorldType) → JSON
   - 支持 Editor World 和 PIE World
@@ -228,14 +228,14 @@ result = json.loads(result_json)
 
 **来源: 移植 SpawnActorTool.cpp(Editor) + AddComponentTool.cpp + Batch*Tool.cpp**
 
-### 3.3 ⬜ OpenClaw Skill: ue57_actor_reflection
+### 3.3 ✅ OpenClaw Skill: ue57_actor_reflection
 - [ ] SKILL.md — 通用反射 + Actor 高级操作指南
 
 ---
 
 ## Phase 4: 资产管理增强（P1）
 
-### 4.1 ⬜ 资产查询与搜索
+### 4.1 ✅ 资产查询与搜索
 **文件: AssetQueryAPI.cpp (~350 行)**
 - [ ] QueryAsset(Name, ClassFilter, PathFilter, Limit) → JSON
   - Content Browser 搜索
@@ -250,7 +250,7 @@ result = json.loads(result_json)
 **来源: 移植 QueryAssetTool.cpp + FindReferencesTool.cpp + ClassHierarchyTool.cpp**
 **注: ClassHierarchy Python 也可做，但 C++ 版更完整（包含非反射类）**
 
-### 4.2 ⬜ 资产创建与修改
+### 4.2 ✅ 资产创建与修改
 **文件: AssetManagementAPI.cpp (~400 行)**
 - [ ] CreateAsset(AssetPath, AssetClass, Properties{}) → JSON
   - 创建 Blueprint / Material / DataTable / World / 其他
@@ -268,7 +268,7 @@ result = json.loads(result_json)
 
 **来源: 移植 CreateAssetTool.cpp + DeleteAssetTool.cpp + SaveAssetTool.cpp + OpenAssetTool.cpp + SetPropertyTool.cpp(Editor) + GetAssetDiffTool.cpp + GetAssetPreviewTool.cpp**
 
-### 4.3 ⬜ DataTable 操作
+### 4.3 ✅ DataTable 操作
 **文件: DataTableAPI.cpp (~200 行)**
 - [ ] AddDataTableRow(AssetPath, RowName, Values{}) → JSON
   - 添加或更新 DataTable 行
@@ -277,14 +277,14 @@ result = json.loads(result_json)
 
 **来源: 移植 AddDataTableRowTool.cpp + QueryAssetTool.cpp(DataTable 部分)**
 
-### 4.4 ⬜ OpenClaw Skill: ue57_asset_management
+### 4.4 ✅ OpenClaw Skill: ue57_asset_management
 - [ ] SKILL.md — 资产管理全流程指南
 
 ---
 
 ## Phase 5: StateTree + Widget Blueprint（P2）
 
-### 5.1 ⬜ StateTree 操作
+### 5.1 ✅ StateTree 操作
 **文件: StateTreeAPI.cpp (~400 行)**
 - [ ] QueryStateTree(AssetPath) → JSON
   - 查询 states / tasks / transitions 结构
@@ -295,7 +295,7 @@ result = json.loads(result_json)
 
 **来源: 移植 StateTree/ 目录 5 个文件**
 
-### 5.2 ⬜ Widget Blueprint 操作
+### 5.2 ✅ Widget Blueprint 操作
 **文件: WidgetBlueprintAPI.cpp (~400 行)**
 - [ ] InspectWidgetBlueprint(AssetPath) → JSON
   - Widget 层级结构 + 绑定 + 属性
@@ -306,14 +306,14 @@ result = json.loads(result_json)
 
 **来源: 移植 Widget/ 目录 4 个文件**
 
-### 5.3 ⬜ OpenClaw Skill: ue57_statetree / ue57_widget_blueprint
+### 5.3 ✅ OpenClaw Skill: ue57_statetree / ue57_widget_blueprint
 - [ ] 各自 SKILL.md
 
 ---
 
 ## Phase 6: 编译系统 + 日志 + 性能（P2）
 
-### 6.1 ⬜ 编译与构建
+### 6.1 ✅ 编译与构建
 **文件: BuildSystemAPI.cpp (~250 行)**
 - [ ] BuildAndRelaunch(bWait) → JSON
   - 触发完整 C++ 重编译
@@ -324,7 +324,7 @@ result = json.loads(result_json)
 
 **来源: 移植 BuildAndRelaunchTool.cpp + TriggerLiveCodingTool.cpp**
 
-### 6.2 ⬜ 日志与 CVar
+### 6.2 ✅ 日志与 CVar
 **文件: LoggingAPI.cpp (~250 行)**
 - [ ] GetLogs(Category, TextFilter, Limit, Severity) → JSON
   - 读取 UE 输出日志（过滤/搜索）
@@ -333,7 +333,7 @@ result = json.loads(result_json)
 
 **来源: 移植 GetLogsTool.cpp + ConsoleVarTool.cpp**
 
-### 6.3 ⬜ 性能分析
+### 6.3 ✅ 性能分析
 **文件: PerformanceAPI.cpp (~250 行)**
 - [ ] InsightsCapture(Action, Channels) → JSON
   - 启动/停止 Trace 捕获
@@ -344,7 +344,7 @@ result = json.loads(result_json)
 
 **来源: 移植 Insights*Tool.cpp 3 个文件**
 
-### 6.4 ⬜ 项目信息
+### 6.4 ✅ 项目信息
 **文件: ProjectInfoAPI.cpp (~200 行)**
 - [ ] GetProjectInfo() → JSON
   - 项目名、引擎版本、目标平台、模块列表
@@ -353,14 +353,14 @@ result = json.loads(result_json)
 
 **来源: 移植 ProjectInfoTool.cpp**
 
-### 6.5 ⬜ OpenClaw Skill: ue57_build_system / ue57_performance
+### 6.5 ✅ OpenClaw Skill: ue57_build_system / ue57_performance
 - [ ] 各自 SKILL.md
 
 ---
 
 ## Phase 7: UE 原生领域扩展 — 自行开发（P3）
 
-### 7.1 ⬜ Sequencer 控制
+### 7.1 ✅ Sequencer 控制
 **文件: SequencerAPI.cpp (~400 行)**
 - [ ] CreateLevelSequence(AssetPath) → JSON
 - [ ] AddTrack(SequencePath, TrackType, ActorName) → JSON
@@ -370,7 +370,7 @@ result = json.loads(result_json)
 
 **来源: 自行开发，基于 ISequencer / ULevelSequence API**
 
-### 7.2 ⬜ 行为树/AI
+### 7.2 ✅ 行为树/AI
 **文件: BehaviorTreeAPI.cpp (~300 行)**
 - [ ] QueryBehaviorTree(AssetPath) → JSON
 - [ ] AddBTNode(AssetPath, ParentNode, NodeClass) → JSON
@@ -379,7 +379,7 @@ result = json.loads(result_json)
 
 **来源: 自行开发，基于 UBehaviorTree / UBTNode API**
 
-### 7.3 ⬜ Niagara 粒子系统
+### 7.3 ✅ Niagara 粒子系统
 **文件: NiagaraAPI.cpp (~400 行)**
 - [ ] QueryNiagaraSystem(AssetPath) → JSON
 - [ ] AddNiagaraModule(AssetPath, EmitterName, ModuleClass) → JSON
@@ -387,7 +387,7 @@ result = json.loads(result_json)
 
 **来源: 自行开发，基于 UNiagaraSystem / UNiagaraEmitter API**
 
-### 7.4 ⬜ Enhanced Input 配置
+### 7.4 ✅ Enhanced Input 配置
 **文件: EnhancedInputAPI.cpp (~250 行)**
 - [ ] QueryInputMappingContext(AssetPath) → JSON
 - [ ] AddInputAction(AssetPath, ActionName, ValueType) → JSON
@@ -395,7 +395,7 @@ result = json.loads(result_json)
 
 **来源: 自行开发，基于 UInputMappingContext / UInputAction API**
 
-### 7.5 ⬜ GAS (Gameplay Ability System)
+### 7.5 ✅ GAS (Gameplay Ability System)
 **文件: GameplayAbilityAPI.cpp (~300 行)**
 - [ ] CreateGameplayAbility(AssetPath, ParentClass) → JSON
 - [ ] CreateGameplayEffect(AssetPath) → JSON
@@ -404,7 +404,7 @@ result = json.loads(result_json)
 
 **来源: 自行开发，基于 UGameplayAbility / UGameplayEffect API**
 
-### 7.6 ⬜ OpenClaw Skills
+### 7.6 ✅ OpenClaw Skills
 - [ ] ue57_sequencer / ue57_behavior_tree / ue57_niagara / ue57_enhanced_input / ue57_gas
 
 ---

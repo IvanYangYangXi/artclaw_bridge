@@ -1,4 +1,4 @@
-"""
+﻿"""
 skill_tab_publish.py - Skill 发布弹窗
 ========================================
 
@@ -9,15 +9,8 @@ from __future__ import annotations
 
 import logging
 
-try:
-    from PySide2.QtWidgets import (
-        QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-        QLineEdit, QSpacerItem, QSizePolicy,
-    )
-    from PySide2.QtCore import Qt
-    HAS_QT = True
-except ImportError:
-    HAS_QT = False
+from artclaw_ui.qt_compat import *  # noqa: F401,F403
+HAS_QT = True
 
 from artclaw_ui.theme import get_theme
 from artclaw_ui.utils import get_artclaw_config

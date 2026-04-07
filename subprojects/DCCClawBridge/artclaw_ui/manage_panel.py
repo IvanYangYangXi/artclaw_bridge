@@ -1,4 +1,4 @@
-"""
+﻿"""
 manage_panel.py - ArtClaw DCC 管理面板
 ========================================
 
@@ -15,12 +15,12 @@ import logging
 from typing import Optional
 
 try:
-    from PySide2.QtWidgets import (
+    from artclaw_ui.qt_compat import (
         QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
         QFrame, QDialog, QSizePolicy, QSpacerItem, QApplication,
     )
-    from PySide2.QtCore import Qt, QPoint
-    from PySide2.QtGui import QFont
+    from artclaw_ui.qt_compat import Qt, QPoint
+    from artclaw_ui.qt_compat import QFont
     HAS_QT = True
 except ImportError:
     HAS_QT = False

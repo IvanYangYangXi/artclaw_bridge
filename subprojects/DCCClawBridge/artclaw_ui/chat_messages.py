@@ -1,4 +1,4 @@
-"""
+﻿"""
 chat_messages.py - ArtClaw 聊天消息模型与渲染组件
 ===================================================
 
@@ -28,15 +28,15 @@ from typing import Optional
 logger = logging.getLogger("artclaw.ui")
 
 try:
-    from PySide2.QtCore import Qt, QTimer
-    from PySide2.QtWidgets import (
+    from artclaw_ui.qt_compat import Qt, QTimer
+    from artclaw_ui.qt_compat import (
         QFrame, QHBoxLayout, QLabel, QPushButton,
         QScrollArea, QSizePolicy, QTextEdit, QVBoxLayout, QWidget,
     )
     HAS_QT = True
 except ImportError:
     HAS_QT = False
-    logger.warning("PySide2 不可用，chat_messages 无法渲染 UI")
+    logger.warning("Qt (PySide2/PySide6) 不可用，chat_messages 无法渲染 UI")
 
 from .theme import (
     SENDER_ASSISTANT, SENDER_STREAMING, SENDER_SYSTEM, SENDER_THINKING,
@@ -108,7 +108,7 @@ class ChatMessage:
 
 
 # ---------------------------------------------------------------------------
-# Qt widgets (only defined when PySide2 is available)
+# Qt widgets (only defined when Qt is available)
 # ---------------------------------------------------------------------------
 
 if HAS_QT:

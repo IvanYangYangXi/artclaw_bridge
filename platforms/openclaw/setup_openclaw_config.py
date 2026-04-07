@@ -109,12 +109,28 @@ def main():
                         help="添加 Maya MCP Server")
     parser.add_argument("--max", action="store_true",
                         help="添加 3ds Max MCP Server")
+    parser.add_argument("--blender", action="store_true",
+                        help="添加 Blender MCP Server")
+    parser.add_argument("--houdini", action="store_true",
+                        help="添加 Houdini MCP Server")
+    parser.add_argument("--sp", action="store_true",
+                        help="添加 Substance Painter MCP Server")
+    parser.add_argument("--sd", action="store_true",
+                        help="添加 Substance Designer MCP Server")
     parser.add_argument("--ue-port", type=int, default=8080,
                         help="UE MCP Server 端口 (默认 8080)")
     parser.add_argument("--maya-port", type=int, default=8081,
                         help="Maya MCP Server 端口 (默认 8081)")
     parser.add_argument("--max-port", type=int, default=8082,
                         help="3ds Max MCP Server 端口 (默认 8082)")
+    parser.add_argument("--blender-port", type=int, default=8083,
+                        help="Blender MCP Server 端口 (默认 8083)")
+    parser.add_argument("--houdini-port", type=int, default=8084,
+                        help="Houdini MCP Server 端口 (默认 8084)")
+    parser.add_argument("--sp-port", type=int, default=8085,
+                        help="Substance Painter MCP Server 端口 (默认 8085)")
+    parser.add_argument("--sd-port", type=int, default=8086,
+                        help="Substance Designer MCP Server 端口 (默认 8086)")
     parser.add_argument("--dry-run", action="store_true",
                         help="只显示将要做的修改，不实际写入")
 
@@ -140,6 +156,26 @@ def main():
         servers["max-primary"] = {
             "type": "websocket",
             "url": f"ws://127.0.0.1:{args.max_port}",
+        }
+    if args.blender:
+        servers["blender-editor"] = {
+            "type": "websocket",
+            "url": f"ws://127.0.0.1:{args.blender_port}",
+        }
+    if args.houdini:
+        servers["houdini-editor"] = {
+            "type": "websocket",
+            "url": f"ws://127.0.0.1:{args.houdini_port}",
+        }
+    if args.sp:
+        servers["sp-editor"] = {
+            "type": "websocket",
+            "url": f"ws://127.0.0.1:{args.sp_port}",
+        }
+    if args.sd:
+        servers["sd-editor"] = {
+            "type": "websocket",
+            "url": f"ws://127.0.0.1:{args.sd_port}",
         }
 
     if not servers:
@@ -183,6 +219,10 @@ def main():
             "run_python", "get_editor_context", "get_selected_objects",
             "get_scene_info", "knowledge_search", "memory",
         ],
+        "blender-editor": ["mcp_blender-editor_*"],
+        "houdini-editor": ["mcp_houdini-editor_*"],
+        "sp-editor": ["mcp_sp-editor_*"],
+        "sd-editor": ["mcp_sd-editor_*"],
     }
 
     agents_list = config.get("agents", {}).get("list", [])
@@ -192,7 +232,11 @@ def main():
         for server_name in servers:
             if server_name in tool_map:
                 for tool in tool_map[server_name]:
-                    full_name = f"mcp_{server_name}_{tool}"
+                    # 如果 tool 已经是完整的 mcp_ 前缀模式，直接使用
+                    if tool.startswith("mcp_"):
+                        full_name = tool
+                    else:
+                        full_name = f"mcp_{server_name}_{tool}"
                     if full_name not in allow:
                         allow.append(full_name)
                         added += 1

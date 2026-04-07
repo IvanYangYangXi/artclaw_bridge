@@ -1,4 +1,4 @@
-"""
+﻿"""
 chat_input.py - ArtClaw DCC Chat Input Widget
 ==============================================
 
@@ -20,13 +20,13 @@ import logging
 from typing import Optional, List, Tuple
 
 try:
-    from PySide2.QtWidgets import (
+    from artclaw_ui.qt_compat import (
         QWidget, QVBoxLayout, QTextEdit,
         QListWidget, QListWidgetItem, QAbstractItemView,
         QSizePolicy,
     )
-    from PySide2.QtCore import Qt, Signal, QPoint
-    from PySide2.QtGui import QKeyEvent, QTextCursor, QImage
+    from artclaw_ui.qt_compat import Qt, Signal, QPoint
+    from artclaw_ui.qt_compat import QKeyEvent, QTextCursor, QImage
     HAS_QT = True
 except ImportError:
     HAS_QT = False
@@ -358,7 +358,7 @@ class ChatInputWidget(QWidget):
     def _try_image_paste(self) -> bool:
         """尝试从剪贴板粘贴图片。返回 True 表示已处理（不再走文字粘贴）"""
         try:
-            from PySide2.QtWidgets import QApplication
+            from artclaw_ui.qt_compat import QApplication
             clipboard = QApplication.clipboard()
             mime = clipboard.mimeData()
             if mime and mime.hasImage():

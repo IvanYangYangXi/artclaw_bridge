@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul 2>&1
 setlocal EnableDelayedExpansion
 
@@ -52,8 +52,8 @@ if not exist "%UE_PLUGIN_SRC%\UEClawBridge.uplugin" (
 
 echo.
 echo  ╔══════════════════════════════════════════════════════╗
-echo  ║       ArtClaw Bridge — 统一安装器 v1.3               ║
-echo  ║       UE / Maya / 3ds Max / 平台配置 一键部署        ║
+echo  ║       ArtClaw Bridge — 统一安装器 v2.0               ║
+echo  ║       UE / Maya / Max / Blender / Houdini / SP / SD  ║
 echo  ╚══════════════════════════════════════════════════════╝
 echo.
 echo  项目目录: %ROOT_DIR%
@@ -64,7 +64,7 @@ echo.
 :: ============================================================
 set "PLATFORM=openclaw"
 echo  当前平台: openclaw (默认)
-echo  支持的平台: openclaw / workbuddy / claude
+echo  支持的平台: openclaw / workbuddy / claude / lobster
 echo.
 set /p PLATFORM_INPUT="  更改平台? (直接回车使用默认): "
 if not "%PLATFORM_INPUT%"=="" (
@@ -91,24 +91,28 @@ echo.
 echo    [1] 安装 Unreal Engine 插件
 echo    [2] 安装 Maya 插件
 echo    [3] 安装 3ds Max 插件
-echo    [4] 配置平台 (Gateway + Skills + config)
-echo    [5] 全部安装 (UE + Maya + Max + 平台配置)
-echo    [6] 卸载 Maya 插件
-echo    [7] 卸载 3ds Max 插件
-echo    [8] 卸载 UE 插件
+echo    [4] 安装 Blender 插件
+echo    [5] 安装 Houdini 插件
+echo    [6] 安装 Substance Painter 插件
+echo    [7] 安装 Substance Designer 插件
+echo    [8] 配置平台 (Gateway + Skills + config)
+echo    [9] 全部安装 (所有 DCC + 平台配置)
+echo    [U] 卸载菜单
 echo    [0] 退出
 echo.
-set /p CHOICE="  请输入选项 (0-8): "
+set /p CHOICE="  请输入选项: "
 
 if "%CHOICE%"=="0" goto :exit_ok
 if "%CHOICE%"=="1" goto :install_ue
 if "%CHOICE%"=="2" goto :install_maya
 if "%CHOICE%"=="3" goto :install_max
-if "%CHOICE%"=="4" goto :install_openclaw
-if "%CHOICE%"=="5" goto :install_all
-if "%CHOICE%"=="6" goto :uninstall_maya
-if "%CHOICE%"=="7" goto :uninstall_max
-if "%CHOICE%"=="8" goto :uninstall_ue
+if "%CHOICE%"=="4" goto :install_blender
+if "%CHOICE%"=="5" goto :install_houdini
+if "%CHOICE%"=="6" goto :install_sp
+if "%CHOICE%"=="7" goto :install_sd
+if "%CHOICE%"=="8" goto :install_openclaw
+if "%CHOICE%"=="9" goto :install_all
+if /I "%CHOICE%"=="U" goto :uninstall_menu
 echo [错误] 无效选项: %CHOICE%
 pause
 exit /b 1
@@ -123,6 +127,10 @@ call :do_install_maya
 if %ERRORLEVEL% NEQ 0 echo [警告] Maya 安装未完成，继续...
 call :do_install_max
 if %ERRORLEVEL% NEQ 0 echo [警告] Max 安装未完成，继续...
+call :do_install_blender
+call :do_install_houdini
+call :do_install_sp
+call :do_install_sd
 call :do_install_openclaw
 goto :summary
 
@@ -611,6 +619,194 @@ echo [提示] 平台配置需手动修改（参考 ~/.artclaw/config.json）
 goto :summary
 
 :: ============================================================
+:: 安装 Blender 插件 (委托 install.py)
+:: ============================================================
+:install_blender
+call :do_install_blender
+goto :summary
+
+:do_install_blender
+echo.
+echo  -- Blender 插件安装 --
+echo.
+set "BLENDER_VER=4.2"
+echo  请输入 Blender 版本 (默认 4.2):
+set /p BLENDER_VER_INPUT="  > "
+if not "!BLENDER_VER_INPUT!"=="" set "BLENDER_VER=!BLENDER_VER_INPUT!"
+echo [安装] 正在安装 Blender !BLENDER_VER! 插件...
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --blender --blender-version !BLENDER_VER! --platform !PLATFORM! --force
+    if !ERRORLEVEL! EQU 0 (
+        echo [完成] Blender 插件安装成功!
+    ) else (
+        echo [错误] Blender 插件安装失败
+    )
+) else (
+    echo [错误] 未找到 Python，请手动运行: python install.py --blender
+)
+exit /b 0
+
+:: ============================================================
+:: 安装 Houdini 插件 (委托 install.py)
+:: ============================================================
+:install_houdini
+call :do_install_houdini
+goto :summary
+
+:do_install_houdini
+echo.
+echo  -- Houdini 插件安装 --
+echo.
+set "HOUDINI_VER=20.5"
+echo  请输入 Houdini 版本 (默认 20.5):
+set /p HOUDINI_VER_INPUT="  > "
+if not "!HOUDINI_VER_INPUT!"=="" set "HOUDINI_VER=!HOUDINI_VER_INPUT!"
+echo [安装] 正在安装 Houdini !HOUDINI_VER! 插件...
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --houdini --houdini-version !HOUDINI_VER! --platform !PLATFORM! --force
+    if !ERRORLEVEL! EQU 0 (
+        echo [完成] Houdini 插件安装成功!
+    ) else (
+        echo [错误] Houdini 插件安装失败
+    )
+) else (
+    echo [错误] 未找到 Python，请手动运行: python install.py --houdini
+)
+exit /b 0
+
+:: ============================================================
+:: 安装 Substance Painter 插件 (委托 install.py)
+:: ============================================================
+:install_sp
+call :do_install_sp
+goto :summary
+
+:do_install_sp
+echo.
+echo  -- Substance Painter 插件安装 --
+echo.
+echo [安装] 正在安装 Substance Painter 插件...
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --sp --platform !PLATFORM! --force
+    if !ERRORLEVEL! EQU 0 (
+        echo [完成] Substance Painter 插件安装成功!
+    ) else (
+        echo [错误] Substance Painter 插件安装失败
+    )
+) else (
+    echo [错误] 未找到 Python，请手动运行: python install.py --sp
+)
+exit /b 0
+
+:: ============================================================
+:: 安装 Substance Designer 插件 (委托 install.py)
+:: ============================================================
+:install_sd
+call :do_install_sd
+goto :summary
+
+:do_install_sd
+echo.
+echo  -- Substance Designer 插件安装 --
+echo.
+echo [安装] 正在安装 Substance Designer 插件...
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --sd --platform !PLATFORM! --force
+    if !ERRORLEVEL! EQU 0 (
+        echo [完成] Substance Designer 插件安装成功!
+    ) else (
+        echo [错误] Substance Designer 插件安装失败
+    )
+) else (
+    echo [错误] 未找到 Python，请手动运行: python install.py --sd
+)
+exit /b 0
+
+:: ============================================================
+:: 卸载菜单
+:: ============================================================
+:uninstall_menu
+echo.
+echo  -- 卸载菜单 --
+echo.
+echo    [1] 卸载 Maya 插件
+echo    [2] 卸载 3ds Max 插件
+echo    [3] 卸载 UE 插件
+echo    [4] 卸载 Blender 插件
+echo    [5] 卸载 Houdini 插件
+echo    [6] 卸载 Substance Painter 插件
+echo    [7] 卸载 Substance Designer 插件
+echo    [0] 返回主菜单
+echo.
+set /p UCHOICE="  请输入选项: "
+if "%UCHOICE%"=="0" goto :main_menu_return
+if "%UCHOICE%"=="1" goto :uninstall_maya
+if "%UCHOICE%"=="2" goto :uninstall_max
+if "%UCHOICE%"=="3" goto :uninstall_ue
+if "%UCHOICE%"=="4" goto :uninstall_blender_menu
+if "%UCHOICE%"=="5" goto :uninstall_houdini_menu
+if "%UCHOICE%"=="6" goto :uninstall_sp_menu
+if "%UCHOICE%"=="7" goto :uninstall_sd_menu
+echo [错误] 无效选项
+goto :uninstall_menu
+
+:main_menu_return
+:: 重新显示主菜单（简化：直接跳到 summary）
+goto :summary
+
+:uninstall_blender_menu
+echo.
+set "BLENDER_VER=4.2"
+echo  请输入 Blender 版本 (默认 4.2):
+set /p BLENDER_VER_INPUT="  > "
+if not "!BLENDER_VER_INPUT!"=="" set "BLENDER_VER=!BLENDER_VER_INPUT!"
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --uninstall --blender --blender-version !BLENDER_VER! --force
+) else (
+    echo [错误] 未找到 Python
+)
+goto :summary
+
+:uninstall_houdini_menu
+echo.
+set "HOUDINI_VER=20.5"
+echo  请输入 Houdini 版本 (默认 20.5):
+set /p HOUDINI_VER_INPUT="  > "
+if not "!HOUDINI_VER_INPUT!"=="" set "HOUDINI_VER=!HOUDINI_VER_INPUT!"
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --uninstall --houdini --houdini-version !HOUDINI_VER! --force
+) else (
+    echo [错误] 未找到 Python
+)
+goto :summary
+
+:uninstall_sp_menu
+echo.
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --uninstall --sp --force
+) else (
+    echo [错误] 未找到 Python
+)
+goto :summary
+
+:uninstall_sd_menu
+echo.
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --uninstall --sd --force
+) else (
+    echo [错误] 未找到 Python
+)
+goto :summary
+
+:: ============================================================
 :: 配置 OpenClaw
 :: ============================================================
 :install_openclaw
@@ -697,6 +893,21 @@ echo    3ds Max:
 echo      1. 启动 Max -- ArtClaw 自动加载
 echo      2. 菜单栏 -- ArtClaw -- Chat Panel
 echo      3. 点击 连接 或输入 /connect
+echo.
+echo    Blender:
+echo      1. Edit -- Preferences -- Add-ons -- 搜索 'ArtClaw'
+echo      2. 勾选启用 ArtClaw Bridge 插件
+echo      3. 侧栏 (N键) -- ArtClaw -- Start ArtClaw
+echo.
+echo    Houdini:
+echo      1. 创建 Shelf Tool, Script: import houdini_shelf; houdini_shelf.toggle_artclaw()
+echo      2. 点击 Shelf 按钮启动
+echo.
+echo    Substance Painter:
+echo      1. 启动 SP -- Python -- 勾选 artclaw_bridge 插件
+echo.
+echo    Substance Designer:
+echo      1. 启动 SD -- 插件自动加载
 echo.
 echo    平台 (!PLATFORM!):
 echo      1. 参考 ~/.artclaw/config.json 确认配置

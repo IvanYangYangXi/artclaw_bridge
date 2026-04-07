@@ -1,4 +1,4 @@
-"""
+﻿"""
 confirm_dialog.py - ArtClaw DCC File Operation Confirmation Dialog
 
 Provides ConfirmDialog for user approval of risky AI operations,
@@ -12,15 +12,15 @@ import os
 from typing import Optional, List, Tuple
 
 try:
-    from PySide2.QtWidgets import (
+    from artclaw_ui.qt_compat import (
         QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
         QCheckBox, QFrame, QScrollArea, QWidget, QTextEdit,
         QSizePolicy
     )
-    from PySide2.QtCore import Signal, Qt, QTimer
-    from PySide2.QtGui import QFont, QColor
+    from artclaw_ui.qt_compat import Signal, Qt, QTimer
+    from artclaw_ui.qt_compat import QFont, QColor
 except ImportError:
-    raise ImportError("PySide2 is required.")
+    raise ImportError("Qt (PySide2/PySide6) is required.")
 
 from artclaw_ui.theme import COLORS, get_theme
 

@@ -1,4 +1,4 @@
-"""
+﻿"""
 settings_dialog.py - ArtClaw DCC Settings Dialog
 
 Provides SettingsDialog for configuring language, send mode, context window,
@@ -10,15 +10,15 @@ import logging
 from typing import Optional, List
 
 try:
-    from PySide2.QtWidgets import (
+    from artclaw_ui.qt_compat import (
         QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
         QCheckBox, QFrame, QScrollArea, QWidget, QButtonGroup,
         QSizePolicy, QSpacerItem
     )
-    from PySide2.QtCore import Signal, Qt
-    from PySide2.QtGui import QFont
+    from artclaw_ui.qt_compat import Signal, Qt
+    from artclaw_ui.qt_compat import QFont
 except ImportError:
-    raise ImportError("PySide2 is required. Install via Maya/Max built-in or pip.")
+    raise ImportError("Qt (PySide2/PySide6) is required.")
 
 from artclaw_ui.theme import COLORS, get_theme
 from artclaw_ui.utils import get_artclaw_config, save_artclaw_config
@@ -127,9 +127,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(_section_label("发送方式"))
         self._chk_enter_send = QCheckBox("Enter 直接发送")
         self._chk_enter_send.setToolTip("勾选 = Enter 直接发送；不勾选 = Ctrl+Enter 发送")
-        self._chk_enter_send.stateChanged.connect(
-            lambda state: self.send_mode_changed.emit(state == Qt.Checked)
-        )
+        self._chk_enter_send.stateChanged.connect(self._on_send_mode_changed)
         layout.addWidget(self._chk_enter_send)
         layout.addWidget(_separator())
 
@@ -270,6 +268,18 @@ class SettingsDialog(QDialog):
         self._btn_language.setText("中文" if new_lang == "zh" else "English")
         self.language_changed.emit()
         logger.info("Language toggled to: %s", new_lang)
+
+    def _on_send_mode_changed(self, state):
+        """发送方式切换 — 保存到配置 + 通知外部"""
+        # PySide2: state 是 int (0/2)
+        # PySide6: state 是 Qt.CheckState enum
+        # 统一用 isChecked() 判断
+        enter_send = self._chk_enter_send.isChecked()
+        cfg = get_artclaw_config()
+        cfg["enter_send"] = enter_send
+        save_artclaw_config(cfg)
+        self.send_mode_changed.emit(enter_send)
+        logger.info("Send mode set to: enter_send=%s", enter_send)
 
     def _on_ctx_size_clicked(self):
         btn = self.sender()

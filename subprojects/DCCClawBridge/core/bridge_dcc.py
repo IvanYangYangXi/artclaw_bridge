@@ -52,15 +52,18 @@ except ImportError:
     from bridge_core import OpenClawBridge, BridgeLogger  # noqa: E402
     from bridge_diagnostics import diagnose_connection  # noqa: E402
 
-# Qt imports — PySide2 在 Maya 2022+/Max 2022+ 内置
+# Qt imports — PySide2 在 Maya 2022+/Max 2022+ 内置，PySide6 供 Blender 等使用
 try:
     from PySide2.QtCore import QObject, Signal, Slot, QTimer
 except ImportError:
-    # 降级: 无 Qt 环境时用纯回调模式
-    QObject = object
-    Signal = None
-    Slot = lambda f: f
-    QTimer = None
+    try:
+        from PySide6.QtCore import QObject, Signal, Slot, QTimer
+    except ImportError:
+        # 降级: 无 Qt 环境时用纯回调模式
+        QObject = object
+        Signal = None
+        Slot = lambda f: f
+        QTimer = None
 
 
 logger = logging.getLogger("artclaw.bridge")

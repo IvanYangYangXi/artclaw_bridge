@@ -1,4 +1,4 @@
-"""
+﻿"""
 skill_tab.py - ArtClaw DCC Skill 管理 Tab
 ============================================
 
@@ -15,13 +15,13 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 try:
-    from PySide2.QtWidgets import (
+    from artclaw_ui.qt_compat import (
         QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
         QLineEdit, QScrollArea, QFrame, QCheckBox, QSizePolicy,
         QSpacerItem, QDialog, QTextEdit, QApplication,
     )
-    from PySide2.QtCore import Qt, Signal
-    from PySide2.QtGui import QFont
+    from artclaw_ui.qt_compat import Qt, Signal
+    from artclaw_ui.qt_compat import QFont
     HAS_QT = True
 except ImportError:
     HAS_QT = False
@@ -336,15 +336,26 @@ if HAS_QT:
             is_inst = s.install_status != "not_installed"
             dim = "" if (is_inst and s.enabled) else "opacity: 0.5;"
 
-            # Pin star (compact)
+            # Pin star
             star = QPushButton("\u2605" if s.pinned else "\u2606")
-            star.setFixedSize(20, 20)
+            star.setFixedSize(28, 28)
             star.setCursor(Qt.PointingHandCursor)
-            star_color = "#F2BF0F" if s.pinned else t['text_dim']
-            star.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {star_color};"
-                f" border: none; font-size: 12px; }}"
-            )
+            if s.pinned:
+                star_style = (
+                    "QPushButton { background: #3D3520; color: #F2BF0F;"
+                    " border: 1px solid #F2BF0F; border-radius: 4px;"
+                    " font-size: 15px; padding: 0; min-height: 0; min-width: 0; }"
+                    "QPushButton:hover { background: #4D4530; }"
+                )
+            else:
+                star_style = (
+                    f"QPushButton {{ background: transparent; color: {t['text_muted']};"
+                    f" border: 1px solid {t['border']}; border-radius: 4px;"
+                    f" font-size: 15px; padding: 0; min-height: 0; min-width: 0; }}"
+                    f"QPushButton:hover {{ color: #F2BF0F; border-color: #F2BF0F; }}"
+                )
+            star.setStyleSheet(star_style)
+            star.setToolTip("取消钉选" if s.pinned else "钉选此技能")
             star.setEnabled(is_inst)
             star.clicked.connect(lambda checked=False, entry=s: self._on_pin(entry))
             h.addWidget(star)
@@ -453,12 +464,14 @@ if HAS_QT:
                 b.clicked.connect(lambda checked=False, e=s: self._on_publish(e))
                 btn_h.addWidget(b)
 
-            det = QPushButton("...")
-            det.setFixedSize(24, 24)
+            det = QPushButton("···")
+            det.setFixedSize(32, 28)
             det.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {t['text_dim']};"
-                f" border: none; font-size: 13px; }}"
-                f"QPushButton:hover {{ color: {t['text']}; background: {t['bg_hover']}; border-radius: 3px; }}"
+                f"QPushButton {{ background: {t['btn_secondary_bg']}; color: {t['text_dim']};"
+                f" border: 1px solid {t['border']}; border-radius: 4px;"
+                f" font-size: 14px; font-weight: bold;"
+                f" padding: 0; min-height: 0; min-width: 0; }}"
+                f"QPushButton:hover {{ color: {t['text']}; background: {t['btn_secondary_hover']}; }}"
             )
             det.setToolTip("详情")
             det.clicked.connect(lambda checked=False, e=s: self._on_detail(e))

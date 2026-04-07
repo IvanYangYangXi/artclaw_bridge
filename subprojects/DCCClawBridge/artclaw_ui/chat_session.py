@@ -1,4 +1,4 @@
-"""
+﻿"""
 chat_session.py - ArtClaw DCC Multi-Session Management
 =======================================================
 
@@ -22,16 +22,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional, TYPE_CHECKING
 
-try:
-    from PySide2.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QLabel, QScrollArea,
-        QFrame, QSizePolicy,
-    )
-    from PySide2.QtCore import Qt, Signal
-    HAS_QT = True
-except ImportError:
-    HAS_QT = False
+from artclaw_ui.qt_compat import *  # noqa: F401,F403
+HAS_QT = True
 
 if TYPE_CHECKING:
     from core.bridge_dcc import DCCBridgeManager
@@ -450,11 +442,12 @@ class SessionMenuWidget(QWidget):
             )
 
         del_btn = QPushButton("✕")
-        del_btn.setFixedSize(20, 20)
+        del_btn.setFixedSize(28, 24)
         del_btn.setToolTip("删除此会话")
         del_btn.setStyleSheet(
-            "QPushButton { color: #888; background: #4A4A4A; border: none; font-size: 11px; }"
-            "QPushButton:hover { color: #F44336; background: #4A4A4A; }"
+            "QPushButton { color: #888; background: transparent; border: 1px solid #555; "
+            "border-radius: 3px; font-size: 12px; padding: 0; min-height: 0; min-width: 0; }"
+            "QPushButton:hover { color: #FFF; background: #C0392B; border-color: #C0392B; }"
         )
 
         # Capture index by default arg

@@ -1,4 +1,4 @@
-"""
+﻿"""
 chat_panel.py - ArtClaw DCC 聊天面板 (主组装器)
 =================================================
 
@@ -19,14 +19,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-try:
-    from PySide2.QtWidgets import (
-        QWidget, QVBoxLayout, QSizePolicy, QApplication,
-    )
-    from PySide2.QtCore import Qt, Slot, QTimer
-    HAS_QT = True
-except ImportError:
-    HAS_QT = False
+from artclaw_ui.qt_compat import *  # noqa: F401,F403
+HAS_QT = True
 
 from artclaw_ui.theme import get_theme
 from artclaw_ui.utils import get_artclaw_config
@@ -44,6 +38,9 @@ class ChatPanel(ChatPanelActionsMixin, QWidget):
     def __init__(self, parent=None, adapter=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.Window)
+        # 独立窗口模式（无父窗口，如 Blender）：关闭时销毁，触发 destroyed 信号
+        if parent is None:
+            self.setAttribute(Qt.WA_DeleteOnClose, True)
         self._adapter = adapter
         init_language()  # 初始化 i18n
         cfg = get_artclaw_config()
@@ -72,6 +69,10 @@ class ChatPanel(ChatPanelActionsMixin, QWidget):
         self._init_bridge()
         self._init_session()
         self._start_pollers()
+
+        # 从配置恢复发送方式
+        enter_send = cfg.get("enter_send", True)
+        self._input.set_enter_to_send(enter_send)
 
     # ==============================================================
     # UI Construction

@@ -1,4 +1,4 @@
-"""
+﻿"""
 chat_toolbar.py - ArtClaw DCC Chat Toolbar
 ===========================================
 
@@ -16,15 +16,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-try:
-    from PySide2.QtWidgets import (
-        QWidget, QHBoxLayout, QPushButton,
-        QSizePolicy, QFileDialog,
-    )
-    from PySide2.QtCore import Qt, Signal
-    HAS_QT = True
-except ImportError:
-    HAS_QT = False
+from artclaw_ui.qt_compat import *  # noqa: F401,F403
+HAS_QT = True
 
 from artclaw_ui.i18n import T
 
@@ -79,13 +72,24 @@ class ToolbarWidget(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
+        def _auto_width(btn: QPushButton, min_w: int = 50, pad: int = 20):
+            """根据文本宽度自适应设置 fixedWidth (PySide6 中 maxWidth 不可靠)"""
+            try:
+                fm = btn.fontMetrics()
+                tw = fm.horizontalAdvance(btn.text()) + pad
+            except Exception:
+                tw = min_w
+            btn.setFixedWidth(max(tw, min_w))
+
         # Left group
         self._new_btn = QPushButton(T("new_chat_btn"))
         self._new_btn.setFixedHeight(28)
+        _auto_width(self._new_btn, 60)
         self._new_btn.clicked.connect(self.new_chat_clicked)
 
         self._manage_btn = QPushButton(T("manage_btn"))
         self._manage_btn.setFixedHeight(28)
+        _auto_width(self._manage_btn, 50)
         self._manage_btn.clicked.connect(self.manage_clicked)
 
         layout.addWidget(self._new_btn)
@@ -94,6 +98,7 @@ class ToolbarWidget(QWidget):
         # 附件按钮 — 靠左，紧跟管理按钮
         self._attach_btn = QPushButton(T("attach_btn"))
         self._attach_btn.setFixedHeight(28)
+        _auto_width(self._attach_btn, 50)
         self._attach_btn.clicked.connect(self._on_attach_clicked)
         layout.addWidget(self._attach_btn)
 
@@ -102,11 +107,13 @@ class ToolbarWidget(QWidget):
         # Right group
         self._stop_btn = QPushButton("⏹ " + T("stop"))
         self._stop_btn.setFixedHeight(28)
+        _auto_width(self._stop_btn, 55)
         self._stop_btn.setEnabled(False)
         self._stop_btn.clicked.connect(self.stop_clicked)
 
         self._resume_btn = QPushButton(T("resume_btn"))
         self._resume_btn.setFixedHeight(28)
+        _auto_width(self._resume_btn, 50)
         self._resume_btn.setEnabled(True)
         self._resume_btn.clicked.connect(self.resume_clicked)
 

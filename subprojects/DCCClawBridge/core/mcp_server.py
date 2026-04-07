@@ -751,7 +751,8 @@ def _init_skill_runtime(server: MCPServer, adapter=None) -> None:
                 get_data_dir(adapter.get_software_name(), adapter.get_software_version()),
                 "memory"
             )
-        memory_store = init_memory_store(server, data_dir=data_dir)
+        dcc_name = adapter.get_software_name() if adapter else "dcc"
+        memory_store = init_memory_store(server, data_dir=data_dir, dcc_name=dcc_name)
         
         # 绑定 RetryTracker 到记忆管理器
         if server._retry_tracker and memory_store:

@@ -1,4 +1,4 @@
-"""
+﻿"""
 chat_status_bar.py - ArtClaw DCC Chat Status Bar
 ==================================================
 
@@ -13,15 +13,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-try:
-    from PySide2.QtWidgets import (
-        QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QLabel, QFrame, QSizePolicy,
-    )
-    from PySide2.QtCore import Qt, Signal
-    HAS_QT = True
-except ImportError:
-    HAS_QT = False
+from artclaw_ui.qt_compat import *  # noqa: F401,F403
+HAS_QT = True
 
 logger = logging.getLogger("artclaw.ui.status_bar")
 

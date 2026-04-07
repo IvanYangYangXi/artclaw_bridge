@@ -1,4 +1,4 @@
-"""
+﻿"""
 chat_quick_input.py - ArtClaw DCC Quick Input Panel
 
 Provides QuickInputPanel for managing and inserting predefined text snippets,
@@ -14,15 +14,15 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Optional
 
 try:
-    from PySide2.QtWidgets import (
+    from artclaw_ui.qt_compat import (
         QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
         QDialog, QLineEdit, QTextEdit, QScrollArea, QFrame,
         QSizePolicy, QGroupBox, QApplication
     )
-    from PySide2.QtCore import Signal, Qt
-    from PySide2.QtGui import QFont
+    from artclaw_ui.qt_compat import Signal, Qt
+    from artclaw_ui.qt_compat import QFont
 except ImportError:
-    raise ImportError("PySide2 is required.")
+    raise ImportError("Qt (PySide2/PySide6) is required.")
 
 from artclaw_ui.theme import COLORS, get_theme
 from artclaw_ui.utils import get_artclaw_config
@@ -111,7 +111,7 @@ class QuickInputEditDialog(QDialog):
 
         # Name
         name_lbl = QLabel("名称:")
-        name_lbl.setStyleSheet(f"color: {COLORS.get('text_primary', '#e0e0e0')};")
+        name_lbl.setStyleSheet(f"color: {COLORS.get('text', '#E0E0E0')};")
         layout.addWidget(name_lbl)
         self._name_input = QLineEdit()
         self._name_input.setPlaceholderText("快捷输入名称")
@@ -120,7 +120,7 @@ class QuickInputEditDialog(QDialog):
 
         # Content
         content_lbl = QLabel("内容:")
-        content_lbl.setStyleSheet(f"color: {COLORS.get('text_primary', '#e0e0e0')};")
+        content_lbl.setStyleSheet(f"color: {COLORS.get('text', '#E0E0E0')};")
         layout.addWidget(content_lbl)
         self._content_input = QTextEdit()
         self._content_input.setPlaceholderText("输入快捷文本内容...")
@@ -136,7 +136,9 @@ class QuickInputEditDialog(QDialog):
         btn_save = QPushButton("保存")
         btn_save.setFixedSize(70, 28)
         btn_save.setStyleSheet(
-            f"background-color: {COLORS.get('accent_blue', '#1e90ff')}; color: white; border-radius: 3px;"
+            f"QPushButton {{ background-color: {COLORS.get('accent', '#4B7BAC')}; color: white; "
+            f"border-radius: 3px; border: none; }}"
+            f"QPushButton:hover {{ background-color: {COLORS.get('accent_hover', '#5B8BBC')}; }}"
         )
         btn_save.clicked.connect(self._on_save)
         btn_row.addWidget(btn_cancel)
@@ -189,27 +191,30 @@ class QuickInputPanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Header row
-        header = QWidget()
+        # Header row — 整行可点击展开/折叠
+        header = QPushButton()
         header.setFixedHeight(32)
+        header.setCursor(Qt.PointingHandCursor)
         header.setStyleSheet(
-            f"background: {COLORS.get('bg_secondary', '#2a2a2a')};"
-            f"border-radius: 4px 4px 0 0;"
+            f"QPushButton {{ background: {COLORS.get('bg_secondary', '#3D3D3D')}; "
+            f"border: none; border-radius: 4px 4px 0 0; "
+            f"padding: 0; min-height: 0; text-align: left; }}"
+            f"QPushButton:hover {{ background: {COLORS.get('bg_hover', '#4A4A4A')}; }}"
         )
+        header.clicked.connect(self._toggle_collapse)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(8, 0, 8, 0)
         header_layout.setSpacing(6)
 
-        self._toggle_btn = QPushButton("▶")
-        self._toggle_btn.setFixedSize(20, 20)
-        self._toggle_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #888; border: none; font-size: 10px; }"
+        self._toggle_indicator = QLabel("▶")
+        self._toggle_indicator.setFixedWidth(16)
+        self._toggle_indicator.setStyleSheet(
+            "QLabel { color: #888; font-size: 10px; background: transparent; }"
         )
-        self._toggle_btn.clicked.connect(self._toggle_collapse)
-        header_layout.addWidget(self._toggle_btn)
+        header_layout.addWidget(self._toggle_indicator)
 
         lbl = QLabel("快捷输入")
-        lbl.setStyleSheet(f"color: {COLORS.get('text_primary', '#e0e0e0')}; font-size: 12px;")
+        lbl.setStyleSheet(f"QLabel {{ color: {COLORS.get('text', '#E0E0E0')}; font-size: 12px; background: transparent; }}")
         header_layout.addWidget(lbl)
         header_layout.addStretch()
 
@@ -217,18 +222,22 @@ class QuickInputPanel(QWidget):
         btn_edit_all = QPushButton("···")
         btn_edit_all.setFixedSize(24, 20)
         btn_edit_all.setStyleSheet(
-            "QPushButton { background: transparent; color: #888; border: none; font-size: 14px; }"
+            "QPushButton { background: transparent; color: #888; border: none; "
+            "font-size: 14px; padding: 0; min-height: 0; min-width: 0; }"
             "QPushButton:hover { color: #e0e0e0; }"
         )
         btn_edit_all.setToolTip("管理全部快捷输入")
         btn_edit_all.clicked.connect(self._on_edit_all)
         header_layout.addWidget(btn_edit_all)
 
-        btn_add = QPushButton("+添加")
-        btn_add.setFixedHeight(22)
+        btn_add = QPushButton("+")
+        btn_add.setFixedSize(32, 24)
+        btn_add.setToolTip("添加快捷输入")
         btn_add.setStyleSheet(
-            f"background-color: {COLORS.get('accent_blue', '#1e90ff')}; color: white;"
-            "border-radius: 3px; font-size: 11px; padding: 0 6px;"
+            f"QPushButton {{ background-color: {COLORS.get('accent', '#4B7BAC')}; color: white; "
+            f"border-radius: 3px; font-size: 16px; font-weight: bold; "
+            f"padding: 0; min-height: 0; min-width: 0; border: none; }}"
+            f"QPushButton:hover {{ background-color: {COLORS.get('accent_hover', '#5B8BBC')}; }}"
         )
         btn_add.clicked.connect(self._on_add)
         header_layout.addWidget(btn_add)
@@ -278,10 +287,11 @@ class QuickInputPanel(QWidget):
         btn_name.setFixedHeight(24)
         btn_name.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         btn_name.setStyleSheet(
-            f"QPushButton {{ background: {COLORS.get('bg_secondary', '#2a2a2a')};"
-            f"color: {COLORS.get('text_primary', '#e0e0e0')}; border-radius: 3px;"
-            f"font-size: 11px; padding: 0 6px; border: 1px solid {COLORS.get('border', '#3a3a3a')}; }}"
-            f"QPushButton:hover {{ background: {COLORS.get('accent_blue', '#1e90ff')}; color: white; }}"
+            f"QPushButton {{ background: {COLORS.get('bg_secondary', '#3D3D3D')};"
+            f"color: {COLORS.get('text', '#E0E0E0')}; border-radius: 3px;"
+            f"font-size: 11px; padding: 2px 6px; min-height: 0;"
+            f"border: 1px solid {COLORS.get('border', '#484848')}; }}"
+            f"QPushButton:hover {{ background: {COLORS.get('accent', '#4B7BAC')}; color: white; }}"
         )
         btn_name.setProperty("qi_index", index)
         btn_name.setToolTip(qi.content[:200] if qi.content else "")
@@ -292,7 +302,8 @@ class QuickInputPanel(QWidget):
         btn_edit = QPushButton("✎")
         btn_edit.setFixedSize(22, 24)
         btn_edit.setStyleSheet(
-            "QPushButton { background: transparent; color: #888; border: none; font-size: 12px; }"
+            "QPushButton { background: transparent; color: #888; border: none; "
+            "font-size: 12px; padding: 0; min-height: 0; min-width: 0; }"
             "QPushButton:hover { color: #e0e0e0; }"
         )
         btn_edit.setProperty("qi_index", index)
@@ -303,7 +314,8 @@ class QuickInputPanel(QWidget):
         btn_del = QPushButton("✕")
         btn_del.setFixedSize(22, 24)
         btn_del.setStyleSheet(
-            "QPushButton { background: transparent; color: #888; border: none; font-size: 12px; }"
+            "QPushButton { background: transparent; color: #888; border: none; "
+            "font-size: 12px; padding: 0; min-height: 0; min-width: 0; }"
             "QPushButton:hover { color: #e74c3c; }"
         )
         btn_del.setProperty("qi_index", index)
@@ -319,7 +331,7 @@ class QuickInputPanel(QWidget):
     def _toggle_collapse(self):
         self._collapsed = not self._collapsed
         self._body.setVisible(not self._collapsed)
-        self._toggle_btn.setText("▶" if self._collapsed else "▼")
+        self._toggle_indicator.setText("▶" if self._collapsed else "▼")
 
     def _load(self):
         self._items = load_quick_inputs()

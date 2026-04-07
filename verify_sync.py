@@ -91,6 +91,59 @@ def _detect_maya_install_dirs() -> List[Path]:
     return dirs
 
 
+# Blender 安装目录（自动检测）
+def _detect_blender_install_dirs() -> List[Path]:
+    """检测 Blender 安装目录（addons/artclaw_bridge/）"""
+    dirs: List[Path] = []
+    blender_base = Path(os.environ.get("APPDATA", "")) / "Blender Foundation" / "Blender"
+    if not blender_base.exists():
+        return dirs
+    for ver_dir in sorted(blender_base.iterdir(), reverse=True):
+        if not ver_dir.is_dir():
+            continue
+        addon_dir = ver_dir / "scripts" / "addons" / "artclaw_bridge"
+        if addon_dir.exists():
+            dirs.append(addon_dir)
+    return dirs
+
+
+# Houdini 安装目录（自动检测）
+def _detect_houdini_install_dirs() -> List[Path]:
+    """检测 Houdini 安装目录（scripts/python/DCCClawBridge/）"""
+    dirs: List[Path] = []
+    houdini_base = Path.home() / "Documents"
+    if not houdini_base.exists():
+        return dirs
+    for child in sorted(houdini_base.iterdir(), reverse=True):
+        if child.is_dir() and child.name.startswith("houdini"):
+            dcc_dir = child / "scripts" / "python" / "DCCClawBridge"
+            if dcc_dir.exists():
+                dirs.append(dcc_dir)
+    return dirs
+
+
+# Substance Painter 安装目录（自动检测）
+def _detect_sp_install_dir() -> Path | None:
+    """检测 Substance Painter 插件安装目录"""
+    sp_dir = (
+        Path.home() / "Documents" / "Adobe"
+        / "Adobe Substance 3D Painter" / "python" / "plugins"
+        / "artclaw_bridge"
+    )
+    return sp_dir if sp_dir.exists() else None
+
+
+# Substance Designer 安装目录（自动检测）
+def _detect_sd_install_dir() -> Path | None:
+    """检测 Substance Designer 插件安装目录"""
+    sd_dir = (
+        Path.home() / "Documents" / "Adobe"
+        / "Adobe Substance 3D Designer" / "python" / "sduserplugins"
+        / "artclaw_bridge"
+    )
+    return sd_dir if sd_dir.exists() else None
+
+
 # ---------------------------------------------------------------------------
 # 工具函数
 # ---------------------------------------------------------------------------
@@ -144,6 +197,40 @@ def collect_sync_pairs() -> List[Tuple[Path, Path, str]]:
             src = DCC_SRC_DIR / rel
             dst = maya_dir / rel
             pairs.append((src, dst, f"DCC->{tag}  {rel}"))
+
+    # --- DCC source → Blender install dirs ---
+    blender_dirs = _detect_blender_install_dirs()
+    for blender_dir in blender_dirs:
+        ver = blender_dir.parent.parent.parent.name  # e.g. "5.1"
+        for rel in dcc_files:
+            src = DCC_SRC_DIR / rel
+            dst = blender_dir / rel
+            pairs.append((src, dst, f"DCC->Blender/{ver}  {rel}"))
+
+    # --- DCC source → Houdini install dirs ---
+    houdini_dirs = _detect_houdini_install_dirs()
+    for houdini_dir in houdini_dirs:
+        ver = houdini_dir.parent.parent.parent.name  # e.g. "houdini20.5"
+        for rel in dcc_files:
+            src = DCC_SRC_DIR / rel
+            dst = houdini_dir / rel
+            pairs.append((src, dst, f"DCC->{ver}  {rel}"))
+
+    # --- DCC source → Substance Painter install dir ---
+    sp_dir = _detect_sp_install_dir()
+    if sp_dir:
+        for rel in dcc_files:
+            src = DCC_SRC_DIR / rel
+            dst = sp_dir / rel
+            pairs.append((src, dst, f"DCC->SP  {rel}"))
+
+    # --- DCC source → Substance Designer install dir ---
+    sd_dir = _detect_sd_install_dir()
+    if sd_dir:
+        for rel in dcc_files:
+            src = DCC_SRC_DIR / rel
+            dst = sd_dir / rel
+            pairs.append((src, dst, f"DCC->SD  {rel}"))
 
     return pairs
 
@@ -200,10 +287,12 @@ def main():
             newer = "src newer" if src_t > dst_t else "dst newer"
             print(f"  [DIFF] {desc}  src={h_src} dst={h_dst}  ({newer})")
 
-    # --- Orphan detection: Maya install files not in DCC source ---
+    # --- Orphan detection: install files not in DCC source ---
+    dcc_rels = set(str(r).replace(os.sep, "/") for r in _scan_dcc_source_files())
+
+    # Maya
     maya_dirs = _detect_maya_install_dirs()
     orphans: List[Tuple[str, Path]] = []
-    dcc_rels = set(str(r).replace(os.sep, "/") for r in _scan_dcc_source_files())
     for maya_dir in maya_dirs:
         label = maya_dir.parent.parent.name
         tag = "Maya" if label.isdigit() else f"Maya/{label}"
@@ -213,6 +302,46 @@ def main():
             rel = str(p.relative_to(maya_dir)).replace(os.sep, "/")
             if rel not in dcc_rels:
                 orphans.append((tag, p))
+
+    # Blender
+    for blender_dir in _detect_blender_install_dirs():
+        ver = blender_dir.parent.parent.parent.name
+        for p in sorted(blender_dir.rglob("*.py")):
+            if "__pycache__" in str(p):
+                continue
+            rel = str(p.relative_to(blender_dir)).replace(os.sep, "/")
+            if rel not in dcc_rels:
+                orphans.append((f"Blender/{ver}", p))
+
+    # Houdini
+    for houdini_dir in _detect_houdini_install_dirs():
+        ver = houdini_dir.parent.parent.parent.name
+        for p in sorted(houdini_dir.rglob("*.py")):
+            if "__pycache__" in str(p):
+                continue
+            rel = str(p.relative_to(houdini_dir)).replace(os.sep, "/")
+            if rel not in dcc_rels:
+                orphans.append((ver, p))
+
+    # SP
+    sp_dir = _detect_sp_install_dir()
+    if sp_dir:
+        for p in sorted(sp_dir.rglob("*.py")):
+            if "__pycache__" in str(p):
+                continue
+            rel = str(p.relative_to(sp_dir)).replace(os.sep, "/")
+            if rel not in dcc_rels:
+                orphans.append(("SP", p))
+
+    # SD
+    sd_dir = _detect_sd_install_dir()
+    if sd_dir:
+        for p in sorted(sd_dir.rglob("*.py")):
+            if "__pycache__" in str(p):
+                continue
+            rel = str(p.relative_to(sd_dir)).replace(os.sep, "/")
+            if rel not in dcc_rels:
+                orphans.append(("SD", p))
 
     if orphans:
         print()

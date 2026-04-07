@@ -1,4 +1,4 @@
-"""
+﻿"""
 chat_attachments.py - ArtClaw DCC Chat Attachment Management
 
 Provides AttachmentManager for managing pending file/image attachments,
@@ -15,15 +15,15 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 try:
-    from PySide2.QtWidgets import (
+    from artclaw_ui.qt_compat import (
         QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton,
         QScrollArea, QFrame, QFileDialog, QSizePolicy
     )
-    from PySide2.QtCore import Signal, Qt
-    from PySide2.QtGui import QPixmap
-    from PySide2.QtWidgets import QApplication
+    from artclaw_ui.qt_compat import Signal, Qt
+    from artclaw_ui.qt_compat import QPixmap
+    from artclaw_ui.qt_compat import QApplication
 except ImportError:
-    raise ImportError("PySide2 is required.")
+    raise ImportError("Qt (PySide2/PySide6) is required.")
 
 from artclaw_ui.theme import COLORS, get_theme
 from artclaw_ui.utils import format_file_size, is_image_file, get_mime_type

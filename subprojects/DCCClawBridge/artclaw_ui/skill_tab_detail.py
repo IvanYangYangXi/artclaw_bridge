@@ -1,4 +1,4 @@
-"""
+﻿"""
 skill_tab_detail.py - Skill 详情弹窗
 =======================================
 
@@ -11,15 +11,8 @@ import os
 import logging
 import subprocess
 
-try:
-    from PySide2.QtWidgets import (
-        QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-        QTextEdit, QSpacerItem, QSizePolicy,
-    )
-    from PySide2.QtCore import Qt
-    HAS_QT = True
-except ImportError:
-    HAS_QT = False
+from artclaw_ui.qt_compat import *  # noqa: F401,F403
+HAS_QT = True
 
 from artclaw_ui.theme import get_theme
 from artclaw_ui.utils import get_artclaw_config

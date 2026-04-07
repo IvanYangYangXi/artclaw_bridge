@@ -182,7 +182,11 @@ DCC_THEMES: dict[str, dict[str, str]] = {
 
 def get_theme(dcc_name: str = "maya") -> dict[str, str]:
     """获取指定 DCC 的主题配色字典"""
-    return DCC_THEMES.get(dcc_name.lower(), DCC_THEMES["maya"])
+    # Blender 使用与 Maya 相同的暗色主题（Blender-inspired dark theme）
+    name = dcc_name.lower()
+    if name == "blender":
+        name = "maya"
+    return DCC_THEMES.get(name, DCC_THEMES["maya"])
 
 
 # ---------------------------------------------------------------------------
@@ -353,9 +357,10 @@ QProgressBar{{background:{t['bg_secondary']};border:1px solid {t['border']};
     border-radius:4px;text-align:center;color:{t['text']};height:16px;}}
 QProgressBar::chunk{{background:{t['accent']};border-radius:3px;}}
 QCheckBox{{color:{t['text']};spacing:6px;}}
-QCheckBox::indicator{{width:14px;height:14px;border:1px solid {t['border']};
+QCheckBox::indicator{{width:16px;height:16px;border:2px solid {t['border']};
     border-radius:3px;background:{t['bg_input']};}}
-QCheckBox::indicator:checked{{background:{t['accent']};border-color:{t['accent']};}}
+QCheckBox::indicator:checked{{background:{t['accent']};border-color:#FFF;}}
+QCheckBox::indicator:unchecked{{background:{t['bg_input']};border-color:{t['border']};}}
 QCheckBox::indicator:hover{{border-color:{t['border_focus']};}}
 QRadioButton{{color:{t['text']};spacing:6px;}}
 QRadioButton::indicator{{width:14px;height:14px;border:1px solid {t['border']};

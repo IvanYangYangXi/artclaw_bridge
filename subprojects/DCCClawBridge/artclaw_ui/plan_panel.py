@@ -1,4 +1,4 @@
-"""
+﻿"""
 plan_panel.py - ArtClaw DCC Plan Mode UI
 
 Provides PlanManager for managing multi-step AI plans, and PlanCardWidget
@@ -13,14 +13,14 @@ from dataclasses import dataclass, field
 from typing import Callable, List, Optional
 
 try:
-    from PySide2.QtWidgets import (
+    from artclaw_ui.qt_compat import (
         QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
         QFrame, QScrollArea, QSizePolicy
     )
-    from PySide2.QtCore import Signal, Qt
-    from PySide2.QtGui import QFont
+    from artclaw_ui.qt_compat import Signal, Qt
+    from artclaw_ui.qt_compat import QFont
 except ImportError:
-    raise ImportError("PySide2 is required.")
+    raise ImportError("Qt (PySide2/PySide6) is required.")
 
 from artclaw_ui.theme import COLORS, get_theme
 

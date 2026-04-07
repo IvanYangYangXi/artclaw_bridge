@@ -23,6 +23,52 @@ REQUIRED_DEPS = [
 ]
 
 
+def _find_python() -> str:
+    """
+    查找可用的 Python 解释器路径。
+
+    在 DCC 宿主程序中 sys.executable 通常指向 DCC 自身的 exe
+    (如 Adobe Substance 3D Painter.exe)，不能用于 pip install。
+    需要查找宿主附带的 Python 解释器。
+
+    查找优先级:
+        1. sys.executable 本身就是 python（名称包含 'python'）
+        2. 宿主目录下的 pythonsdk/python.exe（SP/SD）
+        3. 宿主的 bin/hython.exe（Houdini）
+        4. 同目录下的 python.exe
+        5. fallback: sys.executable（可能失败但至少有日志）
+    """
+    exe = sys.executable
+    exe_name = os.path.basename(exe).lower()
+
+    # 1. sys.executable 本身就是 Python（Maya/Blender/Houdini 等）
+    if "python" in exe_name or "hython" in exe_name:
+        return exe
+
+    exe_dir = os.path.dirname(exe)
+
+    # 2. SP/SD: resources/pythonsdk/python.exe
+    candidates = [
+        os.path.join(exe_dir, "resources", "pythonsdk", "python.exe"),
+        os.path.join(exe_dir, "pythonsdk", "python.exe"),
+        # 3. Houdini fallback
+        os.path.join(exe_dir, "bin", "hython.exe"),
+        os.path.join(exe_dir, "python.exe"),
+    ]
+
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            logger.info(f"Found Python interpreter: {candidate}")
+            return candidate
+
+    # 5. Fallback
+    logger.warning(
+        f"sys.executable is not Python ({exe}), "
+        "no embedded Python found. pip install may fail."
+    )
+    return exe
+
+
 def get_lib_dir() -> str:
     """获取插件私有 Lib/ 目录路径"""
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -83,7 +129,7 @@ def install_missing(callback=None):
 
     def _install():
         try:
-            python = sys.executable
+            python = _find_python()
             for pkg in missing:
                 cmd = [
                     python, "-m", "pip", "install",
