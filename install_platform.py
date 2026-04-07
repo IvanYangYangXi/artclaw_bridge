@@ -52,7 +52,7 @@ PLATFORM_CONFIGS = {
         "skills_installed_path": "~/.openclaw/skills",
         "mcp_config_path": "~/.openclaw/openclaw.json",
         "mcp_config_key": "mcp.servers",
-        "bridge_file": "openclaw_bridge.py",
+        "bridge_file": "openclaw_ws.py",
         "has_gateway": True,
         "has_setup_config": True,
     },

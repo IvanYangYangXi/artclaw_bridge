@@ -27,10 +27,70 @@ logger = logging.getLogger("artclaw.substance_designer")
 def _require_sd():
     """延迟 import sd 模块，仅在 Substance Designer 环境中可用"""
     import sd
-    from sd.api import SDApplication
 
-    app = SDApplication.getApplication()
+    app = sd.getContext().getSDApplication()
     return sd, app
+
+
+# 预导入的 sd.api 子模块缓存（在首次调用时填充，避免 exec 中 import 死锁）
+_SD_API_CACHE: dict = {}
+
+
+def _ensure_sd_api_imports():
+    """
+    预导入常用 sd.api 子模块到缓存。
+
+    SD 的模块 import 在 exec() 中可能因为线程锁竞争超时，
+    但在普通函数调用上下文中是安全的。
+    首次调用时一次性加载，后续直接使用缓存。
+    """
+    if _SD_API_CACHE:
+        return _SD_API_CACHE
+
+    try:
+        from sd.api.sdproperty import SDPropertyCategory
+        from sd.api.sdbasetypes import float2, float3, float4, ColorRGBA, int2, int3, int4
+        from sd.api.sdvaluefloat import SDValueFloat
+        from sd.api.sdvalueint import SDValueInt
+        from sd.api.sdvaluebool import SDValueBool
+        from sd.api.sdvaluestring import SDValueString
+        from sd.api.sdvaluefloat2 import SDValueFloat2
+        from sd.api.sdvaluefloat3 import SDValueFloat3
+        from sd.api.sdvaluefloat4 import SDValueFloat4
+        from sd.api.sdvaluecolorrgba import SDValueColorRGBA
+
+        _SD_API_CACHE.update({
+            "SDPropertyCategory": SDPropertyCategory,
+            "float2": float2, "float3": float3, "float4": float4,
+            "ColorRGBA": ColorRGBA,
+            "int2": int2, "int3": int3, "int4": int4,
+            "SDValueFloat": SDValueFloat,
+            "SDValueInt": SDValueInt,
+            "SDValueBool": SDValueBool,
+            "SDValueString": SDValueString,
+            "SDValueFloat2": SDValueFloat2,
+            "SDValueFloat3": SDValueFloat3,
+            "SDValueFloat4": SDValueFloat4,
+            "SDValueColorRGBA": SDValueColorRGBA,
+        })
+
+        # 可选的额外模块（某些 SD 版本可能没有）
+        for opt_import in [
+            ("sd.api.sdvalueint2", "SDValueInt2"),
+            ("sd.api.sdvalueint3", "SDValueInt3"),
+            ("sd.api.sdvalueint4", "SDValueInt4"),
+        ]:
+            try:
+                mod = __import__(opt_import[0], fromlist=[opt_import[1]])
+                _SD_API_CACHE[opt_import[1]] = getattr(mod, opt_import[1])
+            except (ImportError, AttributeError):
+                pass
+
+        logger.info("ArtClaw: SD API modules pre-imported (%d items)", len(_SD_API_CACHE))
+    except Exception as e:
+        logger.warning("ArtClaw: Failed to pre-import SD API modules: %s", e)
+
+    return _SD_API_CACHE
 
 
 class SubstanceDesignerAdapter(BaseDCCAdapter):
@@ -67,6 +127,9 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
     def on_startup(self) -> None:
         """SD 启动时调用：设置 DCC 名称 + 启动 MCP Server"""
         logger.info("ArtClaw: Substance Designer adapter startup")
+
+        # 预导入 SD API 子模块（避免 exec 中 import 死锁）
+        _ensure_sd_api_imports()
 
         # 设置 DCC 名称（影响 Gateway session key）
         try:
@@ -371,6 +434,10 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
                 "L": sd_module,
                 "graph": current_graph,
             }
+
+            # 注入预导入的 SD API 类（避免 exec 中 import 超时）
+            api_cache = _ensure_sd_api_imports()
+            exec_locals.update(api_cache)
 
             if context:
                 exec_locals.update(context)

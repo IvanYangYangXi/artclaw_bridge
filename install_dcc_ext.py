@@ -368,6 +368,9 @@ def install_substance_painter(force: bool, platform_type: str = "openclaw"):
         )
     cprint("OK", "已创建 __init__.py (SP plugin 包入口, 延迟加载)", "green")
 
+    # 尝试安装 Python 依赖到 SP Python
+    _install_substance_python_deps("Painter")
+
     # 安装 DCC Skills
     install_dcc_skills(["substance_painter", "universal"], platform_type)
 
@@ -464,6 +467,9 @@ def install_substance_designer(force: bool, platform_type: str = "openclaw"):
         )
     cprint("OK", "已创建 __init__.py (SD plugin 包入口, 延迟加载)", "green")
 
+    # 尝试安装 Python 依赖到 SD Python
+    _install_substance_python_deps("Designer")
+
     # 安装 DCC Skills
     install_dcc_skills(["substance_designer", "universal"], platform_type)
 
@@ -493,3 +499,69 @@ def uninstall_substance_designer():
 
     cprint("完成", "Substance Designer 插件卸载完成", "green")
     return True
+
+
+# ===========================================================================
+# Substance 共用: Python 依赖安装
+# ===========================================================================
+
+
+def _install_substance_python_deps(product: str):
+    """
+    尝试查找 Substance Painter/Designer Python 并安装依赖。
+
+    Args:
+        product: "Painter" 或 "Designer"
+    """
+    python = _find_substance_python(product)
+    if not python:
+        cprint("提示", f"未找到 Substance 3D {product} Python，请手动安装依赖", "yellow")
+        cprint("提示", "需要: pip install websockets pydantic", "yellow")
+        return
+    deps = ["websockets", "pydantic"]
+    try:
+        result = subprocess.run(
+            [python, "-m", "pip", "install"] + deps,
+            capture_output=True, text=True, timeout=180,
+        )
+        if result.returncode == 0:
+            cprint("OK", f"Python 依赖已安装到 Substance {product} Python ({', '.join(deps)})", "green")
+        else:
+            error = result.stderr.strip() or result.stdout.strip()
+            cprint("警告", f"依赖安装失败: {error}", "yellow")
+            cprint("提示", f'请手动运行: "{python}" -m pip install {" ".join(deps)}', "yellow")
+    except Exception as e:
+        cprint("警告", f"依赖安装失败: {e}", "yellow")
+        cprint("提示", f'请手动运行: "{python}" -m pip install {" ".join(deps)}', "yellow")
+
+
+def _find_substance_python(product: str) -> str | None:
+    """
+    查找 Substance Painter/Designer 内置 Python。
+
+    SP: C:\\Program Files\\Adobe\\Adobe Substance 3D Painter\\resources\\pythonsdk\\python.exe
+    SD: C:\\Program Files\\Adobe\\Adobe Substance 3D Designer\\plugins\\pythonsdk\\python.exe
+    """
+    if platform.system() != "Windows":
+        return None
+
+    # SP 和 SD 的 pythonsdk 位置不同
+    sdk_subdirs = {
+        "Painter": ["resources", "pythonsdk"],
+        "Designer": ["plugins", "pythonsdk"],
+    }
+    subdir_parts = sdk_subdirs.get(product, ["pythonsdk"])
+
+    for base in [
+        "C:\\Program Files\\Adobe",
+        "C:\\Program Files (x86)\\Adobe",
+    ]:
+        app_dir = os.path.join(base, f"Adobe Substance 3D {product}")
+        if not os.path.isdir(app_dir):
+            continue
+        p = os.path.join(app_dir, *subdir_parts, "python.exe")
+        if os.path.isfile(p):
+            cprint("OK", f"找到 Substance {product} Python: {p}", "cyan")
+            return p
+
+    return None

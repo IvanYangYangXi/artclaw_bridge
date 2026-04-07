@@ -19,207 +19,258 @@ metadata:
 
 ---
 
-## 规则 0：API 模块
+## 规则 0：API 模块与版本
 
-- SD Python API 模块名是 **`sd`**（不是 `substance_designer`）
-- 获取应用实例：
-
-```python
-from sd.api.sdapplication import SDApplication
-app = SDApplication.getApplication()
-```
-
-- 核心管理器：
-  - **包管理器**：`app.getPackageMgr()` — 管理 .sbs 包的加载/创建/保存
-  - **UI 管理器**：`app.getUIMgr()` — 获取当前图、当前选择等编辑器状态
-
----
-
-## 规则 1：严格单线程 ⚠️
-
-- **SD API 严格单线程**，所有调用必须在主线程中串行执行
-- 不能使用 `threading`、`asyncio` 或任何并发机制调用 SD API
-- **调用不存在的节点定义会导致 SD 永久挂起（freeze）**，必须先验证
-- 创建节点前**必须**验证定义 ID 存在（见规则 4）
-
----
-
-## 规则 2：无 Undo API
-
-- SD Python API **不支持 undo group / undo transaction**
-- 不存在类似 UE `ScopedTransaction` 或 Maya `undoInfo` 的机制
-- **破坏性操作前要格外谨慎**：
-  - 删除节点前确认目标正确
-  - 断开连接前记录原始连接关系
-  - 修改参数前可先读取并打印当前值
-
----
-
-## 规则 3：节点图操作核心
-
-SD 以**节点图（Graph）**为核心数据结构：
-
-- **包（Package）** → 包含多个 **图（Graph）** → 图包含 **节点（Node）**
-- 获取当前图：
-
-```python
-graph = app.getUIMgr().getCurrentGraph()
-if graph is None:
-    print("错误：没有打开的图")
-    # 必须中止操作
-```
-
-- 创建节点：`node = graph.newNode(definition_id)`
-- 获取节点属性：`node.getProperties(category)` / `node.getPropertyFromId(id, category)`
-- 连接节点：`output_property.connect(input_property)`
-
----
-
-## 规则 4：节点定义验证（强制）
-
-**创建任何节点之前，必须先验证其定义 ID 存在。** 跳过验证可能导致 SD 永久挂起。
+- SD Python API 模块名是 **`sd`**
+- 当前版本：**SD 12.1.0**（Python 3.9.9）
+- 获取应用实例（**唯一正确方式**）：
 
 ```python
 import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdnode import SDNode
+app = sd.getContext().getSDApplication()
+```
 
-app = SDApplication.getApplication()
+- **❌ 错误方式**（会报 `has no attribute 'getApplication'`）：
+```python
+# 禁止！以下写法不存在
+from sd.api import SDApplication
+app = SDApplication.getApplication()  # ← 不存在的 API
+```
 
-# 方法：通过 SDModuleManager 查找定义
-module_mgr = app.getModuleMgr()
+- 核心管理器：
+  - **包管理器**：`app.getPackageMgr()` — 管理 .sbs 包
+  - **UI 管理器**：`app.getUIMgr()` — 获取当前图、编辑器状态
 
-# 原子节点定义 ID 格式: "sbs::compositing::<name>"
-# 例如: "sbs::compositing::blend"
-#       "sbs::compositing::levels"
-#       "sbs::compositing::normal"
+---
 
-# 创建前验证
-definition_id = "sbs::compositing::blend"
-try:
-    node = graph.newNode(definition_id)
-    if node is None:
-        print(f"错误：无法创建节点 {definition_id}")
-    else:
-        print(f"成功创建节点: {node.getIdentifier()}")
-except Exception as e:
-    print(f"错误：节点定义 {definition_id} 无效 - {e}")
+## 规则 1：预注入变量（直接使用，无需 import）
+
+`execute_code` 已预注入以下变量，**直接使用即可，无需 import**：
+
+| 变量 | 类型 | 说明 |
+|------|------|------|
+| `sd` | module | sd 模块 |
+| `app` | SDApplication | 应用实例 |
+| `graph` | SDSBSCompGraph / None | 当前活动图 |
+| `S` | list | 当前图的节点列表 |
+| `W` | str | 当前文件路径 |
+| `L` | module | sd 模块（同 sd） |
+| `SDPropertyCategory` | enum | 属性分类枚举 |
+| `float2` / `float3` / `float4` | class | 向量类型 |
+| `ColorRGBA` | class | 颜色类型 |
+| `SDValueFloat` | class | 浮点值 |
+| `SDValueInt` | class | 整数值 |
+| `SDValueBool` | class | 布尔值 |
+| `SDValueString` | class | 字符串值 |
+| `SDValueFloat2/3/4` | class | 向量值 |
+| `SDValueColorRGBA` | class | 颜色值 |
+
+```python
+# ✅ 正确：直接使用预注入变量
+if graph is None:
+    result = "错误：没有打开的图"
+else:
+    nodes = graph.getNodes()
+    result = f"节点数: {len(nodes)}"
+```
+
+```python
+# ❌ 错误：在 exec 中 import sd.api 子模块会超时死锁
+from sd.api.sdproperty import SDPropertyCategory  # 会超时！
 ```
 
 ---
 
-## 规则 5：常见陷阱 🚫
+## 规则 2：严格单线程 + 代码简短 ⚠️
 
-| 陷阱 | 后果 | 正确做法 |
-|------|------|----------|
-| `SDUsage.sNew()` | **永久挂起 SD** | **禁止使用** |
-| `arrange_nodes()` / 自动布局 | 破坏所有节点连接 | 用 `node.setPosition(SDValueFloat2.sNew(float2(x, y)))` 手动定位 |
-| 假设库节点输出名为 `"unique_filter_output"` | 连接失败 | 先用 `node.getProperties(SDPropertyCategory.Output)` 查实际端口名 |
-| 不检查 `getCurrentGraph()` 返回值 | NoneType 错误 | 始终判空并中止 |
-| 并发调用 SD API | SD 挂起或崩溃 | 严格串行执行 |
+- **SD API 严格单线程**，所有调用必须在主线程中串行执行
+- **每次工具调用的代码要尽量简短**（<30 行），避免超时
+- 复杂操作分多次调用完成，每次完成一个步骤
+- **禁止**在 exec 代码中使用 `threading`、`asyncio`
+- **禁止**在 exec 代码中 `import sd.api.*` 子模块（用预注入变量代替）
 
 ---
 
-## 规则 6：PBR 输出标准
+## 规则 3：无 Undo API
 
-SD 图的输出节点使用以下标准标识符（Usage）：
+- SD Python API **不支持 undo group / undo transaction**
+- **破坏性操作前要格外谨慎**：
+  - 删除节点前确认目标正确
+  - 修改参数前先读取并打印当前值
 
-| 通道 | 标识符 | 说明 |
-|------|--------|------|
-| BaseColor | `basecolor` | 基础颜色/漫反射 |
+---
+
+## 规则 4：节点创建（关键陷阱）
+
+### 原子节点
+
+```python
+# 使用 definition_id 创建
+node = graph.newNode("sbs::compositing::blend")
+if node is None:
+    result = "创建节点失败"
+```
+
+### 库节点（Library nodes）
+
+```python
+# 必须通过 resource URL + newInstanceNode
+pkg_mgr = app.getPackageMgr()
+resource = None
+for pkg in pkg_mgr.getPackages():
+    try:
+        r = pkg.findResourceFromUrl(resource_url)
+        if r is not None:
+            resource = r
+            break
+    except Exception:
+        pass
+if resource:
+    node = graph.newInstanceNode(resource)
+```
+
+### ⛔ 致命陷阱
+
+| 操作 | 后果 | 说明 |
+|------|------|------|
+| `graph.newNode("不存在的id")` | **SD 永久挂起** | 创建前必须验证 definition_id |
+| `SDUsage.sNew()` | **SD 永久挂起** | **绝对禁止** |
+| `graph.getNodeDefinitions()` | 可能极慢/超时 | 避免在工具调用中使用 |
+
+### 常用原子节点定义 ID
+
+```
+sbs::compositing::blend          # 混合
+sbs::compositing::levels         # 色阶
+sbs::compositing::curve          # 曲线
+sbs::compositing::hsl            # HSL 调整
+sbs::compositing::blur           # 模糊
+sbs::compositing::sharpen        # 锐化
+sbs::compositing::normal         # 法线
+sbs::compositing::warp           # 扭曲
+sbs::compositing::directionalwarp # 方向扭曲
+sbs::compositing::transformation # 变换
+sbs::compositing::distance       # 距离
+sbs::compositing::gradient       # 渐变
+sbs::compositing::uniform        # 纯色
+sbs::compositing::output         # 输出节点
+sbs::compositing::input          # 输入节点
+sbs::compositing::text           # 文字
+```
+
+---
+
+## 规则 5：节点连接
+
+连接 API 在 **SDNode** 上，不在 SDProperty 上：
+
+```python
+# ✅ 方式 1：通过端口 ID 连接（推荐）
+conn = src_node.newPropertyConnectionFromId(
+    "unique_filter_output",  # 源输出端口 ID
+    dst_node,                # 目标节点
+    "input1"                 # 目标输入端口 ID
+)
+
+# ✅ 方式 2：通过属性对象连接
+out_prop = src_node.getPropertyFromId("unique_filter_output", SDPropertyCategory.Output)
+in_prop = dst_node.getPropertyFromId("input1", SDPropertyCategory.Input)
+conn = src_node.newPropertyConnection(out_prop, dst_node, in_prop)
+
+# ❌ 错误：SDProperty 没有 connect 方法！
+# out_prop.connect(in_prop)  # 不存在！会 AttributeError
+```
+
+### 查询/删除连接
+
+```python
+# 查询连接
+prop = node.getPropertyFromId("input1", SDPropertyCategory.Input)
+conns = node.getPropertyConnections(prop)  # -> SDArray[SDConnection]
+if conns and conns.getSize() > 0:
+    c = conns.getItem(0)
+    src_node = c.getOutputPropertyNode()
+    src_port = c.getOutputProperty()
+
+# 删除某端口所有连接
+node.deletePropertyConnections(prop)
+
+# 删除单个连接
+conn.disconnect()
+```
+
+### 常见端口 ID
+
+| 节点 | 输入端口 | 输出端口 |
+|------|----------|----------|
+| blend | source, destination, opacity | unique_filter_output |
+| levels/curve/hsl/blur | input1 | unique_filter_output |
+| warp | input1, inputgradient | unique_filter_output |
+| directionalwarp | input1, **inputintensity** (非 inputgradient!) | unique_filter_output |
+
+**⚠️ 库节点的端口名可能不同**，使用前必须先查询：
+```python
+for p in node.getProperties(SDPropertyCategory.Output):
+    print(p.getId())
+```
+
+---
+
+## 规则 6：参数设置
+
+```python
+# 设置浮点参数
+node.setInputPropertyValueFromId("opacitymult", SDValueFloat.sNew(0.5))
+
+# 设置整数参数（如混合模式）
+node.setInputPropertyValueFromId("blendingmode", SDValueInt.sNew(3))  # Multiply
+
+# 设置位置
+node.setPosition(float2(100.0, 200.0))
+```
+
+**⚠️ SD 12: 对 float 参数传 SDValueInt2/3/4 会静默崩溃** — 类型必须匹配。
+
+---
+
+## 规则 7：PBR 输出标准
+
+| 通道 | Usage 标识符 | 说明 |
+|------|-------------|------|
+| BaseColor | `baseColor` | 基础颜色 |
 | Normal | `normal` | 法线贴图 |
 | Roughness | `roughness` | 粗糙度 |
 | Metallic | `metallic` | 金属度 |
 | Height | `height` | 高度图 |
-| AO | `ambientocclusion` | 环境遮蔽 |
-
-创建输出节点时，使用 `sbs::compositing::output` 定义 ID，然后设置对应的 usage。
-
----
-
-## 规则 7：记忆系统集成
-
-与其他 DCC 相同的记忆系统规则：
-
-- **操作前**：通过 `memory_store` 检查是否有相关操作历史和用户偏好
-- **操作后**：存储操作结果、参数配置、遇到的问题
-- **错误恢复**：记录错误原因和解决方案，避免重复犯错
-
-```python
-from memory_store import get_memory_store
-memory = get_memory_store()
-
-# 检查操作历史
-history = memory.check_operation("sd_create_blend_node")
-
-# 存储操作结果
-memory.store("sd_last_operation", {
-    "action": "create_node",
-    "definition": "sbs::compositing::blend",
-    "graph": graph.getIdentifier(),
-    "success": True
-})
-```
+| AO | `ambientOcclusion` | 环境遮蔽 |
 
 ---
 
 ## 标准操作模板
 
-所有 SD 操作脚本应遵循此结构：
-
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
+# 预注入变量已可用：sd, app, graph, S, W, L,
+# SDPropertyCategory, float2, SDValueFloat, SDValueInt, 等
 
 if graph is None:
-    print("错误：没有打开的图")
+    result = "错误：没有打开的图"
 else:
     try:
-        # ========== 操作代码 ==========
-        
         # 1. 验证前置条件
-        # 2. 执行操作
-        # 3. 验证结果
-        
-        # ========== 操作结束 ==========
-        print("操作完成")
+        # 2. 执行操作（简短！）
+        # 3. 返回结果
+        result = "操作完成"
     except Exception as e:
-        print(f"操作失败: {e}")
+        result = f"操作失败: {e}"
 ```
 
 ---
 
-## 关键 import 参考
+## 推荐工作流（多步骤）
 
-```python
-# 基础
-from sd.api.sdapplication import SDApplication
-from sd.api.sdpackage import SDPackage
-from sd.api.sdgraph import SDGraph
-from sd.api.sdnode import SDNode
-
-# 属性
-from sd.api.sdproperty import SDProperty, SDPropertyCategory
-from sd.api.sdvalue import SDValue
-from sd.api.sdvaluefloat import SDValueFloat
-from sd.api.sdvaluefloat2 import SDValueFloat2
-from sd.api.sdvaluefloat3 import SDValueFloat3
-from sd.api.sdvaluefloat4 import SDValueFloat4
-from sd.api.sdvalueint import SDValueInt
-from sd.api.sdvaluebool import SDValueBool
-from sd.api.sdvalueenum import SDValueEnum
-from sd.api.sdvaluestring import SDValueString
-
-# 颜色模式
-from sd.api.sdvaluecolorrgba import SDValueColorRGBA
-
-# 类型
-from sd.api.sdtypefloat import SDTypeFloat
-from sd.api.sdtypefloat2 import SDTypeFloat2
-from sd.api.sdtypefloat3 import SDTypeFloat3
-from sd.api.sdtypefloat4 import SDTypeFloat4
-from sd.api.sdtypeint import SDTypeInt
-```
+1. `get_context` — 确认 SD 连接和当前图状态
+2. 创建节点（一次创建 1-3 个）
+3. 查询节点端口 ID（库节点必须）
+4. 逐个连接节点
+5. 设置参数
+6. 验证图结构

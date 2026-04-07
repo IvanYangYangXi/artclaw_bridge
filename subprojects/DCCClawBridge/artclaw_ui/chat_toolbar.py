@@ -26,7 +26,7 @@ logger = logging.getLogger("artclaw.ui.toolbar")
 # ── Style constants ──────────────────────────────────────────────────────────
 _BTN_BASE = (
     "QPushButton {{ background: {bg}; color: {fg}; border: 1px solid {border}; "
-    "border-radius: 4px; font-size: 12px; padding: 4px 10px; }}"
+    "border-radius: 4px; font-size: 12px; padding: 4px 10px; min-width: 0px; }}"
     "QPushButton:hover {{ background: {hover}; }}"
     "QPushButton:pressed {{ background: {pressed}; }}"
     "QPushButton:disabled {{ background: #444; color: #666; border-color: #444; }}"
@@ -72,8 +72,8 @@ class ToolbarWidget(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
-        def _auto_width(btn: QPushButton, min_w: int = 50, pad: int = 20):
-            """根据文本宽度自适应设置 fixedWidth (PySide6 中 maxWidth 不可靠)"""
+        def _auto_width(btn: QPushButton, min_w: int = 50, pad: int = 28):
+            """根据文本宽度自适应设置 fixedWidth（pad 包含 QSS padding+border）"""
             try:
                 fm = btn.fontMetrics()
                 tw = fm.horizontalAdvance(btn.text()) + pad

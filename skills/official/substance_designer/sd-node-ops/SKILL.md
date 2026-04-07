@@ -20,25 +20,20 @@ metadata:
 
 ## 通用前置代码
 
-所有节点操作脚本的标准开头：
+`run_python` 已预注入以下变量，**直接使用，无需 import**：
+
+- `sd`, `app`, `graph`, `S`, `W`, `L`
+- `SDPropertyCategory`, `float2`, `float3`, `float4`, `ColorRGBA`
+- `SDValueFloat`, `SDValueInt`, `SDValueBool`, `SDValueString`
+- `SDValueFloat2`, `SDValueFloat3`, `SDValueFloat4`, `SDValueColorRGBA`
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdproperty import SDPropertyCategory
-from sd.api.sdvaluefloat import SDValueFloat
-from sd.api.sdvaluefloat2 import SDValueFloat2
-from sd.api.sdvaluefloat4 import SDValueFloat4
-from sd.api.sdvalueint import SDValueInt
-from sd.api.sdvaluebool import SDValueBool
-from sd.api.sdvaluestring import SDValueString
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
-
+# ✅ 直接使用预注入变量
 if graph is None:
-    print("错误：没有打开的图")
-    # 必须中止
+    result = "错误：没有打开的图"
+
+# ❌ 禁止在 exec 中 import sd.api 子模块（会超时死锁）
+# from sd.api.sdproperty import SDPropertyCategory  # 禁止！
 ```
 
 ---
@@ -74,25 +69,15 @@ if graph is None:
 ### 创建原子节点示例
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
-
 if graph is None:
-    print("错误：没有打开的图")
+    result = "错误：没有打开的图"
 else:
-    # 创建 Blend 节点
     blend_node = graph.newNode("sbs::compositing::blend")
     if blend_node is None:
-        print("错误：无法创建 Blend 节点")
+        result = "错误：无法创建 Blend 节点"
     else:
-        # 设置位置（避免堆叠）
-        from sd.api.sdvaluefloat2 import SDValueFloat2
-        from sd.api.sdbasetypes import float2
         blend_node.setPosition(float2(200, 0))
-        print(f"创建 Blend 节点: {blend_node.getIdentifier()}")
+        result = f"创建 Blend 节点: {blend_node.getIdentifier()}"
 ```
 
 ---
@@ -117,29 +102,33 @@ else:
 
 ### 创建库节点
 
-库节点通过 `graph.newNode()` 传入资源 URL 创建：
+库节点通过 `graph.newInstanceNode()` + 资源查找创建：
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdbasetypes import float2
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
-pkg_mgr = app.getPackageMgr()
-
 if graph is None:
-    print("错误：没有打开的图")
+    result = "错误：没有打开的图"
 else:
-    # 创建库节点需要先找到对应的资源
-    # 方法1: 通过 SBS 资源路径
-    try:
-        noise_node = graph.newNode("sbs::compositing::uniform")
-        if noise_node:
-            noise_node.setPosition(float2(-400, 0))
-            print(f"创建节点成功: {noise_node.getIdentifier()}")
-    except Exception as e:
-        print(f"创建失败: {e}")
+    pkg_mgr = app.getPackageMgr()
+    # 方法: 通过 SBS 资源路径查找并创建实例
+    resource_url = "sbs://perlin_noise.sbs/perlin_noise"
+    resource = None
+    for pkg in pkg_mgr.getPackages():
+        try:
+            r = pkg.findResourceFromUrl(resource_url)
+            if r is not None:
+                resource = r
+                break
+        except Exception:
+            pass
+    if resource:
+        node = graph.newInstanceNode(resource)
+        if node:
+            node.setPosition(float2(-400, 0))
+            result = f"创建库节点成功: {node.getIdentifier()}"
+        else:
+            result = "创建库节点失败"
+    else:
+        result = f"找不到资源: {resource_url}"
 ```
 
 > **⚠️ 注意**：库节点的输出端口名称不一定是 `"unique_filter_output"`。
@@ -149,23 +138,24 @@ else:
 
 ## 3. 连接节点
 
-### 基本连接流程
+### ⚠️ 核心 API（必读）
 
-连接的核心是：**源节点的输出属性** `.connect()` **目标节点的输入属性**。
+SD 的连接 API 在 **SDNode** 上，不在 SDProperty 上：
+
+- **`src_node.newPropertyConnectionFromId(out_port_id, dst_node, in_port_id)`** — 通过端口 ID 连接（推荐）
+- **`src_node.newPropertyConnection(out_prop, dst_node, in_prop)`** — 通过属性对象连接
+- **`node.getPropertyConnections(prop)`** — 查询某端口的连接
+- **`node.deletePropertyConnections(prop)`** — 删除某端口的所有连接
+- **`connection.disconnect()`** — 删除单个连接
+
+> ❌ **`prop.connect()` 不存在！** SDProperty 没有 connect 方法。
+
+### 方式 1：通过端口 ID 连接（推荐）
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdproperty import SDPropertyCategory
-from sd.api.sdbasetypes import float2
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
-
 if graph is None:
-    print("错误：没有打开的图")
+    result = "错误：没有打开的图"
 else:
-    # 创建两个节点
     uniform_node = graph.newNode("sbs::compositing::uniform")
     levels_node = graph.newNode("sbs::compositing::levels")
     
@@ -173,54 +163,64 @@ else:
         uniform_node.setPosition(float2(-200, 0))
         levels_node.setPosition(float2(200, 0))
         
-        # 获取源节点的输出属性
-        out_props = uniform_node.getProperties(SDPropertyCategory.Output)
-        # 获取目标节点的输入属性
-        in_props = levels_node.getProperties(SDPropertyCategory.Input)
-        
-        if out_props and in_props:
-            # 打印端口名，确认正确
-            print("输出端口:")
-            for p in out_props:
-                print(f"  {p.getId()}")
-            print("输入端口:")
-            for p in in_props:
-                print(f"  {p.getId()}")
-            
-            # 连接第一个输出到第一个输入
-            src_output = out_props[0]
-            dst_input = in_props[0]
-            src_output.connect(dst_input)
-            print("连接成功")
-        else:
-            print("无法获取端口属性")
+        # 通过端口 ID 直接连接
+        conn = uniform_node.newPropertyConnectionFromId(
+            "unique_filter_output",  # 源节点输出端口 ID
+            levels_node,             # 目标节点
+            "input1"                 # 目标节点输入端口 ID
+        )
+        result = f"连接成功: {conn}" if conn else "连接失败"
 ```
 
-### 按 ID 查找端口并连接
+### 方式 2：通过属性对象连接
 
 ```python
-# 按端口 ID 精确连接
+# 先获取属性对象，再连接
+out_prop = src_node.getPropertyFromId("unique_filter_output", SDPropertyCategory.Output)
+in_prop = dst_node.getPropertyFromId("input1", SDPropertyCategory.Input)
+
+if out_prop and in_prop:
+    conn = src_node.newPropertyConnection(out_prop, dst_node, in_prop)
+    result = f"连接成功: {conn}"
+```
+
+### 安全连接函数（带端口验证）
+
+```python
 def connect_by_id(src_node, src_port_id, dst_node, dst_port_id):
-    """通过端口 ID 连接两个节点"""
+    """通过端口 ID 连接两个节点（带验证）"""
+    # 验证源端口存在
     src_prop = src_node.getPropertyFromId(src_port_id, SDPropertyCategory.Output)
-    dst_prop = dst_node.getPropertyFromId(dst_port_id, SDPropertyCategory.Input)
-    
     if src_prop is None:
-        print(f"错误：源节点没有输出端口 '{src_port_id}'")
-        # 打印可用端口
-        for p in src_node.getProperties(SDPropertyCategory.Output):
-            print(f"  可用输出: {p.getId()}")
-        return False
+        avail = [p.getId() for p in src_node.getProperties(SDPropertyCategory.Output)]
+        print(f"错误：源节点没有输出端口 '{src_port_id}'，可用: {avail}")
+        return None
     
+    # 验证目标端口存在
+    dst_prop = dst_node.getPropertyFromId(dst_port_id, SDPropertyCategory.Input)
     if dst_prop is None:
-        print(f"错误：目标节点没有输入端口 '{dst_port_id}'")
-        for p in dst_node.getProperties(SDPropertyCategory.Input):
-            print(f"  可用输入: {p.getId()}")
-        return False
+        avail = [p.getId() for p in dst_node.getProperties(SDPropertyCategory.Input)]
+        print(f"错误：目标节点没有输入端口 '{dst_port_id}'，可用: {avail}")
+        return None
     
-    src_prop.connect(dst_prop)
-    print(f"已连接: {src_node.getIdentifier()}.{src_port_id} -> {dst_node.getIdentifier()}.{dst_port_id}")
-    return True
+    conn = src_node.newPropertyConnectionFromId(src_port_id, dst_node, dst_port_id)
+    print(f"已连接: [{src_node.getIdentifier()}].{src_port_id} -> [{dst_node.getIdentifier()}].{dst_port_id}")
+    return conn
+```
+
+### 查询已有连接
+
+```python
+# 检查节点某个端口的连接
+prop = node.getPropertyFromId("input1", SDPropertyCategory.Input)
+if prop:
+    conns = node.getPropertyConnections(prop)
+    if conns and conns.getSize() > 0:
+        for i in range(conns.getSize()):
+            c = conns.getItem(i)
+            src = c.getOutputPropertyNode()
+            src_port = c.getOutputProperty()
+            print(f"  <- [{src.getIdentifier()}].{src_port.getId()}")
 ```
 
 ---
@@ -230,53 +230,29 @@ def connect_by_id(src_node, src_port_id, dst_node, dst_port_id):
 ### 设置基础类型参数
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdproperty import SDPropertyCategory
-from sd.api.sdvaluefloat import SDValueFloat
-from sd.api.sdvalueint import SDValueInt
-from sd.api.sdvaluebool import SDValueBool
-from sd.api.sdvaluefloat4 import SDValueFloat4
-from sd.api.sdbasetypes import float2, float4
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
-
 if graph is None:
-    print("错误：没有打开的图")
+    result = "错误：没有打开的图"
 else:
-    # 假设已创建节点
     node = graph.newNode("sbs::compositing::blend")
     if node:
         node.setPosition(float2(0, 0))
         
-        # ---- 设置 Float 参数 ----
-        # Blend 节点的 opacity 参数
-        opacity_prop = node.getPropertyFromId("opacity", SDPropertyCategory.Input)
-        if opacity_prop:
-            node.setPropertyValue(opacity_prop, SDValueFloat.sNew(0.75))
-            print("设置 opacity = 0.75")
+        # ---- 设置 Float 参数（推荐方式：setInputPropertyValueFromId）----
+        node.setInputPropertyValueFromId("opacity", SDValueFloat.sNew(0.75))
         
         # ---- 设置 Int 参数（如混合模式）----
-        blending_prop = node.getPropertyFromId("blendingmode", SDPropertyCategory.Input)
-        if blending_prop:
-            # 混合模式枚举值：0=Copy, 1=Add, 2=Subtract, 3=Multiply ...
-            node.setPropertyValue(blending_prop, SDValueInt.sNew(3))
-            print("设置 blending mode = Multiply (3)")
+        node.setInputPropertyValueFromId("blendingmode", SDValueInt.sNew(3))  # Multiply
         
         # ---- 设置 Color (Float4) 参数 ----
         uniform_node = graph.newNode("sbs::compositing::uniform")
         if uniform_node:
             uniform_node.setPosition(float2(-200, 200))
-            color_prop = uniform_node.getPropertyFromId("outputcolor", SDPropertyCategory.Input)
-            if color_prop:
-                node.setPropertyValue(
-                    color_prop, 
-                    SDValueFloat4.sNew(float4(0.8, 0.2, 0.1, 1.0))
-                )
-                print("设置颜色 = (0.8, 0.2, 0.1, 1.0)")
+            uniform_node.setInputPropertyValueFromId(
+                "outputcolor",
+                SDValueFloat4.sNew(float4(0.8, 0.2, 0.1, 1.0))
+            )
         
-        print("参数设置完成")
+        result = "参数设置完成"
 ```
 
 ### 查找参数再设置（安全模式）
@@ -306,21 +282,9 @@ def set_param_safe(node, param_id, value):
 为图创建标准 PBR 输出通道：
 
 ```python
-import sd
-from sd.api.sdapplication import SDApplication
-from sd.api.sdproperty import SDPropertyCategory
-from sd.api.sdvaluestring import SDValueString
-from sd.api.sdvalueint import SDValueInt
-from sd.api.sdvalueenum import SDValueEnum
-from sd.api.sdbasetypes import float2
-
-app = SDApplication.getApplication()
-graph = app.getUIMgr().getCurrentGraph()
-
 if graph is None:
-    print("错误：没有打开的图")
+    result = "错误：没有打开的图"
 else:
-    # PBR 输出通道定义
     pbr_outputs = [
         {"usage": "basecolor",        "label": "BaseColor",  "pos_y": 0},
         {"usage": "normal",           "label": "Normal",     "pos_y": 150},
@@ -391,17 +355,22 @@ for i, node in enumerate(branch_nodes):
 ## 7. 删除节点和断开连接
 
 ```python
-# 断开连接
+# 断开某端口的所有连接
 def disconnect_input(node, input_port_id):
-    """断开节点指定输入端口的连接"""
+    """断开节点指定输入端口的所有连接"""
     prop = node.getPropertyFromId(input_port_id, SDPropertyCategory.Input)
     if prop:
-        connections = prop.getConnections()
-        if connections:
-            prop.disconnect()  # 断开所有到此端口的连接
-            print(f"已断开 {node.getIdentifier()}.{input_port_id}")
-        else:
-            print(f"端口 {input_port_id} 没有连接")
+        node.deletePropertyConnections(prop)
+        print(f"已断开 {node.getIdentifier()}.{input_port_id} 的所有连接")
+
+# 断开单个连接
+def disconnect_one(node, port_id, category):
+    """断开指定端口的某个连接"""
+    prop = node.getPropertyFromId(port_id, category)
+    if prop:
+        conns = node.getPropertyConnections(prop)
+        if conns and conns.getSize() > 0:
+            conns.getItem(0).disconnect()  # 断开第一个连接
 
 # 删除节点
 def delete_node(graph, node):

@@ -47,9 +47,10 @@ def _find_python() -> str:
 
     exe_dir = os.path.dirname(exe)
 
-    # 2. SP/SD: resources/pythonsdk/python.exe
+    # 2. SP/SD: pythonsdk/python.exe (多种目录结构)
     candidates = [
-        os.path.join(exe_dir, "resources", "pythonsdk", "python.exe"),
+        os.path.join(exe_dir, "resources", "pythonsdk", "python.exe"),  # SP
+        os.path.join(exe_dir, "plugins", "pythonsdk", "python.exe"),   # SD
         os.path.join(exe_dir, "pythonsdk", "python.exe"),
         # 3. Houdini fallback
         os.path.join(exe_dir, "bin", "hython.exe"),
