@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "sp_bake_export",
+  "display_name": "Sp Bake Export",
+  "description": "SP 烘焙与导出工作流：烘焙贴图、配置导出预设、批量导出。 Use when AI needs to: (1) bake texture maps, (2) export textures, (3) configure export settings. Substance Painter only (run_python).",
+  "version": "0.0.1",
+  "author": "ArtClaw",
+  "software": "substance_painter",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "sp_bake_export",
+      "description": "SP 烘焙与导出工作流：烘焙贴图、配置导出预设、批量导出。 Use when AI needs to: (1) bake texture maps, (2) export textures, (3) configure export settings. Substance Painter only (run_python)."
+    }
+  ]
+}
