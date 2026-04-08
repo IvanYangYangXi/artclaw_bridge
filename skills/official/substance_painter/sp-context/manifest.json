@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "sp_context",
+  "display_name": "Sp Context",
+  "description": "查询 SP 项目上下文：项目信息、纹理集、层结构、通道列表。 Use when AI needs to: (1) get project info, (2) list texture sets, (3) inspect layer stack, (4) check channels. Substance Painter only (run_python).",
+  "version": "0.0.1",
+  "author": "ArtClaw",
+  "software": "substance_painter",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "sp_context",
+      "description": "查询 SP 项目上下文：项目信息、纹理集、层结构、通道列表。 Use when AI needs to: (1) get project info, (2) list texture sets, (3) inspect layer stack, (4) check channels. Substance Painter only (run_python)."
+    }
+  ]
+}
