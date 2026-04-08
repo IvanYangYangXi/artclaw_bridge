@@ -8,8 +8,6 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
 ![Status](https://img.shields.io/badge/status-beta-orange.svg)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 
-[![Star History Chart](https://api.star-history.com/svg?repos=IvanYangYangXi/artclaw_bridge&type=Date)](https://star-history.com/#IvanYangYangXi/artclaw_bridge&Date)
-
 ---
 
 ## 🎬 演示
