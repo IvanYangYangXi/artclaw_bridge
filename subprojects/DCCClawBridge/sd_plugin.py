@@ -8,10 +8,13 @@ sd_plugin.py - Substance Designer 插件入口
 SD 约定导出:
   - initializeSDPlugin()   — SD 加载插件时调用
   - uninitializeSDPlugin() — SD 卸载插件时调用
+
+启动后通过菜单 ArtClaw → Open Chat 打开面板。
 """
 
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 import sys
@@ -29,6 +32,8 @@ logger = logging.getLogger("artclaw.substance_designer")
 _global_state = {
     "adapter": None,
     "running": False,
+    "menu_object_name": "artclaw_menu",  # SD menu objectName
+    "atexit_registered": False,
 }
 
 
@@ -83,7 +88,7 @@ def _check_integrity(dcc_bridge_dir: str) -> None:
 
 
 def _deferred_startup() -> None:
-    """延迟启动：创建 adapter + 打开 Chat Panel"""
+    """延迟启动：创建 adapter + 注册菜单（不自动打开面板）"""
     if _global_state["running"]:
         logger.warning("ArtClaw: already running, skip startup")
         return
@@ -100,7 +105,7 @@ def _deferred_startup() -> None:
 
         ensure_dependencies(callback=_on_deps)
 
-        # 创建 adapter
+        # 创建 adapter（MCP Server 等后台服务）
         from adapters.substance_designer_adapter import SubstanceDesignerAdapter
 
         adapter = SubstanceDesignerAdapter()
@@ -113,22 +118,64 @@ def _deferred_startup() -> None:
         import builtins
         builtins._artclaw_adapter = adapter
 
-        # 打开 Chat Panel（延迟一下等 UI 就绪）
-        try:
-            try:
-                from PySide2.QtCore import QTimer
-            except ImportError:
-                from PySide6.QtCore import QTimer
-            QTimer.singleShot(1000, adapter._open_chat_panel)
-        except ImportError:
-            adapter._open_chat_panel()
+        # 注册菜单入口
+        _register_menu()
 
-        logger.info("ArtClaw: Substance Designer adapter initialized")
+        # 注册 atexit 兜底清理
+        if not _global_state["atexit_registered"]:
+            atexit.register(_atexit_cleanup)
+            _global_state["atexit_registered"] = True
+
+        logger.info(
+            "ArtClaw: Substance Designer adapter initialized "
+            "(use ArtClaw > Open Chat to open panel)"
+        )
 
     except Exception as e:
         logger.error("ArtClaw: Startup failed: %s", e)
         import traceback
         traceback.print_exc()
+
+
+def _register_menu() -> None:
+    """在 SD 菜单栏添加 'ArtClaw' 菜单 → 'Open Chat' 入口"""
+    try:
+        import sd
+        from sd.api.qtforpythonuimgrwrapper import QtForPythonUIMgrWrapper
+
+        ctx = sd.getContext()
+        ui_mgr = QtForPythonUIMgrWrapper(ctx.getSDApplication().getUIMgr())
+
+        menu = ui_mgr.newMenu("ArtClaw", _global_state["menu_object_name"])
+
+        try:
+            from PySide2 import QtWidgets
+        except ImportError:
+            from PySide6 import QtWidgets
+
+        open_action = QtWidgets.QAction("Open Chat", None)
+        open_action.triggered.connect(lambda: show_panel())
+        menu.addAction(open_action)
+
+        # 保存引用防止 GC
+        _global_state["_menu_ref"] = menu
+        _global_state["_action_ref"] = open_action
+
+        logger.info("ArtClaw: Menu registered (ArtClaw > Open Chat)")
+    except Exception as e:
+        logger.warning("ArtClaw: Failed to register menu: %s", e)
+
+
+def _atexit_cleanup() -> None:
+    """atexit 兜底：确保后台线程正常关闭"""
+    try:
+        adapter = _global_state.get("adapter")
+        if adapter:
+            adapter.on_shutdown()
+    except Exception:
+        pass
+    _global_state["adapter"] = None
+    _global_state["running"] = False
 
 
 def initializeSDPlugin() -> None:
@@ -161,27 +208,96 @@ def show_panel():
     """
     显示 / 重新打开 Chat Panel。
 
-    如果 Panel 已被关闭，重新创建并显示。
-    如果 ArtClaw 未运行，则先启动。
+    通过 SD 内置 API 注册为 dock widget，
+    关闭后可随时通过菜单重新打开。
     """
     if not _global_state["running"]:
         logger.info("ArtClaw: Not running, starting first...")
-        initializeSDPlugin()
-        return
+        _deferred_startup()
 
     adapter = _global_state.get("adapter")
-    if adapter is not None:
+    if adapter is None:
+        logger.error("ArtClaw: Adapter not available")
+        return
+
+    try:
+        from artclaw_ui.chat_panel import ChatPanel, get_chat_panel
+        import artclaw_ui.chat_panel as _cp_mod
+
+        # 检查是否已有活跃面板
+        existing = get_chat_panel()
+        if existing is not None:
+            try:
+                existing.show()
+                existing.raise_()
+                return
+            except RuntimeError:
+                # C++ 对象已销毁
+                _cp_mod._panel_instance = None
+
+        # 创建新面板
+        panel = ChatPanel(parent=None, adapter=adapter)
+        panel.setObjectName("ArtClawChatPanel")
+        panel.setWindowTitle("ArtClaw Chat")
+
+        # 通过 SD 内置 API 注册为 dock widget
         try:
-            adapter._open_chat_panel()
-            logger.info("ArtClaw: Chat Panel reopened")
+            import sd
+            from sd.api.qtforpythonuimgrwrapper import QtForPythonUIMgrWrapper
+
+            ctx = sd.getContext()
+            ui_mgr = QtForPythonUIMgrWrapper(ctx.getSDApplication().getUIMgr())
+            dock = ui_mgr.newDockWidget("artclaw_chat_dock", "ArtClaw Chat")
+
+            try:
+                from PySide2 import QtWidgets
+            except ImportError:
+                from PySide6 import QtWidgets
+
+            # dock 是 QWidget (dock widget)，设置 panel 为其内容
+            layout = QtWidgets.QVBoxLayout(dock)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(panel)
+            dock.show()
+
+            logger.info("ArtClaw: Chat Panel registered as dock widget")
         except Exception as e:
-            logger.error("ArtClaw: Failed to reopen Chat Panel: %s", e)
+            # Fallback：独立窗口
+            logger.warning(
+                "ArtClaw: newDockWidget failed (%s), "
+                "falling back to standalone window", e
+            )
+            panel.resize(420, 700)
+            panel.show()
+
+        _cp_mod._panel_instance = panel
+        adapter._panel = panel
+
+    except Exception as e:
+        logger.error("ArtClaw: Failed to open Chat Panel: %s", e)
+        import traceback
+        traceback.print_exc()
 
 
 def uninitializeSDPlugin() -> None:
     """SD 插件卸载入口"""
     logger.info("ArtClaw: uninitializeSDPlugin called")
 
+    # 先关闭面板（停止 QTimer 等资源）
+    try:
+        from artclaw_ui.chat_panel import get_chat_panel
+        import artclaw_ui.chat_panel as _cp_mod
+        panel = get_chat_panel()
+        if panel is not None:
+            try:
+                panel.close()
+            except Exception:
+                pass
+            _cp_mod._panel_instance = None
+    except Exception:
+        pass
+
+    # 关闭 adapter
     adapter = _global_state.get("adapter")
     if adapter:
         try:
@@ -189,8 +305,20 @@ def uninitializeSDPlugin() -> None:
         except Exception as e:
             logger.error("ArtClaw: Shutdown error: %s", e)
 
+    # 清理菜单
+    try:
+        import sd
+        from sd.api.qtforpythonuimgrwrapper import QtForPythonUIMgrWrapper
+        ctx = sd.getContext()
+        ui_mgr = QtForPythonUIMgrWrapper(ctx.getSDApplication().getUIMgr())
+        ui_mgr.deleteMenu(_global_state["menu_object_name"])
+    except Exception:
+        pass
+
     _global_state["adapter"] = None
     _global_state["running"] = False
+    _global_state.pop("_menu_ref", None)
+    _global_state.pop("_action_ref", None)
 
     # 清理全局引用
     import builtins

@@ -274,16 +274,18 @@ class HoudiniAdapter(BaseDCCAdapter):
         hou = _require_houdini()
 
         # 构建执行环境
-        exec_globals = {"__builtins__": __builtins__}
-        exec_locals = {
+        # 预注入变量放 exec_globals，确保 def 内部也能访问（Python exec 的闭包规则）
+        exec_globals = {
+            "__builtins__": __builtins__,
             "hou": hou,
             "S": hou.selectedNodes(),
             "W": hou.hipFile.path() or "",
             "L": hou,
         }
+        exec_locals: Dict = {}
 
         if context:
-            exec_locals.update(context)
+            exec_globals.update(context)
 
         # 捕获 stdout
         stdout_capture = io.StringIO()
@@ -297,7 +299,7 @@ class HoudiniAdapter(BaseDCCAdapter):
                 exec(code, exec_globals, exec_locals)
 
             output = stdout_capture.getvalue()
-            result = exec_locals.get("result", None)
+            result = exec_locals.get("result") or exec_globals.get("result")
 
             return {
                 "success": True,

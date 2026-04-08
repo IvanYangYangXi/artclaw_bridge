@@ -179,6 +179,7 @@ class QuickInputPanel(QWidget):
         super().__init__(parent)
         self._items: List[QuickInput] = []
         self._collapsed = True  # 默认折叠
+        self.setMinimumHeight(36)  # 折叠时至少显示 header
         self._build_ui()
         self._load()
 
@@ -188,12 +189,13 @@ class QuickInputPanel(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(4, 2, 4, 2)
         root.setSpacing(0)
 
         # Header row — 整行可点击展开/折叠
         header = QPushButton()
         header.setFixedHeight(32)
+        header.setMinimumHeight(32)
         header.setCursor(Qt.PointingHandCursor)
         header.setStyleSheet(
             f"QPushButton {{ background: {COLORS.get('bg_secondary', '#3D3D3D')}; "

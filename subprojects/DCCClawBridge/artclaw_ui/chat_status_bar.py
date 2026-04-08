@@ -65,22 +65,31 @@ class StatusBarWidget(QWidget):
         row1 = QHBoxLayout()
         row1.setSpacing(4)
 
+        _compact_btn_ss = (
+            "QPushButton { color: #C0C0C0; background: transparent; border: none;"
+            " font-size: 11px; padding: 0px 4px; min-width: 0; min-height: 0; }"
+            "QPushButton:hover { color: #FFFFFF; background: rgba(255,255,255,0.08); border-radius: 3px; }"
+        )
+
         self._status_btn = QPushButton(f"● {self._T('disconnected')}")
         self._status_btn.setFlat(True)
         self._status_btn.setFixedHeight(22)
         self._status_btn.setCursor(Qt.PointingHandCursor)
+        self._status_btn.setStyleSheet(_compact_btn_ss)
         self._status_btn.clicked.connect(self._toggle_row3)
 
         self._agent_btn = QPushButton("🤖 Agent")
         self._agent_btn.setFlat(True)
         self._agent_btn.setFixedHeight(22)
         self._agent_btn.setCursor(Qt.PointingHandCursor)
+        self._agent_btn.setStyleSheet(_compact_btn_ss)
         self._agent_btn.clicked.connect(self.settings_clicked)
 
         self._session_btn = QPushButton("💬 ▼")
         self._session_btn.setFlat(True)
         self._session_btn.setFixedHeight(22)
         self._session_btn.setCursor(Qt.PointingHandCursor)
+        self._session_btn.setStyleSheet(_compact_btn_ss)
         self._session_btn.clicked.connect(self.session_menu_clicked)
 
         self._ctx_label = QLabel(f"{self._T('context_usage')}: --")
@@ -119,18 +128,22 @@ class StatusBarWidget(QWidget):
 
         self._conn_btn = QPushButton(self._T("connect"))
         self._conn_btn.setFixedHeight(22)
+        self._conn_btn.setMaximumWidth(60)
         self._conn_btn.clicked.connect(self.connect_clicked)
 
         self._disconn_btn = QPushButton(self._T("disconnect"))
         self._disconn_btn.setFixedHeight(22)
+        self._disconn_btn.setMaximumWidth(60)
         self._disconn_btn.clicked.connect(self.disconnect_clicked)
 
         self._diag_btn = QPushButton(self._T("diagnose"))
         self._diag_btn.setFixedHeight(22)
+        self._diag_btn.setMaximumWidth(60)
         self._diag_btn.clicked.connect(self.diagnose_clicked)
 
         self._logs_btn = QPushButton(self._T("view_logs"))
         self._logs_btn.setFixedHeight(22)
+        self._logs_btn.setMaximumWidth(72)
         self._logs_btn.clicked.connect(self._open_logs)
 
         row3.addWidget(self._conn_btn)
@@ -156,13 +169,6 @@ class StatusBarWidget(QWidget):
             StatusBarWidget {{
                 background: {bg};
                 border-bottom: 1px solid {border};
-            }}
-            QPushButton {{
-                color: #C0C0C0;
-                background: transparent;
-                border: none;
-                font-size: 11px;
-                padding: 0 4px;
             }}
             QPushButton:hover {{
                 color: #FFFFFF;
@@ -214,14 +220,21 @@ class StatusBarWidget(QWidget):
     def update_connection(self, connected: bool) -> None:
         """更新连接状态显示"""
         self._connected = connected
+        _base = "background: transparent; border: none; font-size: 11px; padding: 0px 4px; min-width: 0; min-height: 0;"
         if connected:
             self._status_btn.setText(f"● {self._T('connected')}")
-            self._status_btn.setStyleSheet("QPushButton { color: #4CAF50; background: transparent; border: none; font-size: 11px; }")
+            self._status_btn.setStyleSheet(
+                f"QPushButton {{ color: #4CAF50; {_base} }}"
+                "QPushButton:hover { color: #FFFFFF; background: rgba(255,255,255,0.08); border-radius: 3px; }"
+            )
             self._conn_btn.setEnabled(False)
             self._disconn_btn.setEnabled(True)
         else:
             self._status_btn.setText(f"● {self._T('disconnected')}")
-            self._status_btn.setStyleSheet("QPushButton { color: #888888; background: transparent; border: none; font-size: 11px; }")
+            self._status_btn.setStyleSheet(
+                f"QPushButton {{ color: #888888; {_base} }}"
+                "QPushButton:hover { color: #FFFFFF; background: rgba(255,255,255,0.08); border-radius: 3px; }"
+            )
             self._conn_btn.setEnabled(True)
             self._disconn_btn.setEnabled(False)
         self._rebuild_summary()

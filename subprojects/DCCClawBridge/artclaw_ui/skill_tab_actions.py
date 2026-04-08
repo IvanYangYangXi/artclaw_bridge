@@ -15,6 +15,23 @@ import os
 logger = logging.getLogger("artclaw.ui.skill_actions")
 
 
+def _get_hub():
+    """获取 skill_hub (UE) 或 skill_runtime (DCC) 实例"""
+    try:
+        from skill_hub import get_skill_hub
+        hub = get_skill_hub()
+        if hub:
+            return hub
+    except ImportError:
+        pass
+    try:
+        from core.skill_runtime import get_skill_runtime
+        return get_skill_runtime()
+    except ImportError:
+        pass
+    return None
+
+
 def exec_config_action(action: str, skill_name: str):
     """执行 Skill 配置操作 (enable/disable/pin/unpin)"""
     try:
@@ -29,8 +46,7 @@ def exec_config_action(action: str, skill_name: str):
         if action == "enable":
             disabled.discard(skill_name)
             try:
-                from skill_hub import get_skill_hub
-                hub = get_skill_hub()
+                hub = _get_hub()
                 if hub:
                     hub.enable_skill(skill_name)
             except Exception:
@@ -40,8 +56,7 @@ def exec_config_action(action: str, skill_name: str):
             if skill_name in pinned:
                 pinned.remove(skill_name)
             try:
-                from skill_hub import get_skill_hub
-                hub = get_skill_hub()
+                hub = _get_hub()
                 if hub:
                     hub.disable_skill(skill_name)
             except Exception:

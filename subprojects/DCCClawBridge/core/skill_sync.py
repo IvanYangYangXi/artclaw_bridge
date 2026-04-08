@@ -34,10 +34,11 @@ def _parse_frontmatter_light(skill_md_path: Path) -> dict:
     """
     轻量解析 SKILL.md YAML frontmatter，只提取顶层和 metadata.artclaw.* key-value。
 
+    支持多行 description (> 和 |)，正确处理嵌套 metadata.artclaw 块。
     不依赖 skill_hub 或 PyYAML，零外部依赖。
 
     返回: {"name": ..., "description": ..., "version": ..., "author": ..., ...}
-    （author/version 会合并 metadata.artclaw.* 的值）
+    （author/version/software/category/risk_level/display_name 会合并 metadata.artclaw.* 的值）
     """
     try:
         raw = skill_md_path.read_text(encoding="utf-8")[:4096]
@@ -59,24 +60,31 @@ def _parse_frontmatter_light(skill_md_path: Path) -> dict:
     in_multiline = False
     multiline_key = ""
     multiline_val = ""
+    multiline_target = None  # result 或 ac_meta
 
     for line in fm_block.split("\n"):
         stripped = line.strip()
 
-        # 跳过空行和注释
-        if not stripped or stripped.startswith("#"):
-            continue
-
         # 处理多行值（description: > 的后续行）
         if in_multiline:
-            if line.startswith("  ") or line.startswith("\t"):
+            if not stripped:
+                # 空行在多行中可能是段落分隔，跳过
+                continue
+            indent = len(line) - len(line.lstrip())
+            if indent >= 2:
+                # 缩进行：多行值的续行
                 multiline_val += " " + stripped
                 continue
             else:
-                # 多行结束
-                result[multiline_key] = multiline_val.strip()
+                # 缩进回退：多行结束
+                target = multiline_target or result
+                target[multiline_key] = multiline_val.strip()
                 in_multiline = False
                 # 继续解析当前行
+
+        # 跳过空行和注释
+        if not stripped or stripped.startswith("#"):
+            continue
 
         # 检测缩进层级
         indent = len(line) - len(line.lstrip())
@@ -101,21 +109,25 @@ def _parse_frontmatter_light(skill_md_path: Path) -> dict:
                 in_multiline = True
                 multiline_key = key
                 multiline_val = ""
+                multiline_target = result
                 continue
             result[key] = val.strip('"').strip("'")
-        elif indent <= 4 and in_metadata:
+        elif in_metadata and not in_artclaw:
             if key == "artclaw":
                 in_artclaw = True
                 continue
-            if in_artclaw and indent >= 4:
-                ac_meta[key] = val.strip('"').strip("'")
-            elif not in_artclaw:
-                in_metadata = (key == "artclaw")  # 其他 metadata 子 key 忽略
         elif in_artclaw:
+            if val == ">" or val == "|":
+                in_multiline = True
+                multiline_key = key
+                multiline_val = ""
+                multiline_target = ac_meta
+                continue
             ac_meta[key] = val.strip('"').strip("'")
 
     if in_multiline:
-        result[multiline_key] = multiline_val.strip()
+        target = multiline_target or result
+        target[multiline_key] = multiline_val.strip()
 
     # 合并: metadata.artclaw.* 的值覆盖顶层 fallback
     for k in ("author", "version", "software", "category", "risk_level", "display_name"):
@@ -865,6 +877,9 @@ def _build_manifest_from_skill_md(skill_dir: Path, existing: dict) -> dict:
       - 新格式: metadata.artclaw.{field}
       - 旧格式: 顶层 {field}（向后兼容）
 
+    使用本模块的 _parse_frontmatter_light() 解析 frontmatter，
+    不依赖 skill_hub（DCC 环境中不存在 skill_hub）。
+
     Args:
         skill_dir: Skill 目录路径
         existing: 已有的 manifest 字典（可能不完整）
@@ -872,34 +887,24 @@ def _build_manifest_from_skill_md(skill_dir: Path, existing: dict) -> dict:
     Returns:
         补全后的 manifest 字典
     """
-    from skill_hub import _parse_yaml_frontmatter
-
     skill_md_path = skill_dir / "SKILL.md"
     if not skill_md_path.exists():
         return existing
 
-    try:
-        content = skill_md_path.read_text(encoding="utf-8")
-    except Exception:
-        return existing
-
-    fm = _parse_yaml_frontmatter(content)
+    fm = _parse_frontmatter_light(skill_md_path)
     if not fm:
         return existing
 
     skill_name = skill_dir.name
     fm_name = fm.get("name", skill_name).replace("-", "_")
 
-    # 从 metadata.artclaw 读取 ArtClaw 专属字段，旧格式顶层 fallback
-    metadata = fm.get("metadata", {})
-    ac_meta = metadata.get("artclaw", {}) if isinstance(metadata, dict) else {}
-
     def _ac(field, default=""):
-        """优先 metadata.artclaw.{field}，fallback 顶层 fm.{field}。"""
-        val = ac_meta.get(field) if isinstance(ac_meta, dict) else None
-        if val is not None and val != "":
+        """优先 metadata.artclaw.{field} (已由 _parse_frontmatter_light 合并)，
+        fallback 顶层 fm.{field}。"""
+        val = fm.get(field, "")
+        if val:
             return val
-        return fm.get(field, default)
+        return default
 
     # 推断 software
     _software = _ac("software", "")
@@ -1041,11 +1046,25 @@ def rename_skill(old_name: str, new_name: str,
 
 
 def _notify_skill_hub(force: bool = False) -> None:
-    """通知 skill_hub 重新扫描。force=True 时强制重扫（发布后需要刷新缓存的 version）。"""
+    """通知 skill_hub/skill_runtime 重新扫描。force=True 时强制重扫（发布后需要刷新缓存的 version）。"""
     try:
         from skill_hub import get_skill_hub
         hub = get_skill_hub()
         if hub:
             hub.scan_and_register()
+            return
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # DCC 环境: 尝试 skill_runtime
+    try:
+        from core.skill_runtime import get_skill_runtime
+        rt = get_skill_runtime()
+        if rt:
+            rt.scan_and_register()
+    except ImportError:
+        pass
     except Exception:
         pass

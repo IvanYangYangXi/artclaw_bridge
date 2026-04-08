@@ -259,7 +259,7 @@ if HAS_QT:
             self._t = get_theme(dcc_name)
             self._collapsed = message.tool_collapsed
             self._body: Optional[QWidget] = None
-            self._toggle_btn: Optional[QPushButton] = None
+            self._toggle_arrow: Optional[QLabel] = None
             self._status_lbl: Optional[QLabel] = None
             self._build()
 
@@ -274,13 +274,24 @@ if HAS_QT:
             main.setContentsMargins(0, 0, 0, 0)
             main.setSpacing(0)
 
-            # --- Header (单行紧凑) ---
-            hf = QWidget()
-            hf.setStyleSheet("background:transparent;")
+            # --- Header (整行可点击，触发折叠/展开) ---
+            hf = QPushButton()
+            hf.setFlat(True)
+            hf.setCursor(Qt.PointingHandCursor)
+            hf.setFixedHeight(28)
+            hf.setStyleSheet(
+                "QPushButton{background:transparent;border:none;"
+                "text-align:left;padding:0px 6px 0px 8px;}"
+                "QPushButton:hover{background:rgba(255,255,255,0.05);}")
+            hf.clicked.connect(self._toggle)
             hl = QHBoxLayout(hf)
-            hl.setContentsMargins(8, 3, 6, 3)
+            hl.setContentsMargins(0, 0, 0, 0)
             hl.setSpacing(4)
 
+            self._toggle_arrow = QLabel("▶" if self._collapsed else "▼")
+            self._toggle_arrow.setStyleSheet(
+                f"color:{t['text_dim']};font-size:10px;background:transparent;")
+            hl.addWidget(self._toggle_arrow)
             hl.addWidget(self._lbl("🔧", "background:transparent;font-size:12px;"))
             hl.addWidget(self._lbl(
                 m.tool_name or "未知工具",
@@ -291,14 +302,6 @@ if HAS_QT:
                 f"color:{t['text_dim']};background:transparent;font-size:11px;")
             hl.addWidget(self._status_lbl)
             hl.addStretch()
-
-            self._toggle_btn = QPushButton("▶" if self._collapsed else "▼")
-            self._toggle_btn.setFixedSize(18, 18)
-            self._toggle_btn.setStyleSheet(
-                f"QPushButton{{background:transparent;color:{t['text_dim']};border:none;font-size:10px;}}"
-                f"QPushButton:hover{{color:{t['text']};}}")
-            self._toggle_btn.clicked.connect(self._toggle)
-            hl.addWidget(self._toggle_btn)
             main.addWidget(hf)
 
             # --- Body (折叠区) ---
@@ -341,13 +344,13 @@ if HAS_QT:
             lbl.setStyleSheet(style)
             return lbl
 
-        def _toggle(self) -> None:
+        def _toggle(self, _checked=False) -> None:
             self._collapsed = not self._collapsed
             self._msg.tool_collapsed = self._collapsed
             if self._body:
                 self._body.setVisible(not self._collapsed)
-            if self._toggle_btn:
-                self._toggle_btn.setText("▶" if self._collapsed else "▼")
+            if hasattr(self, '_toggle_arrow') and self._toggle_arrow:
+                self._toggle_arrow.setText("▶" if self._collapsed else "▼")
 
         def set_result(self, result: str, is_error: bool = False) -> None:
             """附加工具结果/错误并更新状态"""

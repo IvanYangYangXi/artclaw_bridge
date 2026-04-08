@@ -175,11 +175,11 @@ class ManagePanel(QWidget):
         t = self._t
         active_style = (
             f"QPushButton {{ background-color: {t['accent']}; color: #FFFFFF;"
-            f" border: none; border-radius: 4px; padding: 2px 12px; font-weight: bold; }}"
+            f" border: none; border-radius: 4px; padding: 2px 10px; font-weight: bold; min-width: 0; }}"
         )
         inactive_style = (
             f"QPushButton {{ background-color: transparent; color: {t['text_dim']};"
-            f" border: 1px solid {t['border']}; border-radius: 4px; padding: 2px 12px; }}"
+            f" border: 1px solid {t['border']}; border-radius: 4px; padding: 2px 10px; min-width: 0; }}"
             f"QPushButton:hover {{ background-color: {t['bg_hover']}; color: {t['text']}; }}"
         )
         self._btn_skill.setStyleSheet(active_style if self._current_tab == _TAB_SKILL else inactive_style)

@@ -101,6 +101,8 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
         self._api_lock = threading.Lock()
         self._main_queue: queue.Queue = queue.Queue()
         self._poll_timer = None
+        # 跨调用保持 graph 引用（解决 API 创建的图不是"当前图"问题）
+        self._sticky_graph = None
 
     # ── 基础信息 ──
 
@@ -404,15 +406,31 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
                 }
 
             # 获取当前图和节点
+            # 优先级: UI 当前图 > sticky graph (API 创建的图)
             current_graph = None
             current_nodes = []
             try:
                 ui_mgr = app.getUIMgr()
                 current_graph = ui_mgr.getCurrentGraph()
-                if current_graph is not None:
-                    current_nodes = list(current_graph.getNodes())
             except Exception:
                 pass
+
+            # Fallback: 使用上次 exec 中 AI 设置的 graph
+            if current_graph is None and self._sticky_graph is not None:
+                try:
+                    # 验证 sticky graph 仍然有效（未被关闭/删除）
+                    self._sticky_graph.getIdentifier()
+                    current_graph = self._sticky_graph
+                    logger.debug("ArtClaw: Using sticky graph: %s",
+                                 current_graph.getIdentifier())
+                except Exception:
+                    self._sticky_graph = None
+
+            if current_graph is not None:
+                try:
+                    current_nodes = list(current_graph.getNodes())
+                except Exception:
+                    pass
 
             # 获取当前文件路径
             file_path = ""
@@ -425,8 +443,9 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
                 pass
 
             # 构建执行环境
-            exec_globals = {"__builtins__": __builtins__}
-            exec_locals: Dict[str, Any] = {
+            # 预注入变量放 exec_globals，确保 def 内部也能访问（Python exec 的闭包规则）
+            exec_globals: Dict[str, Any] = {
+                "__builtins__": __builtins__,
                 "sd": sd_module,
                 "app": app,
                 "S": current_nodes,
@@ -437,10 +456,12 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
 
             # 注入预导入的 SD API 类（避免 exec 中 import 超时）
             api_cache = _ensure_sd_api_imports()
-            exec_locals.update(api_cache)
+            exec_globals.update(api_cache)
 
             if context:
-                exec_locals.update(context)
+                exec_globals.update(context)
+
+            exec_locals: Dict[str, Any] = {}
 
             # 捕获 stdout
             stdout_capture = io.StringIO()
@@ -452,7 +473,14 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
                 exec(code, exec_globals, exec_locals)
 
                 output = stdout_capture.getvalue()
-                result = exec_locals.get("result", None)
+                result = exec_locals.get("result") or exec_globals.get("result")
+
+                # 检测 exec 中是否修改了 graph 变量（AI 创建新图后赋值给 graph）
+                new_graph = exec_locals.get("graph") or exec_globals.get("graph")
+                if new_graph is not None and new_graph is not current_graph:
+                    self._sticky_graph = new_graph
+                    logger.info("ArtClaw: Sticky graph updated to: %s",
+                                getattr(new_graph, 'getIdentifier', lambda: 'unknown')())
 
                 return {
                     "success": True,

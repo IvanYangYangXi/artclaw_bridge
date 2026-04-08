@@ -139,7 +139,7 @@ if HAS_QT:
             self._btn_sync = QPushButton("全量更新 (0)")
             self._btn_sync.setStyleSheet(
                 f"QPushButton {{ background: {t['accent']}; color: #fff;"
-                f" border-radius: 3px; padding: 3px 8px; }}"
+                f" border-radius: 3px; padding: 2px 6px; min-width: 0; }}"
             )
             self._btn_sync.clicked.connect(self._on_sync_all)
             row3.addWidget(self._btn_sync)
@@ -324,8 +324,8 @@ if HAS_QT:
         def _make_skill_row(self, s: SkillEntry) -> QWidget:
             t = self._t
             row = QWidget()
-            row.setMinimumHeight(48)
-            row.setMaximumHeight(56)
+            row.setMinimumHeight(52)
+            row.setMaximumHeight(64)
             row.setStyleSheet(
                 f"QWidget {{ background: {t['bg_secondary']}; border-radius: 4px; }}"
             )
@@ -338,20 +338,20 @@ if HAS_QT:
 
             # Pin star
             star = QPushButton("\u2605" if s.pinned else "\u2606")
-            star.setFixedSize(28, 28)
+            star.setFixedSize(24, 24)
             star.setCursor(Qt.PointingHandCursor)
             if s.pinned:
                 star_style = (
                     "QPushButton { background: #3D3520; color: #F2BF0F;"
                     " border: 1px solid #F2BF0F; border-radius: 4px;"
-                    " font-size: 15px; padding: 0; min-height: 0; min-width: 0; }"
+                    " font-size: 13px; padding: 0; min-height: 0; min-width: 0; }"
                     "QPushButton:hover { background: #4D4530; }"
                 )
             else:
                 star_style = (
                     f"QPushButton {{ background: transparent; color: {t['text_muted']};"
                     f" border: 1px solid {t['border']}; border-radius: 4px;"
-                    f" font-size: 15px; padding: 0; min-height: 0; min-width: 0; }}"
+                    f" font-size: 13px; padding: 0; min-height: 0; min-width: 0; }}"
                     f"QPushButton:hover {{ color: #F2BF0F; border-color: #F2BF0F; }}"
                 )
             star.setStyleSheet(star_style)
@@ -429,17 +429,17 @@ if HAS_QT:
             btn_style = (
                 f"QPushButton {{ background: {t['btn_secondary_bg']}; color: {t['text']};"
                 f" border: 1px solid {t['border']}; border-radius: 3px;"
-                f" padding: 1px 6px; font-size: 10px; }}"
+                f" padding: 2px 5px; font-size: 10px; min-height: 22px; min-width: 0; }}"
                 f"QPushButton:hover {{ background: {t['btn_secondary_hover']}; }}"
             )
             accent_btn_style = (
                 f"QPushButton {{ background: {t['accent']}; color: #fff;"
-                f" border: none; border-radius: 3px; padding: 1px 6px; font-size: 10px; }}"
+                f" border: none; border-radius: 3px; padding: 2px 5px; font-size: 10px; min-height: 22px; min-width: 0; }}"
                 f"QPushButton:hover {{ background: {t['accent_hover']}; }}"
             )
             publish_style = (
                 f"QPushButton {{ background: #4D80E6; color: #fff;"
-                f" border: none; border-radius: 3px; padding: 1px 6px; font-size: 10px; }}"
+                f" border: none; border-radius: 3px; padding: 2px 5px; font-size: 10px; min-height: 22px; min-width: 0; }}"
                 f"QPushButton:hover {{ background: #5A8DF0; }}"
             )
 
@@ -464,8 +464,8 @@ if HAS_QT:
                 b.clicked.connect(lambda checked=False, e=s: self._on_publish(e))
                 btn_h.addWidget(b)
 
-            det = QPushButton("···")
-            det.setFixedSize(32, 28)
+            det = QPushButton("\u2026")
+            det.setFixedSize(28, 24)
             det.setStyleSheet(
                 f"QPushButton {{ background: {t['btn_secondary_bg']}; color: {t['text_dim']};"
                 f" border: 1px solid {t['border']}; border-radius: 4px;"

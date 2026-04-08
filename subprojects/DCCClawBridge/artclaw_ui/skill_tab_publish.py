@@ -151,9 +151,16 @@ def show_publish_dialog(entry, discovered_dcc, parent=None):
         try:
             from skill_sync import publish_skill
             cl = changelog_input.text().strip()
-            publish_skill(entry.name, selected_layer[0], bump, cl, selected_dcc[0])
+            result = publish_skill(entry.name, selected_layer[0], bump, cl, selected_dcc[0])
+            if not result.get("ok"):
+                logger.error("发布失败: %s", result.get("message", "未知错误"))
+                # Show error in dialog title briefly
+                dlg.setWindowTitle(f"发布失败: {result.get('message', '未知错误')[:60]}")
+                return  # Don't close dialog on failure
         except Exception as ex:
             logger.error("发布失败: %s", ex)
+            dlg.setWindowTitle(f"发布失败: {str(ex)[:60]}")
+            return  # Don't close dialog on failure
         dlg.accept()
 
     for bump, color in [("Patch", "#55A"), ("Minor", "#5A5"), ("Major", "#A55")]:

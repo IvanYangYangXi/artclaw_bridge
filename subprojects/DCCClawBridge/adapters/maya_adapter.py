@@ -196,16 +196,18 @@ class MayaAdapter(BaseDCCAdapter):
         cmds, _, _ = _require_maya()
 
         # 构建执行环境
-        exec_globals = {"__builtins__": __builtins__}
-        exec_locals = {
+        # 预注入变量放 exec_globals，确保 def 内部也能访问（Python exec 的闭包规则）
+        exec_globals = {
+            "__builtins__": __builtins__,
             "cmds": cmds,
             "S": cmds.ls(selection=True, long=True) or [],
             "W": cmds.file(query=True, sceneName=True) or "",
             "L": cmds,
         }
+        exec_locals: Dict = {}
 
         if context:
-            exec_locals.update(context)
+            exec_globals.update(context)
 
         # 捕获 stdout
         import io
@@ -223,7 +225,7 @@ class MayaAdapter(BaseDCCAdapter):
                 cmds.undoInfo(closeChunk=True)
 
             output = stdout_capture.getvalue()
-            result = exec_locals.get("result", None)
+            result = exec_locals.get("result") or exec_globals.get("result")
 
             return {
                 "success": True,

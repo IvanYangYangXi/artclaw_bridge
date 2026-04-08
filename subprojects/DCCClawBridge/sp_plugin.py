@@ -9,12 +9,15 @@ SP plugin 约定导出 start_plugin() 和 close_plugin()。
     2. 或将此文件所在目录添加到 SP 的 Python Plugins 路径
     3. SP 菜单 → Python → 勾选 sp_plugin 启用
 
+启动后通过菜单 Window → ArtClaw Chat 打开面板。
+
 环境变量 (可选):
     ARTCLAW_BRIDGE_PATH: artclaw_bridge 项目根目录
 """
 
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 import sys
@@ -32,6 +35,9 @@ logger = logging.getLogger("artclaw.substance_painter")
 _global_state = {
     "adapter": None,
     "running": False,
+    "menu_action": None,    # QAction in Window menu
+    "dock_widget": None,    # QDockWidget returned by SP
+    "atexit_registered": False,
 }
 
 
@@ -68,7 +74,7 @@ def _setup_paths() -> bool:
 
 
 def _deferred_startup():
-    """延迟启动：创建 adapter 并初始化"""
+    """延迟启动：创建 adapter + 注册菜单（不自动打开面板）"""
     if _global_state["running"]:
         logger.warning("ArtClaw: Already running, skip startup")
         return
@@ -122,7 +128,7 @@ def _deferred_startup():
         except Exception as e:
             logger.warning("ArtClaw: 依赖检查跳过: %s", e)
 
-        # 创建 adapter 并启动
+        # 创建 adapter 并启动（MCP Server 等后台服务）
         from adapters.substance_painter_adapter import (
             SubstancePainterAdapter,
         )
@@ -137,17 +143,53 @@ def _deferred_startup():
         import builtins
         builtins._artclaw_adapter = adapter
 
-        # 打开 Chat Panel
-        adapter._open_chat_panel()
+        # 注册菜单入口（Window 菜单 → ArtClaw Chat）
+        _register_menu_action()
+
+        # 注册 atexit 兜底清理
+        if not _global_state["atexit_registered"]:
+            atexit.register(_atexit_cleanup)
+            _global_state["atexit_registered"] = True
 
         logger.info(
-            "ArtClaw: Substance Painter adapter initialized successfully"
+            "ArtClaw: Substance Painter adapter initialized "
+            "(use Window > ArtClaw Chat to open panel)"
         )
 
     except Exception as e:
         logger.error("ArtClaw: Startup failed: %s", e)
         import traceback
         traceback.print_exc()
+
+
+def _register_menu_action():
+    """在 SP 的 Window 菜单中添加 'ArtClaw Chat' 入口"""
+    try:
+        import substance_painter.ui as sp_ui
+        try:
+            from PySide6 import QtWidgets, QtGui
+        except ImportError:
+            from PySide2 import QtWidgets, QtGui
+
+        action = QtGui.QAction("ArtClaw Chat", None)
+        action.triggered.connect(lambda: show_panel())
+        sp_ui.add_action(sp_ui.ApplicationMenu.Window, action)
+        _global_state["menu_action"] = action
+        logger.info("ArtClaw: Menu action registered (Window > ArtClaw Chat)")
+    except Exception as e:
+        logger.warning("ArtClaw: Failed to register menu action: %s", e)
+
+
+def _atexit_cleanup():
+    """atexit 兜底：确保后台线程正常关闭"""
+    try:
+        adapter = _global_state.get("adapter")
+        if adapter:
+            adapter.on_shutdown()
+    except Exception:
+        pass
+    _global_state["adapter"] = None
+    _global_state["running"] = False
 
 
 def start_plugin():
@@ -174,27 +216,81 @@ def show_panel():
     """
     显示 / 重新打开 Chat Panel。
 
-    如果 Panel 已被关闭，重新创建并显示。
-    如果 ArtClaw 未运行，则先启动。
+    通过 SP 内置 add_dock_widget 注册为 dock panel，
+    关闭后可随时通过菜单重新打开。
     """
     if not _global_state["running"]:
         logger.info("ArtClaw: Not running, starting first...")
-        start_plugin()
-        return
+        _deferred_startup()
 
     adapter = _global_state.get("adapter")
-    if adapter is not None:
+    if adapter is None:
+        logger.error("ArtClaw: Adapter not available")
+        return
+
+    try:
+        from artclaw_ui.chat_panel import ChatPanel, get_chat_panel, _panel_instance
+        import artclaw_ui.chat_panel as _cp_mod
+
+        # 检查是否已有活跃面板
+        existing = get_chat_panel()
+        if existing is not None:
+            try:
+                existing.show()
+                existing.raise_()
+                return
+            except RuntimeError:
+                # C++ 对象已销毁
+                _cp_mod._panel_instance = None
+
+        # 创建新面板（不设 parent，作为独立 widget 交给 SP dock）
+        panel = ChatPanel(parent=None, adapter=adapter)
+        panel.setObjectName("ArtClawChatPanel")
+        panel.setWindowTitle("ArtClaw Chat")
+
+        # 通过 SP 内置 API 注册为 dock widget
         try:
-            adapter._open_chat_panel()
-            logger.info("ArtClaw: Chat Panel reopened")
+            import substance_painter.ui as sp_ui
+            dock = sp_ui.add_dock_widget(panel)
+            _global_state["dock_widget"] = dock
+            logger.info("ArtClaw: Chat Panel registered as dock widget")
         except Exception as e:
-            logger.error("ArtClaw: Failed to reopen Chat Panel: %s", e)
+            # Fallback：独立窗口
+            logger.warning(
+                "ArtClaw: add_dock_widget failed (%s), "
+                "falling back to standalone window", e
+            )
+            panel.resize(420, 700)
+            panel.show()
+
+        _cp_mod._panel_instance = panel
+        adapter._panel = panel
+
+    except Exception as e:
+        logger.error("ArtClaw: Failed to open Chat Panel: %s", e)
+        import traceback
+        traceback.print_exc()
 
 
 def close_plugin():
     """SP plugin 退出 — SP 关闭或禁用插件时调用"""
     logger.info("ArtClaw: sp_plugin close_plugin() called")
 
+    # 先关闭面板（停止 QTimer 等资源）
+    try:
+        from artclaw_ui.chat_panel import get_chat_panel
+        import artclaw_ui.chat_panel as _cp_mod
+        panel = get_chat_panel()
+        if panel is not None:
+            try:
+                panel.close()
+            except Exception:
+                pass
+            _cp_mod._panel_instance = None
+    except Exception:
+        pass
+
+    # 关闭 adapter（MCP Server + Bridge）
     adapter = _global_state.get("adapter")
     if adapter:
         try:
@@ -202,8 +298,18 @@ def close_plugin():
         except Exception as e:
             logger.error("ArtClaw: Shutdown error: %s", e)
 
+    # 清理菜单
+    if _global_state.get("menu_action"):
+        try:
+            import substance_painter.ui as sp_ui
+            sp_ui.delete_ui_element(_global_state["menu_action"])
+        except Exception:
+            pass
+        _global_state["menu_action"] = None
+
     _global_state["adapter"] = None
     _global_state["running"] = False
+    _global_state["dock_widget"] = None
 
     # 清理全局引用
     import builtins

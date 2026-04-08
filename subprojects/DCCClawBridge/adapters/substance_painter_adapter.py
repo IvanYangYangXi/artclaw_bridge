@@ -364,17 +364,18 @@ class SubstancePainterAdapter(BaseDCCAdapter):
         except Exception:
             pass
 
-        exec_globals = {"__builtins__": __builtins__}
-        exec_locals = {
+        exec_globals = {
+            "__builtins__": __builtins__,
             "sp": sp,
             "substance_painter": sp,
             "S": texture_sets,
             "W": file_path,
             "L": sp,
         }
+        exec_locals: Dict = {}
 
         if context:
-            exec_locals.update(context)
+            exec_globals.update(context)
 
         # 捕获 stdout
         stdout_capture = io.StringIO()
@@ -387,7 +388,7 @@ class SubstancePainterAdapter(BaseDCCAdapter):
             exec(code, exec_globals, exec_locals)
 
             output = stdout_capture.getvalue()
-            result = exec_locals.get("result", None)
+            result = exec_locals.get("result") or exec_globals.get("result")
 
             return {
                 "success": True,

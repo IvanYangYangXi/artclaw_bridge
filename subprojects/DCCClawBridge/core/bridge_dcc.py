@@ -256,11 +256,15 @@ class DCCBridgeManager:
                 if adapter:
                     sw_name = adapter.get_software_name()
                     sw_ver = adapter.get_software_version()
-                    # 工具前缀映射
+                    # 工具前缀映射（必须与 openclaw.json mcp-bridge servers 名一致）
                     _PREFIX_MAP = {
                         "maya": "mcp_maya-primary_",
                         "3dsmax": "mcp_max-primary_",
                         "max": "mcp_max-primary_",
+                        "substance_designer": "mcp_sd-editor_",
+                        "substance_painter": "mcp_sp-editor_",
+                        "blender": "mcp_blender-editor_",
+                        "houdini": "mcp_houdini-editor_",
                     }
                     my_prefix = _PREFIX_MAP.get(sw_name.lower(), f"mcp_{sw_name.lower()}-primary_")
                     # 构建其他工具列表（排除当前软件）
@@ -268,6 +272,10 @@ class DCCBridgeManager:
                         "mcp_ue-editor-agent_": "UE",
                         "mcp_maya-primary_": "Maya",
                         "mcp_max-primary_": "Max",
+                        "mcp_sd-editor_": "Substance Designer",
+                        "mcp_sp-editor_": "Substance Painter",
+                        "mcp_blender-editor_": "Blender",
+                        "mcp_houdini-editor_": "Houdini",
                     }
                     other_tools = "、".join(
                         f"{prefix}（{label}）"

@@ -230,17 +230,19 @@ class MaxAdapter(BaseDCCAdapter):
         pymxs = _require_max()
         rt = pymxs.runtime
 
-        exec_globals = {"__builtins__": __builtins__}
-        exec_locals = {
+        # 预注入变量放 exec_globals，确保 def 内部也能访问（Python exec 的闭包规则）
+        exec_globals = {
+            "__builtins__": __builtins__,
             "rt": rt,
             "pymxs": pymxs,
             "S": list(rt.getCurrentSelection()) if rt.getCurrentSelection() else [],
             "W": str(rt.maxFilePath) + str(rt.maxFileName) if rt.maxFileName else "",
             "L": rt,  # MaxScript runtime as the "library"
         }
+        exec_locals: Dict = {}
 
         if context:
-            exec_locals.update(context)
+            exec_globals.update(context)
 
         import io
         stdout_capture = io.StringIO()
@@ -254,7 +256,7 @@ class MaxAdapter(BaseDCCAdapter):
                 exec(code, exec_globals, exec_locals)
 
             output = stdout_capture.getvalue()
-            result = exec_locals.get("result", None)
+            result = exec_locals.get("result") or exec_globals.get("result")
 
             return {
                 "success": True,

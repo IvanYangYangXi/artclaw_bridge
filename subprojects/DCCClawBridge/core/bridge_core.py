@@ -434,14 +434,24 @@ class OpenClawBridge:
         "ue-editor": "UE Claw Bridge",
         "maya-editor": "Maya Claw Bridge",
         "max-editor": "Max Claw Bridge",
+        "blender-editor": "Blender Claw Bridge",
+        "substance_designer-editor": "SD Claw Bridge",
+        "substance_painter-editor": "SP Claw Bridge",
+        "houdini-editor": "Houdini Claw Bridge",
     }
 
     def _get_display_name(self) -> str:
-        """根据 client_id 返回对应的 displayName"""
-        return self._DISPLAY_NAME_MAP.get(
+        """根据 client_id 返回对应的 displayName，带 session key 后缀区分会话。
+
+        格式: "Maya Claw Bridge · maya-editor:17334..."
+        对齐 UE 端 openclaw_ws.py 的 displayName 逻辑。
+        """
+        base = self._DISPLAY_NAME_MAP.get(
             self.client_id,
             f"{self.client_id.replace('-', ' ').title()} Bridge"
         )
+        suffix = self._session_key[-16:] if self._session_key else ""
+        return f"{base} · {suffix}" if suffix else base
 
     # ------------------------------------------------------------------
     # 内部: OpenClaw RPC 协议

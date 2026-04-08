@@ -376,11 +376,17 @@ class ChatPanel(ChatPanelActionsMixin, QWidget):
             return
 
         if state == "delta":
+            # 响应已完成时，拒绝迟到的 delta（Qt signal 跨线程延迟导致）
+            if not self._is_waiting:
+                return
             # 如果还有T("thinking")消息，先移除
             if not self._has_active_stream:
                 self._msg_list.remove_system_message(T("thinking"))
                 self._has_active_stream = True
             self._msg_list.update_streaming_message("streaming", text)
+        elif state == "final":
+            # final 由 _on_response_complete 处理，这里忽略
+            pass
         elif state == "error":
             self._msg_list.remove_system_message(T("thinking"))
             self._msg_list.add_message("system", f"[错误] {text}")
@@ -406,6 +412,9 @@ class ChatPanel(ChatPanelActionsMixin, QWidget):
 
     @Slot(str, str)
     def _on_ai_thinking(self, state: str, text: str):
+        # 响应已完成时，拒绝迟到的 thinking（Qt signal 跨线程延迟导致）
+        if not self._is_waiting:
+            return
         if not self._has_active_stream:
             self._msg_list.remove_system_message(T("thinking"))
             self._has_active_stream = True
@@ -566,11 +575,15 @@ class ChatPanel(ChatPanelActionsMixin, QWidget):
             self._session_menu.refresh()
 
     def closeEvent(self, event):
+        global _panel_instance
         if hasattr(self, '_status_timer') and self._status_timer:
             self._status_timer.stop()
         self._confirm_poller.stop()
         if self._bridge:
             self._session_mgr.save_last_session(self._bridge)
+        # 清空全局引用，允许下次 show_panel 创建新实例
+        if _panel_instance is self:
+            _panel_instance = None
         super().closeEvent(event)
 
 
@@ -583,10 +596,12 @@ def show_chat_panel(parent=None, adapter=None) -> ChatPanel:
     global _panel_instance
     if _panel_instance is not None:
         try:
+            # 检查 C++ 对象是否仍然存活
+            _panel_instance.isVisible()
             _panel_instance.show()
             _panel_instance.raise_()
             return _panel_instance
-        except RuntimeError:
+        except (RuntimeError, AttributeError):
             _panel_instance = None
     panel = ChatPanel(parent=parent, adapter=adapter)
     panel.setWindowTitle("ArtClaw Chat")

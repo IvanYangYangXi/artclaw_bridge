@@ -22,14 +22,21 @@ def query_all_skills() -> List[dict]:
     """执行 Python 查询获取 Skill 列表，返回 dict 列表"""
     result = []
 
-    # 触发重新扫描
+    # 触发重新扫描: 尝试 skill_hub (UE) → skill_runtime (DCC) → None
+    hub = None
     try:
         from skill_hub import get_skill_hub
         hub = get_skill_hub()
         if hub:
             hub.scan_and_register(metadata_only=True)
+    except ImportError:
+        try:
+            from core.skill_runtime import get_skill_runtime
+            hub = get_skill_runtime()
+        except ImportError:
+            pass
     except Exception:
-        hub = None
+        pass
 
     # 加载配置
     ac_cfg = get_artclaw_config()
@@ -65,10 +72,15 @@ def query_all_skills() -> List[dict]:
         seen.add(n.replace("-", "_"))
         seen.add(n.replace("_", "-"))
 
-    # 1) skill_hub manifests
+    # 1) skill_hub / skill_runtime manifests
     if hub:
         try:
-            for m in hub._all_manifests:
+            # skill_hub (UE) uses _all_manifests; skill_runtime (DCC) uses _skills dict
+            manifests = getattr(hub, '_all_manifests', None)
+            if manifests is None:
+                # skill_runtime: _skills is a dict of SkillManifest
+                manifests = list(getattr(hub, '_skills', {}).values())
+            for m in manifests:
                 name = m.name
                 if name in seen:
                     continue
@@ -187,6 +199,7 @@ def _scan_source_skills(project_root: str) -> dict:
 def _read_skill_metadata(skill_dir: str) -> tuple:
     """从 Skill 目录读取 description, author, version。
     优先从 manifest.json，不足时从 SKILL.md frontmatter 补充。
+    支持多行 description (> 和 |) 和嵌套 metadata.artclaw.* 字段。
     返回: (description, author, version)
     """
     desc = ""
@@ -205,59 +218,99 @@ def _read_skill_metadata(skill_dir: str) -> tuple:
         except Exception:
             pass
 
-    # 2) 从 SKILL.md frontmatter 补充
+    # 2) 从 SKILL.md frontmatter 补充（使用 skill_sync 的轻量解析器）
     skill_md_path = os.path.join(skill_dir, "SKILL.md")
-    if os.path.isfile(skill_md_path):
+    if os.path.isfile(skill_md_path) and (not desc or not author or not version):
         try:
-            with open(skill_md_path, "r", encoding="utf-8") as f:
-                raw = f.read(4096)
-        except Exception:
-            raw = ""
+            from pathlib import Path
+            from skill_sync import _parse_frontmatter_light
+            fm = _parse_frontmatter_light(Path(skill_md_path))
+            if fm:
+                if not author and fm.get("author"):
+                    author = fm["author"]
+                if not version and fm.get("version"):
+                    version = fm["version"]
+                if not desc and fm.get("description"):
+                    desc = fm["description"][:120]
+        except ImportError:
+            # skill_sync 不可用时回退到简单解析
+            try:
+                with open(skill_md_path, "r", encoding="utf-8") as f:
+                    raw = f.read(4096)
+            except Exception:
+                raw = ""
 
-        if raw.startswith("---"):
-            end = raw.find("---", 3)
-            if end > 0:
-                fm_block = raw[3:end]
-                fm_desc = ""
-                fm_author = ""
-                fm_version = ""
-                in_artclaw = False
-                for line in fm_block.split("\n"):
-                    stripped = line.strip()
-                    indent = len(line) - len(line.lstrip())
-                    if indent == 0:
-                        in_artclaw = False
-                    if stripped.startswith("description:"):
-                        val = stripped[12:].strip()
-                        if val and val != ">" and val != "|":
-                            fm_desc = val[:120]
-                    elif stripped.startswith("author:"):
-                        if in_artclaw or indent >= 4:
-                            fm_author = stripped[7:].strip()
-                        elif indent == 0:
-                            fm_author = stripped[7:].strip()
-                    elif stripped.startswith("version:"):
-                        if in_artclaw or indent >= 4:
-                            fm_version = stripped[8:].strip()
-                        elif indent == 0:
-                            fm_version = stripped[8:].strip()
-                    elif stripped == "artclaw:":
-                        in_artclaw = True
+            if raw.startswith("---"):
+                end = raw.find("---", 3)
+                if end > 0:
+                    fm_block = raw[3:end]
+                    in_artclaw = False
+                    in_multiline = False
+                    multiline_key = ""
+                    multiline_val = ""
+                    fm_desc = ""
+                    fm_author = ""
+                    fm_version = ""
+                    for line in fm_block.split("\n"):
+                        stripped = line.strip()
+                        indent = len(line) - len(line.lstrip())
 
-                if not author and fm_author:
-                    author = fm_author
-                if not version and fm_version:
-                    version = fm_version
-                if not desc and fm_desc:
-                    desc = fm_desc
+                        # 处理多行值续行
+                        if in_multiline:
+                            if not stripped:
+                                continue
+                            if indent >= 2:
+                                multiline_val += " " + stripped
+                                continue
+                            else:
+                                if multiline_key == "description":
+                                    fm_desc = multiline_val.strip()[:120]
+                                in_multiline = False
+
+                        if indent == 0:
+                            in_artclaw = False
+                        if stripped.startswith("description:"):
+                            val = stripped[12:].strip()
+                            if val == ">" or val == "|":
+                                in_multiline = True
+                                multiline_key = "description"
+                                multiline_val = ""
+                            elif val and not fm_desc:
+                                fm_desc = val[:120]
+                        elif stripped.startswith("author:"):
+                            fm_author = stripped[7:].strip()
+                        elif stripped.startswith("version:"):
+                            fm_version = stripped[8:].strip()
+                        elif stripped == "artclaw:":
+                            in_artclaw = True
+
+                    if in_multiline and multiline_key == "description":
+                        fm_desc = multiline_val.strip()[:120]
+
+                    if not author and fm_author:
+                        author = fm_author
+                    if not version and fm_version:
+                        version = fm_version
+                    if not desc and fm_desc:
+                        desc = fm_desc
 
         # 如果还没有 desc，取 SKILL.md 正文第一行
         if not desc:
-            for line in raw.split("\n"):
-                line = line.strip()
-                if line and not line.startswith("#") and not line.startswith("---"):
-                    desc = line[:120]
-                    break
+            try:
+                with open(skill_md_path, "r", encoding="utf-8") as f:
+                    raw = f.read(2048)
+                for line in raw.split("\n"):
+                    line = line.strip()
+                    if line and not line.startswith("#") and not line.startswith("---"):
+                        # 跳过 frontmatter 内容
+                        if raw.startswith("---"):
+                            end = raw.find("---", 3)
+                            if end > 0 and raw.find(line) < end + 3:
+                                continue
+                        desc = line[:120]
+                        break
+            except Exception:
+                pass
 
     return desc, author, version
 
