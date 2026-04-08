@@ -280,61 +280,26 @@ The installer will automatically:
 6. Write `~/.artclaw/config.json` project config
 7. Idempotent (safe to run multiple times)
 
-### Method 2: Manual Install
+### Method 2: Agent Installation (Recommended for AI Users)
 
-<details>
-<summary>Manual install steps (click to expand)</summary>
+If you're using an AI Agent (like OpenClaw, Claude, or other MCP-compatible agents), you can install ArtClaw Bridge through natural language conversation:
 
-#### UE Plugin
+**Simply tell your Agent:**
 
-```bash
-# 1. Copy plugin
-xcopy /E /I subprojects\UEDAgentProj\Plugins\UEClawBridge "<UE_Project_Path>\Plugins\UEClawBridge"
+> "Install ArtClaw Bridge for me. I need it for [UE/Maya/Blender/etc.] at [path if needed]."
 
-# 2. Copy shared core modules to plugin Python directory
-for %f in (bridge_core bridge_config bridge_diagnostics health_check integrity_check memory_core skill_sync) do (
-    copy core\%f.py "<UE_Project_Path>\Plugins\UEClawBridge\Content\Python\"
-)
+Your Agent will:
+1. Clone the repository to your workspace
+2. Run the appropriate installation commands
+3. Configure the MCP bridge for your Agent platform
+4. Verify the installation
 
-# 3. Copy platform Bridge modules (OpenClaw example)
-for %f in (openclaw_ws openclaw_chat openclaw_diagnose) do (
-    copy platforms\openclaw\%f.py "<UE_Project_Path>\Plugins\UEClawBridge\Content\Python\"
-)
+**Example prompts:**
+- *"Install ArtClaw Bridge for Unreal Engine 5.7, my project is at D:\\MyProject\\UE_Game"*
+- *"Set up ArtClaw Bridge for Maya 2023 and Blender 5.1"*
+- *"Install ArtClaw Bridge with all DCC support"*
 
-# 4. Install Python dependencies (using UE built-in Python)
-"<UE_Engine_Path>\Engine\Binaries\ThirdParty\Python3\Win64\python.exe" -m pip install websockets pydantic
-```
-
-#### Maya Plugin
-
-```bash
-# 1. Copy DCCClawBridge directory
-xcopy /E /I subprojects\DCCClawBridge "%USERPROFILE%\Documents\maya\2023\scripts\DCCClawBridge"
-
-# 2. Copy shared modules to core/
-for %f in (bridge_core bridge_config bridge_diagnostics memory_core mcp_server skill_sync) do (
-    copy core\%f.py "%USERPROFILE%\Documents\maya\2023\scripts\DCCClawBridge\core\"
-)
-
-# 3. Copy userSetup.py (if file exists, append instead of overwrite)
-copy subprojects\DCCClawBridge\maya_setup\userSetup.py "%USERPROFILE%\Documents\maya\2023\scripts\"
-
-# Note: Chinese Maya also needs installation to zh_CN/scripts/ directory
-```
-
-#### Agent Platform Configuration
-
-```bash
-# OpenClaw
-python platforms\openclaw\setup_openclaw_config.py --ue --maya --max
-openclaw gateway restart
-
-# LobsterAI
-python platforms\lobster\setup_lobster_config.py
-# Restart LobsterAI
-```
-
-</details>
+The Agent handles all the technical details — cloning, dependency installation, path configuration, and MCP setup.
 
 ### Post-Install Verification
 

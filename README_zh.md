@@ -224,61 +224,26 @@ python install.py --all --ue-project "C:\path\to\project"    # 全部安装
 6. 写入 `~/.artclaw/config.json` 项目配置
 7. 重复运行安全（幂等）
 
-### 方式二：手动安装
+### 方式二：Agent 安装（AI 用户推荐）
 
-<details>
-<summary>手动安装步骤（点击展开）</summary>
+如果你在使用 AI Agent（如 OpenClaw、Claude 或其他支持 MCP 的 Agent），可以通过自然语言对话来安装 ArtClaw Bridge：
 
-#### UE 插件
+**直接告诉你的 Agent：**
 
-```bash
-# 1. 复制插件
-xcopy /E /I subprojects\UEDAgentProj\Plugins\UEClawBridge "<UE项目路径>\Plugins\UEClawBridge"
+> "帮我安装 ArtClaw Bridge。我需要用于 [UE/Maya/Blender 等]，项目路径是 [路径]。"
 
-# 2. 复制共享核心模块到插件的 Python 目录
-for %f in (bridge_core bridge_config bridge_diagnostics health_check integrity_check memory_core skill_sync) do (
-    copy core\%f.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
-)
+Agent 会自动完成：
+1. 克隆仓库到你的工作区
+2. 运行相应的安装命令
+3. 为你的 Agent 平台配置 MCP bridge
+4. 验证安装是否成功
 
-# 3. 复制平台 Bridge 模块（以 OpenClaw 为例）
-for %f in (openclaw_ws openclaw_chat openclaw_diagnose) do (
-    copy platforms\openclaw\%f.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
-)
+**示例指令：**
+- *"为 Unreal Engine 5.7 安装 ArtClaw Bridge，我的项目在 D:\\MyProject\\UE_Game"*
+- *"给 Maya 2023 和 Blender 5.1 配置 ArtClaw Bridge"*
+- *"安装 ArtClaw Bridge，支持所有 DCC 软件"*
 
-# 4. 安装 Python 依赖（使用 UE 内置 Python）
-"<UE引擎路径>\Engine\Binaries\ThirdParty\Python3\Win64\python.exe" -m pip install websockets pydantic
-```
-
-#### Maya 插件
-
-```bash
-# 1. 复制 DCCClawBridge 目录
-xcopy /E /I subprojects\DCCClawBridge "%USERPROFILE%\Documents\maya\2023\scripts\DCCClawBridge"
-
-# 2. 复制共享模块到 core/
-for %f in (bridge_core bridge_config bridge_diagnostics memory_core mcp_server skill_sync) do (
-    copy core\%f.py "%USERPROFILE%\Documents\maya\2023\scripts\DCCClawBridge\core\"
-)
-
-# 3. 复制 userSetup.py（如果已有该文件，请追加而非覆盖）
-copy subprojects\DCCClawBridge\maya_setup\userSetup.py "%USERPROFILE%\Documents\maya\2023\scripts\"
-
-# 注意：Maya 中文版需要同时安装到 zh_CN/scripts/ 目录
-```
-
-#### Agent 平台配置
-
-```bash
-# OpenClaw
-python platforms\openclaw\setup_openclaw_config.py --ue --maya --max
-openclaw gateway restart
-
-# LobsterAI
-python platforms\lobster\setup_lobster_config.py
-# 重启 LobsterAI
-```
-
-</details>
+Agent 会处理所有技术细节 —— 克隆、依赖安装、路径配置和 MCP 设置。
 
 ### 安装后验证
 
