@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "sp_layer_ops",
+  "display_name": "Sp Layer Ops",
+  "description": "SP 层操作指南：创建、删除、移动、复制层，设置混合模式和透明度。 Use when AI needs to: (1) add/delete layers, (2) move/duplicate layers, (3) set blend mode/opacity, (4) manage masks. Substance Painter only (run_python).",
+  "version": "0.0.1",
+  "author": "ArtClaw",
+  "software": "substance_painter",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "sp_layer_ops",
+      "description": "SP 层操作指南：创建、删除、移动、复制层，设置混合模式和透明度。 Use when AI needs to: (1) add/delete layers, (2) move/duplicate layers, (3) set blend mode/opacity, (4) manage masks. Substance Painter only (run_python)."
+    }
+  ]
+}
