@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "sp_operation_rules",
+  "display_name": "Sp Operation Rules",
+  "description": "Substance Painter 操作通用规则和最佳实践。所有涉及 SP 场景修改的操作都必须遵守。 AI 在执行任何 Substance Painter 操作任务前应先读取此 Skill。 包含：API 模块、项目状态检查、无 Undo 注意事项、层操作核心、纹理集、导出烘焙等规则。 Use when AI needs to: (1) perform any Substance Painter operation, (2) check SP best practices, (3) understand SP API structure, (4) ensure safe operations without undo support. Substance Painter only (run_python).",
+  "version": "0.0.1",
+  "author": "ArtClaw",
+  "software": "substance_painter",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "sp_operation_rules",
+      "description": "Substance Painter 操作通用规则和最佳实践。所有涉及 SP 场景修改的操作都必须遵守。 AI 在执行任何 Substance Painter 操作任务前应先读取此 Skill。 包含：API 模块、项目状态检查、无 Undo 注意事项、层操作核心、纹理集、导出烘焙等规则。 Use when AI needs to: (1) perform any Substance Painter operation, (2) check SP best practices, (3) understand SP API structure, (4) ensure safe operations without undo support. Substance Painter only (run_python)."
+    }
+  ]
+}

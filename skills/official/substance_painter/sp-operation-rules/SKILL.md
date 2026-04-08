@@ -10,6 +10,7 @@ description: >
   Substance Painter only (run_python).
 metadata:
   artclaw:
+    version: 0.0.1
     author: ArtClaw
     software: substance_painter
 ---
