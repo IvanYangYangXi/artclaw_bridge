@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "blender_operation_rules",
+  "display_name": "Blender Operation Rules",
+  "description": "Blender 操作通用规则和最佳实践。所有涉及 Blender 场景修改的操作都必须遵守。 AI 在执行任何 Blender 场景操作任务前应先读取此 Skill。 包含：坐标系、Undo 管理、预注入变量、Blender 5.x API 变化、上下文覆盖等强制规则。 Use when AI needs to: (1) perform any Blender scene modification, (2) check post-operation best practices, (3) understand Blender coordinate system. Blender only (run_python).",
+  "version": "0.0.1",
+  "author": "ArtClaw",
+  "software": "blender",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "blender_operation_rules",
+      "description": "Blender 操作通用规则和最佳实践。所有涉及 Blender 场景修改的操作都必须遵守。 AI 在执行任何 Blender 场景操作任务前应先读取此 Skill。 包含：坐标系、Undo 管理、预注入变量、Blender 5.x API 变化、上下文覆盖等强制规则。 Use when AI needs to: (1) perform any Blender scene modification, (2) check post-operation best practices, (3) understand Blender coordinate system. Blender only (run_python)."
+    }
+  ]
+}
