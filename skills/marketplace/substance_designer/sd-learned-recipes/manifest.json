@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "sd_learned_recipes",
+  "display_name": "Sd Learned Recipes",
+  "description": "从 SD 内置 30 个 PBR 材质逆向分析的材质配方库。包含 7 个类别配方 + 3 个通用功能配方， 涵盖混凝土/金属/瓷砖/砖墙/布料/木材/有机物的节点图结构、管线设计和制作逻辑。 Use when AI needs to: (1) choose appropriate nodes for a material type, (2) reference professional material graph structure, (3) understand common SD material building patterns, (4) select texture sources for different material categories, (5) plan a material pipeline before building. Substance Designer only (run_python).",
+  "version": "1.0.1",
+  "author": "ArtClaw",
+  "software": "substance_designer",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "sd_learned_recipes",
+      "description": "从 SD 内置 30 个 PBR 材质逆向分析的材质配方库。包含 7 个类别配方 + 3 个通用功能配方， 涵盖混凝土/金属/瓷砖/砖墙/布料/木材/有机物的节点图结构、管线设计和制作逻辑。 Use when AI needs to: (1) choose appropriate nodes for a material type, (2) reference professional material graph structure, (3) understand common SD material building patterns, (4) select texture sources for different material categories, (5) plan a material pipeline before building. Substance Designer only (run_python)."
+    }
+  ]
+}

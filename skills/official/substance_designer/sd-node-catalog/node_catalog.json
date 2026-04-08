@@ -1,0 +1,1874 @@
+{
+  "noise_perlin_noise": {
+    "sbs_file": "noise_perlin_noise.sbs",
+    "resource_id": "perlin_noise",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "32"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_clouds_1": {
+    "sbs_file": "noise_clouds_1.sbs",
+    "resource_id": "clouds_1",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_clouds_2": {
+    "sbs_file": "noise_clouds_2.sbs",
+    "resource_id": "clouds_2",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_clouds_3": {
+    "sbs_file": "noise_clouds_3.sbs",
+    "resource_id": "clouds_3",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_cells_1": {
+    "sbs_file": "noise_cells_1.sbs",
+    "resource_id": "cells_1",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "32"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_cells_2": {
+    "sbs_file": "noise_cells_2.sbs",
+    "resource_id": "cells_2",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "32"
+      },
+      "edge_width": {
+        "type": "float",
+        "default": "2.0"
+      },
+      "invert": {
+        "type": "bool",
+        "default": "False"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_cells_3": {
+    "sbs_file": "noise_cells_3.sbs",
+    "resource_id": "cells_3",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "32"
+      },
+      "hardness": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "invert": {
+        "type": "bool",
+        "default": "False"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_cells_4": {
+    "sbs_file": "noise_cells_4.sbs",
+    "resource_id": "cells_4",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "32"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "color_source": {
+        "type": "int",
+        "default": "0"
+      },
+      "pseudo_random_seed": {
+        "type": "int",
+        "default": "0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      },
+      "input": {
+        "type": "unknown",
+        "default": null
+      }
+    },
+    "category": "noise"
+  },
+  "noise_fractal_sum_base": {
+    "sbs_file": "noise_fractal_sum_base.sbs",
+    "resource_id": "fractal_sum_base",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "Roughness": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "GlobalOpacity": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "MinLevel": {
+        "type": "int",
+        "default": "1"
+      },
+      "MaxLevel": {
+        "type": "int",
+        "default": "11"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_fractal_sum_1": {
+    "sbs_file": "noise_fractal_sum_1.sbs",
+    "resource_id": "fractal_sum_1",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_fractal_sum_2": {
+    "sbs_file": "noise_fractal_sum_2.sbs",
+    "resource_id": "fractal_sum_2",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_fractal_sum_3": {
+    "sbs_file": "noise_fractal_sum_3.sbs",
+    "resource_id": "fractal_sum_3",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_fractal_sum_4": {
+    "sbs_file": "noise_fractal_sum_4.sbs",
+    "resource_id": "fractal_sum_4",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_voronoi": {
+    "sbs_file": "noise_voronoi.sbs",
+    "resource_id": "3d_voronoi_fractal",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "invert": {
+        "type": "bool",
+        "default": "False"
+      },
+      "scale": {
+        "type": "float",
+        "default": "8.0"
+      },
+      "size": {
+        "type": "float3",
+        "default": "x: 1.000000, y: 1.000000, z: 1.000000"
+      },
+      "offset": {
+        "type": "float3",
+        "default": "x: 0.000000, y: 0.000000, z: 0.000000"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "distortion_intensity": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "distortion_scale_multiplier": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "min_level": {
+        "type": "int",
+        "default": "0"
+      },
+      "max_level": {
+        "type": "int",
+        "default": "4"
+      },
+      "roughness": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "lacunarity": {
+        "type": "float",
+        "default": "2.0"
+      },
+      "global_opacity": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "rounded_curve": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "distance_scale": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "distance_mode": {
+        "type": "int",
+        "default": "0"
+      },
+      "minkowski_number": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "blend_mode": {
+        "type": "int",
+        "default": "0"
+      },
+      "style": {
+        "type": "int",
+        "default": "0"
+      },
+      "edge_thickness": {
+        "type": "float",
+        "default": "0.10000000149011612"
+      },
+      "enable_tiling": {
+        "type": "bool",
+        "default": "False"
+      },
+      "position": {
+        "type": "unknown",
+        "default": null
+      }
+    },
+    "category": "noise"
+  },
+  "noise_gaussian_noise": {
+    "sbs_file": "noise_gaussian_noise.sbs",
+    "resource_id": "gaussian_noise",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "32"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "white_noise": {
+    "sbs_file": "white_noise.sbs",
+    "resource_id": "white_noise",
+    "output_ports": [
+      "White_Noise"
+    ],
+    "params": {},
+    "category": "noise"
+  },
+  "noise_bnw_spots_1": {
+    "sbs_file": "noise_bnw_spots_1.sbs",
+    "resource_id": "bnw_spots_1",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "roughness": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_bnw_spots_2": {
+    "sbs_file": "noise_bnw_spots_2.sbs",
+    "resource_id": "bnw_spots_2",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_bnw_spots_3": {
+    "sbs_file": "noise_bnw_spots_3.sbs",
+    "resource_id": "bnw_spots_3",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_plasma": {
+    "sbs_file": "noise_plasma.sbs",
+    "resource_id": "plasma",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "32"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_creased": {
+    "sbs_file": "noise_creased.sbs",
+    "resource_id": "creased",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "warp_intensity": {
+        "type": "float",
+        "default": "0.25"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_crystal_1": {
+    "sbs_file": "noise_crystal_1.sbs",
+    "resource_id": "crystal_1",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "32"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_crystal_2": {
+    "sbs_file": "noise_crystal_2.sbs",
+    "resource_id": "crystal_2",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_fluid": {
+    "sbs_file": "noise_fluid.sbs",
+    "resource_id": "fluid",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "warp_intensity": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "pattern_size": {
+        "type": "float2",
+        "default": "x: 0.500000, y: 1.000000"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_fur_1": {
+    "sbs_file": "noise_fur_1.sbs",
+    "resource_id": "fur_1",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "2"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_fur_2": {
+    "sbs_file": "noise_fur_2.sbs",
+    "resource_id": "fur_2",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "waves_scale": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "waves_rotation": {
+        "type": "float",
+        "default": "0.125"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_fur_3": {
+    "sbs_file": "noise_fur_3.sbs",
+    "resource_id": "fur_3",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "waves_amount": {
+        "type": "float",
+        "default": "2.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "wood_fibers_1": {
+    "sbs_file": "wood_fibers_1.sbs",
+    "resource_id": "wood_fibers_1",
+    "output_ports": [
+      "Wood_Fibers"
+    ],
+    "params": {
+      "Disorder": {
+        "type": "float",
+        "default": "0.0"
+      }
+    },
+    "category": "directional"
+  },
+  "wood_fibers_2": {
+    "sbs_file": "wood_fibers_2.sbs",
+    "resource_id": "wood_fibers_2",
+    "output_ports": [
+      "Wood_Noise"
+    ],
+    "params": {},
+    "category": "directional"
+  },
+  "fibers_1": {
+    "sbs_file": "fibers_1.sbs",
+    "resource_id": "fibers_1",
+    "output_ports": [
+      "Rope"
+    ],
+    "params": {
+      "Tiling": {
+        "type": "int",
+        "default": "1"
+      }
+    },
+    "category": "directional"
+  },
+  "fibers_2": {
+    "sbs_file": "fibers_2.sbs",
+    "resource_id": "fibers_2",
+    "output_ports": [
+      "Fiber"
+    ],
+    "params": {
+      "Tiling": {
+        "type": "int",
+        "default": "1"
+      }
+    },
+    "category": "directional"
+  },
+  "directionnal_noise": {
+    "sbs_file": "directionnal_noise.sbs",
+    "resource_id": "directionnal_noise",
+    "output_ports": [
+      "Directionnal_Noise"
+    ],
+    "params": {},
+    "category": "directional"
+  },
+  "noise_directional_noise_1": {
+    "sbs_file": "noise_directional_noise_1.sbs",
+    "resource_id": "directional_noise_1",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "angle": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "angle_random": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "directional"
+  },
+  "noise_directional_noise_2": {
+    "sbs_file": "noise_directional_noise_2.sbs",
+    "resource_id": "directional_noise_2",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "angle": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "angle_random": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "directional"
+  },
+  "noise_directional_noise_3": {
+    "sbs_file": "noise_directional_noise_3.sbs",
+    "resource_id": "directional_noise_3",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "angle": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "angle_random": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "directional"
+  },
+  "noise_directional_noise_4": {
+    "sbs_file": "noise_directional_noise_4.sbs",
+    "resource_id": "directional_noise_4",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "angle": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "angle_random": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "directional"
+  },
+  "noise_directional_scratches": {
+    "sbs_file": "noise_directional_scratches.sbs",
+    "resource_id": "directional_scratches",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "4"
+      },
+      "angle": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "angle_random": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "pattern_amount": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "pattern_size": {
+        "type": "float2",
+        "default": "x: 0.500000, y: 20.000000"
+      },
+      "pattern_size_random": {
+        "type": "float2",
+        "default": "x: 0.000000, y: 0.000000"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "directional"
+  },
+  "noise_messy_fibers_1": {
+    "sbs_file": "noise_messy_fibers_1.sbs",
+    "resource_id": "messy_fibers_1",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "angle": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "angle_random": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "lines_number": {
+        "type": "float",
+        "default": "16.0"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "directional"
+  },
+  "noise_messy_fibers_2": {
+    "sbs_file": "noise_messy_fibers_2.sbs",
+    "resource_id": "messy_fibers_2",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "angle": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "angle_random": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "links_number": {
+        "type": "float",
+        "default": "16.0"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "directional"
+  },
+  "noise_messy_fibers_3": {
+    "sbs_file": "noise_messy_fibers_3.sbs",
+    "resource_id": "messy_fibers_3",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "angle": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "angle_random": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "color_random": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "directional"
+  },
+  "pattern_stripes": {
+    "sbs_file": "pattern_stripes.sbs",
+    "resource_id": "stripes",
+    "output_ports": [
+      "Stripes"
+    ],
+    "params": {
+      "Stripes": {
+        "type": "int",
+        "default": "10"
+      },
+      "Width": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "Softness": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "Shift": {
+        "type": "int",
+        "default": "10"
+      },
+      "Align": {
+        "type": "int",
+        "default": "0"
+      },
+      "Filtering": {
+        "type": "bool",
+        "default": "True"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "pattern"
+  },
+  "pattern_fibers_1": {
+    "sbs_file": "pattern_fibers_1.sbs",
+    "resource_id": "fibers_1",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "Tiling": {
+        "type": "int",
+        "default": "1"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "pattern"
+  },
+  "pattern_fibers_2": {
+    "sbs_file": "pattern_fibers_2.sbs",
+    "resource_id": "fibers_2",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "Tiling": {
+        "type": "int",
+        "default": "1"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "pattern"
+  },
+  "tile_generator": {
+    "sbs_file": "tile_generator.sbs",
+    "resource_id": "tile_generator",
+    "output_ports": [
+      "TileGenerator"
+    ],
+    "params": {
+      "Nb_X": {
+        "type": "int",
+        "default": "10"
+      },
+      "Nb_Y": {
+        "type": "int",
+        "default": "10"
+      },
+      "Middle_Size": {
+        "type": "float2",
+        "default": "x: 0.500000, y: 0.500000"
+      },
+      "Scale": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "ScaleVariation": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "ScaleVariation_Seed": {
+        "type": "int",
+        "default": "0"
+      },
+      "LuminanceByScaleVariation": {
+        "type": "bool",
+        "default": "False"
+      },
+      "Interstice": {
+        "type": "float4",
+        "default": "x: 0.000000, y: 0.000000, z: 0.000000, w: 0.000000"
+      },
+      "Offset": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "Offset_Random": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "Offset_Random_Seed": {
+        "type": "int",
+        "default": "0"
+      },
+      "Vertical_Offset": {
+        "type": "bool",
+        "default": "False"
+      },
+      "Global_Offset": {
+        "type": "float2",
+        "default": "x: 0.000000, y: 0.000000"
+      },
+      "LuminanceByNumber": {
+        "type": "bool",
+        "default": "False"
+      },
+      "Luminance_Variation-Contrast": {
+        "type": "float2",
+        "default": "x: 0.000000, y: 0.000000"
+      },
+      "Pattern_Type": {
+        "type": "int",
+        "default": "9"
+      },
+      "Pattern_Specific": {
+        "type": "float2",
+        "default": "x: 0.200000, y: 0.000000"
+      },
+      "image_input_filtering": {
+        "type": "int",
+        "default": "0"
+      },
+      "Free_Rotation": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "Free_Rotation_Random": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "Fixed_Rotation": {
+        "type": "int",
+        "default": "0"
+      },
+      "Fixed_Rotation_Random": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "QuincunxFlip": {
+        "type": "bool",
+        "default": "False"
+      },
+      "Position_Random": {
+        "type": "float2",
+        "default": "x: 0.000000, y: 0.000000"
+      },
+      "CheckerMask": {
+        "type": "bool",
+        "default": "False"
+      },
+      "HorizontalMask": {
+        "type": "bool",
+        "default": "False"
+      },
+      "VerticalMask": {
+        "type": "bool",
+        "default": "False"
+      },
+      "RandomMask": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "InvertMask": {
+        "type": "bool",
+        "default": "False"
+      },
+      "BlendingMode": {
+        "type": "int",
+        "default": "0"
+      },
+      "BackgroundColor": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "GlobalOpacity": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "reverse_rendering_order": {
+        "type": "bool",
+        "default": "False"
+      },
+      "Source": {
+        "type": "unknown",
+        "default": null
+      },
+      "background": {
+        "type": "unknown",
+        "default": null
+      }
+    },
+    "category": "pattern"
+  },
+  "shape": {
+    "sbs_file": "shape.sbs",
+    "resource_id": "shape",
+    "output_ports": [
+      "Simple_Shape"
+    ],
+    "params": {
+      "Tiling": {
+        "type": "int",
+        "default": "1"
+      },
+      "Pattern": {
+        "type": "int",
+        "default": "1"
+      },
+      "Pattern_Specific": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "Size": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "Size_xy": {
+        "type": "float2",
+        "default": "x: 1.000000, y: 1.000000"
+      },
+      "Angle": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "Rotation": {
+        "type": "bool",
+        "default": "False"
+      }
+    },
+    "category": "pattern"
+  },
+  "brick_generator": {
+    "sbs_file": "brick_generator.sbs",
+    "resource_id": "brick_generator",
+    "output_ports": [
+      "Bricks_Generator"
+    ],
+    "params": {
+      "Bricks": {
+        "type": "int2",
+        "default": "x: 4, y: 4"
+      },
+      "Bevel": {
+        "type": "float4",
+        "default": "x: 0.500000, y: 0.500000, z: 0.000000, w: 0.000000"
+      },
+      "Keep_Ratio": {
+        "type": "bool",
+        "default": "False"
+      },
+      "Gap": {
+        "type": "float2",
+        "default": "x: 0.000000, y: 0.000000"
+      },
+      "Middle_Size": {
+        "type": "float2",
+        "default": "x: 0.500000, y: 0.500000"
+      },
+      "Height": {
+        "type": "float4",
+        "default": "x: 1.000000, y: 1.000000, z: 0.000000, w: 0.000000"
+      },
+      "Slope": {
+        "type": "float4",
+        "default": "x: 0.000000, y: 0.000000, z: 0.000000, w: 0.000000"
+      },
+      "Offset": {
+        "type": "float2",
+        "default": "x: 0.500000, y: 0.000000"
+      }
+    },
+    "category": "pattern"
+  },
+  "noise_grunge_map_001": {
+    "sbs_file": "noise_grunge_map_001.sbs",
+    "resource_id": "grunge_map_001",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "balance": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "contrast": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "invert": {
+        "type": "bool",
+        "default": "False"
+      },
+      "brush_pattern": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "grunge"
+  },
+  "noise_grunge_map_002": {
+    "sbs_file": "noise_grunge_map_002.sbs",
+    "resource_id": "grunge_map_002",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "balance": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "contrast": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "invert": {
+        "type": "bool",
+        "default": "False"
+      },
+      "brush_pattern": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "grunge"
+  },
+  "noise_grunge_map_003": {
+    "sbs_file": "noise_grunge_map_003.sbs",
+    "resource_id": "grunge_map_003",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "balance": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "contrast": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "invert": {
+        "type": "bool",
+        "default": "False"
+      },
+      "brush_pattern": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "grunge"
+  },
+  "noise_grunge_map_004": {
+    "sbs_file": "noise_grunge_map_004.sbs",
+    "resource_id": "grunge_map_004",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "balance": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "contrast": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "invert": {
+        "type": "bool",
+        "default": "False"
+      },
+      "brush_pattern": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "grunge"
+  },
+  "noise_grunge_map_005": {
+    "sbs_file": "noise_grunge_map_005.sbs",
+    "resource_id": "grunge_map_005",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "balance": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "contrast": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "invert": {
+        "type": "bool",
+        "default": "False"
+      },
+      "brush_pattern": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "grunge"
+  },
+  "noise_dirt_1": {
+    "sbs_file": "noise_dirt_1.sbs",
+    "resource_id": "dirt_1",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "grunge"
+  },
+  "noise_dirt_2": {
+    "sbs_file": "noise_dirt_2.sbs",
+    "resource_id": "dirt_2",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "grunge"
+  },
+  "noise_dirt_3": {
+    "sbs_file": "noise_dirt_3.sbs",
+    "resource_id": "dirt_3",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "grunge"
+  },
+  "noise_dirt_4": {
+    "sbs_file": "noise_dirt_4.sbs",
+    "resource_id": "dirt_4",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "grunge"
+  },
+  "noise_dirt_5": {
+    "sbs_file": "noise_dirt_5.sbs",
+    "resource_id": "dirt_5",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "1"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "grunge"
+  },
+  "gradient_linear_1": {
+    "sbs_file": "gradient_linear_1.sbs",
+    "resource_id": "gradient_linear_1",
+    "output_ports": [
+      "Simple_Gradient"
+    ],
+    "params": {
+      "Tiling": {
+        "type": "int",
+        "default": "1"
+      },
+      "rotation": {
+        "type": "int",
+        "default": "0"
+      }
+    },
+    "category": "gradient"
+  },
+  "gradient_linear_2": {
+    "sbs_file": "gradient_linear_2.sbs",
+    "resource_id": "gradient_linear_2",
+    "output_ports": [
+      "Simple_Gradient_2"
+    ],
+    "params": {
+      "Tiling": {
+        "type": "int",
+        "default": "1"
+      },
+      "rotation": {
+        "type": "int",
+        "default": "0"
+      }
+    },
+    "category": "gradient"
+  },
+  "gradient_linear_3": {
+    "sbs_file": "gradient_linear_3.sbs",
+    "resource_id": "gradient_linear_3",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "Tiling": {
+        "type": "int",
+        "default": "1"
+      },
+      "position": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "rotation": {
+        "type": "int",
+        "default": "0"
+      }
+    },
+    "category": "gradient"
+  },
+  "ambient_occlusion_2": {
+    "sbs_file": "ambient_occlusion_2.sbs",
+    "resource_id": "ambient_occlusion_2",
+    "output_ports": [
+      "ambient_occlusion"
+    ],
+    "params": {
+      "spreading": {
+        "type": "float",
+        "default": "0.15000000596046448"
+      },
+      "equalizer": {
+        "type": "float3",
+        "default": "x: 0.000000, y: 0.000000, z: 0.000000"
+      },
+      "levels": {
+        "type": "float3",
+        "default": "x: 0.000000, y: 0.500000, z: 1.000000"
+      },
+      "Source": {
+        "type": "unknown",
+        "default": null
+      }
+    },
+    "category": "utility"
+  },
+  "histogram_range": {
+    "sbs_file": "histogram_range.sbs",
+    "resource_id": "histogram_range",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "range": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "position": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "input": {
+        "type": "unknown",
+        "default": null
+      }
+    },
+    "category": "utility"
+  },
+  "anisotropic_noise": {
+    "sbs_file": "anisotropic_noise.sbs",
+    "resource_id": "anisotropic_noise",
+    "output_ports": [
+      "Anisotropic_Noise"
+    ],
+    "params": {
+      "X_Amount": {
+        "type": "int",
+        "default": "4"
+      },
+      "Y_Amount": {
+        "type": "int",
+        "default": "256"
+      },
+      "Y_By_Resolution": {
+        "type": "bool",
+        "default": "False"
+      },
+      "rotate": {
+        "type": "bool",
+        "default": "False"
+      },
+      "Smoothness": {
+        "type": "float",
+        "default": "1.0"
+      },
+      "Smoothness_Interpolation": {
+        "type": "float",
+        "default": "0.0"
+      }
+    },
+    "category": "noise"
+  },
+  "blue_noise": {
+    "sbs_file": "blue_noise.sbs",
+    "resource_id": "blue_noise_fast",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "noise_control": {
+        "type": "float",
+        "default": "1.0"
+      }
+    },
+    "category": "noise"
+  },
+  "vertical_noise": {
+    "sbs_file": "vertical_noise.sbs",
+    "resource_id": "vertical_noise",
+    "output_ports": [
+      "Vertical_Noise"
+    ],
+    "params": {
+      "Disorder": {
+        "type": "float",
+        "default": "0.0"
+      }
+    },
+    "category": "noise"
+  },
+  "horizontal_lines": {
+    "sbs_file": "horizontal_lines.sbs",
+    "resource_id": "horizontal_lines",
+    "output_ports": [
+      "Horizontal_Lines"
+    ],
+    "params": {},
+    "category": "pattern"
+  },
+  "stripes": {
+    "sbs_file": "stripes.sbs",
+    "resource_id": "stripes",
+    "output_ports": [
+      "Stripes"
+    ],
+    "params": {
+      "Stripes": {
+        "type": "int",
+        "default": "10"
+      },
+      "Width": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "Softness": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "Shift": {
+        "type": "int",
+        "default": "10"
+      },
+      "Align": {
+        "type": "int",
+        "default": "0"
+      },
+      "Filtering": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "pattern"
+  },
+  "perlin_noise_1": {
+    "sbs_file": "perlin_noise_1.sbs",
+    "resource_id": "perlin_noise_1",
+    "output_ports": [
+      "Noise"
+    ],
+    "params": {},
+    "category": "noise"
+  },
+  "perlin_noise_2": {
+    "sbs_file": "perlin_noise_2.sbs",
+    "resource_id": "perlin_noise_2",
+    "output_ports": [
+      "Noise_2"
+    ],
+    "params": {},
+    "category": "noise"
+  },
+  "perlin_noise_zoom": {
+    "sbs_file": "perlin_noise_zoom.sbs",
+    "resource_id": "perlin_noise_zoom",
+    "output_ports": [
+      "Noise_Zoom"
+    ],
+    "params": {
+      "Distance": {
+        "type": "int",
+        "default": "14"
+      },
+      "Disorder": {
+        "type": "float",
+        "default": "50.0"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_liquid": {
+    "sbs_file": "noise_liquid.sbs",
+    "resource_id": "liquid",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "32"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "warp_intensity": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  },
+  "noise_microscope_view": {
+    "sbs_file": "noise_microscope_view.sbs",
+    "resource_id": "microscope_view",
+    "output_ports": [
+      "output"
+    ],
+    "params": {
+      "scale": {
+        "type": "int",
+        "default": "32"
+      },
+      "warp_intensity": {
+        "type": "float",
+        "default": "0.5"
+      },
+      "disorder": {
+        "type": "float",
+        "default": "0.0"
+      },
+      "non_square_expansion": {
+        "type": "bool",
+        "default": "True"
+      }
+    },
+    "category": "noise"
+  }
+}

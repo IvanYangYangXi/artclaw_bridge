@@ -54,20 +54,71 @@ from sd.api.sdproperty import SDPropertyCategory  # 禁止！
 
 ---
 
-## 规则 2：严格单线程 + 代码简短 ⚠️
+## 规则 2：⚠️ 变量不跨调用持久 — 最常见致命错误！
+
+> **每次 `run_python` 调用都是独立的 `exec()` 环境。
+> 上一次调用中创建的局部变量（如 `wood_fibers`、`warp1`、`perlin_zoom`）
+> 在下一次调用中完全不存在！直接引用 = `NameError`。**
+
+### ✅ 正确做法：用节点 ID 跨调用恢复引用
+
+```python
+# === 第 1 次调用：创建节点，打印 ID ===
+node = graph.newNode("sbs::compositing::blend")
+node.setPosition(float2(200, 0))
+node_id = node.getDefinition().getId()  # 不够唯一
+# 用 UID 更可靠：
+uid = node.getIdentifier()  # 或记住位置
+result = f"blend node created, uid={uid}"
+
+# === 第 2 次调用：通过 ID 恢复 ===
+# ❌ blend1 = ...  # NameError! 上次的变量不存在
+# ✅ 重新获取：
+nodes = graph.getNodes()
+for n in nodes:
+    # 通过位置/类型/UID 匹配
+    pos = n.getPosition()
+    def_id = n.getDefinition().getId()
+```
+
+### ✅ 最佳实践：单次调用完成所有关联操作
+
+```python
+# 在同一次调用中创建节点 + 连接，避免跨调用引用
+node_a = graph.newInstanceNode(res_a)
+node_a.setPosition(float2(0, 0))
+node_b = graph.newNode("sbs::compositing::warp")
+node_b.setPosition(float2(200, 0))
+node_a.newPropertyConnectionFromId("output", node_b, "input1")
+# ↑ 全部在一次调用中完成，变量有效
+```
+
+### 预注入变量是例外
+
+`graph`、`app`、`sd`、`SDPropertyCategory` 等**预注入变量**每次调用都可用（由 adapter 注入），不受此限制。
+
+---
+
+## 规则 3：严格单线程 + 代码简短 ⚠️
 
 - **每次工具调用的代码 <30 行**
 - **单次调用上限**：≤3 个节点创建 + ≤3 条连接
-- **超过就分多次调用**
+- **超过就分多次调用**（但注意规则 2：把有引用关系的节点创建+连接放同一次调用）
 - **禁止** `threading`、`asyncio`
 
 ### ⛔ 超时 = MCP 永久死亡
 
 一旦超时，SD MCP 连接永久失效，唯一恢复方式：用户重启 SD。
 
+### 规则 2 和规则 3 的平衡
+
+- **优先保证引用完整性**（规则 2）：把创建+连接放同一次调用
+- **如果节点太多**，按"组"拆分：每组内部在一次调用中完成创建+连接
+- **组之间的连接**：下一次调用中通过 `graph.getNodes()` + 位置/类型匹配恢复引用后再连接
+
 ---
 
-## 规则 3：exec 闭包陷阱 🔴
+## 规则 4：exec 闭包陷阱 🔴
 
 **`import` 的模块在 `def` 函数体内不可见**（Python exec 闭包规则）。
 
@@ -84,7 +135,7 @@ path = os.path.join(base, name)
 
 ---
 
-## 规则 4：节点分类 — 原子 vs 库
+## 规则 5：节点分类 — 原子 vs 库
 
 ### 原子节点 — `graph.newNode(definition_id)`
 
@@ -154,7 +205,7 @@ for p in node.getProperties(SDPropertyCategory.Output):
 
 ---
 
-## 规则 5：通道格式 🔴
+## 规则 6：通道格式 🔴
 
 SD 中最重要的概念。格式不匹配 = 节点全黑或结果错误。
 
@@ -199,7 +250,7 @@ Blend 输出 = 彩色纹理
 
 ---
 
-## 规则 6：连接 API
+## 规则 7：连接 API
 
 ```python
 # 连接（推荐方式）
@@ -226,7 +277,7 @@ node.deletePropertyConnections(prop)
 
 ---
 
-## 规则 7：PBR 输出
+## 规则 8：PBR 输出
 
 ```python
 out = graph.newNode("sbs::compositing::output")
@@ -247,7 +298,7 @@ out.setPropertyValue(ip, SDValueString.sNew("baseColor"))  # 或 normal/roughnes
 
 ---
 
-## 规则 8：创建新包和图
+## 规则 9：创建新包和图
 
 ```python
 pkg_mgr = app.getPackageMgr()
@@ -280,7 +331,7 @@ pkg_mgr.savePackageAs(pkg, r"C:\path\to\file.sbs")
 
 ---
 
-## 规则 9：⛔ 致命操作
+## 规则 10：⛔ 致命操作
 
 | 操作 | 后果 |
 |------|------|
@@ -297,9 +348,10 @@ pkg_mgr.savePackageAs(pkg, r"C:\path\to\file.sbs")
 
 1. `get_context` — 确认连接和图状态
 2. **分析目标材质特征**（规则 0）
-3. 加载需要的库节点 sbs 包
-4. 分步创建节点（每次 ≤3 个）
-5. 查询库节点端口名
-6. 分步连接
-7. 设置参数
-8. `graph.compute()` + 保存
+3. **查 `sd-learned-recipes`** — 找相似材质配方参考，了解该类材质用哪些纹理源
+4. **查 `sd-node-catalog`** — 确认库节点的 sbs 文件名、输出端口名、参数
+5. 加载需要的库节点 sbs 包
+6. 分步创建节点（每次 ≤3 个）
+7. 分步连接（注意通道格式匹配）
+8. 设置参数
+9. `graph.compute()` + 保存
