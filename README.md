@@ -1,124 +1,176 @@
 # ArtClaw Bridge
 
-**让 UE引擎、Maya、3ds Max、Blender、Houdini、Substance Painter / Designer 等 DCC 工具通过 MCP 协议接入 AI Agent 的桥接框架**
+**Bridge DCC tools (UE, Maya, 3ds Max, Blender, Houdini, Substance Painter/Designer) to AI Agents via MCP Protocol**
 
-ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substance Painter、Substance Designer 等数字内容创作（DCC）软件提供统一的 AI 桥接层。通过 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) 协议，AI Agent 可以直接理解和操作编辑器环境。
+ArtClaw Bridge provides a unified AI bridging layer for Digital Content Creation (DCC) software including Unreal Engine, Maya, 3ds Max, Blender, Houdini, Substance Painter, and Substance Designer. Through the [MCP (Model Context Protocol)](https://modelcontextprotocol.io/), AI Agents can directly understand and operate the editor environment.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Status](https://img.shields.io/badge/status-beta-orange.svg)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 
+[中文文档](README_zh.md)
+
 ---
 
-## 🎬 演示
+## 🎬 Demo
 
-> 以下为实际操作演示，展示了 AI Agent 在编辑器内直接执行任务的效果
+> Real operation demos showing AI Agent executing tasks directly in the editor
 
-**UE 连接 OpenClaw — 编辑器内 AI 对话面板**
+**UE Connection to OpenClaw — AI Chat Panel in Editor**
 
 ![UEClawBridge](docs/示例/UE连接openClaw效果.png)
 
-**跨 DCC 上下流交接 — AI 驱动工作流**
+**Cross-DCC Pipeline — AI-Driven Workflow**
 
 ![ArtClawBridge Workflow](docs/示例/打通不同软件间的上下流交接.png)
 
-⭐ *更多演示视频即将上线，敬请关注！*
+⭐ *More demo videos coming soon!*
 
 ---
 
-## 项目愿景
+## Project Vision
 
-在一个框架下做软件和 Agent 桥接，把 AI 能力接入到整个游戏开发的美术流，赋予 Agent 操作软件和解决上下游对接问题的能力。
+Create a unified framework bridging software and AI Agents, integrating AI capabilities into the entire game development art pipeline, and empowering Agents to operate software and solve upstream/downstream handoff problems.
 
-桥接的好处是**未来可以接各种软件和各种 Agent 平台**，形成通用的软件-Agent 交互层。
+The benefit of bridging is **the ability to connect various software and Agent platforms in the future**, forming a universal software-Agent interaction layer.
 
 ---
 
-## ✨ 核心特性
+## ✨ Core Features
 
-### 🔗 统一 MCP 协议
-各 DCC 软件通过标准 MCP 协议与 AI Agent 通信。每个 DCC 只暴露一个 MCP 工具（`run_ue_python` / `run_python`），AI 通过执行 Python 代码完成所有操作，极简且强大。
+### 🔗 Unified MCP Protocol
+All DCC software communicates with AI Agents through the standard MCP protocol. Each DCC exposes only one MCP tool (`run_ue_python` / `run_python`), and AI completes all operations by executing Python code — minimal yet powerful.
 
-### 💬 编辑器内 AI 对话面板
-在 UE / Maya / Max / Blender / Houdini / SP / SD 编辑器内直接与 AI 对话，无需切换窗口。支持：
-- **流式输出** — AI 回复实时显示，支持 Markdown 渲染
-- **Tool 调用可视化** — 折叠卡片显示工具名、参数、执行结果
-- **附件发送** — 支持拖入图片或文件，AI 自动读取分析
-- **上下文长度显示** — 实时显示 token 使用百分比
-- **停止按钮** — 随时中断 AI 执行（发送 `chat.abort` 终止 Agent 运行）
+### 💬 In-Editor AI Chat Panel
+Chat directly with AI in UE / Maya / Max / Blender / Houdini / SP / SD editors without switching windows. Features:
+- **Streaming Output** — AI responses display in real-time with Markdown rendering
+- **Tool Call Visualization** — Collapsible cards showing tool name, parameters, and execution results
+- **Attachment Support** — Drag and drop images or files for AI to analyze automatically
+- **Context Length Display** — Real-time token usage percentage
+- **Stop Button** — Interrupt AI execution anytime (sends `chat.abort` to terminate Agent)
 
-### 🛠️ Skill 管理系统
-分层管理的 Skill 热加载系统，跨 DCC 共享：
-- **四层优先级** — 官方 > 市集 > 用户 > 临时，高层覆盖低层同名 Skill
-- **编辑器内管理面板** — 双端（UE + DCC）统一 UI，支持筛选/搜索/启用/禁用/钉选
-- **完整生命周期** — 安装、卸载、更新、发布（版本递增 + git commit），一键全量同步
-- **AI 生成 Skill** — 自然语言描述需求，AI 自动生成可执行的 Skill（manifest + 代码 + 文档）
-- **修改检测** — 自动识别运行时有未发布变更的 Skill，智能区分"更新"与"发布"方向
-- **Pinned Skills 上下文注入** — 钉选的 Skill 文档自动注入 AI 首条消息上下文
+### 🛠️ Skill Management System
+Layered Skill hot-reloading system, shared across DCCs:
+- **Four-Level Priority** — Official > Marketplace > User > Temporary, higher levels override lower ones
+- **In-Editor Management Panel** — Unified UI for both UE + DCC, supports filter/search/enable/disable/pin
+- **Full Lifecycle** — Install, uninstall, update, publish (version increment + git commit), one-click full sync
+- **AI-Generated Skills** — Describe requirements in natural language, AI auto-generates executable Skills (manifest + code + docs)
+- **Change Detection** — Auto-detects unpublished changes at runtime, intelligently distinguishes "update" vs "publish" direction
+- **Pinned Skills Context Injection** — Pinned Skill docs automatically injected into AI's first message context
 
-### 🌐 多 Agent 平台支持
-配置驱动的平台抽象层，新平台注册到配置文件即自动出现在 UI：
-- **OpenClaw** — 主力平台，通过 mcp-bridge 插件集成
-- **LobsterAI（有道龙虾）** — OpenClaw 二次封装，Gateway 端口 18790
-- **Claude Desktop** — stdio→WebSocket 桥接 POC
-- **编辑器内热切换** — Settings 面板一键切换平台，自动断连/重连/刷新 Agent 列表
+### 🌐 Multi-Agent Platform Support
+Configuration-driven platform abstraction layer — new platforms automatically appear in UI when registered in config:
+- **OpenClaw** — Primary platform, integrated via mcp-bridge plugin
+- **LobsterAI (Youdao)** — OpenClaw repackaged, Gateway port 18790
+- **Claude Desktop** — stdio→WebSocket bridge POC
+- **Hot-Swap in Editor** — One-click platform switch in Settings panel, auto disconnect/reconnect/refresh Agent list
 
-### 🔄 多会话与 Agent 管理
-- **多 Agent 切换** — 设置面板选择 Agent，工具栏显示当前 Agent 信息
-- **会话列表管理** — 新建/切换/删除对话，各 Agent 独立会话缓存
-- **会话持久化** — UE 重启后自动恢复上次会话，DCC 实时保存会话状态
+### 🔄 Multi-Session & Agent Management
+- **Multi-Agent Switching** — Select Agent in settings panel, toolbar shows current Agent info
+- **Session List Management** — Create/switch/delete conversations, each Agent has independent session cache
+- **Session Persistence** — Auto-recover last session after UE restart, DCC saves session state in real-time
 
-### 🧠 记忆管理系统 v2
-三层渐进式记忆模型，AI 记住用户偏好和操作历史：
-- **短期记忆**（4h / 200 条）→ **中期**（7d / 500 条）→ **长期**（永久 / 1000 条）
-- 语义标签分类（事实/偏好/规范/操作/崩溃/模式）
-- 自动晋升、合并去重、定时维护
-- 操作历史追踪与查询
+### 🧠 Memory Management System v2
+Three-tier progressive memory model — AI remembers user preferences and operation history:
+- **Short-term** (4h / 200 entries) → **Medium-term** (7d / 500 entries) → **Long-term** (permanent / 1000 entries)
+- Semantic tag classification (facts/preferences/norms/operations/crashes/patterns)
+- Auto-promotion, deduplication, scheduled maintenance
+- Operation history tracking and querying
 
-### 📚 本地知识库（RAG）
-索引 API 文档和项目文档，语义检索辅助 AI 决策。
+### 📚 Local Knowledge Base (RAG)
+Index API docs and project docs, semantic retrieval assists AI decision-making.
 
-### 🛡️ 安全与稳定
-- 事务保护、风险评估、主线程调度
-- 共享模块同步校验（`verify_sync.py` 对比 MD5，防止多副本漂移）
-- 长任务超时保护 + 活跃事件重置
+### 🛡️ Security & Stability
+- Transaction protection, risk assessment, main-thread scheduling
+- Shared module sync verification (`verify_sync.py` compares MD5, prevents multi-copy drift)
+- Long-task timeout protection + active event reset
 
-## 🎯 已支持的引擎、DCC 和 Agent 平台
+---
 
-目前已完成 **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 + Blender 5.1 + Substance Painter 11.0.1 + Substance Designer 12.1.0** 的验证工作，其他组合理论兼容但未实际测试，欢迎社区反馈。
+## 🎯 Supported Engines, DCCs & Agent Platforms
 
-### 引擎 & DCC 软件
+Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 + Blender 5.1 + Substance Painter 11.0.1 + Substance Designer 12.1.0**. Other combinations are theoretically compatible but not tested — community feedback welcome.
 
-| 软件 | 验证版本 | 验证状态 | 插件 | MCP 端口 | 说明 |
-|------|----------|----------|------|----------|------|
-| **Unreal Engine** | 5.7 | ✅ 已验证 | UEClawBridge | 8080 | C++ + Python，Slate UI 对话面板 |
-| **Maya** | 2023 | ✅ 已验证 | DCCClawBridge | 8081 | Python 3.9.7 + PySide2，Qt 对话面板 |
-| **3ds Max** | — | ⚠️ 未验证 | DCCClawBridge | 8082 | 代码已实现，与 Maya 共享插件，未实际测试 |
-| **Blender** | 5.1 | ✅ 已验证 | DCCClawBridge | 8083 | PySide6 独立 Qt 窗口，bpy.app.timers 驱动 |
-| **Houdini** | — | ⚠️ 未验证 | DCCClawBridge | 8084 | 代码已实现，hdefereval 主线程调度，未实际测试 |
-| **Substance Painter** | 11.0.1 | ✅ 已验证 | DCCClawBridge | 8085 | SP 内置 Qt + QTimer 轮询调度 |
-| **Substance Designer** | 12.1.0 | ✅ 已验证 | DCCClawBridge | 8086 | SD 内置 Qt + QTimer 轮询调度，预注入 sd.api 变量 |
-| **其他 UE / Maya 版本** | — | ⚠️ 未验证 | — | — | 理论兼容 UE 5.3+ / Maya 2022+，未实际测试 |
+### Engines & DCC Software
 
-### Agent 平台
+| Software | Verified Version | Status | Plugin | MCP Port | Notes |
+|----------|-----------------|--------|--------|----------|-------|
+| **Unreal Engine** | 5.7 | ✅ Verified | UEClawBridge | 8080 | C++ + Python, Slate UI chat panel |
+| **Maya** | 2023 | ✅ Verified | DCCClawBridge | 8081 | Python 3.9.7 + PySide2, Qt chat panel |
+| **3ds Max** | — | ⚠️ Not Verified | DCCClawBridge | 8082 | Code implemented, shares plugin with Maya, not tested |
+| **Blender** | 5.1 | ✅ Verified | DCCClawBridge | 8083 | PySide6 standalone Qt window, bpy.app.timers driven |
+| **Houdini** | — | ⚠️ Not Verified | DCCClawBridge | 8084 | Code implemented, hdefereval main-thread scheduling, not tested |
+| **Substance Painter** | 11.0.1 | ✅ Verified | DCCClawBridge | 8085 | SP built-in Qt + QTimer polling |
+| **Substance Designer** | 12.1.0 | ✅ Verified | DCCClawBridge | 8086 | SD built-in Qt + QTimer polling, pre-injected sd.api vars |
+| **Other UE / Maya Versions** | — | ⚠️ Not Verified | — | — | Theoretically compatible with UE 5.3+ / Maya 2022+, not tested |
 
-| 平台 | 验证状态 | 说明 |
-|------|----------|------|
-| **OpenClaw** | ✅ 已验证 | 主力开发平台，通过 mcp-bridge 插件集成，所有功能均在此验证 |
-| **LobsterAI（有道龙虾）** | ✅ 已验证 | OpenClaw 二次封装，Gateway 端口 18790，基础功能已验证 |
-| **Claude Desktop** | ⚠️ POC | stdio→WebSocket 桥接概念验证，未深度集成 |
+### Agent Platforms
 
-## 🏗️ 架构
+| Platform | Status | Notes |
+|----------|--------|-------|
+| **OpenClaw** | ✅ Verified | Primary dev platform, integrated via mcp-bridge plugin, all features verified here |
+| **LobsterAI (Youdao)** | ✅ Verified | OpenClaw repackaged, Gateway port 18790, basic features verified |
+| **Claude Desktop** | ⚠️ POC | stdio→WebSocket bridge proof of concept, not deeply integrated |
+
+---
+
+## 🛠️ Official Skills (27 Total)
+
+### Universal Skills (3)
+- **artclaw-knowledge** — Project knowledge base queries
+- **artclaw-memory** — Memory management operations
+- **artclaw-skill-manage** — Skill management operations
+
+### Unreal Engine Skills (6)
+- **ue57-artclaw-context** — Editor context queries
+- **ue57-artclaw-highlight** — Viewport highlighting
+- **ue57-camera-transform** — Camera operations
+- **ue57-operation-rules** — UE operation guidelines
+- **ue57_get_material_nodes** — Material node queries
+- **ue57_material_node_edit** — Material node editing
+
+### Maya Skills (1)
+- **maya-operation-rules** — Maya operation guidelines
+
+### Blender Skills (3)
+- **blender-context** — Editor context queries
+- **blender-operation-rules** — Blender operation guidelines
+- **blender-viewport-capture** — Viewport screenshot
+
+### 3ds Max Skills (1)
+- **max-operation-rules** — Max operation guidelines
+
+### Houdini Skills (4)
+- **houdini-context** — Editor context queries
+- **houdini-node-ops** — Node operations
+- **houdini-operation-rules** — Houdini operation guidelines
+- **houdini-simulation** — Simulation operations
+
+### Substance Painter Skills (4)
+- **sp-context** — Editor context queries
+- **sp-layer-ops** — Layer operations
+- **sp-operation-rules** — SP operation guidelines
+- **sp-bake-export** — Baking and export
+
+### Substance Designer Skills (4)
+- **sd-context** — Editor context queries
+- **sd-material-recipes** — Material recipe operations
+- **sd-node-ops** — Node operations
+- **sd-operation-rules** — SD operation guidelines
+
+---
+
+## 🏗️ Architecture
 
 ```
 ┌─────────────────────┐
 │   AI Agent (LLM)    │
 │ OpenClaw / LobsterAI│
 └────────┬────────────┘
-         │ WebSocket (上行:聊天 RPC / 下行:MCP 工具调用)
+         │ WebSocket (Upstream: Chat RPC / Downstream: MCP Tool Calls)
 ┌────────▼────────────┐
 │   Agent Gateway      │  ← OpenClaw / LobsterAI Gateway
-│   + MCP Bridge       │     统一管理 Agent、Session、MCP Server
+│   + MCP Bridge       │     Unified Agent, Session, MCP Server management
 └────────┬────────────┘
          │ WebSocket JSON-RPC (MCP)
     ┌────┴────┬─────────┬─────────┬─────────┬─────────┬─────────┐
@@ -131,142 +183,146 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
   UE API   Maya API  Max API  bpy API   hou API   SP API   SD API
 ```
 
-**通信双链路**：
-- **上行（聊天）**：编辑器面板 → Gateway WebSocket RPC → AI Agent
-- **下行（工具调用）**：AI Agent → Gateway → MCP Bridge → DCC MCP Server → DCC API
+**Dual-Link Communication**:
+- **Upstream (Chat)**: Editor Panel → Gateway WebSocket RPC → AI Agent
+- **Downstream (Tool Calls)**: AI Agent → Gateway → MCP Bridge → DCC MCP Server → DCC API
 
-每个 DCC 软件运行独立的 MCP Server，通过统一协议向 AI Agent 暴露编辑器能力。Skill 系统、知识库、记忆存储等核心模块跨 DCC 共享。
+Each DCC software runs an independent MCP Server, exposing editor capabilities to AI Agents through a unified protocol. Skill system, knowledge base, memory storage, and other core modules are shared across DCCs.
 
-## 📦 项目结构
+---
+
+## 📦 Project Structure
 
 ```
 artclaw_bridge/
-├── core/                            # 🔧 共享核心模块（唯一源码，安装时复制到各 DCC）
-│   ├── bridge_core.py               #    WebSocket RPC 通信核心
-│   ├── bridge_config.py             #    配置加载与多平台默认值
-│   ├── bridge_dcc.py                #    DCC 端 Bridge 管理器（Qt signal/slot）
-│   ├── memory_core.py               #    记忆管理系统 v2 核心
-│   ├── mcp_server.py                #    MCP Server（DCC 端，含 tool 事件回调）
-│   ├── skill_sync.py                #    Skill 安装/卸载/同步/发布
-│   └── ...                          #    诊断、健康检查、完整性检查等
-├── platforms/                       # 🌐 平台 Bridge（可替换）
-│   ├── openclaw/                    #    OpenClaw 适配（ws 连接 + 聊天 API + 诊断）
-│   ├── lobster/                     #    LobsterAI 配置注入
-│   └── claude/                      #    Claude Desktop stdio→WS 桥接 POC
-├── subprojects/                     # 💻 DCC 插件子项目
-│   ├── UEDAgentProj/                #    Unreal Engine 工程
-│   │   └── Plugins/UEClawBridge/    #       UE 插件（C++ Slate UI + Python 业务逻辑）
-│   └── DCCClawBridge/               #    Maya / Max / Blender / Houdini / SP / SD 共享插件
-│       ├── artclaw_ui/              #       通用 Qt 聊天面板 + Skill 管理面板
-│       ├── adapters/                #       DCC 适配层（Maya / Max / Blender / Houdini / SP / SD）
-│       ├── core/                    #       核心模块副本（安装时从 core/ 同步）
-│       ├── maya_setup/              #       Maya 部署文件
-│       └── max_setup/               #       Max 部署文件
-├── skills/                          # 🛠️ Skill 源码仓库
-│   ├── official/                    #    官方 Skill（universal / unreal / maya / max / blender / houdini / SP / SD）
-│   ├── marketplace/                 #    市集 Skill
-│   └── templates/                   #    Skill 模板（basic / advanced / material_doc）
-├── cli/                             # ⌨️ ArtClaw CLI 工具
-├── docs/                            # 📚 项目文档（规范 / 功能设计 / 排错记录）
-├── install.bat                      # 📦 一键安装器（Windows 交互菜单，支持平台选择）
-├── install.py                       # 📦 跨平台安装器（CLI，--platform openclaw/lobster）
-└── verify_sync.py                   # 🔍 共享模块同步校验（MD5 对比，--fix 自动修复）
+├── core/                            # 🔧 Shared core modules (single source, copied to DCCs during install)
+│   ├── bridge_core.py               #    WebSocket RPC communication core
+│   ├── bridge_config.py             #    Config loading & multi-platform defaults
+│   ├── bridge_dcc.py                #    DCC-side Bridge manager (Qt signal/slot)
+│   ├── memory_core.py               #    Memory management system v2 core
+│   ├── mcp_server.py                #    MCP Server (DCC-side, with tool event callbacks)
+│   ├── skill_sync.py                #    Skill install/uninstall/sync/publish
+│   └── ...                          #    Diagnostics, health check, integrity check, etc.
+├── platforms/                       # 🌐 Platform Bridges (replaceable)
+│   ├── openclaw/                    #    OpenClaw adapter (ws connection + chat API + diagnostics)
+│   ├── lobster/                     #    LobsterAI config injection
+│   └── claude/                      #    Claude Desktop stdio→WS bridge POC
+├── subprojects/                     # 💻 DCC plugin subprojects
+│   ├── UEDAgentProj/                #    Unreal Engine project
+│   │   └── Plugins/UEClawBridge/    #       UE plugin (C++ Slate UI + Python logic)
+│   └── DCCClawBridge/               #    Maya / Max / Blender / Houdini / SP / SD shared plugin
+│       ├── artclaw_ui/              #       Generic Qt chat panel + Skill management panel
+│       ├── adapters/                #       DCC adapters (Maya / Max / Blender / Houdini / SP / SD)
+│       ├── core/                    #       Core module copies (synced from core/ during install)
+│       ├── maya_setup/              #       Maya deployment files
+│       └── max_setup/               #       Max deployment files
+├── skills/                          # 🛠️ Skill source repository
+│   ├── official/                    #    Official Skills (universal / unreal / maya / max / blender / houdini / SP / SD)
+│   ├── marketplace/                 #    Marketplace Skills
+│   └── templates/                   #    Skill templates (basic / advanced / material_doc)
+├── cli/                             # ⌨️ ArtClaw CLI tools
+├── docs/                            # 📚 Project docs (specs / features / troubleshooting)
+├── install.bat                      # 📦 One-click installer (Windows interactive menu, platform selection)
+├── install.py                       # 📦 Cross-platform installer (CLI, --platform openclaw/lobster)
+└── verify_sync.py                   # 🔍 Shared module sync verification (MD5 comparison, --fix auto-repair)
 ```
 
-## 🚀 安装
+---
 
-### 前置条件
+## 🚀 Installation
+
+### Prerequisites
 
 - **Python** 3.9+
-- **Agent 平台**（任选其一）：
-  - [OpenClaw](https://github.com/openclaw/openclaw)（`npm install -g openclaw`）
-  - [LobsterAI](https://lobsterai.com/)（有道龙虾）
-- 目标 DCC 软件（任选，按需安装）：
-  - UE 5.7（推荐，理论兼容 5.3+）
-  - Maya 2023（推荐，理论兼容 2022+）
-  - 3ds Max 2024+（未测试）
-  - Blender 5.1（已验证，需自动安装 PySide6）
-  - Houdini（未测试）
-  - Substance Painter 11.0.1（已验证）
-  - Substance Designer 12.1.0（已验证）
+- **Agent Platform** (choose one):
+  - [OpenClaw](https://github.com/openclaw/openclaw) (`npm install -g openclaw`)
+  - [LobsterAI](https://lobsterai.com/) (Youdao)
+- Target DCC software (choose as needed):
+  - UE 5.7 (recommended, theoretically compatible with 5.3+)
+  - Maya 2023 (recommended, theoretically compatible with 2022+)
+  - 3ds Max 2024+ (not tested)
+  - Blender 5.1 (verified, auto-installs PySide6)
+  - Houdini (not tested)
+  - Substance Painter 11.0.1 (verified)
+  - Substance Designer 12.1.0 (verified)
 
-### 方式一：一键安装（推荐）
+### Method 1: One-Click Install (Recommended)
 
 ```bash
-# 1. 克隆仓库
+# 1. Clone repo
 git clone https://github.com/IvanYangYangXi/artclaw_bridge.git
 cd artclaw_bridge
 
-# 2a. Windows 交互菜单 — 双击或命令行运行:
+# 2a. Windows interactive menu — double-click or run in terminal:
 install.bat
 
-# 2b. 或使用 Python CLI:
-python install.py --help                                     # 查看所有选项
-python install.py --maya                                     # 安装 Maya 插件（默认 2023）
-python install.py --maya --maya-version 2024                 # 指定 Maya 版本
-python install.py --max --max-version 2024                   # 安装 Max 插件
-python install.py --ue --ue-project "C:\path\to\project"     # 安装 UE 插件
-python install.py --blender --blender-version 5.1            # 安装 Blender 插件（自动装 PySide6）
-python install.py --houdini --houdini-version 20.5           # 安装 Houdini 插件
-python install.py --sp                                       # 安装 Substance Painter 插件
-python install.py --sd                                       # 安装 Substance Designer 插件
-python install.py --openclaw                                 # 配置 OpenClaw
-python install.py --openclaw --platform lobster              # 配置 LobsterAI
-python install.py --all --ue-project "C:\path\to\project"    # 全部安装
+# 2b. Or use Python CLI:
+python install.py --help                                     # View all options
+python install.py --maya                                     # Install Maya plugin (default 2023)
+python install.py --maya --maya-version 2024                 # Specify Maya version
+python install.py --max --max-version 2024                   # Install Max plugin
+python install.py --ue --ue-project "C:\path\to\project"     # Install UE plugin
+python install.py --blender --blender-version 5.1            # Install Blender plugin (auto-installs PySide6)
+python install.py --houdini --houdini-version 20.5           # Install Houdini plugin
+python install.py --sp                                       # Install Substance Painter plugin
+python install.py --sd                                       # Install Substance Designer plugin
+python install.py --openclaw                                 # Configure OpenClaw
+python install.py --openclaw --platform lobster              # Configure LobsterAI
+python install.py --all --ue-project "C:\path\to\project"    # Install all
 ```
 
-安装脚本会自动：
-1. 复制插件文件到目标 DCC 的标准目录
-2. 部署 `core/` 共享模块（自包含，无需源码目录）
-3. 安装官方 Skills 到平台目录（`~/.openclaw/skills/` 或 LobsterAI 对应目录）
-4. **安全处理 startup 文件**（追加模式，不覆盖用户已有内容）
-5. 配置 Agent 平台 mcp-bridge 集成
-6. 写入 `~/.artclaw/config.json` 项目配置
-7. 重复运行安全（幂等）
+The installer will automatically:
+1. Copy plugin files to target DCC standard directories
+2. Deploy `core/` shared modules (self-contained, no source directory needed)
+3. Install official Skills to platform directory (`~/.openclaw/skills/` or LobsterAI equivalent)
+4. **Safely handle startup files** (append mode, doesn't overwrite existing user content)
+5. Configure Agent platform mcp-bridge integration
+6. Write `~/.artclaw/config.json` project config
+7. Idempotent (safe to run multiple times)
 
-### 方式二：手动安装
+### Method 2: Manual Install
 
 <details>
-<summary>手动安装步骤（点击展开）</summary>
+<summary>Manual install steps (click to expand)</summary>
 
-#### UE 插件
+#### UE Plugin
 
 ```bash
-# 1. 复制插件
-xcopy /E /I subprojects\UEDAgentProj\Plugins\UEClawBridge "<UE项目路径>\Plugins\UEClawBridge"
+# 1. Copy plugin
+xcopy /E /I subprojects\UEDAgentProj\Plugins\UEClawBridge "<UE_Project_Path>\Plugins\UEClawBridge"
 
-# 2. 复制共享核心模块到插件的 Python 目录
+# 2. Copy shared core modules to plugin Python directory
 for %f in (bridge_core bridge_config bridge_diagnostics health_check integrity_check memory_core skill_sync) do (
-    copy core\%f.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
+    copy core\%f.py "<UE_Project_Path>\Plugins\UEClawBridge\Content\Python\"
 )
 
-# 3. 复制平台 Bridge 模块（以 OpenClaw 为例）
+# 3. Copy platform Bridge modules (OpenClaw example)
 for %f in (openclaw_ws openclaw_chat openclaw_diagnose) do (
-    copy platforms\openclaw\%f.py "<UE项目路径>\Plugins\UEClawBridge\Content\Python\"
+    copy platforms\openclaw\%f.py "<UE_Project_Path>\Plugins\UEClawBridge\Content\Python\"
 )
 
-# 4. 安装 Python 依赖（使用 UE 内置 Python）
-"<UE引擎路径>\Engine\Binaries\ThirdParty\Python3\Win64\python.exe" -m pip install websockets pydantic
+# 4. Install Python dependencies (using UE built-in Python)
+"<UE_Engine_Path>\Engine\Binaries\ThirdParty\Python3\Win64\python.exe" -m pip install websockets pydantic
 ```
 
-#### Maya 插件
+#### Maya Plugin
 
 ```bash
-# 1. 复制 DCCClawBridge 目录
+# 1. Copy DCCClawBridge directory
 xcopy /E /I subprojects\DCCClawBridge "%USERPROFILE%\Documents\maya\2023\scripts\DCCClawBridge"
 
-# 2. 复制共享模块到 core/
+# 2. Copy shared modules to core/
 for %f in (bridge_core bridge_config bridge_diagnostics memory_core mcp_server skill_sync) do (
     copy core\%f.py "%USERPROFILE%\Documents\maya\2023\scripts\DCCClawBridge\core\"
 )
 
-# 3. 复制 userSetup.py（如果已有该文件，请追加而非覆盖）
+# 3. Copy userSetup.py (if file exists, append instead of overwrite)
 copy subprojects\DCCClawBridge\maya_setup\userSetup.py "%USERPROFILE%\Documents\maya\2023\scripts\"
 
-# 注意：Maya 中文版需要同时安装到 zh_CN/scripts/ 目录
+# Note: Chinese Maya also needs installation to zh_CN/scripts/ directory
 ```
 
-#### Agent 平台配置
+#### Agent Platform Configuration
 
 ```bash
 # OpenClaw
@@ -275,41 +331,43 @@ openclaw gateway restart
 
 # LobsterAI
 python platforms\lobster\setup_lobster_config.py
-# 重启 LobsterAI
+# Restart LobsterAI
 ```
 
 </details>
 
-### 安装后验证
+### Post-Install Verification
 
-| DCC | 验证步骤 |
-|-----|---------|
-| **UE** | 打开项目 → 启用 "UE Claw Bridge" 插件 → 重启 → Window → UE Claw Bridge → 连接 |
-| **Maya** | 启动 Maya → 菜单栏出现 **ArtClaw** → 打开 Chat Panel → 连接 |
-| **3ds Max** | 启动 Max → ArtClaw 自动加载 → 菜单栏 ArtClaw → Chat Panel → 连接 |
-| **Blender** | 启动 Blender → Edit → Preferences → Add-ons → 启用 ArtClaw Bridge → 侧栏 ArtClaw → Start Bridge |
-| **Houdini** | 启动 Houdini → Shelf → ArtClaw → Start Bridge |
-| **SP** | 启动 Substance Painter → Python → artclaw → start_plugin → Chat Panel |
-| **SD** | 启动 Substance Designer → Python → artclaw → start_plugin → Chat Panel |
+| DCC | Verification Steps |
+|-----|-------------------|
+| **UE** | Open project → Enable "UE Claw Bridge" plugin → Restart → Window → UE Claw Bridge → Connect |
+| **Maya** | Launch Maya → **ArtClaw** appears in menu bar → Open Chat Panel → Connect |
+| **3ds Max** | Launch Max → ArtClaw auto-loads → Menu bar ArtClaw → Chat Panel → Connect |
+| **Blender** | Launch Blender → Edit → Preferences → Add-ons → Enable ArtClaw Bridge → Sidebar ArtClaw → Start Bridge |
+| **Houdini** | Launch Houdini → Shelf → ArtClaw → Start Bridge |
+| **SP** | Launch Substance Painter → Python → artclaw → start_plugin → Chat Panel |
+| **SD** | Launch Substance Designer → Python → artclaw → start_plugin → Chat Panel |
 
-### 卸载
+### Uninstall
 
 ```bash
-python install.py --uninstall --maya                           # 卸载 Maya 插件
-python install.py --uninstall --ue --ue-project "C:\project"   # 卸载 UE 插件
-python install.py --uninstall --blender --blender-version 5.1  # 卸载 Blender 插件
-python install.py --uninstall --sp                             # 卸载 Substance Painter 插件
-python install.py --uninstall --sd                             # 卸载 Substance Designer 插件
+python install.py --uninstall --maya                           # Uninstall Maya plugin
+python install.py --uninstall --ue --ue-project "C:\project"   # Uninstall UE plugin
+python install.py --uninstall --blender --blender-version 5.1  # Uninstall Blender plugin
+python install.py --uninstall --sp                             # Uninstall Substance Painter plugin
+python install.py --uninstall --sd                             # Uninstall Substance Designer plugin
 ```
 
-卸载脚本会删除插件目录，从 startup 文件中**仅移除 ArtClaw 代码块**（不影响用户已有内容）。
+The uninstall script removes plugin directories and **only removes ArtClaw code blocks** from startup files (doesn't affect existing user content).
 
-## 🛠️ Skill 系统
+---
 
-### 目录结构
+## 🛠️ Skill System
+
+### Directory Structure
 
 ```
-项目源码（开发时）:                        已安装（运行时）:
+Project Source (Development):              Installed (Runtime):
 skills/                                   ~/.openclaw/skills/
 ├── official/                             ├── ue57-camera-transform/
 │   ├── universal/                        ├── ue57-artclaw-context/
@@ -347,82 +405,88 @@ skills/                                   ~/.openclaw/skills/
 └── templates/
 ```
 
-**工作流**：编辑已安装目录 → `发布`（已安装→源码 + 版本递增 + git commit）→ `更新`（源码→已安装）
+**Workflow**: Edit installed directory → `Publish` (installed→source + version increment + git commit) → `Update` (source→installed)
 
-### 创建 Skill
+### Creating Skills
 
-在编辑器中直接用自然语言描述：
+Describe in natural language directly in the editor:
 
-> "帮我创建一个 skill，批量重命名场景中选中的 Actor，加上指定前缀"
+> "Create a skill for me to batch rename selected Actors in the scene, adding a specified prefix"
 
-AI 会自动生成 `SKILL.md` + `manifest.json` + `__init__.py`，确认后即可使用。
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！特别欢迎以下方向的贡献：
-
-- 🔌 **新 DCC 桥接实现** — 更多 DCC 软件支持
-- 🛠️ **新 Skill** — 适用于各 DCC 的实用 Skill（当前已有 UE / Maya / Max / Blender / Houdini / SP / SD 官方 Skill）
-- 🧪 **测试反馈** — 在未验证的 DCC 版本上测试并反馈
-- 📖 **文档改进** — 使用教程、最佳实践
-
-### 贡献流程
-
-1. Fork 本仓库
-2. 创建功能分支：`git checkout -b feat/my-feature`
-3. 提交更改：`git commit -m "feat: add my feature"`
-4. 推送并创建 PR
-
-详见 [贡献指南](docs/skills/CONTRIBUTING.md)。
-
-## 📖 文档
-
-- **[系统架构设计](docs/specs/系统架构设计.md)** — 整体架构与设计原则
-- **[Skill 开发指南](docs/skills/SKILL_DEVELOPMENT_GUIDE.md)** — 编写自定义 Skill
-- **[Skill 规范](docs/skills/MANIFEST_SPEC.md)** — manifest.json 格式规范
-- **[代码规范](docs/specs/代码规范.md)** — 项目编码约定
-- **[多平台兼容设计](docs/UEClawBridge/features/多平台兼容设计方案.md)** — 平台抽象层设计
-- **[DCCClawBridge](subprojects/DCCClawBridge/README.md)** — Maya / Max / Blender / Houdini / SP / SD 插件详细说明
-- **[贡献指南](docs/skills/CONTRIBUTING.md)** — 如何为项目贡献
+AI will auto-generate `SKILL.md` + `manifest.json` + `__init__.py`, ready to use after confirmation.
 
 ---
 
-## 🧾 一些想法说明（不一定正确，欢迎指正）
+## 🤝 Contributing
 
-### 为什么不直接做 Agent 接入大模型？
+Issues and Pull Requests welcome! Especially looking for contributions in:
 
-Agent 平台是个大工程。现在很多公司都在做自己的 Agent 管理平台，龙虾也属于 Agent 管理平台。
+- 🔌 **New DCC Bridge Implementations** — Support for more DCC software
+- 🛠️ **New Skills** — Useful Skills for various DCCs (currently have UE / Maya / Max / Blender / Houdini / SP / SD official Skills)
+- 🧪 **Testing Feedback** — Test on unverified DCC versions and report
+- 📖 **Documentation** — Usage tutorials, best practices
 
-这部分是个大工程，本项目只做了**当前需要的工程问题方案**，专注于软件桥接这个细分领域。
+### Contribution Workflow
 
-### 有 MCP 和 Skill 就可以接入大模型了，为什么要做这个桥接工程？
+1. Fork this repository
+2. Create feature branch: `git checkout -b feat/my-feature`
+3. Commit changes: `git commit -m "feat: add my feature"`
+4. Push and create PR
 
-目的是优化使用者体验。就像 VSCode 有很多 Agent 插件，让用户能在原本软件的窗口里使用，能大大提高使用的意愿和效率，并且可以根据需求做定制开发。
-
-### 生产落地的思考
-
-一些简单任务，比如按明确规则批量生成一些对象，通过 MCP 接入后直接就能干活了。对于性能优化等分析工作、脚本开发等可以通过代码执行的任务也完全能直接胜任。但是这些应用场景大多是 TA 和程序的工作，完全无法帮到美术同学。现在的好处是，美术可以直接让 AI 帮做一些简单脚本能实现的功能，而不需要学习编程。
-
-大模型直接执行的过程是个黑盒，完全不知道内部是怎么工作的，AI 的执行结果完全无法预测，就像最早期的 AI 生图——AI 能画图，但无法在项目落地。后来出了很多工程化的工具，让 AI 的执行过程更加可控，才能真正提升生产效率。
-
-所以我们接下来需要做的是把过程拆解，让 AI 的产出变得可控。这个过程还是需要依靠传统的工程化思维。Claude Code 的代码也验证了这个方向是对的——他们没有很多黑科技，而是通过工程化让大模型以正确可控的方式去执行。
+See [Contributing Guide](docs/skills/CONTRIBUTING.md) for details.
 
 ---
 
-## 📄 许可证
+## 📖 Documentation
 
-本项目基于 [MIT License](LICENSE) 开源。
-
-## 👤 作者
-
-**Ivan(杨己力)** — [@IvanYangYangXi](https://github.com/IvanYangYangXi)
+- **[System Architecture](docs/specs/系统架构设计.md)** — Overall architecture and design principles
+- **[Skill Development Guide](docs/skills/SKILL_DEVELOPMENT_GUIDE.md)** — Writing custom Skills
+- **[Skill Specification](docs/skills/MANIFEST_SPEC.md)** — manifest.json format specification
+- **[Code Standards](docs/specs/代码规范.md)** — Project coding conventions
+- **[Multi-Platform Compatibility](docs/UEClawBridge/features/多平台兼容设计方案.md)** — Platform abstraction layer design
+- **[DCCClawBridge](subprojects/DCCClawBridge/README.md)** — Maya / Max / Blender / Houdini / SP / SD plugin details
+- **[Contributing Guide](docs/skills/CONTRIBUTING.md)** — How to contribute
 
 ---
 
-## ☕ 支持这个项目
+## 🧾 Some Thoughts (Not Necessarily Correct, Feedback Welcome)
 
-如果 ArtClaw Bridge 对你的工作有帮助，欢迎请作者喝杯咖啡 ☕
+### Why not directly build an Agent connected to LLM?
+
+Agent platforms are a big undertaking. Many companies are building their own Agent management platforms, and LobsterAI is one of them.
+
+This project only addresses **the engineering problems currently needed**, focusing on the niche of software bridging.
+
+### With MCP and Skills you can connect to LLM, why build this bridge project?
+
+The goal is to optimize user experience. Just like VSCode has many Agent plugins that let users work in their original software windows — greatly improving willingness to use and efficiency, and enabling custom development based on needs.
+
+### Thoughts on Production Deployment
+
+For simple tasks like batch generating objects according to clear rules, they can be done directly through MCP. Performance optimization analysis, script development, and other tasks achievable through code execution are also fully capable. But these use cases are mostly for TA and programmers — they don't help artists at all.
+
+The benefit now is that artists can directly have AI help with simple scriptable functions without learning programming.
+
+The process of LLM direct execution is a black box — you have no idea how it works internally, and AI execution results are completely unpredictable. It's like early AI image generation — AI could draw, but couldn't be deployed in projects. Later, many engineering tools emerged to make AI's execution process more controllable, which truly improved production efficiency.
+
+So what we need to do next is break down the process and make AI's output controllable. This still relies on traditional engineering thinking. Claude Code's code also validates this direction is correct — they don't have many black magic tricks, but make LLMs execute in correct, controllable ways through engineering.
+
+---
+
+## 📄 License
+
+This project is open-sourced under [MIT License](LICENSE).
+
+## 👤 Author
+
+**Ivan (Yang Jili)** — [@IvanYangYangXi](https://github.com/IvanYangYangXi)
+
+---
+
+## ☕ Support This Project
+
+If ArtClaw Bridge helps your work, consider buying the author a coffee ☕
 
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/IvanYangYangXi?style=social)](https://github.com/sponsors/IvanYangYangXi)
 
-你的支持是我持续开发和维护的最大动力！🚀
+Your support is the biggest motivation for continued development and maintenance! 🚀
