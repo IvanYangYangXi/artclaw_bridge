@@ -97,27 +97,28 @@ levels → 输出
 - **shape** → 木板边缘形状
 - **油漆层**: 额外的 blend 叠加彩色油漆 + 剥落遮罩
 
-## AI 生成木材的推荐步骤
+## AI 生成木材的思考参考
 
-### 简单木纹（~30 节点）
+> 通用分析框架参考 `sd-operation-rules` 规则 0。以下是木材特有的知识。
 
-1. `wood_fibers_1` 或 `wood_fibers_2` → 木纹纤维基础
-2. `perlin_noise_zoom` → 大尺度变化 + warp 扭曲源
-3. warp(纤维 + 噪波) → 自然弯曲的木纹
-4. `dirmotionblur` → 增强方向性
-5. levels → 灰度高度图
-6. 着色: Blend(Uniform深棕 + Uniform浅黄 + opacity=灰度)
-7. `bnw_spots_1` → 节疤/瑕疵叠加
-8. 输出分叉: Height/Normal/AO + Roughness + Metallic(0)
+### 木材的 Height 需要什么？
 
-### 木板拼接（~60 节点）
+- **主特征是方向性**：木纹是强方向性的 — wood_fibers + warp + dirmotionblur 是核心组合
+- **年轮**：wood_fibers 自带年轮结构，用 warp 弯曲让年轮更自然
+- **有没有板拼？** 多块木板拼接 → tile_generator 做板块分区 + 板间缝隙
 
-在简单版基础上：
-1. 增加 `tile_generator` → 木板排列
-2. 每块板随机色调偏移（tile_generator 随机灰度 → blend 色调变化）
-3. 板间缝隙处理（类似砖墙的缝隙逻辑）
-4. `dirt_4` → 使用痕迹（水平划痕）
-5. `moisture_noise` → 做旧
+### 木材的着色需要什么？
+
+- **颜色变化来源**：年轮本身的深浅色差（木材最核心的着色）+ 每块板的色调差异(如果是拼板)
+- 木纹着色很简单：木纹灰度 → Blend(深色+浅色) 就能表现年轮色差
+- 拼板：tile_generator 随机灰度做板间色调差异
+- 旧木：加 moisture_noise 或 dirt 做磨损
+
+### 木材的关键技巧
+
+- **warp 数量决定质量**：越多次 warp，纤维弯曲越自然
+- **dirmotionblur**：方向与纤维方向一致，是木材标志性处理
+- 木材 Roughness 0.4-0.8（抛光低、旧木高），Metallic 始终 0
 
 ## 关键参数经验
 

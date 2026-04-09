@@ -92,26 +92,28 @@ metal_003 的 Metallic 仍是 `uniform`（纯金属），但 metal_002 和 metal
 - Metallic = `blend`(uniform(1.0) + 遮罩)
 - 遮罩来自 fractal_sum + bnw_spots（锈蚀/氧化区域降低金属度）
 
-## AI 生成金属的推荐步骤
+## AI 生成金属的思考参考
 
-### 简单磨损金属（~30 节点）
+> 通用分析框架参考 `sd-operation-rules` 规则 0。以下是金属特有的知识。
 
-1. `scratches_1` → levels → 划痕基础
-2. `fractal_sum_base` → levels → 表面不均匀
-3. blend(划痕 + 不均匀) → 灰度高度图
-4. 着色: Blend(Uniform暗银 + Uniform亮银 + opacity=灰度)
-5. moisture_noise → Blend 做旧
-6. 输出: Height/Normal/AO 从高度图分叉
-7. Roughness: 从高度图派生 + 额外 scratches 叠加
-8. Metallic: uniform(1.0) 或 blend(如需锈蚀区域)
+### 金属的 Height 需要什么？
 
-### 金属板（~50 节点）
+- **什么类型的金属？** 光滑板材？铸铁？锻造？不同类型表面质感完全不同
+- **划痕**：几乎所有金属都有划痕 → scratches_1 是核心纹理源
+- **表面不均匀**：fractal_sum 做微妙的高度变化
+- **有没有结构？**（板块拼接、铆钉、花纹压印）→ 有就用 tile_generator 做分区
 
-1. `tile_generator` → 板块排列
-2. `scratches_1` → 表面划痕
-3. `histogram_scan` → 从 tile_generator 输出生成遮罩（板面 vs 缝隙）
-4. blend 叠加 → 板面纹理 + 缝隙深色
-5. 着色 + 输出
+### 金属的着色需要什么？
+
+- **金属色泽本身变化不大**（银、金、铜的底色较均匀）
+- **颜色变化主要来自**：反射率变化（划痕更亮）+ 氧化/锈蚀（局部变色）
+- 干净金属：底色 + Height 变体做微妙明暗 就够了
+- 生锈金属：需要 moisture_noise/bnw_spots 做锈蚀遮罩，锈蚀区 Metallic 降低
+
+### 金属的特殊通道
+
+- **Metallic 不是 0/1**：纯金属区 0.8-1.0，锈蚀/涂层区 0.0-0.3
+- **Roughness 关键**：划痕处比光面更粗糙，用 scratches 遮罩叠加
 
 ## 关键参数经验
 

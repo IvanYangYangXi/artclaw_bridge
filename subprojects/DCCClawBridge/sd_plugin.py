@@ -210,6 +210,12 @@ def show_panel():
 
     通过 SD 内置 API 注册为 dock widget，
     关闭后可随时通过菜单重新打开。
+
+    关键设计：
+    - SD 关闭 dock 只是隐藏（不销毁），可通过 窗口 菜单重新显示
+    - ArtClaw → Open Chat 做同样的事：找到已有 dock 并 show
+    - 只在第一次（dock 不存在时）创建新的
+    - 通过 QDockWidget objectName 前缀匹配查找
     """
     if not _global_state["running"]:
         logger.info("ArtClaw: Not running, starting first...")
@@ -224,23 +230,35 @@ def show_panel():
         from artclaw_ui.chat_panel import ChatPanel, get_chat_panel
         import artclaw_ui.chat_panel as _cp_mod
 
-        # 检查是否已有活跃面板
-        existing = get_chat_panel()
-        if existing is not None:
-            try:
-                existing.show()
-                existing.raise_()
-                return
-            except RuntimeError:
-                # C++ 对象已销毁
-                _cp_mod._panel_instance = None
+        try:
+            from PySide2 import QtWidgets
+        except ImportError:
+            from PySide6 import QtWidgets
 
-        # 创建新面板
+        # ---- 查找已有的 ArtClaw dock widget ----
+        main_win = None
+        for w in QtWidgets.QApplication.topLevelWidgets():
+            if isinstance(w, QtWidgets.QMainWindow):
+                main_win = w
+                break
+
+        if main_win:
+            for dock in main_win.findChildren(QtWidgets.QDockWidget):
+                if dock.objectName().startswith("artclaw_chat_dock"):
+                    if not dock.isVisible():
+                        dock.setVisible(True)
+                        dock.raise_()
+                        logger.info(
+                            "ArtClaw: Re-shown existing dock (%s)",
+                            dock.objectName(),
+                        )
+                    return
+
+        # ---- 没有已有 dock，创建新的 ----
         panel = ChatPanel(parent=None, adapter=adapter)
         panel.setObjectName("ArtClawChatPanel")
         panel.setWindowTitle("ArtClaw Chat")
 
-        # 通过 SD 内置 API 注册为 dock widget
         try:
             import sd
             from sd.api.qtforpythonuimgrwrapper import QtForPythonUIMgrWrapper
@@ -249,12 +267,6 @@ def show_panel():
             ui_mgr = QtForPythonUIMgrWrapper(ctx.getSDApplication().getUIMgr())
             dock = ui_mgr.newDockWidget("artclaw_chat_dock", "ArtClaw Chat")
 
-            try:
-                from PySide2 import QtWidgets
-            except ImportError:
-                from PySide6 import QtWidgets
-
-            # dock 是 QWidget (dock widget)，设置 panel 为其内容
             layout = QtWidgets.QVBoxLayout(dock)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(panel)
@@ -262,7 +274,6 @@ def show_panel():
 
             logger.info("ArtClaw: Chat Panel registered as dock widget")
         except Exception as e:
-            # Fallback：独立窗口
             logger.warning(
                 "ArtClaw: newDockWidget failed (%s), "
                 "falling back to standalone window", e

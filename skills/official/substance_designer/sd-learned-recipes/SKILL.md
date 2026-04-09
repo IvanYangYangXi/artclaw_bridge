@@ -1,77 +1,84 @@
 ---
 name: sd-learned-recipes
 description: >
-  从 SD 内置 PBR 材质逆向分析的材质配方库。包含 10 个材质的节点图结构、
-  库节点使用、管线特征，以及跨材质的通用模式总结。
+  从 SD 内置 30 个 PBR 材质逆向分析的材质配方库。包含 7 个类别配方 + 3 个通用功能配方，
+  涵盖混凝土/金属/瓷砖/砖墙/布料/木材/有机物的节点图结构、管线设计和制作逻辑。
   Use when AI needs to: (1) choose appropriate nodes for a material type,
   (2) reference professional material graph structure,
   (3) understand common SD material building patterns,
-  (4) select texture sources for different material categories.
+  (4) select texture sources for different material categories,
+  (5) plan a material pipeline before building.
   Substance Designer only (run_python).
 metadata:
   artclaw:
-    version: 0.1.0
+    version: 1.0.1
     author: ArtClaw
     software: substance_designer
 ---
 
 # SD 材质配方库
 
-> 从 SD 12.1.0 内置 PBR 材质逆向分析，10 个材质的真实图结构。
-> **制作材质前参考此库，选择正确的纹理源和管线设计。**
+> 从 SD 12.1.0 全部 **30 个**内置 PBR 材质逆向分析，提炼出可复用的制作配方。
+> **制作任何材质前，先查此库选择正确的管线设计和纹理源。**
 
-## 配方文件
+## 配方文件索引
 
-`recipes/` 目录下：
-- `_overview.md` — **总览（先读这个）**：跨材质模式总结、纹理源选择规律
-- `wood_american_cherry.md` — 木材配方详解（152 节点）
-- `metal_002.md` — 金属配方详解（120 节点）
+### 通用配方（所有材质适用）
 
-## 关键发现（必读）
+| 文件 | 内容 | 何时读取 |
+|------|------|----------|
+| `recipes/_overview.md` | 总览 + 跨材质统计 + 选择指南 | **必读**：开始前 |
+| `recipes/output_pipeline.md` | 输出通道标准管线（Height优先原则） | **必读**：构建输出时 |
+| `recipes/coloring.md` | 着色管线：灰度→彩色的三种方案 | 需要 BaseColor 时 |
+| `recipes/weathering.md` | 做旧/风化/污渍叠加的三级策略 | 需要真实感时 |
 
-### 1. Blend 是 SD 材质的核心
-每个材质 30-41 个 blend 节点。**SD 材质制作 = blend 叠加的艺术。**
+### 类别配方（按需读取）
 
-### 2. 着色用 gradient 渐变映射
-每材质 10-13 个 gradient 节点做灰度→颜色映射，是最主流的着色方式。
-replace_color 库节点是第二选择。
+| 文件 | 材质数 | 适用 |
+|------|--------|------|
+| `recipes/concrete.md` | 10 个 | 混凝土/水泥/路面 |
+| `recipes/metal.md` | 5 个 | 金属/金属板/锈蚀 |
+| `recipes/tile.md` | 5 个 | 瓷砖/地砖/马赛克 |
+| `recipes/brick.md` | 2 个 | 砖墙/砌体 |
+| `recipes/fabric.md` | 3 个 | 布料/织物/编织 |
+| `recipes/wood.md` | 2 个 | 木材/木板/木纹 |
+| `recipes/organic.md` | 3 个 | 碎石/纸张/纸板 |
 
-### 3. Levels 精细控制信号范围
-每材质 18-30 个 levels，几乎每个处理环节前后都有 levels 调整。
+## 快速决策树
 
-### 4. 材质类别→纹理源对照表
+```
+要做什么材质？
+├→ 硬质表面
+│   ├→ 有规则排列？ → tile.md 或 brick.md
+│   ├→ 金属？ → metal.md
+│   └→ 粗糙不规则？ → concrete.md
+├→ 有机/软质
+│   ├→ 编织结构？ → fabric.md
+│   ├→ 木纹方向性？ → wood.md
+│   └→ 颗粒/纤维？ → organic.md
+└→ 不确定 → 先读 _overview.md 的类别纹理源表
+```
 
-| 材质 | 主纹理源 | 辅助 |
-|------|----------|------|
-| 木材 | wood_fibers, directionnal_noise | perlin_noise, bnw_spots |
-| 金属 | creased, scratches | perlin_noise, dirt |
-| 混凝土 | clouds, fractal_sum | perlin_noise, moisture_noise |
-| 砖 | tile_generator, cells | clouds, crystal, shape |
-| 布料 | weave, shape | gradient_linear |
-| 碎石 | tile_generator, cells | clouds, bnw_spots |
+## 核心发现速查
 
-### 5. 输出通道标准模式
-
-| 通道 | 来源 |
-|------|------|
-| BaseColor | 灰度纹理 → gradient/replace_color → levels |
-| Normal | 灰度高度图 → normal 节点(仅1个) → levels |
-| Roughness | levels 或 blend |
-| Metallic | uniform(非金属=0) 或 blend(金属有遮罩) |
-| Height | histogram_range 库节点 |
-| AO | ambient_occlusion_2 库节点 |
+1. **Height 优先**: 先构建灰度高度图，Normal/AO/Height 三通道从同一源分叉
+2. **Blend 是核心**: 平均每材质 33 个 blend（SD 材质 = blend 叠加的艺术）
+3. **着色在末端**: 灰度处理完成后才进入着色环节
+4. **做旧必备**: moisture_noise(80%使用率) + bnw_spots(60%)
+5. **tile_generator 万能**: 不只用于瓷砖，碎石(6个)、木板(5个)、混凝土(3个)都用
 
 ## 使用方法
 
 ```python
-# 在制作材质前，读取参考配方
-import os, json
-
+# 在 SD 中读取配方
+import os
 recipes_dir = os.path.expanduser(r"~\.openclaw\skills\sd-learned-recipes\recipes")
+
 # 先读总览
 with open(os.path.join(recipes_dir, "_overview.md"), "r", encoding="utf-8") as f:
     overview = f.read()
-# 再读具体材质配方
-with open(os.path.join(recipes_dir, "wood_american_cherry.md"), "r", encoding="utf-8") as f:
+
+# 再读对应类别
+with open(os.path.join(recipes_dir, "concrete.md"), "r", encoding="utf-8") as f:
     recipe = f.read()
 ```

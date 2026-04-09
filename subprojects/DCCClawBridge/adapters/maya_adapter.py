@@ -31,6 +31,7 @@ class MayaAdapter(BaseDCCAdapter):
     """Maya DCC 适配层"""
 
     def __init__(self):
+        super().__init__()  # 初始化持久化命名空间
         self._panel = None  # Chat Panel 实例引用
         self._menu_name = "ArtClawMenu"
 
@@ -188,26 +189,32 @@ class MayaAdapter(BaseDCCAdapter):
         """
         在 Maya 环境中执行 Python 代码。
 
+        使用持久化命名空间：跨调用保持用户定义的变量。
+        每次调用时 DCC 上下文变量（S/W/L/cmds）会刷新为最新值。
+
         上下文变量:
             S = 选中对象列表
             W = 当前场景文件路径
             L = maya.cmds 模块
+            cmds = maya.cmds 模块
         """
         cmds, _, _ = _require_maya()
 
-        # 构建执行环境
-        # 预注入变量放 exec_globals，确保 def 内部也能访问（Python exec 的闭包规则）
-        exec_globals = {
+        # ── 持久化命名空间：刷新 DCC 上下文变量 ──
+        ns = self._exec_namespace
+        ns.update({
             "__builtins__": __builtins__,
             "cmds": cmds,
             "S": cmds.ls(selection=True, long=True) or [],
             "W": cmds.file(query=True, sceneName=True) or "",
             "L": cmds,
-        }
-        exec_locals: Dict = {}
+        })
 
         if context:
-            exec_globals.update(context)
+            ns.update(context)
+
+        # 清除上次的 result
+        ns.pop("result", None)
 
         # 捕获 stdout
         import io
@@ -220,12 +227,12 @@ class MayaAdapter(BaseDCCAdapter):
             # Undo 包装
             cmds.undoInfo(openChunk=True, chunkName="ArtClaw_AI")
             try:
-                exec(code, exec_globals, exec_locals)
+                exec(code, ns)
             finally:
                 cmds.undoInfo(closeChunk=True)
 
             output = stdout_capture.getvalue()
-            result = exec_locals.get("result") or exec_globals.get("result")
+            result = ns.get("result")
 
             return {
                 "success": True,

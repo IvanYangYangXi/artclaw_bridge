@@ -12,6 +12,17 @@ from typing import Any, Callable, Dict, List, Optional
 class BaseDCCAdapter(ABC):
     """DCC 适配层抽象接口"""
 
+    def __init__(self):
+        # 持久化执行命名空间：跨 execute_code 调用保持用户定义的变量
+        # 每次调用时 DCC 上下文变量（S/W/L 等）会刷新为最新值，
+        # 但用户自定义的变量（节点引用、helper 函数等）会保留。
+        self._exec_namespace: Dict[str, Any] = {"__builtins__": __builtins__}
+
+    def clear_exec_namespace(self) -> None:
+        """清空持久化命名空间（保留 __builtins__），用于 /new 或手动重置"""
+        self._exec_namespace.clear()
+        self._exec_namespace["__builtins__"] = __builtins__
+
     # ── 基础信息 ──
 
     @abstractmethod

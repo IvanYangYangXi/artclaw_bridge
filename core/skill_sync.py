@@ -683,11 +683,17 @@ def publish_skill(skill_name: str, target_layer: str = "marketplace",
         source_target = project_root / "skills" / target_layer / target_dcc / skill_name
         skills_root = project_root / "skills"
         for layer_name in ("official", "marketplace"):
-            for dcc_name in ("universal", "unreal", "maya", "max"):
-                old_path = skills_root / layer_name / dcc_name / skill_name
+            # 动态扫描所有 DCC 子目录，不硬编码
+            layer_dir = skills_root / layer_name
+            if not layer_dir.is_dir():
+                continue
+            for dcc_dir in layer_dir.iterdir():
+                if not dcc_dir.is_dir():
+                    continue
+                old_path = dcc_dir / skill_name
                 if old_path.exists() and old_path != source_target:
                     shutil.rmtree(old_path)
-                    logger.info(f"Removed old source: {layer_name}/{dcc_name}/{skill_name}")
+                    logger.info(f"Removed old source: {layer_name}/{dcc_dir.name}/{skill_name}")
 
         # 3. 同步到项目源码（目标层 + DCC 目录）
         source_target.parent.mkdir(parents=True, exist_ok=True)
@@ -862,6 +868,14 @@ def _infer_dcc_from_name(skill_name: str) -> str:
         return "maya"
     elif skill_name.startswith("max"):
         return "max"
+    elif skill_name.startswith("sd-") or skill_name.startswith("sd_"):
+        return "substance_designer"
+    elif skill_name.startswith("sp-") or skill_name.startswith("sp_"):
+        return "substance_painter"
+    elif skill_name.startswith("blender"):
+        return "blender"
+    elif skill_name.startswith("houdini"):
+        return "houdini"
     else:
         return "universal"
 
@@ -915,6 +929,14 @@ def _build_manifest_from_skill_md(skill_dir: Path, existing: dict) -> dict:
             _software = "maya"
         elif fm_name.startswith("max"):
             _software = "3ds_max"
+        elif fm_name.startswith("sd_") or fm_name.startswith("sd-"):
+            _software = "substance_designer"
+        elif fm_name.startswith("sp_") or fm_name.startswith("sp-"):
+            _software = "substance_painter"
+        elif fm_name.startswith("blender"):
+            _software = "blender"
+        elif fm_name.startswith("houdini"):
+            _software = "houdini"
         else:
             _software = "universal"
 

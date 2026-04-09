@@ -28,6 +28,7 @@ class MaxAdapter(BaseDCCAdapter):
     """3ds Max DCC 适配层"""
 
     def __init__(self):
+        super().__init__()  # 初始化持久化命名空间
         self._panel = None
         self._menu_name = "ArtClaw"
 
@@ -226,23 +227,31 @@ class MaxAdapter(BaseDCCAdapter):
     # ── 代码执行 ──
 
     def execute_code(self, code: str, context: Optional[Dict] = None) -> Dict:
-        """在 Max 环境中执行 Python 代码"""
+        """
+        在 Max 环境中执行 Python 代码。
+
+        使用持久化命名空间：跨调用保持用户定义的变量。
+        每次调用时 DCC 上下文变量（S/W/L/rt/pymxs）会刷新为最新值。
+        """
         pymxs = _require_max()
         rt = pymxs.runtime
 
-        # 预注入变量放 exec_globals，确保 def 内部也能访问（Python exec 的闭包规则）
-        exec_globals = {
+        # ── 持久化命名空间：刷新 DCC 上下文变量 ──
+        ns = self._exec_namespace
+        ns.update({
             "__builtins__": __builtins__,
             "rt": rt,
             "pymxs": pymxs,
             "S": list(rt.getCurrentSelection()) if rt.getCurrentSelection() else [],
             "W": str(rt.maxFilePath) + str(rt.maxFileName) if rt.maxFileName else "",
             "L": rt,  # MaxScript runtime as the "library"
-        }
-        exec_locals: Dict = {}
+        })
 
         if context:
-            exec_globals.update(context)
+            ns.update(context)
+
+        # 清除上次的 result
+        ns.pop("result", None)
 
         import io
         stdout_capture = io.StringIO()
@@ -253,10 +262,10 @@ class MaxAdapter(BaseDCCAdapter):
 
             # Max undo 包装
             with pymxs.undo(True, "ArtClaw AI"):
-                exec(code, exec_globals, exec_locals)
+                exec(code, ns)
 
             output = stdout_capture.getvalue()
-            result = exec_locals.get("result") or exec_globals.get("result")
+            result = ns.get("result")
 
             return {
                 "success": True,

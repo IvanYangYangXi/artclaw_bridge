@@ -41,6 +41,7 @@ class SubstancePainterAdapter(BaseDCCAdapter):
     """Substance Painter DCC 适配层"""
 
     def __init__(self):
+        super().__init__()  # 初始化持久化命名空间
         self._panel = None
         self._main_queue: queue.Queue = queue.Queue()
         self._poll_timer = None
@@ -337,10 +338,14 @@ class SubstancePainterAdapter(BaseDCCAdapter):
         """
         在 SP 环境中执行 Python 代码。
 
+        使用持久化命名空间：跨调用保持用户定义的变量。
+        每次调用时 DCC 上下文变量（S/W/L/sp）会刷新为最新值。
+
         上下文变量:
             S = texture set 列表 (list)
             W = 当前项目文件路径 (str)
             L = substance_painter 模块
+            sp = substance_painter 模块
 
         注意: SP 不支持 undo group API，不做 undo 包装。
         """
@@ -364,18 +369,22 @@ class SubstancePainterAdapter(BaseDCCAdapter):
         except Exception:
             pass
 
-        exec_globals = {
+        # ── 持久化命名空间：刷新 DCC 上下文变量 ──
+        ns = self._exec_namespace
+        ns.update({
             "__builtins__": __builtins__,
             "sp": sp,
             "substance_painter": sp,
             "S": texture_sets,
             "W": file_path,
             "L": sp,
-        }
-        exec_locals: Dict = {}
+        })
 
         if context:
-            exec_globals.update(context)
+            ns.update(context)
+
+        # 清除上次的 result
+        ns.pop("result", None)
 
         # 捕获 stdout
         stdout_capture = io.StringIO()
@@ -385,10 +394,10 @@ class SubstancePainterAdapter(BaseDCCAdapter):
             sys.stdout = stdout_capture
 
             # SP 没有 undo group API，直接执行
-            exec(code, exec_globals, exec_locals)
+            exec(code, ns)
 
             output = stdout_capture.getvalue()
-            result = exec_locals.get("result") or exec_globals.get("result")
+            result = ns.get("result")
 
             return {
                 "success": True,

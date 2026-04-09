@@ -331,6 +331,16 @@ class DCCBridgeManager:
         self._bridge.reset_session()
         self._context_injected = False
         
+        # 清空持久化执行命名空间（新对话不继承旧对话的变量）
+        try:
+            import builtins
+            adapter = getattr(builtins, '_artclaw_adapter', None)
+            if adapter and hasattr(adapter, 'clear_exec_namespace'):
+                adapter.clear_exec_namespace()
+                logger.debug("Exec namespace cleared on session reset")
+        except Exception:
+            pass
+
         # 清空 RetryTracker 状态（新对话不继承旧对话的重试计数）
         try:
             from core.mcp_server import get_mcp_server

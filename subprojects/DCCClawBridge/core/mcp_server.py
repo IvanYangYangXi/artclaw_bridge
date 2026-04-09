@@ -377,22 +377,69 @@ class MCPServer:
         return str(content)
 
     async def _execute_on_main_thread(self, handler: Callable, arguments: dict) -> Any:
-        """在 DCC 主线程执行工具 handler（通过 Future 等待结果）"""
+        """在 DCC 主线程执行工具 handler（通过 Future 等待结果）。
+
+        使用轮询等待：每秒检查一次 adapter 的 frozen 标志，
+        如果 watchdog 检测到主线程冻结则立即放弃（不用等完整超时）。
+        硬超时 60s 兜底。
+        """
         import concurrent.futures
         future = concurrent.futures.Future()
+        cancelled = [False]  # 可变容器，供 _run 闭包检查
 
         def _run():
+            if cancelled[0]:
+                # 超时后主线程才执行到这里，跳过
+                future.cancel()
+                return
             try:
                 result = handler(arguments)
-                future.set_result(result)
+                if not cancelled[0]:
+                    future.set_result(result)
             except Exception as e:
-                future.set_exception(e)
+                if not cancelled[0]:
+                    future.set_exception(e)
 
         self._main_thread_executor(_run)
 
-        # 在 asyncio 中等待 concurrent.futures.Future
+        # 轮询等待 Future 完成，同时检查 adapter frozen 标志
         loop = asyncio.get_event_loop()
-        return await asyncio.wrap_future(future, loop=loop)
+        wrapped = asyncio.wrap_future(future, loop=loop)
+        elapsed = 0.0
+        poll_interval = 1.0
+        hard_timeout = 60.0
+
+        while elapsed < hard_timeout:
+            try:
+                return await asyncio.wait_for(
+                    asyncio.shield(wrapped),
+                    timeout=poll_interval,
+                )
+            except asyncio.TimeoutError:
+                elapsed += poll_interval
+                # 检查 adapter 是否已被 watchdog 标记为 frozen
+                adapter = getattr(self, '_adapter_ref', None)
+                if adapter and getattr(adapter, '_main_thread_frozen', False):
+                    cancelled[0] = True
+                    future.cancel()
+                    raise TimeoutError(
+                        "SD 主线程已冻结（watchdog 检测），工具调用已中止。"
+                        "正在尝试自动恢复，如果持续失败请重启 SD。"
+                    )
+
+        # 硬超时
+        cancelled[0] = True
+        logger.error(
+            "Main thread execution timed out (%.0fs). "
+            "DCC main thread may be blocked. Tool call aborted.",
+            hard_timeout,
+        )
+        future.cancel()
+        raise TimeoutError(
+            "工具执行超时 (%.0fs)，DCC 主线程可能被阻塞。"
+            "如果持续超时，请在 DCC 中检查是否有弹窗/挂起操作，"
+            "或重启 DCC 插件。" % hard_timeout
+        )
 
     # --- Tool 注册接口 ---
 
@@ -548,6 +595,7 @@ def start_mcp_server(adapter=None, port: int = DEFAULT_PORT) -> bool:
     # 注入主线程执行器
     if adapter:
         _mcp_server._main_thread_executor = adapter.execute_deferred
+        _mcp_server._adapter_ref = adapter  # watchdog frozen 标志检查用
 
     # 注册内置工具
     _register_builtin_tools(_mcp_server, adapter)
@@ -591,6 +639,83 @@ def _connect_tool_events_to_bridge(server: MCPServer) -> None:
         logger.debug(f"Bridge UI signal connection skipped: {e}")
 
 
+def _parse_image_markers(text: str) -> list:
+    """解析 stdout 中的 [IMAGE:path] 标记，转换为 MCP content blocks。
+
+    用户代码中 print("[IMAGE:/path/to/file.png]") 会被解析为 ImageContent，
+    其余文本保留为 TextContent。支持 png/jpg/jpeg/bmp/tga/tif 格式。
+
+    每张图片最大 10MB，超限自动降级为文本路径提示。
+    """
+    import re
+    import base64
+
+    _IMAGE_MARKER_RE = re.compile(r'\[IMAGE:(.*?)\]')
+    _MIME_MAP = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.bmp': 'image/bmp',
+        '.tga': 'image/tga',
+        '.tif': 'image/tiff',
+        '.tiff': 'image/tiff',
+        '.webp': 'image/webp',
+    }
+    _MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+
+    markers = list(_IMAGE_MARKER_RE.finditer(text))
+    if not markers:
+        return [{"type": "text", "text": text}]
+
+    content = []
+    last_end = 0
+
+    for match in markers:
+        # 标记前的文本
+        before = text[last_end:match.start()].strip()
+        if before:
+            content.append({"type": "text", "text": before})
+
+        file_path = match.group(1).strip()
+        last_end = match.end()
+
+        # 尝试读取图片并转 base64
+        try:
+            import os
+            if not os.path.isfile(file_path):
+                content.append({"type": "text", "text": f"[图片未找到: {file_path}]"})
+                continue
+
+            file_size = os.path.getsize(file_path)
+            if file_size > _MAX_IMAGE_SIZE:
+                content.append({"type": "text", "text": f"[图片过大({file_size}B): {file_path}]"})
+                continue
+
+            ext = os.path.splitext(file_path)[1].lower()
+            mime_type = _MIME_MAP.get(ext, 'image/png')
+
+            with open(file_path, 'rb') as f:
+                data = f.read()
+            b64 = base64.b64encode(data).decode('ascii')
+
+            content.append({
+                "type": "image",
+                "data": b64,
+                "mimeType": mime_type,
+            })
+            logger.debug(f"Image embedded: {file_path} ({file_size}B, {mime_type})")
+
+        except Exception as e:
+            content.append({"type": "text", "text": f"[图片读取失败: {file_path}: {e}]"})
+
+    # 标记后的剩余文本
+    after = text[last_end:].strip()
+    if after:
+        content.append({"type": "text", "text": after})
+
+    return content if content else [{"type": "text", "text": text}]
+
+
 def _register_builtin_tools(server: MCPServer, adapter=None) -> None:
     """注册内置 MCP 工具"""
 
@@ -629,8 +754,13 @@ def _register_builtin_tools(server: MCPServer, adapter=None) -> None:
                 output_parts.append(f"返回值: {result['result']}")
 
             text = "\n".join(output_parts) if output_parts else "执行完成 (无输出)"
+
+            # v2.8: 解析 [IMAGE:path] 标记，转换为 MCP ImageContent
+            # 用户代码 print("[IMAGE:/path/to/file.png]") 即可嵌入图片
+            content = _parse_image_markers(text)
+
             return {
-                "content": [{"type": "text", "text": text}],
+                "content": content,
                 "isError": not result.get("success", False),
             }
         else:
@@ -638,7 +768,7 @@ def _register_builtin_tools(server: MCPServer, adapter=None) -> None:
 
     server.register_tool(
         name="run_python",
-        description="在 DCC 软件中执行 Python 代码。上下文变量: S=选中对象列表, W=当前场景文件, L=DCC命令模块。所有写操作都有 Undo 支持。\n\n快捷上下文: 设 get_context=true（无需 code）可获取编辑器状态: 软件名/版本/当前文件/选中对象/场景信息。\n\n可用的内部 API（import 后调用）:\n- core.knowledge_base.get_knowledge_base().search(query, top_k) — 搜索知识库\n- core.memory_store.get_memory_store() — 记忆读写\n- core.skill_runtime 的 SkillRuntime 实例 — Skill 执行",
+        description="在 DCC 软件中执行 Python 代码。上下文变量: S=选中对象列表, W=当前场景文件, L=DCC命令模块。所有写操作都有 Undo 支持。\n\n快捷上下文: 设 get_context=true（无需 code）可获取编辑器状态: 软件名/版本/当前文件/选中对象/场景信息。\n\n视觉输出: print('[IMAGE:/path/to/file.png]') 可将图片嵌入返回结果，AI 可直接看到图片内容。支持 png/jpg/bmp 格式。\n\n可用的内部 API（import 后调用）:\n- core.knowledge_base.get_knowledge_base().search(query, top_k) — 搜索知识库\n- core.memory_store.get_memory_store() — 记忆读写\n- core.skill_runtime 的 SkillRuntime 实例 — Skill 执行",
         input_schema={
             "type": "object",
             "properties": {

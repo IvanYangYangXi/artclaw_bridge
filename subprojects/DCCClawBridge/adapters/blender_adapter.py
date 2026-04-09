@@ -85,6 +85,7 @@ class BlenderAdapter(BaseDCCAdapter):
     """Blender DCC 适配层"""
 
     def __init__(self):
+        super().__init__()  # 初始化持久化命名空间
         self._panel = None  # Chat Panel 实例引用（由 BlenderQtBridge 管理）
 
     # ── 基础信息 ──
@@ -268,18 +269,22 @@ class BlenderAdapter(BaseDCCAdapter):
         """
         在 Blender 环境中执行 Python 代码。
 
+        使用持久化命名空间：跨调用保持用户定义的变量。
+        每次调用时 DCC 上下文变量（S/W/L/C/D/bpy）会刷新为最新值。
+
         上下文变量:
             S = 选中对象列表 (list[bpy.types.Object])
             W = 当前场景文件路径 (str)
             L = bpy 模块（类比 Maya 的 cmds）
             C = bpy.context（Blender 惯例快捷变量）
             D = bpy.data（Blender 惯例快捷变量）
+            bpy = bpy 模块
         """
         bpy = _require_blender()
 
-        # 构建执行环境
-        # 预注入变量放 exec_globals，确保 def 内部也能访问（Python exec 的闭包规则）
-        exec_globals = {
+        # ── 持久化命名空间：刷新 DCC 上下文变量 ──
+        ns = self._exec_namespace
+        ns.update({
             "__builtins__": __builtins__,
             "bpy": bpy,
             "S": list(bpy.context.selected_objects),
@@ -287,11 +292,13 @@ class BlenderAdapter(BaseDCCAdapter):
             "L": bpy,
             "C": bpy.context,
             "D": bpy.data,
-        }
-        exec_locals: Dict = {}
+        })
 
         if context:
-            exec_globals.update(context)
+            ns.update(context)
+
+        # 清除上次的 result
+        ns.pop("result", None)
 
         # 捕获 stdout
         stdout_capture = io.StringIO()
@@ -302,10 +309,10 @@ class BlenderAdapter(BaseDCCAdapter):
 
             # Undo 包装：在执行前创建 undo 步骤
             bpy.ops.ed.undo_push(message="ArtClaw AI")
-            exec(code, exec_globals, exec_locals)
+            exec(code, ns)
 
             output = stdout_capture.getvalue()
-            result = exec_locals.get("result") or exec_globals.get("result")
+            result = ns.get("result")
 
             return {
                 "success": True,

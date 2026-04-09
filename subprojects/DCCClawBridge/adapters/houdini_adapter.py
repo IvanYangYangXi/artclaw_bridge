@@ -43,6 +43,7 @@ class HoudiniAdapter(BaseDCCAdapter):
     """Houdini DCC 适配层"""
 
     def __init__(self):
+        super().__init__()  # 初始化持久化命名空间
         self._panel = None  # Chat Panel 实例引用
 
     # ── 基础信息 ──
@@ -261,10 +262,14 @@ class HoudiniAdapter(BaseDCCAdapter):
         """
         在 Houdini 环境中执行 Python 代码。
 
+        使用持久化命名空间：跨调用保持用户定义的变量。
+        每次调用时 DCC 上下文变量（S/W/L/hou）会刷新为最新值。
+
         上下文变量:
             S = 当前选中节点列表 (hou.selectedNodes())
             W = 当前 hip 文件路径
             L = hou 模块
+            hou = hou 模块
 
         所有操作包裹在 hou.undos.group 中，支持 Ctrl+Z 撤销。
 
@@ -273,19 +278,21 @@ class HoudiniAdapter(BaseDCCAdapter):
         """
         hou = _require_houdini()
 
-        # 构建执行环境
-        # 预注入变量放 exec_globals，确保 def 内部也能访问（Python exec 的闭包规则）
-        exec_globals = {
+        # ── 持久化命名空间：刷新 DCC 上下文变量 ──
+        ns = self._exec_namespace
+        ns.update({
             "__builtins__": __builtins__,
             "hou": hou,
             "S": hou.selectedNodes(),
             "W": hou.hipFile.path() or "",
             "L": hou,
-        }
-        exec_locals: Dict = {}
+        })
 
         if context:
-            exec_globals.update(context)
+            ns.update(context)
+
+        # 清除上次的 result
+        ns.pop("result", None)
 
         # 捕获 stdout
         stdout_capture = io.StringIO()
@@ -296,10 +303,10 @@ class HoudiniAdapter(BaseDCCAdapter):
 
             # Undo 包装: Houdini 使用 context manager
             with hou.undos.group("ArtClaw AI"):
-                exec(code, exec_globals, exec_locals)
+                exec(code, ns)
 
             output = stdout_capture.getvalue()
-            result = exec_locals.get("result") or exec_globals.get("result")
+            result = ns.get("result")
 
             return {
                 "success": True,

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import queue
 import sys
 import threading
@@ -93,16 +94,165 @@ def _ensure_sd_api_imports():
     return _SD_API_CACHE
 
 
+# ── 截图预览辅助函数 ──
+
+_PREVIEW_SAVE_DIR = os.path.join(
+    os.path.expanduser("~"), ".openclaw", "workspace-xiaoyou", "sd_captures"
+)
+
+
+def _make_save_preview_func():
+    """创建 save_preview 辅助函数（注入到 exec 命名空间）。
+
+    用法:
+        save_preview(texture, "label")
+        save_preview(texture, "label", scale=2)  # 1/2 大小
+        save_preview(node, "label")               # 自动获取第一个输出端口的纹理
+
+    自动：缩放到 1/4 → 保存 jpg → 输出 [IMAGE:path] 标记。
+    """
+    def save_preview(texture_or_node, label="preview", scale=4, quality=80):
+        """保存 SD 纹理缩略图并输出 [IMAGE:] 标记让 AI 看到。
+
+        Args:
+            texture_or_node: SDTexture 对象，或 SDNode（自动取第一个输出端口）
+            label: 显示标签（也用于文件名）
+            scale: 缩小倍数（1=原始, 2=1/2, 4=1/4）默认 4
+            quality: JPEG 质量 (1-100) 默认 80
+        Returns:
+            保存的文件路径，失败返回 None
+        """
+        import os as _os
+        import re as _re
+
+        # 如果传入的是 node，自动获取纹理
+        tex = texture_or_node
+        node = None
+        if hasattr(tex, 'getProperties'):
+            # 看起来是 SDNode
+            node = tex
+            try:
+                from sd.api.sdproperty import SDPropertyCategory as _SDPCat
+                out_props = node.getProperties(_SDPCat.Output)
+                if out_props:
+                    val = node.getPropertyValue(out_props[0])
+                    if val:
+                        tex = val.get()
+                    else:
+                        print(f"[{label}] 节点无输出值（未 compute？）")
+                        return None
+                else:
+                    print(f"[{label}] 节点无输出端口")
+                    return None
+            except Exception as e:
+                print(f"[{label}] 获取纹理失败: {e}")
+                return None
+
+        if tex is None or not hasattr(tex, 'save'):
+            print(f"[{label}] 无效的纹理对象")
+            return None
+
+        # 准备保存目录和文件名
+        save_dir = _PREVIEW_SAVE_DIR
+        _os.makedirs(save_dir, exist_ok=True)
+
+        # 清理 label 为合法文件名
+        safe_label = _re.sub(r'[^\w\-]', '_', label)
+        save_path = _os.path.join(save_dir, f"{safe_label}.jpg")
+
+        # 先保存原始纹理到临时 png
+        tmp_path = save_path + ".tmp.png"
+        try:
+            tex.save(tmp_path)
+        except Exception as e:
+            print(f"[{label}] 纹理保存失败: {e}")
+            return None
+
+        try:
+            # 读取原始数据
+            with open(tmp_path, 'rb') as f:
+                raw = f.read()
+
+            # 尝试用 QImage 缩放 + 转 jpg
+            try:
+                from PySide2.QtGui import QImage
+                from PySide2.QtCore import Qt, QByteArray, QBuffer, QIODevice
+
+                ba = QByteArray(raw)
+                img = QImage()
+                if img.loadFromData(ba):
+                    orig_w, orig_h = img.width(), img.height()
+                    if scale > 1:
+                        new_w = max(orig_w // scale, 64)
+                        new_h = max(orig_h // scale, 64)
+                        img = img.scaled(new_w, new_h,
+                                         Qt.KeepAspectRatio,
+                                         Qt.SmoothTransformation)
+
+                    out_ba = QByteArray()
+                    buf = QBuffer(out_ba)
+                    buf.open(QIODevice.WriteOnly)
+                    img.save(buf, "JPEG", quality)
+                    buf.close()
+
+                    with open(save_path, 'wb') as f:
+                        f.write(bytes(out_ba.data()))
+
+                    print(f"{label} ({img.width()}x{img.height()}):")
+                    print(f"[IMAGE:{save_path}]")
+                    return save_path
+                # QImage 加载失败，fallback
+            except ImportError:
+                pass  # 没有 PySide2，fallback
+
+            # Fallback: 直接用原始 png（不缩放）
+            fallback_path = _os.path.join(save_dir, f"{safe_label}.png")
+            _os.rename(tmp_path, fallback_path)
+            tmp_path = None  # 已 rename，不需要 finally 清理
+            print(f"{label} (原始大小, 未缩放):")
+            print(f"[IMAGE:{fallback_path}]")
+            return fallback_path
+
+        finally:
+            if tmp_path and _os.path.exists(tmp_path):
+                try:
+                    _os.remove(tmp_path)
+                except OSError:
+                    pass
+
+    return save_preview
+
+
 class SubstanceDesignerAdapter(BaseDCCAdapter):
     """Substance Designer DCC 适配层"""
 
+    # exec 执行超时阈值（秒）：超过此时间认为主线程卡死
+    EXEC_TIMEOUT = 30
+    # 卡死后恢复探测间隔（秒）
+    RECOVERY_PROBE_INTERVAL = 5.0
+    # 恢复探测最大尝试次数（超过后放弃自动恢复）
+    RECOVERY_MAX_PROBES = 12  # 12 * 5s = 60s
+
     def __init__(self):
+        super().__init__()  # 初始化持久化命名空间
         self._panel = None
         self._api_lock = threading.Lock()
         self._main_queue: queue.Queue = queue.Queue()
         self._poll_timer = None
         # 跨调用保持 graph 引用（解决 API 创建的图不是"当前图"问题）
         self._sticky_graph = None
+        # 主线程卡死检测
+        self._main_thread_busy = False
+        # 主线程冻结标志（watchdog 设置，比 _main_thread_busy 更强）
+        self._main_thread_frozen = False
+        # watchdog 定时器（在 exec 执行时启动）
+        self._watchdog_timer: Optional[threading.Timer] = None
+        # 恢复探测计数器
+        self._recovery_probe_count = 0
+        # 视觉分析检查点计数器：连续多少次 tool call 没有产生 [IMAGE:] 输出
+        self._calls_since_image = 0
+        # 阈值：超过此数量的非截图调用后开始警告
+        self._image_check_threshold = 3
 
     # ── 基础信息 ──
 
@@ -174,7 +324,12 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
             logger.warning("ArtClaw: Failed to start poll timer: %s", e)
 
     def _consume_main_queue(self) -> None:
-        """消费主线程队列中的任务（每次 tick 最多 10 个）"""
+        """消费主线程队列中的任务（每次 tick 最多 10 个）。
+
+        注意：此函数在 QTimer 回调中执行（SD 主线程），如果 fn(*args) 卡死，
+        整个 SD 主线程会冻结。SD API 的某些操作（如 newNode 传不存在的 ID）
+        会永久挂起，这是 SD 的已知 bug，无法从 Python 层面超时中断。
+        """
         processed = 0
         while not self._main_queue.empty() and processed < 10:
             try:
@@ -187,9 +342,109 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
                 logger.error("Main thread task failed: %s", e, exc_info=True)
             processed += 1
 
+    # ── Watchdog：exec 超时检测与自动恢复 ──
+
+    def _start_watchdog(self) -> None:
+        """启动 watchdog 定时器，在 EXEC_TIMEOUT 秒后触发卡死检测。"""
+        self._cancel_watchdog()
+        self._watchdog_timer = threading.Timer(
+            self.EXEC_TIMEOUT, self._on_exec_timeout
+        )
+        self._watchdog_timer.daemon = True
+        self._watchdog_timer.start()
+
+    def _cancel_watchdog(self) -> None:
+        """取消 watchdog 定时器（exec 正常返回时调用）。"""
+        if self._watchdog_timer is not None:
+            self._watchdog_timer.cancel()
+            self._watchdog_timer = None
+
+    def _on_exec_timeout(self) -> None:
+        """Watchdog 触发：exec 执行超过 EXEC_TIMEOUT 秒。
+
+        此时主线程可能卡死。标记 frozen 状态并启动恢复探测。
+        frozen 状态下所有新请求会立即返回错误（比等 300s 好得多）。
+        """
+        if not self._main_thread_busy:
+            # exec 已经返回了，只是 watchdog 取消慢了一拍
+            return
+
+        self._main_thread_frozen = True
+        self._recovery_probe_count = 0
+        logger.error(
+            "ArtClaw Watchdog: exec 执行超过 %ds，主线程可能卡死。"
+            "已标记 frozen 状态，后续请求将快速失败。"
+            "开始自动恢复探测...",
+            self.EXEC_TIMEOUT,
+        )
+        # 启动恢复探测循环
+        self._schedule_recovery_probe()
+
+    def _schedule_recovery_probe(self) -> None:
+        """安排下一次恢复探测。"""
+        if self._recovery_probe_count >= self.RECOVERY_MAX_PROBES:
+            logger.error(
+                "ArtClaw Watchdog: 已探测 %d 次（%ds），主线程仍未恢复。"
+                "SD 需要手动重启。",
+                self._recovery_probe_count,
+                int(self._recovery_probe_count * self.RECOVERY_PROBE_INTERVAL),
+            )
+            return
+
+        probe_timer = threading.Timer(
+            self.RECOVERY_PROBE_INTERVAL, self._do_recovery_probe
+        )
+        probe_timer.daemon = True
+        probe_timer.start()
+
+    def _do_recovery_probe(self) -> None:
+        """执行一次恢复探测：往主线程队列放一个心跳任务。
+
+        如果主线程解冻了（SD API 调用最终返回），QTimer 会消费队列，
+        心跳任务被执行 → 清除 frozen 状态。
+        """
+        self._recovery_probe_count += 1
+
+        # 如果 busy 标志已清除，说明 exec 最终返回了
+        if not self._main_thread_busy:
+            self._main_thread_frozen = False
+            logger.info(
+                "ArtClaw Watchdog: 主线程已恢复（exec 最终返回）。"
+                "frozen 状态已清除。"
+            )
+            return
+
+        # 尝试通过主线程队列发心跳
+        def _heartbeat():
+            logger.info(
+                "ArtClaw Watchdog: 主线程心跳成功！清除 frozen 状态。"
+            )
+            self._main_thread_frozen = False
+            self._main_thread_busy = False
+            if self._api_lock.locked():
+                try:
+                    self._api_lock.release()
+                except RuntimeError:
+                    pass  # 不是当前线程持有的锁
+
+        try:
+            self._main_queue.put_nowait((_heartbeat, ()))
+            logger.debug(
+                "ArtClaw Watchdog: 恢复探测 #%d 已入队",
+                self._recovery_probe_count,
+            )
+        except Exception as e:
+            logger.error("ArtClaw Watchdog: 探测入队失败: %s", e)
+
+        # 安排下一次探测
+        self._schedule_recovery_probe()
+
     def on_shutdown(self) -> None:
         """SD 关闭时调用：停止 MCP Server + 断开 Bridge"""
         logger.info("ArtClaw: Substance Designer adapter shutdown")
+
+        # 取消 watchdog
+        self._cancel_watchdog()
 
         # 停止轮询 timer
         if self._poll_timer is not None:
@@ -222,19 +477,36 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
         在 SD 主线程执行函数（API 安全）。
 
         SD API 严格单线程，通过 _api_lock + _main_queue 轮询调度。
+        如果前一个操作已阻塞主线程，快速失败而不是无限等待。
         """
         if threading.current_thread() is threading.main_thread():
-            with self._api_lock:
+            if not self._api_lock.acquire(timeout=10):
+                raise TimeoutError(
+                    "SD API 锁获取超时 (10s)，前一个操作可能仍在执行"
+                )
+            try:
                 return fn(*args)
+            finally:
+                self._api_lock.release()
+
+        # 快速失败：主线程卡死时不排队
+        if self._main_thread_busy:
+            raise TimeoutError(
+                "SD 主线程被前一个操作阻塞，无法执行"
+            )
 
         result_queue: queue.Queue = queue.Queue()
 
         def _run():
-            with self._api_lock:
-                try:
-                    result_queue.put(("ok", fn(*args)))
-                except Exception as e:
-                    result_queue.put(("error", e))
+            if not self._api_lock.acquire(timeout=10):
+                result_queue.put(("error", TimeoutError("SD API 锁获取超时")))
+                return
+            try:
+                result_queue.put(("ok", fn(*args)))
+            except Exception as e:
+                result_queue.put(("error", e))
+            finally:
+                self._api_lock.release()
 
         self._main_queue.put((_run, ()))
 
@@ -384,6 +656,9 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
         """
         在 SD 环境中执行 Python 代码。
 
+        使用持久化命名空间：跨调用保持用户定义的变量（节点引用、helper 函数等）。
+        每次调用时 DCC 上下文变量（sd/app/S/W/L/graph）会刷新为最新值。
+
         上下文变量:
             sd   = sd 模块
             app  = SDApplication 实例
@@ -394,112 +669,559 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
 
         注意: SD 不支持 undo group，代码执行不做 undo 包装。
         """
-        with self._api_lock:
-            try:
-                sd_module, app = _require_sd()
-            except Exception as e:
-                return {
-                    "success": False,
-                    "result": None,
-                    "error": f"SD API unavailable: {e}",
-                    "output": "",
-                }
+        # 防御性初始化：热加载新代码时旧实例可能缺少新属性
+        if not hasattr(self, "_exec_namespace"):
+            self._exec_namespace = {"__builtins__": __builtins__}
+        if not hasattr(self, "_main_thread_busy"):
+            self._main_thread_busy = False
+        if not hasattr(self, "_main_thread_frozen"):
+            self._main_thread_frozen = False
 
-            # 获取当前图和节点
-            # 优先级: UI 当前图 > sticky graph (API 创建的图)
-            current_graph = None
-            current_nodes = []
-            try:
-                ui_mgr = app.getUIMgr()
-                current_graph = ui_mgr.getCurrentGraph()
-            except Exception:
-                pass
-
-            # Fallback: 使用上次 exec 中 AI 设置的 graph
-            if current_graph is None and self._sticky_graph is not None:
-                try:
-                    # 验证 sticky graph 仍然有效（未被关闭/删除）
-                    self._sticky_graph.getIdentifier()
-                    current_graph = self._sticky_graph
-                    logger.debug("ArtClaw: Using sticky graph: %s",
-                                 current_graph.getIdentifier())
-                except Exception:
-                    self._sticky_graph = None
-
-            if current_graph is not None:
-                try:
-                    current_nodes = list(current_graph.getNodes())
-                except Exception:
-                    pass
-
-            # 获取当前文件路径
-            file_path = ""
-            try:
-                pkg_mgr = app.getPackageMgr()
-                user_packages = pkg_mgr.getUserPackages()
-                if user_packages:
-                    file_path = user_packages[0].getFilePath() or ""
-            except Exception:
-                pass
-
-            # 构建执行环境
-            # 预注入变量放 exec_globals，确保 def 内部也能访问（Python exec 的闭包规则）
-            exec_globals: Dict[str, Any] = {
-                "__builtins__": __builtins__,
-                "sd": sd_module,
-                "app": app,
-                "S": current_nodes,
-                "W": file_path,
-                "L": sd_module,
-                "graph": current_graph,
+        # 快速失败：如果主线程已被 watchdog 标记为冻结
+        if self._main_thread_frozen:
+            return {
+                "success": False,
+                "result": None,
+                "error": (
+                    "SD 主线程已冻结（上一个操作超过 %ds 未返回）。"
+                    "正在尝试自动恢复，如果持续失败请重启 SD。"
+                    % self.EXEC_TIMEOUT
+                ),
+                "output": "",
             }
 
-            # 注入预导入的 SD API 类（避免 exec 中 import 超时）
-            api_cache = _ensure_sd_api_imports()
-            exec_globals.update(api_cache)
+        # 快速失败：如果主线程已被前一个操作卡死
+        if self._main_thread_busy:
+            return {
+                "success": False,
+                "result": None,
+                "error": (
+                    "SD 主线程被前一个操作阻塞，无法执行新代码。"
+                    "可能是 SD API 挂起（已知 bug），需要重启 SD。"
+                ),
+                "output": "",
+            }
 
-            if context:
-                exec_globals.update(context)
+        # 尝试获取 API 锁（带超时，避免无限等待）
+        if not self._api_lock.acquire(timeout=10):
+            return {
+                "success": False,
+                "result": None,
+                "error": (
+                    "SD API 锁获取超时 (10s)，前一个操作可能仍在执行。"
+                    "如果持续发生，请重启 SD。"
+                ),
+                "output": "",
+            }
 
-            exec_locals: Dict[str, Any] = {}
+        self._main_thread_busy = True
+        self._start_watchdog()
+        try:
+            return self._execute_code_inner(code, context)
+        finally:
+            self._cancel_watchdog()
+            self._main_thread_busy = False
+            self._api_lock.release()
 
-            # 捕获 stdout
-            stdout_capture = io.StringIO()
-            old_stdout = sys.stdout
+    @staticmethod
+    def _validate_graph_outputsize(graph_obj, api_cache: dict,
+                                   auto_fix: bool = True) -> Optional[str]:
+        """校验图的 $outputsize 是否在合理范围，防止 Cooker 爆内存/卡死。
 
+        SD $outputsize 编码: 值 N → 实际像素 2^(N+8)。
+          0 → 256px, 1 → 512px, 2 → 1024px, 3 → 2048px,
+          4 → 4096px, 5 → 8192px。
+        合理范围: 每个分量 0~5 (256px ~ 8192px)。
+        值 0 对于库节点内部图表示"继承父图尺寸"，属于正常默认。
+
+        262144px 的 Cooker 警告对应分量值约 10 (2^18=262144)。
+
+        Args:
+            graph_obj: SDGraph 实例
+            api_cache: 预导入的 SD API 类缓存
+            auto_fix: 是否自动修正为 (2, 2) = 1024²
+
+        Returns:
+            警告消息（如有问题）或 None（正常）
+        """
+        if graph_obj is None:
+            return None
+
+        SDPropertyCategory = api_cache.get("SDPropertyCategory")
+        SDValueInt2 = api_cache.get("SDValueInt2")
+        int2_cls = api_cache.get("int2")
+        if not all([SDPropertyCategory, SDValueInt2, int2_cls]):
+            return None
+
+        try:
+            size_prop = graph_obj.getPropertyFromId(
+                "$outputsize", SDPropertyCategory.Input
+            )
+            if not size_prop:
+                return None
+
+            val = graph_obj.getPropertyValue(size_prop)
+            if not val:
+                return None
+
+            s = val.get()
+            if not hasattr(s, "x"):
+                return None
+
+            # 合理范围: 0 (256px / 继承) ~ 5 (8192px)
+            # 值 0 可能是"继承父图"，不修正
+            if 0 <= s.x <= 5 and 0 <= s.y <= 5:
+                return None
+
+            graph_id = "unknown"
             try:
-                sys.stdout = stdout_capture
-                # SD 不支持 undo group，直接执行
-                exec(code, exec_globals, exec_locals)
+                graph_id = graph_obj.getIdentifier()
+            except Exception:
+                pass
 
-                output = stdout_capture.getvalue()
-                result = exec_locals.get("result") or exec_globals.get("result")
+            warning = (
+                f"⚠️ 图 '{graph_id}' 的 $outputsize=({s.x},{s.y}) 超出合理范围 "
+                f"[0..5]，实际像素约 {2**(s.x+8)}x{2**(s.y+8)}。"
+            )
 
-                # 检测 exec 中是否修改了 graph 变量（AI 创建新图后赋值给 graph）
-                new_graph = exec_locals.get("graph") or exec_globals.get("graph")
-                if new_graph is not None and new_graph is not current_graph:
-                    self._sticky_graph = new_graph
-                    logger.info("ArtClaw: Sticky graph updated to: %s",
-                                getattr(new_graph, 'getIdentifier', lambda: 'unknown')())
+            if auto_fix:
+                try:
+                    graph_obj.setPropertyValue(
+                        size_prop, SDValueInt2.sNew(int2_cls(2, 2))
+                    )
+                    warning += " 已自动修正为 (2,2)=1024²。"
+                    logger.warning("ArtClaw: %s", warning)
+                except Exception as fix_err:
+                    warning += f" 自动修正失败: {fix_err}"
+                    logger.error("ArtClaw: %s", warning)
+            else:
+                logger.warning("ArtClaw: %s", warning)
 
-                return {
-                    "success": True,
-                    "result": result,
-                    "error": None,
-                    "output": output,
-                }
+            return warning
 
-            except Exception as e:
-                output = stdout_capture.getvalue()
-                return {
-                    "success": False,
-                    "result": None,
-                    "error": f"{type(e).__name__}: {str(e)}",
-                    "output": output,
-                }
+        except Exception as e:
+            logger.debug("ArtClaw: outputsize check failed: %s", e)
+            return None
 
-            finally:
-                sys.stdout = old_stdout
+    def _validate_all_graphs_outputsize(self, app, api_cache: dict) -> List[str]:
+        """校验所有用户包中所有图的 $outputsize，返回警告列表。"""
+        warnings = []
+        try:
+            pkg_mgr = app.getPackageMgr()
+            for pkg in pkg_mgr.getUserPackages():
+                try:
+                    for res in pkg.getChildrenResources(False):
+                        try:
+                            w = self._validate_graph_outputsize(
+                                res, api_cache, auto_fix=True
+                            )
+                            if w:
+                                warnings.append(w)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug("ArtClaw: all-graph outputsize check failed: %s", e)
+        return warnings
+
+    # ── SDNode 安全 Patch：参数预验证 ──
+
+    _node_patched = False  # 类级标志，只 patch 一次
+
+    @classmethod
+    def _install_node_safety_patches(cls, api_cache: dict) -> None:
+        """Monkey-patch SDNode 的高频出错方法，添加参数预验证。
+
+        当 AI 传了不存在的属性 ID 时，原生 API 只返回一个裸的
+        ``APIException: SDApiError.ItemNotFound``，没有任何上下文。
+        Patch 后会：
+        1. 调用前用 getPropertyFromId 验证属性是否存在
+        2. 不存在时立即抛出友好错误，附带该节点的全部可用属性列表
+        3. 存在时透传给原始方法，零额外开销
+
+        仅在 SD 进程内 patch 一次（类级标志），对所有 SDNode 实例生效。
+        """
+        if cls._node_patched:
+            return
+
+        SDPropertyCategory = api_cache.get("SDPropertyCategory")
+        if not SDPropertyCategory:
+            return
+
+        try:
+            from sd.api.sdnode import SDNode
+        except ImportError:
+            return
+
+        # ── 工具函数：列出节点的属性 ID ──
+
+        def _list_props(node, category) -> List[str]:
+            """安全地列出节点在指定分类下的所有属性 ID。"""
+            try:
+                props = node.getProperties(category)
+                if props is None:
+                    return []
+                return [
+                    p.getId() for p in props
+                    if not p.getId().startswith("$")
+                ]
+            except Exception:
+                return []
+
+        def _get_node_label(node) -> str:
+            """获取节点的可读标签（definition + identifier）。"""
+            try:
+                defn = node.getDefinition()
+                defn_id = defn.getId() if defn else "unknown"
+            except Exception:
+                defn_id = "unknown"
+            try:
+                node_id = node.getIdentifier() or ""
+            except Exception:
+                node_id = ""
+            return f"{defn_id}" + (f" ({node_id})" if node_id else "")
+
+        # ── Patch setInputPropertyValueFromId ──
+
+        _orig_setInput = SDNode.setInputPropertyValueFromId
+
+        def _safe_setInputPropertyValueFromId(self_node, prop_id, sd_value):
+            # 快速验证：属性是否存在
+            check = self_node.getPropertyFromId(
+                prop_id, SDPropertyCategory.Input
+            )
+            if check is None:
+                available = _list_props(self_node, SDPropertyCategory.Input)
+                label = _get_node_label(self_node)
+                raise ValueError(
+                    f"节点 [{label}] 没有名为 '{prop_id}' 的输入参数。\n"
+                    f"可用的输入参数: {available}\n"
+                    f"请检查参数名拼写，或用以下代码查询:\n"
+                    f"  for p in node.getProperties(SDPropertyCategory.Input):\n"
+                    f"      print(p.getId())"
+                )
+            return _orig_setInput(self_node, prop_id, sd_value)
+
+        SDNode.setInputPropertyValueFromId = _safe_setInputPropertyValueFromId
+
+        # ── Patch newPropertyConnectionFromId ──
+
+        _orig_newConn = SDNode.newPropertyConnectionFromId
+
+        def _safe_newPropertyConnectionFromId(
+            self_node, out_prop_id, target_node, in_prop_id
+        ):
+            # 验证源节点的输出端口
+            out_check = self_node.getPropertyFromId(
+                out_prop_id, SDPropertyCategory.Output
+            )
+            if out_check is None:
+                available_out = _list_props(
+                    self_node, SDPropertyCategory.Output
+                )
+                label = _get_node_label(self_node)
+                raise ValueError(
+                    f"源节点 [{label}] 没有名为 '{out_prop_id}' 的输出端口。\n"
+                    f"可用的输出端口: {available_out}"
+                )
+            # 验证目标节点的输入端口
+            in_check = target_node.getPropertyFromId(
+                in_prop_id, SDPropertyCategory.Input
+            )
+            if in_check is None:
+                available_in = _list_props(
+                    target_node, SDPropertyCategory.Input
+                )
+                target_label = _get_node_label(target_node)
+                raise ValueError(
+                    f"目标节点 [{target_label}] 没有名为 '{in_prop_id}' 的输入端口。\n"
+                    f"可用的输入端口: {available_in}"
+                )
+            return _orig_newConn(
+                self_node, out_prop_id, target_node, in_prop_id
+            )
+
+        SDNode.newPropertyConnectionFromId = _safe_newPropertyConnectionFromId
+
+        # ── Patch SDGraph.newNode（防止永久卡死 SD！）──
+        # newNode(definition_id) 传不存在的 ID 会永久挂起 SD 主线程，
+        # 这是 SD 的已知 bug。用白名单验证 definition_id 格式。
+
+        try:
+            from sd.api.sdgraph import SDGraph
+
+            _orig_newNode = SDGraph.newNode
+
+            # 合法的原子节点前缀 (sbs::compositing:: 命名空间)
+            _VALID_PREFIXES = (
+                "sbs::compositing::",
+                "sbs::function::",
+                "sbs::mdl::",
+            )
+
+            # 已知的合法原子节点 ID（高频使用的）
+            _KNOWN_ATOM_NODES = {
+                "sbs::compositing::blend",
+                "sbs::compositing::levels",
+                "sbs::compositing::normal",
+                "sbs::compositing::warp",
+                "sbs::compositing::directionalwarp",
+                "sbs::compositing::uniform",
+                "sbs::compositing::output",
+                "sbs::compositing::curve",
+                "sbs::compositing::hsl",
+                "sbs::compositing::blur",
+                "sbs::compositing::sharpen",
+                "sbs::compositing::invert",
+                "sbs::compositing::transformation",
+                "sbs::compositing::gradient",
+                "sbs::compositing::emboss",
+                "sbs::compositing::edgedetect",
+                "sbs::compositing::distance",
+                "sbs::compositing::passthrough",
+                "sbs::compositing::basecolor_to_linear",
+                "sbs::compositing::linear_to_basecolor",
+                "sbs::compositing::grayscaleconversion",
+                "sbs::compositing::rgba_merge",
+                "sbs::compositing::rgba_split",
+                "sbs::compositing::channel_shuffle",
+                "sbs::compositing::multi_switch",
+                "sbs::compositing::multi_switch_grayscale",
+                "sbs::compositing::curvature",
+                "sbs::compositing::histogramrange",
+                "sbs::compositing::histogramselect",
+                "sbs::compositing::histogramscan",
+                "sbs::compositing::histogramshift",
+                "sbs::compositing::highpass",
+                "sbs::compositing::lowpass",
+                "sbs::compositing::valueprocessor",
+                "sbs::compositing::pixelprocessor",
+                "sbs::compositing::fxmap",
+                "sbs::compositing::input",
+                "sbs::compositing::text",
+                "sbs::compositing::svg",
+                "sbs::compositing::bitmap",
+                "sbs::compositing::compinstance",
+                "sbs::compositing::switch",
+                "sbs::compositing::clamp",
+                "sbs::compositing::pow",
+                "sbs::compositing::quantize",
+                "sbs::compositing::replace_color",
+                "sbs::compositing::non_uniform_blur",
+                "sbs::compositing::skew",
+                "sbs::compositing::mirror",
+                "sbs::compositing::safe_transform",
+                "sbs::compositing::trap_distort",
+            }
+
+            def _safe_newNode(self_graph, definition_id):
+                # 基本格式检查
+                if not isinstance(definition_id, str):
+                    raise ValueError(
+                        f"newNode 的 definition_id 必须是字符串，"
+                        f"收到: {type(definition_id).__name__}"
+                    )
+                # 检查是否有合法前缀
+                if not any(
+                    definition_id.startswith(p) for p in _VALID_PREFIXES
+                ):
+                    raise ValueError(
+                        f"newNode: '{definition_id}' 不是合法的原子节点 ID。\n"
+                        f"原子节点 ID 必须以 {_VALID_PREFIXES} 开头。\n"
+                        f"如果要创建库节点（噪波/纹理），请用:\n"
+                        f"  pkg = pm.loadUserPackage(sbs_path)\n"
+                        f"  res = pkg.getChildrenResources(False)[0]\n"
+                        f"  node = graph.newInstanceNode(res)"
+                    )
+                # 如果在白名单里，直接放行
+                if definition_id in _KNOWN_ATOM_NODES:
+                    return _orig_newNode(self_graph, definition_id)
+                # 不在白名单但前缀合法：放行但警告
+                logger.warning(
+                    "ArtClaw Guard: newNode('%s') 不在已知白名单中，"
+                    "如果 SD 卡死请报告此 ID。", definition_id
+                )
+                return _orig_newNode(self_graph, definition_id)
+
+            SDGraph.newNode = _safe_newNode
+            logger.info(
+                "ArtClaw: SDGraph.newNode safety patch installed"
+            )
+        except ImportError:
+            logger.debug("ArtClaw: SDGraph import failed, skipping newNode patch")
+
+        cls._node_patched = True
+        logger.info(
+            "ArtClaw: SDNode safety patches installed "
+            "(setInputPropertyValueFromId, newPropertyConnectionFromId)"
+        )
+
+    def _execute_code_inner(self, code: str, context: Optional[Dict] = None) -> Dict:
+        """execute_code 的内部实现（已持有 _api_lock）。"""
+        try:
+            sd_module, app = _require_sd()
+        except Exception as e:
+            return {
+                "success": False,
+                "result": None,
+                "error": f"SD API unavailable: {e}",
+                "output": "",
+            }
+
+        # 获取当前图和节点
+        # 优先级: UI 当前图 > sticky graph (API 创建的图)
+        current_graph = None
+        current_nodes = []
+        try:
+            ui_mgr = app.getUIMgr()
+            current_graph = ui_mgr.getCurrentGraph()
+        except Exception:
+            pass
+
+        # Fallback: 使用上次 exec 中 AI 设置的 graph
+        if current_graph is None and self._sticky_graph is not None:
+            try:
+                # 验证 sticky graph 仍然有效（未被关闭/删除）
+                self._sticky_graph.getIdentifier()
+                current_graph = self._sticky_graph
+                logger.debug("ArtClaw: Using sticky graph: %s",
+                             current_graph.getIdentifier())
+            except Exception:
+                self._sticky_graph = None
+
+        if current_graph is not None:
+            try:
+                current_nodes = list(current_graph.getNodes())
+            except Exception:
+                pass
+
+        # 获取当前文件路径
+        file_path = ""
+        try:
+            pkg_mgr = app.getPackageMgr()
+            user_packages = pkg_mgr.getUserPackages()
+            if user_packages:
+                file_path = user_packages[0].getFilePath() or ""
+        except Exception:
+            pass
+
+        # ── 执行前校验：当前图的 $outputsize ──
+        api_cache = _ensure_sd_api_imports()
+        pre_warnings = []
+        pre_w = self._validate_graph_outputsize(
+            current_graph, api_cache, auto_fix=True
+        )
+        if pre_w:
+            pre_warnings.append(pre_w)
+
+        # ── 安装 SDNode 安全 patch（参数预验证）──
+        self._install_node_safety_patches(api_cache)
+
+        # ── 持久化命名空间：刷新 DCC 上下文变量 ──
+        # 只用一个 dict 作为 exec globals（不传 locals），
+        # 这样用户代码中定义的变量直接写入命名空间，跨调用持久保留。
+        ns = self._exec_namespace
+        ns.update({
+            "__builtins__": __builtins__,
+            "sd": sd_module,
+            "app": app,
+            "S": current_nodes,
+            "W": file_path,
+            "L": sd_module,
+            "graph": current_graph,
+        })
+
+        # 注入预导入的 SD API 类（避免 exec 中 import 超时）
+        # api_cache 已在前置校验时获取
+        ns.update(api_cache)
+
+        # 注入截图预览辅助函数（v2.8）
+        ns["save_preview"] = _make_save_preview_func()
+
+        if context:
+            ns.update(context)
+
+        # 清除上次的 result（避免上次结果被误读）
+        ns.pop("result", None)
+
+        # 捕获 stdout
+        stdout_capture = io.StringIO()
+        old_stdout = sys.stdout
+
+        try:
+            sys.stdout = stdout_capture
+            # SD 不支持 undo group，直接执行
+            # 只传 globals=ns，不传 locals，所有定义写入 ns
+            exec(code, ns)
+
+            output = stdout_capture.getvalue()
+            result = ns.get("result")
+
+            # 检测 exec 中是否修改了 graph 变量（AI 创建新图后赋值给 graph）
+            new_graph = ns.get("graph")
+            if new_graph is not None and new_graph is not current_graph:
+                self._sticky_graph = new_graph
+                logger.info("ArtClaw: Sticky graph updated to: %s",
+                            getattr(new_graph, 'getIdentifier', lambda: 'unknown')())
+
+            # ── 执行后校验：检查所有图的 $outputsize ──
+            # agent 代码可能创建了新图或修改了 outputsize，
+            # 在 compute 被触发前拦截异常值
+            post_warnings = self._validate_all_graphs_outputsize(
+                app, api_cache
+            )
+
+            # 合并前置 + 后置警告，追加到输出
+            all_warnings = pre_warnings + post_warnings
+            if all_warnings:
+                warning_text = "\n".join(
+                    f"[ArtClaw Guard] {w}" for w in all_warnings
+                )
+                output = output + "\n" + warning_text if output else warning_text
+
+            # ── 视觉分析检查点计数器（仅材质构建任务触发） ──
+            # 启发式判断：代码中包含创建/连线操作 = 正在构建材质图
+            _build_keywords = (
+                "newNode", "newInstanceNode",
+                "newPropertyConnectionFromId",
+                "setInputPropertyValueFromId",
+            )
+            is_build_call = any(kw in code for kw in _build_keywords)
+
+            if "[IMAGE:" in output:
+                self._calls_since_image = 0
+            elif is_build_call:
+                self._calls_since_image += 1
+
+            if (is_build_call
+                    and self._calls_since_image >= self._image_check_threshold):
+                cp_warning = (
+                    f"\n⛔ [ArtClaw] 已连续 {self._calls_since_image} 次构建操作没有截图！"
+                    f"\n不看截图就继续=盲做，方向偏差会累积到不可修复！"
+                    f"\n立即截图：save_preview(graph.getNodeFromId('最新节点ID'), 'checkpoint')"
+                    f"\n如果截图返回空，检查节点是否已连接到 output 节点（SD 只计算到 output 的链路）。"
+                )
+                output = output + cp_warning if output else cp_warning
+
+            return {
+                "success": True,
+                "result": result,
+                "error": None,
+                "output": output,
+            }
+
+        except Exception as e:
+            output = stdout_capture.getvalue()
+            return {
+                "success": False,
+                "result": None,
+                "error": f"{type(e).__name__}: {str(e)}",
+                "output": output,
+            }
+
+        finally:
+            sys.stdout = old_stdout
 
     # ── 内部方法 ──
 

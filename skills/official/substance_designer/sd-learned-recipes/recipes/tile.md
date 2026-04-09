@@ -102,26 +102,22 @@ warp + levels → 处理
 - 划痕区域（中等 roughness）
 - 污渍区域（高 roughness）
 
-## AI 生成瓷砖的推荐步骤
+## AI 生成瓷砖的思考参考
 
-### 简单方形瓷砖（~30 节点）
+> 通用分析框架参考 `sd-operation-rules` 规则 0。以下是瓷砖特有的知识。
 
-1. `tile_generator` #1 → 形状遮罩（砖面 vs 缝隙）
-2. `tile_generator` #2 → 随机灰度（每块砖不同）
-3. Blend(Uniform暗色 + Uniform亮色 + 随机灰度) → 基础着色
-4. 缝隙遮罩 → Blend 到 BaseColor（缝隙变暗）
-5. 缝隙遮罩 → Blend 到 Height（缝隙凹陷）
-6. 输出: Height/Normal/AO 从高度图分叉
-7. Roughness: 缝隙遮罩叠加粗糙度变化
+### 瓷砖的 Height 需要什么？
 
-### 带纹理的瓷砖（~60 节点）
+- **主结构**：tile_generator 做砖块排列 — 砖面平整凸起，缝隙凹陷（对比度比砖墙更锐利）
+- **砖面细节**：看瓷砖类型 — 大理石纹有微妙起伏(perlin+warp)，光滑瓷砖几乎没有
+- **缝隙形态**：瓷砖缝比砖缝更整齐、更深
 
-在简单版基础上：
-1. 增加 `perlin_noise_zoom`（大面积变化）
-2. 用 `warp` 扭曲砖面纹理（增加自然感）
-3. 用 `replace_color` 替代 Blend 着色（更丰富的颜色）
-4. 增加 `bnw_spots`（表面瑕疵）
-5. `moisture_noise` 做旧
+### 瓷砖的着色需要什么？
+
+- **颜色变化来源**：每块砖颜色差异（制造差异/纹理）+ 缝隙灰色 + 污渍(可选)
+- 简单瓷砖：tile_generator 随机灰度做每块砖色差 + 缝隙单独着色，2 层就够
+- 大理石瓷砖：需要 perlin/clouds + warp 做纹理着色，更复杂
+- 缝隙区域的 Roughness 比砖面高得多（0.7-0.95 vs 0.2-0.5）
 
 ## 关键参数经验
 

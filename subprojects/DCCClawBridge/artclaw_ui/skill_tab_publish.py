@@ -20,6 +20,8 @@ logger = logging.getLogger("artclaw.ui.skill_publish")
 _DCC_LABELS = {
     "universal": "Universal", "unreal": "UE", "unreal_engine": "UE",
     "maya": "Maya", "max": "Max",
+    "substance_designer": "SD", "substance_painter": "SP",
+    "blender": "Blender", "houdini": "Houdini",
 }
 
 
@@ -94,7 +96,8 @@ def show_publish_dialog(entry, discovered_dcc, parent=None):
     selected_dcc = [default_dcc]
 
     dcc_btns = []
-    dcc_options = ["universal", "unreal", "maya", "max"]
+    dcc_options = ["universal", "unreal", "maya", "max",
+                    "substance_designer", "substance_painter", "blender", "houdini"]
     for sw in discovered_dcc:
         norm = "unreal" if sw == "unreal_engine" else sw
         if norm not in dcc_options:

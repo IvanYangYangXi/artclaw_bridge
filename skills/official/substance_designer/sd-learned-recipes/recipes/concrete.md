@@ -101,24 +101,30 @@ levels(从高度派生) → OUT:Roughness
 - `hsl` 色相/饱和度微调
 - `levels` 最终色阶
 
-## AI 生成混凝土的推荐步骤
+## AI 生成混凝土的思考参考
 
-### 简单版（目标 ~30 节点）
+> 通用分析框架参考 `sd-operation-rules` 规则 0。以下是混凝土特有的知识。
 
-1. 纹理源: `perlin_noise_1` + `fractal_sum_base`
-2. 叠加: blend → levels
-3. 着色: 灰度 → Blend(Uniform暗灰 + Uniform浅灰 + opacity=纹理)
-4. 做旧: moisture_noise → Blend 到 BaseColor
-5. 输出: Height(histogram_range) + Normal(normal) + AO(ambient_occlusion_2) + Roughness(levels) + Metallic(uniform=0)
+### 混凝土的 Height 需要什么？
 
-### 标准版（目标 ~60 节点）
+- **有分区结构吗？**（浇筑板块、模板痕迹）→ 有就用 tile_generator 做分区
+- **表面质感**：混凝土表面是粗糙但相对平坦的，主要靠中小尺度细节（气孔、砂粒、裂纹）
+- **典型层级**：分区结构(可选) + 表面粗糙度(perlin) + 气孔/砂粒(fractal_sum/bnw_spots)
 
-在简单版基础上：
-1. 增加 `tile_generator`（板块分区）
-2. 增加 `bnw_spots_1`（气孔细节）
-3. 用 `warp` 增加自然感
-4. 多层 blend 叠加（3-4 层）
-5. 用 `replace_color` 替代 Blend 着色
+### 混凝土的着色需要什么？
+
+- **颜色来源**：混凝土本身灰色较均匀，变化主要来自风化/湿润/污渍
+- 基础色：灰色底色 + Height 着色（凸起偏浅、凹陷偏深）
+- 如果是旧混凝土：加 moisture_noise 做湿润/水渍效果
+- 如果有分区：不同板块可以有微妙的色差（replace_color）
+
+### 简单参考管线
+
+```
+perlin_noise + fractal_sum → blend → levels → Height
+Height → normal + AO + Roughness(levels)
+Height → Blend(灰暗+灰亮) → (可选)moisture_noise叠加 → BaseColor
+```
 
 ## 关键参数经验
 

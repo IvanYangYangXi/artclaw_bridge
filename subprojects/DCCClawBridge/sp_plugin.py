@@ -218,6 +218,11 @@ def show_panel():
 
     通过 SP 内置 add_dock_widget 注册为 dock panel，
     关闭后可随时通过菜单重新打开。
+
+    关键设计：
+    - SP 关闭 dock 只是隐藏（不销毁）
+    - 再次打开时查找已有 QDockWidget 并 show
+    - 只在第一次创建新 dock
     """
     if not _global_state["running"]:
         logger.info("ArtClaw: Not running, starting first...")
@@ -229,33 +234,57 @@ def show_panel():
         return
 
     try:
-        from artclaw_ui.chat_panel import ChatPanel, get_chat_panel, _panel_instance
+        from artclaw_ui.chat_panel import ChatPanel, get_chat_panel
         import artclaw_ui.chat_panel as _cp_mod
 
-        # 检查是否已有活跃面板
-        existing = get_chat_panel()
-        if existing is not None:
+        try:
+            from PySide6 import QtWidgets
+        except ImportError:
+            from PySide2 import QtWidgets
+
+        # ---- 查找已有的 ArtClaw dock widget ----
+        # SP 的 add_dock_widget 返回的 dock 关闭后只是隐藏
+        dock = _global_state.get("dock_widget")
+        if dock is not None:
             try:
-                existing.show()
-                existing.raise_()
+                if not dock.isVisible():
+                    dock.setVisible(True)
+                    dock.raise_()
+                    logger.info("ArtClaw: Re-shown existing dock")
                 return
             except RuntimeError:
                 # C++ 对象已销毁
+                _global_state["dock_widget"] = None
                 _cp_mod._panel_instance = None
 
-        # 创建新面板（不设 parent，作为独立 widget 交给 SP dock）
+        # Fallback: 在主窗口中搜索
+        main_win = None
+        for w in QtWidgets.QApplication.topLevelWidgets():
+            if isinstance(w, QtWidgets.QMainWindow):
+                main_win = w
+                break
+
+        if main_win:
+            for d in main_win.findChildren(QtWidgets.QDockWidget):
+                if "ArtClaw" in (d.windowTitle() or ""):
+                    if not d.isVisible():
+                        d.setVisible(True)
+                        d.raise_()
+                        logger.info("ArtClaw: Re-shown found dock (%s)", d.objectName())
+                    _global_state["dock_widget"] = d
+                    return
+
+        # ---- 没有已有 dock，创建新的 ----
         panel = ChatPanel(parent=None, adapter=adapter)
         panel.setObjectName("ArtClawChatPanel")
         panel.setWindowTitle("ArtClaw Chat")
 
-        # 通过 SP 内置 API 注册为 dock widget
         try:
             import substance_painter.ui as sp_ui
             dock = sp_ui.add_dock_widget(panel)
             _global_state["dock_widget"] = dock
             logger.info("ArtClaw: Chat Panel registered as dock widget")
         except Exception as e:
-            # Fallback：独立窗口
             logger.warning(
                 "ArtClaw: add_dock_widget failed (%s), "
                 "falling back to standalone window", e

@@ -47,7 +47,7 @@
 ```
 [Uniform 深色(Color)] → Blend.source
 [Uniform 浅色(Color)] → Blend.destination  
-[灰度纹理]            → Blend.opacity
+[灰度纹理]            → Blend.opacity（连接端口，不是参数！标量控制用 opacitymult）
 Blend 输出 = 彩色纹理
 ```
 
@@ -93,20 +93,60 @@ D6: highpass + emboss + gradient + levels + levels + blend (纹理+着色+调整
 
 ## AI 生成材质的着色推荐
 
-### 简单材质（<50 节点）
+### 着色复杂度取决于材质本身
 
-用 Blend 着色，2-3 层：
-1. 基础色调: `Uniform深色 + Uniform浅色 + 灰度纹理 → Blend`
-2. 变化层: `Uniform变化色 + 上一层 + noise遮罩 → Blend`
-3. HSL 微调 + levels 输出
+**不要默认使用多层着色。** 先回答：这个材质的颜色变化来源是什么？
 
-### 中等材质（50-100 节点）
+| 材质类型 | 颜色变化来源 | 推荐着色方案 |
+|---------|------------|------------|
+| 纯色塑料/金属 | 几乎没有 | 1 层 Uniform + levels 微调 |
+| 普通混凝土 | 表面不均匀 + 风化 | 2 层：Height 着色 + moisture_noise 叠加 |
+| 布料 | 经纬色差 + 褶皱暗区 + 做旧 | 3-4 层：方向性着色 + 褶皱着色 + 做旧 |
+| 古老石墙 | 材料色差 + 苔藓 + 风化 + 污渍 | 4-5 层：多来源叠加 |
 
-混合使用：
-1. 主体着色用 replace_color 库节点
-2. 细节叠加用 Blend
-3. 最终 HSL + levels
+### Blend 着色（最基本的方案）
 
-### 专业材质（100+ 节点）
+```
+[Uniform 深色(Color)] → Blend.source
+[Uniform 浅色(Color)] → Blend.destination  
+[灰度遮罩]            → Blend.opacity（连接端口）
+Blend 输出 = 彩色纹理
+```
 
-参考具体类别配方（concrete.md、metal.md 等），使用多层 gradient + replace_color。
+这是最简单有效的着色方式。如果材质颜色均匀，一层就够了。
+
+### 方向性着色（有结构方向的材质）
+
+**当材质有方向性的颜色差异时才需要**（布料经纬线、木纹、金属拉丝）。
+
+核心手法：**gradient_linear → transformation(旋转) → 作为着色遮罩**。
+
+```
+gradient_linear_1 → transformation(0°)  → 方向 A 遮罩
+gradient_linear_1 → transformation(90°) → 方向 B 遮罩
+```
+
+然后：
+```
+方向 A 遮罩 → Blend(色调A + 色调B + 遮罩) → 方向色差
+```
+
+### 基于 Height 的着色（有高度变化的材质）
+
+**当凸起和凹陷处应该颜色不同时**（大部分材质适用）。
+
+```
+Height 灰度 → Blend(凸起色 + 凹陷色 + Height遮罩) → 高度色差
+```
+
+### 多层着色叠加（颜色来源多的材质）
+
+**只有当材质确实有多种颜色变化来源时才叠加。** 每一层着色都应该有不同的物理来源和不同的遮罩。
+
+```
+层1: [物理来源A] 的色差（遮罩=对应来源的灰度遮罩）
+层2: [物理来源B] 的色差（遮罩=另一个来源的灰度遮罩）
+...
+```
+
+**原则：每一层着色的遮罩来源必须不同。如果找不到新的物理来源，就不要再加层。**

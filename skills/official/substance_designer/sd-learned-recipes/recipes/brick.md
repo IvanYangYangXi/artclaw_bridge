@@ -63,17 +63,23 @@ blend(多层叠加) → 完整的砖面灰度纹理
   → blend(凹陷) 到 Height
 ```
 
-## AI 生成砖墙的推荐步骤
+## AI 生成砖墙的思考参考
 
-### 标准砖墙（~40 节点）
+> 通用分析框架参考 `sd-operation-rules` 规则 0。以下是砖墙特有的知识。
 
-1. `tile_generator` → 砖块排列（running bond 模式）
-2. `fractal_sum_base` → levels → 砖面纹理
-3. 砖面遮罩分离（砖面 vs 砂浆）
-4. 每块砖着色: `tile_generator` 随机灰度 → Blend 着色（2 种砖色）
-5. 砂浆: invert 砖面遮罩 → Blend 浅灰色
-6. `moisture_noise` → 做旧叠加
-7. 输出分叉: Height/Normal/AO + Roughness(砖面光滑/砂浆粗糙) + Metallic(0)
+### 砖墙的 Height 需要什么？
+
+- **主结构**：tile_generator 做砖块排列（running bond 等砌法）— 砖面凸起，砂浆凹陷
+- **砖面细节**：砖表面不是完全平的 — fractal_sum 或 perlin 做微妙起伏
+- **有没有破损？** 旧砖墙可能有缺角/碎裂 → 额外遮罩叠加
+
+### 砖墙的着色需要什么？
+
+- **颜色变化来源**：每块砖颜色略有不同（烧制差异）+ 砂浆是灰白色 + 风化/苔藓
+- 砖面：tile_generator 的随机灰度值天然可做每块砖的色差遮罩
+- 砂浆：用 invert 砖面遮罩分离砂浆区域，单独着色
+- 均匀的新砖墙：砖色 + 砂浆色 两层即可
+- 旧砖墙：加 moisture_noise 做风化
 
 ## 关键参数经验
 
