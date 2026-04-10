@@ -22,6 +22,7 @@ from install_utils import (
     copy_shared_modules,
     cprint,
     install_dcc_skills,
+    ROOT_DIR,
 )
 
 # ===========================================================================
@@ -502,8 +503,299 @@ def uninstall_substance_designer():
 
 
 # ===========================================================================
+# ComfyUI
+# ===========================================================================
+
+COMFYUI_BRIDGE_SRC = ROOT_DIR / "subprojects" / "ComfyUIClawBridge"
+
+
+def install_comfyui(comfyui_path: str, force: bool, platform_type: str = "openclaw"):
+    """安装 ComfyUI 自定义节点
+
+    将 ComfyUIClawBridge 部署到 ComfyUI 的 custom_nodes/artclaw_bridge/ 目录。
+    同时复制 DCCClawBridge（adapters + core）作为依赖。
+
+    Args:
+        comfyui_path: ComfyUI 安装目录（包含 main.py 的目录）
+        force: 跳过覆盖确认
+        platform_type: 目标平台
+    """
+    print()
+    print("  ── ComfyUI 插件安装 ─────────────────────────────")
+    print()
+
+    if not comfyui_path:
+        cprint("错误", "--comfyui-path 未指定，请提供 ComfyUI 安装目录", "red")
+        return False
+
+    # 验证 ComfyUI 目录
+    comfyui_dir = os.path.abspath(comfyui_path)
+    custom_nodes_dir = os.path.join(comfyui_dir, "custom_nodes")
+    if not os.path.isdir(custom_nodes_dir):
+        # 尝试向上一级找
+        if os.path.isdir(os.path.join(comfyui_dir, "main.py")):
+            pass  # comfyui_dir is correct
+        elif os.path.isdir(os.path.join(os.path.dirname(comfyui_dir), "custom_nodes")):
+            comfyui_dir = os.path.dirname(comfyui_dir)
+            custom_nodes_dir = os.path.join(comfyui_dir, "custom_nodes")
+        else:
+            cprint("错误", f"未找到 custom_nodes 目录: {custom_nodes_dir}", "red")
+            cprint("提示", "请确认 ComfyUI 安装目录正确（包含 main.py 和 custom_nodes/）", "yellow")
+            return False
+
+    dcc_dst = os.path.join(custom_nodes_dir, "artclaw_bridge")
+
+    cprint("信息", f"平台: {platform_type}")
+    cprint("信息", f"ComfyUI 目录: {comfyui_dir}")
+    cprint("信息", f"目标目录: {dcc_dst}")
+
+    if not confirm_overwrite(dcc_dst, force):
+        cprint("跳过", "ComfyUI 插件安装", "yellow")
+        return True
+
+    os.makedirs(custom_nodes_dir, exist_ok=True)
+
+    # 复制 ComfyUIClawBridge 为 artclaw_bridge
+    cprint("复制", "ComfyUIClawBridge → artclaw_bridge...")
+    if not COMFYUI_BRIDGE_SRC.is_dir():
+        cprint("错误", f"ComfyUIClawBridge 源码不存在: {COMFYUI_BRIDGE_SRC}", "red")
+        return False
+    copy_dir(str(COMFYUI_BRIDGE_SRC), dcc_dst)
+    cprint("OK", f"ComfyUIClawBridge 已安装到: {dcc_dst}", "green")
+
+    # 复制 DCCClawBridge 到 artclaw_bridge 旁边的 DCCClawBridge/ 目录
+    # startup.py 通过 ../DCCClawBridge 找到依赖
+    dcc_bridge_dst = os.path.join(custom_nodes_dir, "artclaw_bridge_dcc")
+    cprint("复制", "DCCClawBridge → artclaw_bridge_dcc/ (依赖库)...")
+    copy_dir(str(DCC_BRIDGE_SRC), dcc_bridge_dst)
+    cprint("OK", f"DCCClawBridge 已安装到: {dcc_bridge_dst}", "green")
+
+    # 复制共享模块到 dcc 的 core/
+    cprint("复制", "bridge_core 共享模块到 core/...")
+    copy_shared_modules(os.path.join(dcc_bridge_dst, "core"))
+    cprint("OK", "共享模块已打包 (自包含部署)", "green")
+
+    # 创建 artclaw_bridge_dcc 的 __init__.py（ComfyUI 需要这个文件来识别包）
+    init_path = os.path.join(dcc_bridge_dst, "__init__.py")
+    with open(init_path, "w", encoding="utf-8") as f:
+        f.write('"""ArtClaw Bridge - DCC 依赖库"""\n')
+    cprint("OK", "已创建 artclaw_bridge_dcc/__init__.py", "green")
+
+    # 复制平台 bridge 到 core/
+    cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
+    copy_platform_bridge(platform_type, os.path.join(dcc_bridge_dst, "core"))
+
+    # 更新 startup.py 中的路径（指向实际 DCCClawBridge 位置）
+    # 写入环境变量配置文件
+    env_file = os.path.join(dcc_dst, ".env")
+    with open(env_file, "w", encoding="utf-8") as f:
+        f.write(f"# ArtClaw Bridge 自动生成\n")
+        f.write(f"ARTCLAW_DCC_BRIDGE_PATH={dcc_bridge_dst}\n")
+    cprint("OK", f"已创建 .env 配置: {env_file}", "green")
+
+    # 安装 Python 依赖到 ComfyUI 环境
+    _install_comfyui_python_deps(comfyui_dir)
+
+    # 安装推荐的 ComfyUI 节点包
+    _install_comfyui_custom_nodes(comfyui_dir)
+
+    # 安装 DCC Skills
+    install_dcc_skills(["comfyui", "universal"], platform_type)
+
+    cprint("完成", "ComfyUI 插件安装成功!", "green")
+    print()
+    cprint("后续步骤", "1. 启动 ComfyUI → ArtClaw Bridge 自动加载", "cyan")
+    cprint("后续步骤", "2. 日志中应出现: ArtClaw: MCP Server started on port 8087", "cyan")
+    cprint("后续步骤", "3. 配置 OpenClaw: python setup_openclaw_config.py --comfyui", "cyan")
+    cprint("后续步骤", "4. 重启 ComfyUI Desktop 加载新安装的节点包", "cyan")
+    print()
+    cprint("注意", "如果 MCP Server 启动失败，请检查 websockets 和 pydantic 是否已安装", "yellow")
+    return True
+
+
+def uninstall_comfyui(comfyui_path: str):
+    """卸载 ComfyUI 自定义节点"""
+    print()
+    print("  ── ComfyUI 插件卸载 ─────────────────────────────")
+    print()
+
+    if not comfyui_path:
+        cprint("错误", "--comfyui-path 未指定", "red")
+        return False
+
+    comfyui_dir = os.path.abspath(comfyui_path)
+    custom_nodes_dir = os.path.join(comfyui_dir, "custom_nodes")
+
+    for dirname in ["artclaw_bridge", "artclaw_bridge_dcc"]:
+        dst = os.path.join(custom_nodes_dir, dirname)
+        if os.path.isdir(dst):
+            shutil.rmtree(dst)
+            cprint("删除", f"已删除: {dst}", "green")
+        else:
+            cprint("跳过", f"{dirname} 不存在: {dst}", "yellow")
+
+    cprint("完成", "ComfyUI 插件卸载完成", "green")
+    return True
+
+
+# ===========================================================================
 # Substance 共用: Python 依赖安装
 # ===========================================================================
+
+
+def _install_comfyui_custom_nodes(comfyui_dir: str):
+    """
+    安装推荐的 ComfyUI 自定义节点包。
+
+    这些节点包提供额外的图像处理功能，用于 PBR 贴图生成等。
+    """
+    custom_nodes_dir = os.path.join(comfyui_dir, "custom_nodes")
+    os.makedirs(custom_nodes_dir, exist_ok=True)
+
+    # 推荐的节点包列表
+    repos = [
+        {
+            "name": "ComfyUI-Manager",
+            "url": "https://github.com/ltdrdata/ComfyUI-Manager.git",
+            "desc": "节点管理器",
+            "required": True,
+        },
+        {
+            "name": "comfyui_controlnet_aux",
+            "url": "https://github.com/Fannovel16/comfyui_controlnet_aux.git",
+            "desc": "ControlNet 辅助节点",
+            "required": False,
+        },
+        {
+            "name": "cg-image-picker",
+            "url": "https://github.com/chrisgoringe/cg-image-picker.git",
+            "desc": "图像选择和处理",
+            "required": False,
+        },
+    ]
+
+    print()
+    cprint("安装", "ComfyUI 自定义节点包...")
+    print()
+
+    python = _find_comfyui_python(comfyui_dir)
+
+    for repo in repos:
+        repo_path = os.path.join(custom_nodes_dir, repo["name"])
+        print(f"  [{repo['name']}]")
+        print(f"    描述: {repo['desc']}")
+
+        if os.path.exists(repo_path):
+            print(f"    状态: 已存在")
+        else:
+            print(f"    安装: {repo['url']}")
+            try:
+                result = subprocess.run(
+                    ["git", "clone", repo["url"]],
+                    cwd=custom_nodes_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if result.returncode == 0:
+                    print(f"    状态: ✓ 安装成功")
+                else:
+                    print(f"    状态: ✗ 安装失败")
+                    if repo["required"]:
+                        cprint("警告", f"{repo['name']} 安装失败，但它是可选组件", "yellow")
+                    continue
+            except Exception as e:
+                print(f"    状态: ✗ 错误: {e}")
+                continue
+
+        # 安装节点包的依赖
+        req_file = os.path.join(repo_path, "requirements.txt")
+        if os.path.exists(req_file) and python:
+            print(f"    依赖: 安装中...")
+            try:
+                result = subprocess.run(
+                    [python, "-m", "pip", "install", "-r", req_file],
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                )
+                if result.returncode == 0:
+                    print(f"    依赖: ✓ 安装成功")
+                else:
+                    print(f"    依赖: ⚠ 可能有问题")
+            except Exception as e:
+                print(f"    依赖: ⚠ 错误: {e}")
+
+    print()
+    cprint("OK", "节点包安装完成", "green")
+
+
+def _install_comfyui_python_deps(comfyui_dir: str):
+    """
+    尝试查找 ComfyUI 的 Python 并安装依赖。
+
+    ComfyUI Desktop 使用独立的虚拟环境 (.venv)。
+    依赖: websockets, pydantic
+    """
+    python = _find_comfyui_python(comfyui_dir)
+    if not python:
+        cprint("提示", "未找到 ComfyUI Python，请手动安装依赖", "yellow")
+        cprint("提示", "需要: pip install websockets pydantic", "yellow")
+        return
+
+    deps = ["websockets", "pydantic"]
+    cprint("安装", f"正在安装 Python 依赖到 ComfyUI: {', '.join(deps)}...")
+    try:
+        result = subprocess.run(
+            [python, "-m", "pip", "install"] + deps,
+            capture_output=True, text=True, timeout=180,
+        )
+        if result.returncode == 0:
+            cprint("OK", f"Python 依赖已安装到 ComfyUI Python ({', '.join(deps)})", "green")
+        else:
+            error = result.stderr.strip() or result.stdout.strip()
+            cprint("警告", f"依赖安装失败: {error}", "yellow")
+            cprint("提示", f'请手动运行: "{python}" -m pip install {" ".join(deps)}', "yellow")
+    except Exception as e:
+        cprint("警告", f"依赖安装失败: {e}", "yellow")
+        cprint("提示", f'请手动运行: "{python}" -m pip install {" ".join(deps)}', "yellow")
+
+
+def _find_comfyui_python(comfyui_dir: str) -> str | None:
+    """
+    查找 ComfyUI 使用的 Python 解释器。
+
+    优先级:
+    1. ComfyUI Desktop: .venv/Scripts/python.exe (虚拟环境)
+    2. 系统 Python (comfyui_dir 下的 python.exe)
+    3. 环境变量中的 python
+    """
+    # 1. ComfyUI Desktop 虚拟环境
+    venv_python = os.path.join(comfyui_dir, ".venv", "Scripts", "python.exe")
+    if os.path.isfile(venv_python):
+        cprint("OK", f"找到 ComfyUI Desktop Python: {venv_python}", "cyan")
+        return venv_python
+
+    # 2. 直接放在 comfyui_dir 下的 python
+    direct_python = os.path.join(comfyui_dir, "python.exe")
+    if os.path.isfile(direct_python):
+        cprint("OK", f"找到 ComfyUI Python: {direct_python}", "cyan")
+        return direct_python
+
+    # 3. 尝试系统 Python
+    try:
+        result = subprocess.run(
+            ["python", "-c", "import sys; print(sys.executable)"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            system_python = result.stdout.strip()
+            cprint("提示", f"使用系统 Python: {system_python}", "yellow")
+            return system_python
+    except Exception:
+        pass
+
+    return None
 
 
 def _install_substance_python_deps(product: str):

@@ -117,6 +117,8 @@ def main():
                         help="添加 Substance Painter MCP Server")
     parser.add_argument("--sd", action="store_true",
                         help="添加 Substance Designer MCP Server")
+    parser.add_argument("--comfyui", action="store_true",
+                        help="添加 ComfyUI MCP Server")
     parser.add_argument("--ue-port", type=int, default=8080,
                         help="UE MCP Server 端口 (默认 8080)")
     parser.add_argument("--maya-port", type=int, default=8081,
@@ -131,6 +133,8 @@ def main():
                         help="Substance Painter MCP Server 端口 (默认 8085)")
     parser.add_argument("--sd-port", type=int, default=8086,
                         help="Substance Designer MCP Server 端口 (默认 8086)")
+    parser.add_argument("--comfyui-port", type=int, default=8087,
+                        help="ComfyUI MCP Server 端口 (默认 8087)")
     parser.add_argument("--dry-run", action="store_true",
                         help="只显示将要做的修改，不实际写入")
 
@@ -176,6 +180,11 @@ def main():
         servers["sd-editor"] = {
             "type": "websocket",
             "url": f"ws://127.0.0.1:{args.sd_port}",
+        }
+    if args.comfyui:
+        servers["comfyui-editor"] = {
+            "type": "websocket",
+            "url": f"ws://127.0.0.1:{args.comfyui_port}",
         }
 
     if not servers:
@@ -223,6 +232,7 @@ def main():
         "houdini-editor": ["mcp_houdini-editor_*"],
         "sp-editor": ["mcp_sp-editor_*"],
         "sd-editor": ["mcp_sd-editor_*"],
+        "comfyui-editor": ["mcp_comfyui-editor_*"],
     }
 
     agents_list = config.get("agents", {}).get("list", [])

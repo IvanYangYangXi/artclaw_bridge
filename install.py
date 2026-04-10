@@ -43,6 +43,7 @@ from install_dcc_ext import (
     install_houdini, uninstall_houdini,
     install_substance_painter, uninstall_substance_painter,
     install_substance_designer, uninstall_substance_designer,
+    install_comfyui, uninstall_comfyui,
 )
 
 
@@ -122,6 +123,12 @@ def _print_post_steps(installed: list[str]):
         print("    Substance Designer:")
         print("      1. 启动 SD → plugin 自动加载")
         print()
+    if "ComfyUI" in joined:
+        print("    ComfyUI:")
+        print("      1. 启动 ComfyUI → ArtClaw Bridge 自动加载")
+        print("      2. 日志中应出现 MCP Server started on port 8083")
+        print("      3. 配置 OpenClaw 连接: --comfyui")
+        print()
     if "OpenClaw" in joined:
         print("    OpenClaw:")
         print("      1. 重启 Gateway: openclaw gateway restart")
@@ -147,6 +154,7 @@ def main():
   python install.py --houdini --houdini-version 20.0     安装 Houdini 插件
   python install.py --sp                                 安装 Substance Painter 插件
   python install.py --sd                                 安装 Substance Designer 插件
+  python install.py --comfyui --comfyui-path "C:\\ComfyUI" 安装 ComfyUI 插件
   python install.py --openclaw                           配置平台 (默认 openclaw)
   python install.py --all --ue-project "C:\\MyProject"    全部安装
   python install.py --uninstall --maya                   卸载 Maya 插件
@@ -165,6 +173,7 @@ def main():
     parser.add_argument("--houdini", action="store_true", help="安装/卸载 Houdini 插件")
     parser.add_argument("--sp", action="store_true", help="安装/卸载 Substance Painter 插件")
     parser.add_argument("--sd", action="store_true", help="安装/卸载 Substance Designer 插件")
+    parser.add_argument("--comfyui", action="store_true", help="安装/卸载 ComfyUI 插件")
     parser.add_argument("--openclaw", action="store_true", help="配置平台 (Gateway + Skills + config)")
     parser.add_argument("--all", action="store_true", help="安装全部 (7 个 DCC + 平台配置)")
 
@@ -174,6 +183,7 @@ def main():
     parser.add_argument("--ue-project", default="", help="UE 项目路径 (包含 .uproject 的目录)")
     parser.add_argument("--blender-version", default="4.2", help="Blender 版本 (默认: 4.2)")
     parser.add_argument("--houdini-version", default="20.5", help="Houdini 版本 (默认: 20.5)")
+    parser.add_argument("--comfyui-path", default="", help="ComfyUI 安装目录 (包含 main.py 的目录)")
 
     # 平台选择
     parser.add_argument(
@@ -191,7 +201,8 @@ def main():
     # 无参数时显示帮助
     any_target = (
         args.maya or args.max or args.ue or args.blender
-        or args.houdini or args.sp or args.sd or args.openclaw or args.all
+        or args.houdini or args.sp or args.sd or args.comfyui
+        or args.openclaw or args.all
     )
     if not any_target:
         parser.print_help()
@@ -200,7 +211,7 @@ def main():
     # --all 展开: 所有 7 个 DCC + 平台配置
     if args.all:
         args.maya = args.max = args.ue = True
-        args.blender = args.houdini = args.sp = args.sd = True
+        args.blender = args.houdini = args.sp = args.sd = args.comfyui = True
         args.openclaw = True
 
     pt = args.platform
@@ -259,6 +270,8 @@ def _run_installs(args, pt: str, installed: list[str], uninstalled: list[str]):
         installed.append("Substance Painter 插件")
     if args.sd and install_substance_designer(args.force, pt):
         installed.append("Substance Designer 插件")
+    if args.comfyui and install_comfyui(args.comfyui_path, args.force, pt):
+        installed.append("ComfyUI 插件")
     if args.openclaw and install_openclaw(pt):
         installed.append(f"平台配置 ({pt})")
 
@@ -279,6 +292,8 @@ def _run_uninstalls(args, installed: list[str], uninstalled: list[str]):
         uninstalled.append("Substance Painter 插件")
     if args.sd and uninstall_substance_designer():
         uninstalled.append("Substance Designer 插件")
+    if args.comfyui and uninstall_comfyui(args.comfyui_path):
+        uninstalled.append("ComfyUI 插件")
     if args.openclaw:
         cprint("提示", "平台配置需手动修改（参考 ~/.artclaw/config.json）", "yellow")
 

@@ -12,6 +12,7 @@ setlocal EnableDelayedExpansion
 ::    - 安装 UE 插件到 UE 项目
 ::    - 安装 Maya 插件到 Maya scripts 目录 (幂等追加 userSetup.py)
 ::    - 安装 3ds Max 插件到 Max scripts 目录 (幂等注入 startup)
+::    - 安装 Blender / Houdini / SP / SD / ComfyUI 插件
 ::    - 配置平台 (OpenClaw / WorkBuddy / Claude / LobsterAI)
 ::    - 自动打包 bridge_core 共享模块（自包含部署）
 ::    - 卸载已安装的插件
@@ -51,10 +52,10 @@ if not exist "%UE_PLUGIN_SRC%\UEClawBridge.uplugin" (
 )
 
 echo.
-echo  ╔══════════════════════════════════════════════════════╗
-echo  ║       ArtClaw Bridge — 统一安装器 v2.0               ║
-echo  ║       UE / Maya / Max / Blender / Houdini / SP / SD  ║
-echo  ╚══════════════════════════════════════════════════════╝
+echo  ╔══════════════════════════════════════════════════════════╗
+echo  ║       ArtClaw Bridge — 统一安装器 v2.0                   ║
+echo  ║       UE / Maya / Max / Blender / Houdini / SP / SD / CU ║
+echo  ╚══════════════════════════════════════════════════════════╝
 echo.
 echo  项目目录: %ROOT_DIR%
 echo.
@@ -95,8 +96,9 @@ echo    [4] 安装 Blender 插件
 echo    [5] 安装 Houdini 插件
 echo    [6] 安装 Substance Painter 插件
 echo    [7] 安装 Substance Designer 插件
-echo    [8] 配置平台 (Gateway + Skills + config)
-echo    [9] 全部安装 (所有 DCC + 平台配置)
+echo    [8] 安装 ComfyUI 插件 (含节点包+依赖)
+echo    [9] 配置平台 (Gateway + Skills + config)
+echo    [A] 全部安装 (所有 DCC + 平台配置)
 echo    [U] 卸载菜单
 echo    [0] 退出
 echo.
@@ -110,8 +112,9 @@ if "%CHOICE%"=="4" goto :install_blender
 if "%CHOICE%"=="5" goto :install_houdini
 if "%CHOICE%"=="6" goto :install_sp
 if "%CHOICE%"=="7" goto :install_sd
-if "%CHOICE%"=="8" goto :install_openclaw
-if "%CHOICE%"=="9" goto :install_all
+if "%CHOICE%"=="8" goto :install_comfyui
+if "%CHOICE%"=="9" goto :install_openclaw
+if /I "%CHOICE%"=="A" goto :install_all
 if /I "%CHOICE%"=="U" goto :uninstall_menu
 echo [错误] 无效选项: %CHOICE%
 pause
@@ -727,6 +730,38 @@ if !ERRORLEVEL! EQU 0 (
 exit /b 0
 
 :: ============================================================
+:: 安装 ComfyUI 插件 (委托 install.py)
+:: ============================================================
+:install_comfyui
+call :do_install_comfyui
+goto :summary
+
+:do_install_comfyui
+echo.
+echo  -- ComfyUI 插件安装 --
+echo.
+set "COMFYUI_PATH="
+echo  请输入 ComfyUI 安装目录 (包含 main.py 的目录):
+set /p COMFYUI_PATH="  > "
+if "!COMFYUI_PATH!"=="" (
+    echo [错误] 未输入 ComfyUI 路径
+    exit /b 1
+)
+echo [安装] 正在安装 ComfyUI 插件...
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --comfyui --comfyui-path "!COMFYUI_PATH!" --platform !PLATFORM! --force
+    if !ERRORLEVEL! EQU 0 (
+        echo [完成] ComfyUI 插件安装成功!
+    ) else (
+        echo [错误] ComfyUI 插件安装失败
+    )
+) else (
+    echo [错误] 未找到 Python，请手动运行: python install.py --comfyui --comfyui-path "path"
+)
+exit /b 0
+
+:: ============================================================
 :: 卸载菜单
 :: ============================================================
 :uninstall_menu
@@ -740,6 +775,7 @@ echo    [4] 卸载 Blender 插件
 echo    [5] 卸载 Houdini 插件
 echo    [6] 卸载 Substance Painter 插件
 echo    [7] 卸载 Substance Designer 插件
+echo    [8] 卸载 ComfyUI 插件
 echo    [0] 返回主菜单
 echo.
 set /p UCHOICE="  请输入选项: "
@@ -750,6 +786,8 @@ if "%UCHOICE%"=="3" goto :uninstall_ue
 if "%UCHOICE%"=="4" goto :uninstall_blender_menu
 if "%UCHOICE%"=="5" goto :uninstall_houdini_menu
 if "%UCHOICE%"=="6" goto :uninstall_sp_menu
+if "%UCHOICE%"=="7" goto :uninstall_sd_menu
+if "%UCHOICE%"=="8" goto :uninstall_comfyui_menu
 if "%UCHOICE%"=="7" goto :uninstall_sd_menu
 echo [错误] 无效选项
 goto :uninstall_menu
@@ -801,6 +839,23 @@ echo.
 where python >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
     python "%ROOT_DIR%\install.py" --uninstall --sd --force
+) else (
+    echo [错误] 未找到 Python
+)
+goto :summary
+
+:uninstall_comfyui_menu
+echo.
+set "COMFYUI_PATH="
+echo  请输入 ComfyUI 安装目录:
+set /p COMFYUI_PATH="  > "
+if "!COMFYUI_PATH!"=="" (
+    echo [跳过] 未输入路径
+    goto :summary
+)
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --uninstall --comfyui --comfyui-path "!COMFYUI_PATH!" --force
 ) else (
     echo [错误] 未找到 Python
 )
@@ -908,6 +963,13 @@ echo      1. 启动 SP -- Python -- 勾选 artclaw_bridge 插件
 echo.
 echo    Substance Designer:
 echo      1. 启动 SD -- 插件自动加载
+echo.
+echo    ComfyUI:
+echo      1. 启动 ComfyUI -- ArtClaw Bridge 自动加载
+echo      2. 日志中应出现: ArtClaw: MCP Server started on port 8087
+echo      3. 配置 OpenClaw 连接
+echo      4. 重启 ComfyUI Desktop 加载额外节点包 (Manager, ControlNet)
+echo      5. 如需 PBR 贴图生成，使用 workflow 文件
 echo.
 echo    平台 (!PLATFORM!):
 echo      1. 参考 ~/.artclaw/config.json 确认配置

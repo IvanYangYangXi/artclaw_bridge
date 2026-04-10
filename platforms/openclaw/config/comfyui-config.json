@@ -1,0 +1,30 @@
+{
+  "$comment": "ComfyUI 单实例配置 — ComfyUI MCP Server 连接 OpenClaw Gateway",
+  "$doc": "将 plugins 部分合并到 ~/.openclaw/openclaw.json",
+
+  "plugins": {
+    "allow": ["mcp-bridge"],
+    "entries": {
+      "mcp-bridge": {
+        "enabled": true,
+        "config": {
+          "servers": {
+            "comfyui-editor": {
+              "type": "websocket",
+              "url": "ws://127.0.0.1:8087",
+              "$comment": "ComfyUI MCP Server (自定义节点 artclaw_bridge 启动)"
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "$tool_namespace_note": [
+    "工具命名空间:",
+    "  ComfyUI 工具: mcp_comfyui-editor_run_python",
+    "",
+    "Agent tools.allow 白名单使用通配符:",
+    "  mcp_comfyui-editor_*"
+  ]
+}

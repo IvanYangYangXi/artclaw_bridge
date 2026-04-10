@@ -265,6 +265,7 @@ class DCCBridgeManager:
                         "substance_painter": "mcp_sp-editor_",
                         "blender": "mcp_blender-editor_",
                         "houdini": "mcp_houdini-editor_",
+                        "comfyui": "mcp_comfyui-editor_",
                     }
                     my_prefix = _PREFIX_MAP.get(sw_name.lower(), f"mcp_{sw_name.lower()}-primary_")
                     # 构建其他工具列表（排除当前软件）
@@ -276,6 +277,7 @@ class DCCBridgeManager:
                         "mcp_sp-editor_": "Substance Painter",
                         "mcp_blender-editor_": "Blender",
                         "mcp_houdini-editor_": "Houdini",
+                        "mcp_comfyui-editor_": "ComfyUI",
                     }
                     other_tools = "、".join(
                         f"{prefix}（{label}）"
