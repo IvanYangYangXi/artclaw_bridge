@@ -1,8 +1,8 @@
 # ArtClaw Bridge
 
-**Bridge DCC tools (UE, Maya, 3ds Max, Blender, Houdini, Substance Painter/Designer) to AI Agents via MCP Protocol**
+**Bridge DCC tools (UE, Maya, 3ds Max, Blender, Houdini, Substance Painter/Designer, ComfyUI) to AI Agents via MCP Protocol**
 
-ArtClaw Bridge provides a unified AI bridging layer for Digital Content Creation (DCC) software including Unreal Engine, Maya, 3ds Max, Blender, Houdini, Substance Painter, and Substance Designer. Through the [MCP (Model Context Protocol)](https://modelcontextprotocol.io/), AI Agents can directly understand and operate the editor environment.
+ArtClaw Bridge provides a unified AI bridging layer for Digital Content Creation (DCC) software including Unreal Engine, Maya, 3ds Max, Blender, Houdini, Substance Painter, Substance Designer, and ComfyUI. Through the [MCP (Model Context Protocol)](https://modelcontextprotocol.io/), AI Agents can directly understand and operate the editor environment.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Status](https://img.shields.io/badge/status-beta-orange.svg)
@@ -24,6 +24,15 @@ ArtClaw Bridge provides a unified AI bridging layer for Digital Content Creation
 
 ![ArtClawBridge Workflow](docs/示例/打通不同软件间的上下流交接.png)
 
+**Blender Integration — AI Operating in Blender Editor**
+
+![Blender AI Integration](docs/示例/blender-bridge演示.gif)
+
+**Substance Designer & Painter — AI Texture Generation Workflow**
+
+![SD AI Integration](docs/示例/SD接入.png)
+![SP AI Integration](docs/示例/SP接入.png)
+
 ⭐ *More demo videos coming soon!*
 
 ---
@@ -42,7 +51,7 @@ The benefit of bridging is **the ability to connect various software and Agent p
 All DCC software communicates with AI Agents through the standard MCP protocol. Each DCC exposes only one MCP tool (`run_ue_python` / `run_python`), and AI completes all operations by executing Python code — minimal yet powerful.
 
 ### 💬 In-Editor AI Chat Panel
-Chat directly with AI in UE / Maya / Max / Blender / Houdini / SP / SD editors without switching windows. Features:
+Chat directly with AI in UE / Maya / Max / Blender / Houdini / SP / SD / ComfyUI editors without switching windows. Features:
 - **Streaming Output** — AI responses display in real-time with Markdown rendering
 - **Tool Call Visualization** — Collapsible cards showing tool name, parameters, and execution results
 - **Attachment Support** — Drag and drop images or files for AI to analyze automatically
@@ -89,7 +98,7 @@ Index API docs and project docs, semantic retrieval assists AI decision-making.
 
 ## 🎯 Supported Engines, DCCs & Agent Platforms
 
-Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 + Blender 5.1 + Substance Painter 11.0.1 + Substance Designer 12.1.0**. Other combinations are theoretically compatible but not tested — community feedback welcome.
+Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 + Blender 5.1 + Substance Painter 11.0.1 + Substance Designer 12.1.0 + ComfyUI**. Other combinations are theoretically compatible but not tested — community feedback welcome.
 
 ### Engines & DCC Software
 
@@ -102,6 +111,7 @@ Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 +
 | **Houdini** | — | ⚠️ Not Verified | DCCClawBridge | 8084 | Code implemented, hdefereval main-thread scheduling, not tested |
 | **Substance Painter** | 11.0.1 | ✅ Verified | DCCClawBridge | 8085 | SP built-in Qt + QTimer polling |
 | **Substance Designer** | 12.1.0 | ✅ Verified | DCCClawBridge | 8086 | SD built-in Qt + QTimer polling, pre-injected sd.api vars |
+| **ComfyUI** | Latest | ✅ Verified | ComfyUIClawBridge | 8087 | Custom node, Python-only, WS MCP Server, no visible nodes |
 | **Other UE / Maya Versions** | — | ⚠️ Not Verified | — | — | Theoretically compatible with UE 5.3+ / Maya 2022+, not tested |
 
 ### Agent Platforms
@@ -163,24 +173,30 @@ Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 +
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────┐
-│   AI Agent (LLM)    │
-│ OpenClaw / LobsterAI│
-└────────┬────────────┘
-         │ WebSocket (Upstream: Chat RPC / Downstream: MCP Tool Calls)
-┌────────▼────────────┐
-│   Agent Gateway      │  ← OpenClaw / LobsterAI Gateway
-│   + MCP Bridge       │     Unified Agent, Session, MCP Server management
-└────────┬────────────┘
-         │ WebSocket JSON-RPC (MCP)
-    ┌────┴────┬─────────┬─────────┬─────────┬─────────┬─────────┐
-    ▼         ▼         ▼         ▼         ▼         ▼         ▼
-┌────────┐┌────────┐┌────────┐┌────────┐┌────────┐┌────────┐┌────────┐
-│ UE     ││ Maya   ││ 3dsMax ││Blender ││Houdini ││  SP    ││  SD    │
-│ :8080  ││ :8081  ││ :8082  ││ :8083  ││ :8084  ││ :8085  ││ :8086  │
-└───┬────┘└───┬────┘└───┬────┘└───┬────┘└───┬────┘└───┬────┘└───┬────┘
-    ▼         ▼         ▼         ▼         ▼         ▼         ▼
-  UE API   Maya API  Max API  bpy API   hou API   SP API   SD API
+┌──────────────────────────────────────────────────────────────┐
+│                        AI Agent (LLM)                        │
+│                   OpenClaw / LobsterAI                       │
+└──────────────────────────┬───────────────────────────────────┘
+                           │ WebSocket (Upstream: Chat RPC / Downstream: MCP Tool Calls)
+┌──────────────────────────▼───────────────────────────────────┐
+│                     Agent Gateway                             │
+│             + MCP Bridge + ArtClawToolManager                │
+│    (Unified Agent, Session, MCP Server, Tool, Workflow mgmt) │
+└──────────────────────────┬───────────────────────────────────┘
+                           │ WebSocket JSON-RPC (MCP)
+         ┌─────────────────┼─────────────────┬─────────────────┐
+         ▼                 ▼                 ▼                 ▼
+    ┌─────────┐       ┌─────────┐       ┌─────────┐       ┌─────────┐
+    │   UE    │       │  Maya   │       │ Blender │       │ ComfyUI │
+    │  :8080  │       │  :8081  │       │  :8083  │       │  :8087  │
+    └────┬────┘       └────┬────┘       └────┬────┘       └────┬────┘
+         ▼                 ▼                 ▼                 ▼
+      UE API           Maya API          bpy API          ComfyUI API
+         │                 │                 │                 │
+    ┌─────────┐       ┌─────────┐       ┌─────────┐       ┌─────────┐
+    │ 3dsMax  │       │ Houdini │       │   SP    │       │   SD    │
+    │  :8082  │       │  :8084  │       │  :8085  │       │  :8086  │
+    └─────────┘       └─────────┘       └─────────┘       └─────────┘
 ```
 
 **Dual-Link Communication**:
@@ -188,6 +204,68 @@ Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 +
 - **Downstream (Tool Calls)**: AI Agent → Gateway → MCP Bridge → DCC MCP Server → DCC API
 
 Each DCC software runs an independent MCP Server, exposing editor capabilities to AI Agents through a unified protocol. Skill system, knowledge base, memory storage, and other core modules are shared across DCCs.
+
+---
+
+## 🖥️ ArtClawToolManager — Web Management Dashboard
+
+A standalone web-based management interface for unified control of Skills, Tools, and Workflows across all DCC platforms.
+
+### Features
+
+- **Web-Based Chat Panel** — Control AI Agents directly from the browser, no DCC installation required
+- **Skill Management** — Browse, install, update, and manage all Skills across platforms
+- **Tool Registry** — Unified registry for content filtering and automation tools
+- **Workflow Management** — Create, manage, and execute AI-driven workflow templates
+- **ComfyUI Integration** — Direct AI control of ComfyUI through the web interface
+- **Cross-Platform** — Single dashboard manages all connected DCC software
+
+### Architecture
+
+```
+ArtClawToolManager/
+├── src/
+│   ├── server/           # FastAPI backend
+│   │   └── api/
+│   │       ├── skills.py    # Skill lifecycle management
+│   │       ├── tools.py     # Tool registry & execution
+│   │       └── workflows.py # Workflow template management
+│   └── web/             # Frontend (src/)
+└── docs/                # Documentation
+```
+
+### Usage
+
+The web dashboard connects to the same Agent Gateway as DCC plugins, providing an alternative interface for AI interaction and tool/workflow management without needing to open DCC software.
+
+---
+
+## 🔧 Tool & Workflow Architecture
+
+A unified paradigm designed for **content filtering, automation triggering, and AI-driven workflows**. Built as a three-layer architecture:
+
+### Tool Layer
+- **Registration** — Tools register with the ToolManager via standard manifest
+- **Execution** — Unified `execute_tool(tool_id, inputs)` API with standardized I/O
+- **Filtering** — Built-in content filtering pipeline (validate → filter → transform → output)
+- **Scheduling** — Cron-based and event-triggered automation
+
+### Workflow Layer
+- **Template System** — JSON-based workflow templates with variable substitution
+- **Chain Execution** — Multi-step workflows with dependency resolution
+- **State Management** — Workflow state persistence across sessions
+- **AI Integration** — LLMs can trigger workflows via `execute_workflow()` API
+
+### Trigger Layer
+- **Event-Driven** — File system events, API calls, message queues
+- **Conditional Logic** — Filter conditions, threshold checks, content validation
+- **Fan-Out** — Single trigger → multiple tool/workflow execution
+- **Audit Trail** — Full execution logging for debugging and compliance
+
+This architecture enables powerful automation scenarios:
+- AI detects scene changes → triggers content validation workflow
+- New asset imported → runs automated QA tools
+- ComfyUI generation complete → triggers downstream DCC pipeline
 
 ---
 
@@ -209,13 +287,19 @@ artclaw_bridge/
 │   └── claude/                      #    Claude Desktop stdio→WS bridge POC
 ├── subprojects/                     # 💻 DCC plugin subprojects
 │   ├── UEDAgentProj/                #    Unreal Engine project
-│   │   └── Plugins/UEClawBridge/    #       UE plugin (C++ Slate UI + Python logic)
-│   └── DCCClawBridge/               #    Maya / Max / Blender / Houdini / SP / SD shared plugin
-│       ├── artclaw_ui/              #       Generic Qt chat panel + Skill management panel
-│       ├── adapters/                #       DCC adapters (Maya / Max / Blender / Houdini / SP / SD)
-│       ├── core/                    #       Core module copies (synced from core/ during install)
-│       ├── maya_setup/              #       Maya deployment files
-│       └── max_setup/               #       Max deployment files
+│   │   └── Plugins/UEClawBridge/  #       UE plugin (C++ Slate UI + Python logic)
+│   ├── DCCClawBridge/               #    Maya / Max / Blender / Houdini / SP / SD shared plugin
+│   │   ├── artclaw_ui/              #       Generic Qt chat panel + Skill management panel
+│   │   ├── adapters/               #       DCC adapters (Maya / Max / Blender / Houdini / SP / SD)
+│   │   ├── core/                   #       Core module copies (synced from core/ during install)
+│   │   ├── maya_setup/             #       Maya deployment files
+│   │   └── max_setup/              #       Max deployment files
+│   ├── ComfyUIClawBridge/           #    ComfyUI custom node (Python-only MCP Server, no visible nodes)
+│   └── ArtClawToolManager/          #    🖥️ Web dashboard + Tool/Workflow management
+│       ├── src/
+│       │   ├── server/api/         #       FastAPI backend (skills, tools, workflows)
+│       │   └── web/src/            #       Frontend
+│       └── docs/                   #       Documentation
 ├── skills/                          # 🛠️ Skill source repository
 │   ├── official/                    #    Official Skills (universal / unreal / maya / max / blender / houdini / SP / SD)
 │   ├── marketplace/                 #    Marketplace Skills
@@ -245,6 +329,7 @@ artclaw_bridge/
   - Houdini (not tested)
   - Substance Painter 11.0.1 (verified)
   - Substance Designer 12.1.0 (verified)
+  - ComfyUI (verified, install via ComfyUI-Manager or copy to custom_nodes)
 
 ### Method 1: One-Click Install (Recommended)
 
@@ -257,18 +342,19 @@ cd artclaw_bridge
 install.bat
 
 # 2b. Or use Python CLI:
-python install.py --help                                     # View all options
-python install.py --maya                                     # Install Maya plugin (default 2023)
-python install.py --maya --maya-version 2024                 # Specify Maya version
+python install.py --help                                      # View all options
+python install.py --maya                                      # Install Maya plugin (default 2023)
+python install.py --maya --maya-version 2024                  # Specify Maya version
 python install.py --max --max-version 2024                   # Install Max plugin
-python install.py --ue --ue-project "C:\path\to\project"     # Install UE plugin
-python install.py --blender --blender-version 5.1            # Install Blender plugin (auto-installs PySide6)
-python install.py --houdini --houdini-version 20.5           # Install Houdini plugin
-python install.py --sp                                       # Install Substance Painter plugin
-python install.py --sd                                       # Install Substance Designer plugin
-python install.py --openclaw                                 # Configure OpenClaw
-python install.py --openclaw --platform lobster              # Configure LobsterAI
-python install.py --all --ue-project "C:\path\to\project"    # Install all
+python install.py --ue --ue-project "C:\path\to\project"   # Install UE plugin
+python install.py --blender --blender-version 5.1             # Install Blender plugin (auto-installs PySide6)
+python install.py --houdini --houdini-version 20.5            # Install Houdini plugin
+python install.py --sp                                        # Install Substance Painter plugin
+python install.py --sd                                        # Install Substance Designer plugin
+python install.py --comfyui --comfyui-path "C:\ComfyUI"      # Install ComfyUI plugin
+python install.py --openclaw                                  # Configure OpenClaw
+python install.py --openclaw --platform lobster               # Configure LobsterAI
+python install.py --all --ue-project "C:\path\to\project"    # Install all DCCs
 ```
 
 The installer will automatically:
@@ -286,7 +372,7 @@ If you're using an AI Agent (like OpenClaw, Claude, or other MCP-compatible agen
 
 **Simply tell your Agent:**
 
-> "Install ArtClaw Bridge for me. I need it for [UE/Maya/Blender/etc.] at [path if needed]."
+> "Install ArtClaw Bridge for me. I need it for [UE/Maya/Blender/ComfyUI/etc.] at [path if needed]."
 
 Your Agent will:
 1. Clone the repository to your workspace
@@ -297,6 +383,7 @@ Your Agent will:
 **Example prompts:**
 - *"Install ArtClaw Bridge for Unreal Engine 5.7, my project is at D:\\MyProject\\UE_Game"*
 - *"Set up ArtClaw Bridge for Maya 2023 and Blender 5.1"*
+- *"Install ArtClaw Bridge for ComfyUI at C:\\ComfyUI"*
 - *"Install ArtClaw Bridge with all DCC support"*
 
 The Agent handles all the technical details — cloning, dependency installation, path configuration, and MCP setup.
@@ -312,15 +399,17 @@ The Agent handles all the technical details — cloning, dependency installation
 | **Houdini** | Launch Houdini → Shelf → ArtClaw → Start Bridge |
 | **SP** | Launch Substance Painter → Python → artclaw → start_plugin → Chat Panel |
 | **SD** | Launch Substance Designer → Python → artclaw → start_plugin → Chat Panel |
+| **ComfyUI** | Launch ComfyUI → Check console for "ArtClaw: ComfyUI Bridge 启动中..." → Web dashboard detects connection |
 
 ### Uninstall
 
 ```bash
-python install.py --uninstall --maya                           # Uninstall Maya plugin
-python install.py --uninstall --ue --ue-project "C:\project"   # Uninstall UE plugin
-python install.py --uninstall --blender --blender-version 5.1  # Uninstall Blender plugin
-python install.py --uninstall --sp                             # Uninstall Substance Painter plugin
-python install.py --uninstall --sd                             # Uninstall Substance Designer plugin
+python install.py --uninstall --maya                            # Uninstall Maya plugin
+python install.py --uninstall --ue --ue-project "C:\project"     # Uninstall UE plugin
+python install.py --uninstall --blender --blender-version 5.1    # Uninstall Blender plugin
+python install.py --uninstall --sp                                # Uninstall Substance Painter plugin
+python install.py --uninstall --sd                                # Uninstall Substance Designer plugin
+python install.py --uninstall --comfyui --comfyui-path "C:\ComfyUI" # Uninstall ComfyUI plugin
 ```
 
 The uninstall script removes plugin directories and **only removes ArtClaw code blocks** from startup files (doesn't affect existing user content).
@@ -333,16 +422,16 @@ The uninstall script removes plugin directories and **only removes ArtClaw code 
 
 ```
 Project Source (Development):              Installed (Runtime):
-skills/                                   ~/.openclaw/skills/
-├── official/                             ├── ue57-camera-transform/
-│   ├── universal/                        ├── ue57-artclaw-context/
-│   │   ├── artclaw-memory/               ├── artclaw-memory/
-│   │   └── scene-vision-analyzer/        ├── scene-vision-analyzer/
-│   ├── unreal/                           ├── maya-operation-rules/
-│   │   ├── ue57-camera-transform/        ├── blender-operation-rules/
-│   │   └── ue57-operation-rules/         ├── sp-operation-rules/
-│   ├── maya/                             ├── sd-operation-rules/
-│   │   └── maya-operation-rules/         └── ...
+skills/                                    ~/.openclaw/skills/
+├── official/                               ├── ue57-camera-transform/
+│   ├── universal/                         ├── ue57-artclaw-context/
+│   │   ├── artclaw-memory/                 ├── artclaw-memory/
+│   │   └── scene-vision-analyzer/          ├── scene-vision-analyzer/
+│   ├── unreal/                             ├── maya-operation-rules/
+│   │   ├── ue57-camera-transform/          ├── blender-operation-rules/
+│   │   └── ue57-operation-rules/           ├── sp-operation-rules/
+│   ├── maya/                               ├── sd-operation-rules/
+│   │   └── maya-operation-rules/           └── ...
 │   ├── max/
 │   │   └── max-operation-rules/
 │   ├── blender/
@@ -387,7 +476,7 @@ AI will auto-generate `SKILL.md` + `manifest.json` + `__init__.py`, ready to use
 Issues and Pull Requests welcome! Especially looking for contributions in:
 
 - 🔌 **New DCC Bridge Implementations** — Support for more DCC software
-- 🛠️ **New Skills** — Useful Skills for various DCCs (currently have UE / Maya / Max / Blender / Houdini / SP / SD official Skills)
+- 🛠️ **New Skills** — Useful Skills for various DCCs (currently have UE / Maya / Max / Blender / Houdini / SP / SD / ComfyUI official Skills)
 - 🧪 **Testing Feedback** — Test on unverified DCC versions and report
 - 📖 **Documentation** — Usage tutorials, best practices
 
@@ -410,6 +499,7 @@ See [Contributing Guide](docs/skills/CONTRIBUTING.md) for details.
 - **[Code Standards](docs/specs/代码规范.md)** — Project coding conventions
 - **[Multi-Platform Compatibility](docs/UEClawBridge/features/多平台兼容设计方案.md)** — Platform abstraction layer design
 - **[DCCClawBridge](subprojects/DCCClawBridge/README.md)** — Maya / Max / Blender / Houdini / SP / SD plugin details
+- **[ComfyUIClawBridge](subprojects/ComfyUIClawBridge/__init__.py)** — ComfyUI plugin details
 - **[Contributing Guide](docs/skills/CONTRIBUTING.md)** — How to contribute
 
 ---
