@@ -135,33 +135,45 @@ docs/
 
 ---
 
-## Phase 4: 工具管理器 + Tool Creator（2周）
+## Phase 4: 工具管理器 + Tool Creator + 触发机制（2周）
 
-**目标**: 用户工具管理和创建
+**目标**: 用户工具管理、创建和自动触发
 
 **核心设计**:
-- 工具执行同样采用 AI 协助模式
+- 工具执行采用 AI 协助模式
 - Tool Creator 由 Agent 协助完成
+- 触发规则引擎（Web 端管理 + artclaw_sdk）
 
 **交付标准**:
 - [ ] 工具列表管理（全部/官方/市集/我的）
-- [ ] **AI 协助执行流程**（同 Workflow）
+- [ ] **AI 协助运行流程**（同 Workflow）
 - [ ] **Tool Creator Skill 完整交互流程**
   - [ ] 创建方式选择（包装 Skill/编写脚本/组合工具）
   - [ ] Agent 引导对话流程
-  - [ ] 工具定义生成和保存
+  - [ ] 工具定义生成和保存（manifest.json）
+- [ ] **触发规则管理（Web 端）**
+  - [ ] 触发规则 CRUD（手动/事件/定时/文件监听）
+  - [ ] 条件筛选配置（路径/命名/类型/属性）
+  - [ ] 参数预设管理
+  - [ ] 筛选预设管理
+- [ ] artclaw_sdk 基础模块
 - [ ] 发布到市集功能
 - [ ] 版本管理（沿用 Skill 逻辑）
 - [ ] 批量操作（多选删除/发布）
 
 **文档**:
-- [ ] phase4-tool-manager.md（需详细化）
+- [x] phase4-tool-manager.md（索引）
+- [x] phase4-tool-list.md
+- [x] phase4-tool-creator.md
+- [x] phase4-tool-version.md
+- [x] phase4-tool-api.md
+- [x] trigger-mechanism.md
 
 ---
 
-## Phase 5: DCC 集成（2-3周）
+## Phase 5: DCC 集成 + 触发引擎（2-3周）
 
-**目标**: DCC 内嵌快捷面板，与 Web 管理器联动
+**目标**: DCC 内嵌快捷面板 + 触发规则引擎 DCC 端实现
 
 **交付标准**:
 - [ ] UE Slate 面板
@@ -173,25 +185,41 @@ docs/
   - Web 面板：完整对话、工具管理
 - [ ] DCC 插件分发机制
 - [ ] 上下文传递与联动
+- [ ] **触发规则引擎（DCC 端）**
+  - [ ] DCCEventManager 事件注册（UE/Maya/ComfyUI）
+  - [ ] FilterEvaluator 条件筛选
+  - [ ] 定时调度器（ScheduleManager）
+  - [ ] pre 事件拦截机制
 
-**说明**: 工期增加（原1周→2-3周），3个DCC面板工作量较大
+**说明**: 工期增加（原1周→2-3周），3个DCC面板 + 触发引擎
 
 **文档**:
-- [ ] phase5-dcc-integration.md（需详细化）
+- [ ] phase5-dcc-integration.md（需拆分）
 
 ---
 
 ## Phase 6: 市集功能（可选，1-2周）
 
-**目标**: 市集基础设施
+**目标**: 市集基础设施 + 评分/评论系统
 
-**说明**: 当前为本地文件存储，本 Phase 实现远程市集 API
+**说明**: 当前为本地文件存储，本 Phase 实现远程市集
+
+**评分/评论系统方案**:
+- **推荐**: 自建简易 API（FastAPI + SQLite），与 Tool Manager 后端统一部署
+- **备选**: 接入第三方评论服务（Disqus API / Utterances / Giscus）
+  - Disqus: 免费版有广告，API 完善
+  - Utterances/Giscus: 基于 GitHub Issues/Discussions，免费无广告，适合开源项目
+  - Cusdis: 自托管，轻量，隐私友好
+- **建议**: 初期用自建 API（简单直接），后续如需社区化再考虑第三方
 
 **交付标准**:
-- [ ] 远程市集 API 对接
-- [ ] 评分/评论系统
+- [ ] 远程市集 API
+- [ ] **评分系统**（1-5星，平均分计算）
+- [ ] **评论系统**（文本评论，支持回复）
 - [ ] 版本管理（远程）
-- [ ] 创作者收益统计
+- [ ] 下载统计
+
+**说明**: Phase 4 已预留评分/评论 UI 入口（占位），本 Phase 实现后端
 
 **文档**:
 - [ ] phase6-marketplace.md

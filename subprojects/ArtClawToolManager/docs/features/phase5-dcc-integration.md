@@ -11,10 +11,9 @@
 
 - **架构设计**: [architecture-design.md](../specs/architecture-design.md)
 - **UI 设计**: [ui-design.md](../ui/ui-design.md)
+- **触发机制**: [trigger-mechanism.md](../specs/trigger-mechanism.md)
 - **OpenClaw Gateway**: [gateway-forwarding-roadmap.md](../../../../docs/features/gateway-forwarding-roadmap.md)
 - **ComfyUI MCP 集成**: [comfyui-mcp-integration.md](../../../../docs/features/comfyui-mcp-integration.md)
-- **DCCClawBridge 架构**: [架构.md](../../../../docs/DCCClawBridge/specs/架构.md) (编码问题，实际文件名为乱码)
-- **实现路径图**: [实现路径图.md](../../../../docs/DCCClawBridge/specs/实现路径图.md) (编码问题)
 
 ---
 
@@ -28,6 +27,27 @@
 - ComfyUI 按钮扩展
 - DCC 插件分发机制
 - 上下文传递与联动
+- **触发规则引擎（DCC 端）**
+
+---
+
+## 触发规则引擎开发计划（Week 2-3）
+
+详见 [trigger-mechanism.md](../specs/trigger-mechanism.md) 第 6-7 章
+
+| 内容 | 时间 | 说明 |
+|------|------|------|
+| DCCEventManager | Week 2 | 在各 DCC Adapter 中注册事件回调 |
+| FilterEvaluator | Week 2 | 条件筛选评估器（path/name/type/property） |
+| ScheduleManager | Week 2 | 定时/周期调度器（interval/cron/once） |
+| pre 事件拦截 | Week 2 | 事件前检查+阻止原操作+显示原因 |
+| FileWatcher | Week 3 | 文件/目录变更监听+防抖 |
+| 运行结果上报 | Week 3 | silent/notify/interactive 三种模式 |
+
+**DCC 事件注册优先级**:
+1. UE: `asset.save`(pre/post), `asset.import`(post), `level.save`(pre/post)
+2. Maya: `file.save`(pre/post), `file.export`(pre/post)
+3. ComfyUI: `workflow.complete`(post)
 
 ---
 

@@ -1,0 +1,428 @@
+// Ref: docs/ui/ui-design.md#Tools
+// Tool detail drawer: single-page sections with unified save
+// Sections: Info, Parameter Presets, Trigger Rules
+import { useState, useEffect, useCallback } from 'react'
+import {
+  X, Plus, Trash2, Star, Save, Copy, Package, Code, Layers,
+} from 'lucide-react'
+import { cn } from '../../utils/cn'
+import { useAppStore } from '../../stores/appStore'
+import { DCC_DISPLAY_NAMES, getEventLabel } from '../../constants/dccTypes'
+import type {
+  ToolItemExtended, ParameterPreset, TriggerRuleData, ImplementationType, ToolParameter,
+} from '../../types'
+import TriggerRuleEditor, { type TriggerFormData } from './TriggerRuleEditor'
+import {
+  fetchPresets, fetchTriggers,
+  createTrigger, deleteTrigger, updateTool, createTool,
+} from '../../api/client'
+
+// ---------- Props ----------
+
+interface ToolDetailDialogProps {
+  tool: ToolItemExtended
+  open: boolean
+  onClose: () => void
+  onPresetsChange?: () => void
+}
+
+// ---------- Constants ----------
+
+const IMPL_ICONS: Record<ImplementationType, React.ReactNode> = {
+  skill_wrapper: <Package className="w-3.5 h-3.5" />,
+  script: <Code className="w-3.5 h-3.5" />,
+  composite: <Layers className="w-3.5 h-3.5" />,
+}
+
+// ---------- Component ----------
+
+export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange }: ToolDetailDialogProps) {
+  const language = useAppStore((s) => s.language)
+  const zh = language === 'zh'
+
+  // -- Editable state (all changes buffered until save) --
+  const [name, setName] = useState(tool.name)
+  const [description, setDescription] = useState(tool.description ?? '')
+  const [presets, setPresets] = useState<ParameterPreset[]>([])
+  const [triggers, setTriggers] = useState<TriggerRuleData[]>([])
+
+  // UI state
+  const [activePresetId, setActivePresetId] = useState<string | null>(null)
+  const [showNewPreset, setShowNewPreset] = useState(false)
+  const [showNewTrigger, setShowNewTrigger] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+
+  // New preset form
+  const [newPresetName, setNewPresetName] = useState('')
+  const [newPresetDesc, setNewPresetDesc] = useState('')
+  const [newPresetValues, setNewPresetValues] = useState<Record<string, string>>({})
+
+  // Editable inputs (script parameters)
+  const [editedInputs, setEditedInputs] = useState<ToolParameter[] | null>(null)
+
+  const inputs: ToolParameter[] = editedInputs ?? (tool.manifest?.inputs as ToolParameter[]) ?? []
+
+  // -- Load data --
+  useEffect(() => {
+    if (!open) return
+    setName(tool.name)
+    setDescription(tool.description ?? '')
+    setEditedInputs(null)
+    setDirty(false)
+    // Load presets
+    fetchPresets(tool.id).then((r) => { if (r.success) setPresets((r.data ?? []) as ParameterPreset[]) }).catch(() => {})
+    // Load triggers
+    fetchTriggers(tool.id).then((r) => { if (r.success) setTriggers((r.data ?? []) as TriggerRuleData[]) }).catch(() => {})
+  }, [open, tool.id, tool.name, tool.description])
+
+  const markDirty = useCallback(() => setDirty(true), [])
+
+  // -- Save --
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await updateTool(tool.id, { name, description, manifest: { ...(tool.manifest ?? {}), inputs: editedInputs ?? tool.manifest?.inputs, presets } })
+      setDirty(false)
+      onPresetsChange?.()
+    } catch { /* ignore */ }
+    setSaving(false)
+  }
+
+  const handleSaveAsNew = async () => {
+    setSaving(true)
+    try {
+      const newManifest = { ...(tool.manifest ?? {}), name: `${name} (copy)`, inputs: editedInputs ?? tool.manifest?.inputs, presets }
+      await createTool({ name: `${name} (copy)`, description, source: 'user', target_dccs: tool.targetDCCs, implementation_type: tool.implementationType ?? 'script', manifest: newManifest })
+      onPresetsChange?.()
+      onClose()
+    } catch { /* ignore */ }
+    setSaving(false)
+  }
+
+  // -- Preset CRUD (local state) --
+  const handleCreatePreset = () => {
+    const id = `preset-${Date.now()}`
+    const now = new Date().toISOString()
+    const values: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(newPresetValues)) { if (v) values[k] = v }
+    setPresets((prev) => [...prev, { id, name: newPresetName || 'New Preset', description: newPresetDesc, isDefault: false, values, createdAt: now, updatedAt: now }])
+    setNewPresetName(''); setNewPresetDesc(''); setNewPresetValues({}); setShowNewPreset(false)
+    markDirty()
+  }
+
+  const handleDeletePreset = (id: string) => {
+    setPresets((prev) => prev.filter((p) => p.id !== id))
+    if (activePresetId === id) setActivePresetId(null)
+    markDirty()
+  }
+
+  const handleSetDefault = (id: string) => {
+    setPresets((prev) => prev.map((p) => ({ ...p, isDefault: p.id === id })))
+    markDirty()
+  }
+
+  const handlePresetValueChange = (presetId: string, key: string, value: string) => {
+    setPresets((prev) => prev.map((p) => p.id === presetId ? { ...p, values: { ...p.values, [key]: value }, updatedAt: new Date().toISOString() } : p))
+    markDirty()
+  }
+
+  const handlePresetFieldChange = (presetId: string, field: 'name' | 'description', value: string) => {
+    setPresets((prev) => prev.map((p) => p.id === presetId ? { ...p, [field]: value } : p))
+    markDirty()
+  }
+
+  // -- Trigger CRUD (API calls) --
+  const handleCreateTrigger = async (data: TriggerFormData) => {
+    try {
+      const resp = await createTrigger(tool.id, {
+        name: data.name, trigger_type: data.triggerType, dcc: data.dcc, event_type: data.eventType,
+        event_timing: data.eventTiming, execution_mode: data.executionMode, is_enabled: data.isEnabled,
+        conditions: data.conditions, parameter_preset_id: data.parameterPresetId,
+        schedule_config: data.scheduleConfig,
+      })
+      if (resp.success && resp.data) setTriggers((prev) => [...prev, resp.data as TriggerRuleData])
+    } catch { /* ignore */ }
+    setShowNewTrigger(false)
+  }
+
+  const handleDeleteTrigger = async (id: string) => {
+    try { await deleteTrigger(id); setTriggers((prev) => prev.filter((t) => t.id !== id)) } catch { /* ignore */ }
+  }
+
+  if (!open) return null
+
+  const inputCls = 'w-full px-3 py-2 rounded bg-bg-tertiary text-text-primary text-small border border-border-default focus:border-accent focus:outline-none placeholder:text-text-dim transition-colors'
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Drawer */}
+      <div className="fixed right-0 top-0 bottom-0 w-[40%] min-w-[380px] max-w-[600px] bg-bg-primary border-l border-border-default z-50 flex flex-col animate-slide-in-right">
+        {/* Header */}
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-border-default">
+          <h2 className="text-body font-semibold text-text-primary">{zh ? '工具详情' : 'Tool Details'}</h2>
+          <div className="flex items-center gap-2">
+            {dirty && (
+              <span className="text-[10px] text-warning px-1.5 py-0.5 rounded bg-warning/10">{zh ? '未保存' : 'Unsaved'}</span>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded hover:bg-bg-tertiary text-text-dim"><X className="w-4 h-4" /></button>
+          </div>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto">
+
+          {/* ── Section 1: Basic Info ── */}
+          <Section title={zh ? '📋 基本信息' : '📋 Basic Info'}>
+            <label className="block text-[11px] text-text-dim mb-1">{zh ? '名称' : 'Name'}</label>
+            <input value={name} onChange={(e) => { setName(e.target.value); markDirty() }} className={inputCls} />
+            <label className="block text-[11px] text-text-dim mb-1 mt-3">{zh ? '描述' : 'Description'}</label>
+            <textarea value={description} onChange={(e) => { setDescription(e.target.value); markDirty() }} rows={2} className={cn(inputCls, 'resize-y')} />
+            <div className="flex items-center gap-4 mt-3 text-[11px] text-text-dim">
+              <span>{zh ? '版本' : 'Version'}: {tool.version ?? '0.0.0'}</span>
+              <span>{zh ? '来源' : 'Source'}: {tool.source}</span>
+              <span className="flex items-center gap-1">{IMPL_ICONS[tool.implementationType ?? 'script']} {tool.implementationType ?? 'script'}</span>
+              {tool.targetDCCs && <span>DCC: {tool.targetDCCs.map((d) => DCC_DISPLAY_NAMES[d] ?? d).join(', ')}</span>}
+            </div>
+          </Section>
+
+          {/* ── Section 1.5: Script Parameters (editable) ── */}
+          {inputs.length > 0 && (
+            <Section title={zh ? '📦 脚本参数' : '📦 Script Parameters'}>
+              <p className="text-[10px] text-text-dim mb-2">{zh ? '可编辑参数名、默认值和描述，保存后写入 manifest.json' : 'Edit name, default value and description. Saved to manifest.json'}</p>
+              <div className="space-y-2">
+                {inputs.map((input, i) => (
+                  <div key={input.id} className="flex items-start gap-2 p-2 rounded bg-bg-tertiary border border-border-default/50">
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={input.name}
+                          onChange={(e) => {
+                            const updated = [...inputs]
+                            updated[i] = { ...updated[i], name: e.target.value }
+                            markDirty()
+                            // Update manifest inputs in local state — will be saved on handleSave
+                            setEditedInputs(updated)
+                          }}
+                          className={cn(inputCls, 'flex-1 text-[12px] font-mono')}
+                          placeholder={zh ? '参数名' : 'Param name'}
+                        />
+                        <span className="px-1.5 py-0.5 bg-bg-quaternary rounded text-[10px] text-text-dim shrink-0">{input.type}</span>
+                        <label className="flex items-center gap-1 text-[10px] text-text-dim shrink-0 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={input.required}
+                            onChange={(e) => {
+                              const updated = [...inputs]
+                              updated[i] = { ...updated[i], required: e.target.checked }
+                              markDirty()
+                              setEditedInputs(updated)
+                            }}
+                            className="w-3 h-3 rounded accent-accent"
+                          />
+                          {zh ? '必填' : 'Req'}
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-text-dim w-12 shrink-0">{zh ? '默认值' : 'Default'}</span>
+                        <input
+                          value={input.default !== undefined ? String(input.default) : ''}
+                          onChange={(e) => {
+                            const updated = [...inputs]
+                            const raw = e.target.value
+                            let parsed: unknown = raw
+                            if (input.type === 'number' && raw !== '') parsed = Number(raw)
+                            else if (input.type === 'boolean') parsed = raw === 'true'
+                            else if (raw === '') parsed = undefined
+                            updated[i] = { ...updated[i], default: parsed }
+                            markDirty()
+                            setEditedInputs(updated)
+                          }}
+                          placeholder={zh ? '无默认值' : 'No default'}
+                          className={cn(inputCls, 'flex-1 text-[11px] font-mono')}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-text-dim w-12 shrink-0">{zh ? '描述' : 'Desc'}</span>
+                        <input
+                          value={input.description ?? ''}
+                          onChange={(e) => {
+                            const updated = [...inputs]
+                            updated[i] = { ...updated[i], description: e.target.value || undefined }
+                            markDirty()
+                            setEditedInputs(updated)
+                          }}
+                          placeholder={zh ? '参数说明' : 'Description'}
+                          className={cn(inputCls, 'flex-1 text-[11px]')}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* ── Section 2: Parameter Presets ── */}
+          <Section title={zh ? '⭐ 参数预设' : '⭐ Parameter Presets'}>
+            {/* Tag list */}
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {presets.map((p) => (
+                <button key={p.id} onClick={() => setActivePresetId(activePresetId === p.id ? null : p.id)}
+                  className={cn('text-[11px] px-2.5 py-1 rounded border transition-colors',
+                    activePresetId === p.id ? 'bg-accent/20 text-accent border-accent/50' : 'bg-bg-tertiary text-text-secondary border-border-default hover:bg-bg-quaternary',
+                  )}>
+                  {p.isDefault && '★ '}{p.name}
+                </button>
+              ))}
+              <button onClick={() => { setShowNewPreset(!showNewPreset); setActivePresetId(null) }}
+                className="text-[11px] px-2 py-1 rounded border border-dashed border-border-default text-text-dim hover:text-accent hover:border-accent transition-colors">
+                <Plus className="w-3 h-3 inline -mt-0.5" /> {zh ? '新建' : 'New'}
+              </button>
+            </div>
+
+            {/* New preset form */}
+            {showNewPreset && (
+              <div className="border border-border-default rounded-lg p-3 mb-3 bg-bg-secondary space-y-2">
+                <input value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)} placeholder={zh ? '预设名称' : 'Preset name'} className={inputCls} />
+                <input value={newPresetDesc} onChange={(e) => setNewPresetDesc(e.target.value)} placeholder={zh ? '描述 (可选)' : 'Description (optional)'} className={inputCls} />
+                {inputs.map((inp) => (
+                  <div key={inp.id} className="flex items-center gap-2">
+                    <span className="text-[11px] text-text-dim w-24 shrink-0 truncate">{inp.name}</span>
+                    <input value={newPresetValues[inp.id] ?? ''} onChange={(e) => setNewPresetValues((v) => ({ ...v, [inp.id]: e.target.value }))}
+                      placeholder={String(inp.default ?? '')} className={cn(inputCls, 'flex-1')} />
+                  </div>
+                ))}
+                <div className="flex gap-2 pt-1">
+                  <button onClick={handleCreatePreset} className="px-3 py-1.5 rounded text-[11px] bg-accent text-white hover:bg-accent/90">{zh ? '创建' : 'Create'}</button>
+                  <button onClick={() => setShowNewPreset(false)} className="px-3 py-1.5 rounded text-[11px] text-text-dim hover:bg-bg-tertiary">{zh ? '取消' : 'Cancel'}</button>
+                </div>
+              </div>
+            )}
+
+            {/* Active preset editor */}
+            {activePresetId && (() => {
+              const preset = presets.find((p) => p.id === activePresetId)
+              if (!preset) return null
+              return (
+                <div className="border border-accent/30 rounded-lg p-3 bg-accent/5 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input value={preset.name} onChange={(e) => handlePresetFieldChange(preset.id, 'name', e.target.value)}
+                      className={cn(inputCls, 'flex-1 text-[12px]')} />
+                    <button onClick={() => handleSetDefault(preset.id)} title={zh ? '设为默认' : 'Set default'}
+                      className={cn('p-1.5 rounded transition-colors', preset.isDefault ? 'text-accent' : 'text-text-dim hover:text-accent')}>
+                      <Star className="w-3.5 h-3.5" fill={preset.isDefault ? 'currentColor' : 'none'} />
+                    </button>
+                    <button onClick={() => handleDeletePreset(preset.id)} className="p-1.5 rounded text-text-dim hover:text-error transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <input value={preset.description ?? ''} onChange={(e) => handlePresetFieldChange(preset.id, 'description', e.target.value)}
+                    placeholder={zh ? '描述' : 'Description'} className={cn(inputCls, 'text-[11px]')} />
+                  {inputs.map((inp) => (
+                    <div key={inp.id} className="flex items-center gap-2">
+                      <span className="text-[11px] text-text-dim w-24 shrink-0 truncate">{inp.name}</span>
+                      <input value={String(preset.values[inp.id] ?? '')}
+                        onChange={(e) => handlePresetValueChange(preset.id, inp.id, e.target.value)}
+                        placeholder={String(inp.default ?? '')} className={cn(inputCls, 'flex-1 text-[12px]')} />
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+
+            {presets.length === 0 && !showNewPreset && (
+              <p className="text-[11px] text-text-dim">{zh ? '暂无预设' : 'No presets yet'}</p>
+            )}
+          </Section>
+
+          {/* ── Section 4: Trigger Rules ── */}
+          <Section title={zh ? '⚡ 触发规则' : '⚡ Trigger Rules'}>
+            {triggers.length > 0 ? (
+              <div className="space-y-2 mb-3">
+                {triggers.map((t) => {
+                  const tAny = t as TriggerRuleData & { dcc?: string; parameterPresetId?: string }
+                  const dccLabel = tAny.dcc ? (DCC_DISPLAY_NAMES[tAny.dcc] ?? tAny.dcc) : ''
+                  const eventLabel = tAny.dcc && t.eventType ? getEventLabel(tAny.dcc, t.eventType, language) : t.eventType
+                  const ppName = tAny.parameterPresetId ? presets.find((p) => p.id === tAny.parameterPresetId)?.name : undefined
+                  const hasInlineFilter = t.conditions && (
+                    t.conditions.fileRules?.length ||
+                    t.conditions.sceneRules?.length ||
+                    t.conditions.typeFilter
+                  )
+                  return (
+                    <div key={t.id} className="flex items-start gap-2 p-2.5 rounded border border-border-default bg-bg-secondary">
+                      <span className={cn('w-2 h-2 rounded-full mt-1.5 shrink-0', t.isEnabled ? 'bg-success' : 'bg-text-dim')} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-small text-text-primary truncate">{t.name || (zh ? '未命名' : 'Unnamed')}</div>
+                        <div className="text-[11px] text-text-dim mt-0.5">
+                          {dccLabel && <span className="mr-2">{dccLabel}</span>}
+                          {eventLabel && <span className="mr-2">{eventLabel}</span>}
+                          <span>({t.eventTiming})</span>
+                          <span className="ml-2">{t.executionMode}</span>
+                        </div>
+                        {(hasInlineFilter || ppName) && (
+                          <div className="text-[10px] text-text-dim mt-0.5">
+                            {hasInlineFilter && <span className="mr-3">🔍 {zh ? '内联筛选' : 'Inline filter'}</span>}
+                            {ppName && <span>⭐ {ppName}</span>}
+                          </div>
+                        )}
+                      </div>
+                      <button onClick={() => handleDeleteTrigger(t.id)} className="p-1 rounded text-text-dim hover:text-error transition-colors shrink-0">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="text-[11px] text-text-dim mb-3">{zh ? '暂无触发规则' : 'No trigger rules yet'}</p>
+            )}
+
+            {showNewTrigger ? (
+              <TriggerRuleEditor
+                parameterPresets={presets.map((p) => ({ id: p.id, name: p.name }))}
+                onSave={handleCreateTrigger}
+                onCancel={() => setShowNewTrigger(false)}
+              />
+            ) : (
+              <button onClick={() => setShowNewTrigger(true)}
+                className="flex items-center gap-1 text-[12px] text-accent hover:text-accent-hover transition-colors">
+                <Plus className="w-3.5 h-3.5" />{zh ? '添加规则' : 'Add Rule'}
+              </button>
+            )}
+          </Section>
+        </div>
+
+        {/* Footer */}
+        <div className="shrink-0 flex items-center justify-end gap-3 px-5 py-4 border-t border-border-default">
+          <button onClick={onClose} className="px-4 py-2 rounded text-small text-text-secondary hover:bg-bg-tertiary transition-colors">
+            {zh ? '取消' : 'Cancel'}
+          </button>
+          <button onClick={handleSaveAsNew} disabled={saving}
+            className="flex items-center gap-1.5 px-4 py-2 rounded text-small text-text-secondary hover:bg-bg-tertiary border border-border-default transition-colors disabled:opacity-50">
+            <Copy className="w-3.5 h-3.5" />{zh ? '另存为新工具' : 'Save As New Tool'}
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex items-center gap-1.5 px-4 py-2 rounded text-small font-medium bg-accent text-white hover:bg-accent/90 disabled:opacity-50 transition-colors">
+            <Save className="w-3.5 h-3.5" />{zh ? '保存' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ---------- Section wrapper ----------
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="px-5 py-4 border-b border-border-default">
+      <h3 className="text-small font-medium text-text-primary mb-3">{title}</h3>
+      {children}
+    </div>
+  )
+}

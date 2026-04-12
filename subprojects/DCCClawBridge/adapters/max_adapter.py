@@ -72,8 +72,27 @@ class MaxAdapter(BaseDCCAdapter):
         except Exception as e:
             logger.error(f"ArtClaw: MCP Server startup error: {e}")
 
+        # Initialize event manager for Tool Manager triggers
+        try:
+            from core.dcc_event_manager import DCCEventManager, set_global_event_manager
+            self._event_manager = DCCEventManager(self)
+            set_global_event_manager(self._event_manager)
+            self._event_manager.load_rules()
+            self._event_manager.register_events()
+            logger.info("ArtClaw: DCCEventManager initialized")
+        except Exception as e:
+            logger.warning(f"ArtClaw: DCCEventManager init failed (Tool Manager not running?): {e}")
+
     def on_shutdown(self) -> None:
         logger.info("ArtClaw: Max adapter shutdown")
+        
+        # Clean up event manager
+        try:
+            if hasattr(self, '_event_manager') and self._event_manager:
+                self._event_manager.unregister_all()
+        except Exception:
+            pass
+        
         try:
             from core.mcp_server import stop_mcp_server
             stop_mcp_server()

@@ -1,0 +1,38 @@
+# ArtClaw Bridge Requirements
+# Core dependencies for DCC Bridge functionality
+
+# HTTP requests for API communication  
+requests>=2.25.0
+
+# File system monitoring for FileWatcher
+watchdog>=2.1.0
+
+# Threading and async support (typically included in Python standard library)
+# concurrent.futures - included in stdlib
+# threading - included in stdlib
+# queue - included in stdlib
+
+# JSON handling - included in stdlib
+# json - included in stdlib
+
+# Regular expressions - included in stdlib  
+# re - included in stdlib
+
+# Path manipulation - included in stdlib
+# pathlib - included in stdlib
+# os - included in stdlib
+
+# Pattern matching for file filters
+# fnmatch - included in stdlib
+
+# Time utilities - included in stdlib
+# time - included in stdlib
+
+# Logging - included in stdlib
+# logging - included in stdlib
+
+# System information - included in stdlib
+# sys - included in stdlib
+
+# Type hints - included in Python 3.9+
+# typing - included in stdlib

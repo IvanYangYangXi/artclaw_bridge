@@ -5,6 +5,10 @@
 #include "Selection.h"
 #include "ContentBrowserModule.h"
 #include "GameFramework/Actor.h"
+#include "UObject/SavePackage.h"
+#include "UObject/ObjectSaveContext.h"
+#include "Editor.h"
+#include "Subsystems/ImportSubsystem.h"
 
 // ------------------------------------------------------------------
 // 日志分类定义 (阶段 0.4)
@@ -23,12 +27,14 @@ void UUEAgentSubsystem::Initialize(FSubsystemCollectionBase& Collection)
     bIsConnected = false; // 初始化为断开状态
 
     SetupSelectionTracking();
+    SetupDCCEventTracking();
 
     UE_LOG(LogUEAgent, Log, TEXT("Subsystem Initialized (v%s)"), *GetPluginVersion());
 }
 
 void UUEAgentSubsystem::Deinitialize()
 {
+    CleanupDCCEventTracking();
     CleanupSelectionTracking();
 
     UE_LOG(LogUEAgent, Log, TEXT("Subsystem Deinitializing."));
@@ -173,4 +179,151 @@ void UUEAgentSubsystem::OnContentBrowserSelectionChanged(const TArray<FAssetData
         ActivePanel = EUEAgentActivePanel::ContentBrowser;
         LastContentBrowserSelectionTime = FPlatformTime::Seconds();
     }
+}
+
+// ------------------------------------------------------------------
+// DCC 事件追踪 — 供 Tool Manager 触发规则使用
+//
+// 将 UE 编辑器原生 delegate 转发为 Python 可绑定的动态委托。
+// Python 侧通过 subsystem.on_asset_pre_save.add_callable(fn) 绑定。
+// ------------------------------------------------------------------
+
+void UUEAgentSubsystem::SetupDCCEventTracking()
+{
+    // 1. 资源保存后 — UPackage::PackageSavedWithContextEvent
+    PackageSavedHandle = UPackage::PackageSavedWithContextEvent.AddUObject(
+        this, &UUEAgentSubsystem::HandlePackageSaved);
+
+    // 2. 对象保存前 — FCoreUObjectDelegates::OnObjectPreSave
+    ObjectPreSaveHandle = FCoreUObjectDelegates::OnObjectPreSave.AddUObject(
+        this, &UUEAgentSubsystem::HandleObjectPreSave);
+
+    // 3. 资源导入后 — UImportSubsystem::OnAssetPostImport
+    if (GEditor)
+    {
+        UImportSubsystem* ImportSubsystem = GEditor->GetEditorSubsystem<UImportSubsystem>();
+        if (ImportSubsystem)
+        {
+            AssetPostImportHandle = ImportSubsystem->OnAssetPostImport.AddUObject(
+                this, &UUEAgentSubsystem::HandleAssetPostImport);
+        }
+    }
+
+    // 4. 关卡保存前 — FEditorDelegates::PreSaveWorldWithContext
+    PreSaveWorldHandle = FEditorDelegates::PreSaveWorldWithContext.AddUObject(
+        this, &UUEAgentSubsystem::HandlePreSaveWorld);
+
+    // 5. 关卡保存后 — FEditorDelegates::PostSaveWorldWithContext
+    PostSaveWorldHandle = FEditorDelegates::PostSaveWorldWithContext.AddUObject(
+        this, &UUEAgentSubsystem::HandlePostSaveWorld);
+
+    UE_LOG(LogUEAgent, Log, TEXT("DCC event tracking initialized (asset save/import, level save/load)"));
+}
+
+void UUEAgentSubsystem::CleanupDCCEventTracking()
+{
+    if (PackageSavedHandle.IsValid())
+    {
+        UPackage::PackageSavedWithContextEvent.Remove(PackageSavedHandle);
+        PackageSavedHandle.Reset();
+    }
+
+    if (ObjectPreSaveHandle.IsValid())
+    {
+        FCoreUObjectDelegates::OnObjectPreSave.Remove(ObjectPreSaveHandle);
+        ObjectPreSaveHandle.Reset();
+    }
+
+    if (AssetPostImportHandle.IsValid())
+    {
+        if (GEditor)
+        {
+            UImportSubsystem* ImportSubsystem = GEditor->GetEditorSubsystem<UImportSubsystem>();
+            if (ImportSubsystem)
+            {
+                ImportSubsystem->OnAssetPostImport.Remove(AssetPostImportHandle);
+            }
+        }
+        AssetPostImportHandle.Reset();
+    }
+
+    if (PreSaveWorldHandle.IsValid())
+    {
+        FEditorDelegates::PreSaveWorldWithContext.Remove(PreSaveWorldHandle);
+        PreSaveWorldHandle.Reset();
+    }
+
+    if (PostSaveWorldHandle.IsValid())
+    {
+        FEditorDelegates::PostSaveWorldWithContext.Remove(PostSaveWorldHandle);
+        PostSaveWorldHandle.Reset();
+    }
+
+    UE_LOG(LogUEAgent, Log, TEXT("DCC event tracking cleaned up"));
+}
+
+// --- 事件回调实现 ---
+
+void UUEAgentSubsystem::HandlePackageSaved(const FString& Filename, UPackage* Package, FObjectPostSaveContext Context)
+{
+    if (!Package) return;
+
+    const FString PackagePath = Package->GetPathName();
+
+    // 过滤掉引擎/临时包，只转发用户资源
+    if (PackagePath.StartsWith(TEXT("/Engine/")) || PackagePath.StartsWith(TEXT("/Temp/")))
+    {
+        return;
+    }
+
+    UE_LOG(LogUEAgent, Verbose, TEXT("Asset post-save: %s"), *PackagePath);
+    OnAssetPostSave.Broadcast(PackagePath, true);
+}
+
+void UUEAgentSubsystem::HandleObjectPreSave(UObject* Object, FObjectPreSaveContext Context)
+{
+    if (!Object) return;
+
+    UPackage* Package = Object->GetOutermost();
+    if (!Package) return;
+
+    const FString PackagePath = Package->GetPathName();
+
+    // 过滤引擎包
+    if (PackagePath.StartsWith(TEXT("/Engine/")) || PackagePath.StartsWith(TEXT("/Temp/")))
+    {
+        return;
+    }
+
+    UE_LOG(LogUEAgent, Verbose, TEXT("Asset pre-save: %s"), *PackagePath);
+    OnAssetPreSave.Broadcast(PackagePath);
+}
+
+void UUEAgentSubsystem::HandleAssetPostImport(UFactory* Factory, UObject* CreatedObject)
+{
+    if (!CreatedObject) return;
+
+    const FString AssetPath = CreatedObject->GetPathName();
+    const FString AssetClass = CreatedObject->GetClass() ? CreatedObject->GetClass()->GetName() : TEXT("Unknown");
+
+    UE_LOG(LogUEAgent, Log, TEXT("Asset imported: %s (%s)"), *AssetPath, *AssetClass);
+    OnAssetImported.Broadcast(AssetPath, AssetClass);
+}
+
+void UUEAgentSubsystem::HandlePreSaveWorld(UWorld* World, FObjectPreSaveContext Context)
+{
+    if (!World) return;
+
+    const FString LevelPath = World->GetPathName();
+    UE_LOG(LogUEAgent, Log, TEXT("Level pre-save: %s"), *LevelPath);
+    OnLevelPreSave.Broadcast(LevelPath);
+}
+
+void UUEAgentSubsystem::HandlePostSaveWorld(UWorld* World, FObjectPostSaveContext Context)
+{
+    if (!World) return;
+
+    const FString LevelPath = World->GetPathName();
+    UE_LOG(LogUEAgent, Log, TEXT("Level post-save: %s"), *LevelPath);
+    OnLevelPostSave.Broadcast(LevelPath, true);
 }

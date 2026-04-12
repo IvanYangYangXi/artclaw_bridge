@@ -305,6 +305,17 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
         # 启动主线程队列轮询 timer
         self._start_poll_timer()
 
+        # Initialize event manager for Tool Manager triggers
+        try:
+            from core.dcc_event_manager import DCCEventManager, set_global_event_manager
+            self._event_manager = DCCEventManager(self)
+            set_global_event_manager(self._event_manager)
+            self._event_manager.load_rules()
+            self._event_manager.register_events()
+            logger.info("ArtClaw: DCCEventManager initialized")
+        except Exception as e:
+            logger.warning(f"ArtClaw: DCCEventManager init failed (Tool Manager not running?): {e}")
+
     def _start_poll_timer(self) -> None:
         """启动 QTimer 定期消费主线程队列（50ms 间隔）"""
         if self._poll_timer is not None:
@@ -442,6 +453,13 @@ class SubstanceDesignerAdapter(BaseDCCAdapter):
     def on_shutdown(self) -> None:
         """SD 关闭时调用：停止 MCP Server + 断开 Bridge"""
         logger.info("ArtClaw: Substance Designer adapter shutdown")
+
+        # Clean up event manager
+        try:
+            if hasattr(self, '_event_manager') and self._event_manager:
+                self._event_manager.unregister_all()
+        except Exception:
+            pass
 
         # 取消 watchdog
         self._cancel_watchdog()

@@ -128,10 +128,28 @@ class BlenderAdapter(BaseDCCAdapter):
         except Exception as e:
             logger.error("ArtClaw: MCP Server startup error: %s", e)
 
+        # Initialize event manager for Tool Manager triggers
+        try:
+            from core.dcc_event_manager import DCCEventManager, set_global_event_manager
+            self._event_manager = DCCEventManager(self)
+            set_global_event_manager(self._event_manager)
+            self._event_manager.load_rules()
+            self._event_manager.register_events()
+            logger.info("ArtClaw: DCCEventManager initialized")
+        except Exception as e:
+            logger.warning(f"ArtClaw: DCCEventManager init failed (Tool Manager not running?): {e}")
+
     def on_shutdown(self) -> None:
         """Blender 关闭时调用 — 清理资源"""
         global _timer_registered
         logger.info("ArtClaw: Blender adapter shutdown")
+
+        # Clean up event manager
+        try:
+            if hasattr(self, '_event_manager') and self._event_manager:
+                self._event_manager.unregister_all()
+        except Exception:
+            pass
 
         # 停止 MCP Server
         try:

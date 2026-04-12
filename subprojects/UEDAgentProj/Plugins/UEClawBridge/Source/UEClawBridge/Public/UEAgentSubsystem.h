@@ -5,7 +5,10 @@
 #include "CoreMinimal.h"
 #include "EditorSubsystem.h"
 #include "AssetRegistry/AssetData.h"
+#include "UObject/ObjectSaveContext.h"
 #include "UEAgentSubsystem.generated.h"
+
+class UFactory;
 
 // ------------------------------------------------------------------
 // 日志分类声明 (阶段 0.4)
@@ -29,6 +32,29 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAgentConnectionStatusChanged, boo
 
 // 原生多播委托：C++ Slate UI 绑定（性能更优，无需 UObject 上下文）
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAgentConnectionStatusChangedNative, bool /*bNewStatus*/);
+
+// ------------------------------------------------------------------
+// DCC 事件委托 — 供 Python DCCEventManager 绑定
+// ------------------------------------------------------------------
+
+/** 资源保存前事件（Python 可通过返回值拦截，但 UE delegate 不支持返回值，用单独的阻止接口） */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAssetPreSaveEvent, const FString&, AssetPath);
+
+/** 资源保存后事件 */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAssetPostSaveEvent, const FString&, AssetPath, bool, bSuccess);
+
+/** 资源导入后事件 */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAssetImportEvent, const FString&, AssetPath, const FString&, AssetClass);
+
+/** 资源删除前事件 */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAssetDeleteEvent, const FString&, AssetPath);
+
+/** 关卡保存前/后事件 */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLevelPreSaveEvent, const FString&, LevelPath);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLevelPostSaveEvent, const FString&, LevelPath, bool, bSuccess);
+
+/** 关卡加载后事件 */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLevelLoadEvent, const FString&, LevelPath);
 
 /**
  * 编辑器活跃面板枚举
@@ -110,6 +136,36 @@ public:
     /** 状态变更委托（C++ Native）：Slate UI 绑定用 */
     FOnAgentConnectionStatusChangedNative OnConnectionStatusChangedNative;
 
+    // --- DCC 事件委托 (Tool Manager 触发规则) ---
+
+    /** 资源保存前 — Python: subsystem.on_asset_pre_save.add_callable(fn) */
+    UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
+    FOnAssetPreSaveEvent OnAssetPreSave;
+
+    /** 资源保存后 — Python: subsystem.on_asset_post_save.add_callable(fn) */
+    UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
+    FOnAssetPostSaveEvent OnAssetPostSave;
+
+    /** 资源导入后 */
+    UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
+    FOnAssetImportEvent OnAssetImported;
+
+    /** 资源删除前 */
+    UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
+    FOnAssetDeleteEvent OnAssetPreDelete;
+
+    /** 关卡保存前 */
+    UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
+    FOnLevelPreSaveEvent OnLevelPreSave;
+
+    /** 关卡保存后 */
+    UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
+    FOnLevelPostSaveEvent OnLevelPostSave;
+
+    /** 关卡/地图加载后 */
+    UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
+    FOnLevelLoadEvent OnLevelLoaded;
+
     // --- 活跃面板追踪 (选区感知) ---
 
     /** 获取用户最后操作的编辑面板 (Viewport / ContentBrowser) */
@@ -127,11 +183,34 @@ private:
     /** 清理选区变化监听 */
     void CleanupSelectionTracking();
 
+    /** 启动 DCC 事件监听 */
+    void SetupDCCEventTracking();
+
+    /** 清理 DCC 事件监听 */
+    void CleanupDCCEventTracking();
+
     /** Viewport 选区变化回调 */
     void OnViewportSelectionChanged(UObject* NewSelection);
 
     /** Content Browser 资产选区变化回调 */
     void OnContentBrowserSelectionChanged(const TArray<FAssetData>& NewSelectedAssets, bool bIsPrimaryBrowser);
+
+    // --- DCC 事件回调（内部，由 UE delegate 触发） ---
+
+    /** UPackage::PackageSavedWithContextEvent 回调 */
+    void HandlePackageSaved(const FString& Filename, UPackage* Package, FObjectPostSaveContext Context);
+
+    /** FCoreUObjectDelegates::OnObjectPreSave 回调 */
+    void HandleObjectPreSave(UObject* Object, FObjectPreSaveContext Context);
+
+    /** UImportSubsystem::OnAssetPostImport 回调 */
+    void HandleAssetPostImport(UFactory* Factory, UObject* CreatedObject);
+
+    /** FEditorDelegates::PreSaveWorldWithContext 回调 */
+    void HandlePreSaveWorld(UWorld* World, FObjectPreSaveContext Context);
+
+    /** FEditorDelegates::PostSaveWorldWithContext 回调 */
+    void HandlePostSaveWorld(UWorld* World, FObjectPostSaveContext Context);
 
     /** 当前活跃面板 */
     EUEAgentActivePanel ActivePanel = EUEAgentActivePanel::Viewport;
@@ -142,4 +221,11 @@ private:
     /** 委托句柄 */
     FDelegateHandle ViewportSelectionHandle;
     FDelegateHandle ContentBrowserSelectionHandle;
+
+    /** DCC 事件委托句柄 */
+    FDelegateHandle PackageSavedHandle;
+    FDelegateHandle ObjectPreSaveHandle;
+    FDelegateHandle AssetPostImportHandle;
+    FDelegateHandle PreSaveWorldHandle;
+    FDelegateHandle PostSaveWorldHandle;
 };

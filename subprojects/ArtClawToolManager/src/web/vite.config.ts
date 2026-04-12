@@ -9,8 +9,12 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:9876',
-        changeOrigin: true
-      }
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:9876',
+        ws: true,
+      },
     }
   }
 })

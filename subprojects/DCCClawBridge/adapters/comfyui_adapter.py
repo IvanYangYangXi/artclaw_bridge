@@ -226,9 +226,27 @@ class ComfyUIAdapter(BaseDCCAdapter):
 
         # MCP Server 由 startup.py 启动，这里不重复启动
 
+        # Initialize event manager for Tool Manager triggers
+        try:
+            from core.dcc_event_manager import DCCEventManager, set_global_event_manager
+            self._event_manager = DCCEventManager(self)
+            set_global_event_manager(self._event_manager)
+            self._event_manager.load_rules()
+            self._event_manager.register_events()
+            logger.info("ArtClaw: DCCEventManager initialized")
+        except Exception as e:
+            logger.warning(f"ArtClaw: DCCEventManager init failed (Tool Manager not running?): {e}")
+
     def on_shutdown(self) -> None:
         """关闭时调用：停止 MCP Server"""
         logger.info("ArtClaw: ComfyUI adapter shutdown")
+
+        # Clean up event manager
+        try:
+            if hasattr(self, '_event_manager') and self._event_manager:
+                self._event_manager.unregister_all()
+        except Exception:
+            pass
 
         try:
             from core.mcp_server import stop_mcp_server

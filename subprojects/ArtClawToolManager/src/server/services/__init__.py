@@ -1,0 +1,2 @@
+# Ref: docs/specs/architecture-design.md#ProjectStructure
+"""Business logic services package."""

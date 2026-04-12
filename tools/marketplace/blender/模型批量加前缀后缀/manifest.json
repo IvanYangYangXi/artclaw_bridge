@@ -1,0 +1,73 @@
+{
+  "id": "user/blender-rename-prefix-suffix",
+  "name": "模型批量加前缀后缀",
+  "description": "批量为 Blender 选中的对象名称添加前缀和/或后缀。支持自定义分隔符，适用于资产命名规范化。",
+  "version": "1.0.1",
+  "source": "marketplace",
+  "targetDCCs": [
+    "blender"
+  ],
+  "author": "User",
+  "implementation": {
+    "type": "script",
+    "entry": "main.py",
+    "function": "rename_objects"
+  },
+  "inputs": [
+    {
+      "id": "prefix",
+      "name": "前缀",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "添加到对象名称前面的文本，留空则不添加"
+    },
+    {
+      "id": "suffix",
+      "name": "后缀",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "添加到对象名称后面的文本，留空则不添加"
+    },
+    {
+      "id": "separator",
+      "name": "分隔符",
+      "type": "select",
+      "required": false,
+      "default": "_",
+      "options": [
+        "_",
+        "-",
+        ".",
+        ""
+      ],
+      "description": "前缀/后缀与原名之间的分隔符"
+    },
+    {
+      "id": "target",
+      "name": "目标范围",
+      "type": "select",
+      "required": false,
+      "default": "selected",
+      "options": [
+        "selected",
+        "all",
+        "collection"
+      ],
+      "description": "selected=仅选中对象，all=场景全部对象，collection=当前活跃集合"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "renamed_count",
+      "name": "重命名数量",
+      "type": "number"
+    },
+    {
+      "id": "renamed_objects",
+      "name": "重命名清单",
+      "type": "object"
+    }
+  ]
+}
