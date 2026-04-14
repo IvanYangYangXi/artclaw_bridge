@@ -7,5 +7,6 @@ Provides event-driven and schedule-based trigger execution for DCC tools.
 from .engine import TriggerEngine
 from .filter_evaluator import FilterEvaluator
 from .schedule_manager import ScheduleManager
+from .watch_manager import WatchManager
 
-__all__ = ["TriggerEngine", "FilterEvaluator", "ScheduleManager"]
+__all__ = ["TriggerEngine", "FilterEvaluator", "ScheduleManager", "WatchManager"]

@@ -1,6 +1,6 @@
 // Ref: docs/ui/ui-design.md#StatusBar
 // Status bar: connection, DCC, Agent, session, context usage, alerts
-import { Circle, AlertTriangle, AlertCircle, X, Eye, EyeOff } from 'lucide-react'
+import { Circle, AlertTriangle, AlertCircle, X, Eye, EyeOff, Plus, Trash2 } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { useAppStore } from '../../stores/appStore'
 import { useChatStore } from '../../stores/chatStore'
@@ -26,7 +26,7 @@ export default function StatusBar() {
     agentPlatforms, setCurrentPlatform, setCurrentAgent,
     language,
   } = useAppStore()
-  const { connectionStatus, sessions, currentSessionId, setCurrentSession, contextUsage } = useChatStore()
+  const { connectionStatus, contextUsage, sessionEntries, activeSessionId, switchSession, createNewSession, deleteSessionEntry } = useChatStore()
 
   // Alert state
   const [alerts, setAlerts] = useState<Alert[]>([])
@@ -188,16 +188,36 @@ export default function StatusBar() {
 
         <div className="w-px h-4 bg-gray-600" />
 
-        {/* Session selector */}
+        {/* Session selector + management */}
         <select
-          value={currentSessionId ?? ''}
-          onChange={(e) => setCurrentSession(e.target.value)}
+          value={activeSessionId}
+          onChange={(e) => switchSession(e.target.value)}
           className={cn(selectClass, 'max-w-[150px] truncate')}
         >
-          {sessions.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
+          {sessionEntries.map((s) => (
+            <option key={s.id} value={s.id}>{s.label}</option>
           ))}
         </select>
+        {/* New session */}
+        <button
+          onClick={createNewSession}
+          className="p-1 rounded text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+          title={language === 'zh' ? '新建会话' : 'New session'}
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
+        {/* Delete current session (only if more than 1) */}
+        {sessionEntries.length > 1 && (
+          <button
+            onClick={() => deleteSessionEntry(activeSessionId)}
+            className="p-1 rounded text-gray-400 hover:text-red-400 hover:bg-gray-700 transition-colors"
+            title={language === 'zh' ? '删除当前会话' : 'Delete session'}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+
+        <div className="w-px h-4 bg-gray-600" />
 
         {/* Spacer */}
         <div className="flex-1" />

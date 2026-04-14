@@ -145,12 +145,10 @@ class ConnectionManager:
                         {"type": "ping", "ts": time.time()}
                     )
                 except Exception:
-                    break
+                    break  # Let receive loop / finally handle cleanup
         except asyncio.CancelledError:
             pass
-        finally:
-            # Ensure cleanup
-            await self.disconnect(ws, session_id)
+        # Do NOT call self.disconnect() here – let chat_ws.py finally handle cleanup
 
     # ------------------------------------------------------------------
     # statistics

@@ -6,6 +6,10 @@ description: >
   preferences or conventions, (2) check operation history (what was done before), (3) store
   lessons learned from errors, (4) maintain and compact memory tiers. Replaces old MCP tool:
   memory (7 actions: store/get/search/list/delete/check_operation/maintain).
+metadata:
+  artclaw:
+    version: 0.1.0
+    author: ArtClaw
 ---
 
 # ArtClaw 记忆管理

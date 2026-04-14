@@ -2,12 +2,13 @@
 // Dynamic parameter form for workflow/tool execution
 // Includes: parameter form, trigger rules (editable), filter display, preset quick-switch
 import { useState, useEffect, useCallback } from 'react'
-import { Play, RefreshCw, Upload, Image, Zap, Star, Plus, Trash2 } from 'lucide-react'
+import { Play, RefreshCw, Upload, Image, Zap, Star, Plus, Trash2, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import type { WorkflowParameter, ExecutionContext, TriggerRuleData, ParameterPreset, ToolItemExtended } from '../../types'
-import { DCC_DISPLAY_NAMES, DCC_EVENTS, getEventLabel } from '../../constants/dccTypes'
+import { DCC_DISPLAY_NAMES, getEventLabel } from '../../constants/dccTypes'
 import { fetchTriggers, fetchPresets, createTrigger, deleteTrigger, updateTrigger, fetchToolDetail } from '../../api/client'
 import { useAppStore } from '../../stores/appStore'
+import TriggerRuleEditor, { type TriggerFormData } from '../Tools/TriggerRuleEditor'
 
 interface ParameterPanelProps {
   executionContext: ExecutionContext
@@ -37,12 +38,7 @@ export default function ParameterPanel({
   const [toolData, setToolData] = useState<ToolItemExtended | null>(null)
   const [expandedTriggerId, setExpandedTriggerId] = useState<string | null>(null)
   const [showAddTrigger, setShowAddTrigger] = useState(false)
-  const [newTriggerName, setNewTriggerName] = useState('')
-  const [newTriggerType, setNewTriggerType] = useState<string>('manual')
-  const [newTriggerDcc, setNewTriggerDcc] = useState('')
-  const [newTriggerEvent, setNewTriggerEvent] = useState('')
-  const [newTriggerTiming, setNewTriggerTiming] = useState<string>('post')
-  const [newTriggerMode, setNewTriggerMode] = useState<string>('notify')
+  const [triggerSectionExpanded, setTriggerSectionExpanded] = useState(true)
   
   // Temporary overrides for script parameter defaults (not saved permanently)
   const [tempInputOverrides, setTempInputOverrides] = useState<Record<string, { name?: string; default?: unknown; description?: string; required?: boolean }>>({})
@@ -66,32 +62,77 @@ export default function ParameterPanel({
 
   useEffect(() => { loadData() }, [loadData])
 
+  const [executing, setExecuting] = useState(false)
+
   const handleExecute = async () => {
+    if (executing) return
+    setExecuting(true)
+
     const mergedParams = { ...values }
-    // Include temp input overrides
     if (Object.keys(tempInputOverrides).length > 0) {
       mergedParams._inputOverrides = tempInputOverrides
     }
+
+    const { addMessage } = (await import('../../stores/chatStore')).useChatStore.getState()
     
     if (executionContext.needsAI === false) {
       try {
-        await fetch(`/api/v1/tools/${executionContext.id}/execute`, {
+        const res = await fetch(`/api/v1/tools/${encodeURIComponent(executionContext.id)}/execute`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ parameters: mergedParams }),
         })
-        onCancel()
+        const data = await res.json() as {
+          success: boolean
+          data?: { action?: string; exit_code?: number; stdout?: string; stderr?: string; success?: boolean; command?: string }
+          detail?: { message?: string; code?: string }
+        }
+
+        if (data.success && data.data?.action === 'executed') {
+          const r = data.data
+          const icon = r.success ? '✅' : '❌'
+          const lines = [
+            `${icon} **${executionContext.name}** 执行${r.success ? '完成' : '失败'} (exit ${r.exit_code})`,
+          ]
+          if (r.stdout?.trim()) lines.push(`\`\`\`\n${r.stdout.trim()}\n\`\`\``)
+          if (r.stderr?.trim()) lines.push(`⚠️ stderr:\n\`\`\`\n${r.stderr.trim()}\n\`\`\``)
+          addMessage({
+            id: `exec-${Date.now()}`,
+            role: 'system',
+            content: lines.join('\n\n'),
+            timestamp: new Date().toISOString(),
+          })
+          onCancel()
+        } else if (data.success && data.data?.action === 'navigate') {
+          // AI-driven tool from direct execute endpoint – submit to chat
+          onSubmit()
+        } else {
+          // Backend returned an error response
+          const errMsg = data.detail?.message || JSON.stringify(data)
+          addMessage({
+            id: `exec-err-${Date.now()}`,
+            role: 'system',
+            content: `❌ **${executionContext.name}** 执行失败: ${errMsg}`,
+            timestamp: new Date().toISOString(),
+          })
+          // Don't close panel on error — let user retry
+        }
       } catch (error) {
         console.error('Failed to execute tool:', error)
+        addMessage({
+          id: `exec-err-${Date.now()}`,
+          role: 'system',
+          content: `❌ **${executionContext.name}** 执行失败: ${error instanceof Error ? error.message : '网络错误'}`,
+          timestamp: new Date().toISOString(),
+        })
       }
     } else {
-      // For AI execution, we need to update the store's values to include overrides
-      // so they get included in the chat message
       if (Object.keys(tempInputOverrides).length > 0) {
         onChange('_inputOverrides', tempInputOverrides)
       }
       onSubmit()
     }
+    setExecuting(false)
   }
 
   const handlePresetApply = (preset: ParameterPreset) => {
@@ -100,24 +141,25 @@ export default function ParameterPanel({
     }
   }
 
-  const handleAddTrigger = async () => {
+  const handleAddTrigger = async (data: TriggerFormData) => {
     try {
       const resp = await createTrigger(executionContext.id, {
-        name: newTriggerName || (zh ? '新规则' : 'New Rule'),
-        trigger_type: newTriggerType,
-        dcc: newTriggerDcc || undefined,
-        event_type: newTriggerEvent || undefined,
-        event_timing: newTriggerTiming,
-        execution_mode: newTriggerMode,
-        is_enabled: true,
-        conditions: {},
+        name: data.name || (zh ? '新规则' : 'New Rule'),
+        trigger_type: data.triggerType,
+        dcc: data.dcc || undefined,
+        event_type: data.eventType || undefined,
+        event_timing: data.eventTiming,
+        execution_mode: data.executionMode,
+        is_enabled: data.isEnabled,
+        conditions: data.conditions,
+        parameter_preset_id: data.parameterPresetId,
+        schedule_config: data.scheduleConfig,
       })
       if (resp.success && resp.data) {
         setTriggers((prev) => [...prev, resp.data as TriggerRuleData])
       }
     } catch { /* ignore */ }
     setShowAddTrigger(false)
-    setNewTriggerName('')
   }
 
   const handleDeleteTrigger = async (id: string) => {
@@ -141,8 +183,6 @@ export default function ParameterPanel({
   const EXEC_MODE_LABEL: Record<string, string> = zh
     ? { silent: '静默', notify: '通知', interactive: '交互(AI)' }
     : { silent: 'Silent', notify: 'Notify', interactive: 'Interactive' }
-
-  const inputCls = 'w-full px-2 py-1.5 rounded bg-bg-tertiary text-text-primary text-[11px] border border-border-default focus:border-accent focus:outline-none placeholder:text-text-dim transition-colors'
 
   return (
     <div className="flex flex-col h-full">
@@ -197,222 +237,214 @@ export default function ParameterPanel({
           </div>
         )}
 
-        {/* ── Script Parameters (tool only, editable) ── */}
-        {isTool && toolData?.manifest?.inputs && (toolData.manifest.inputs as Array<{ id: string; name: string; type: string; default?: unknown; description?: string; required?: boolean }>).length > 0 && (
-          <div className="pt-2 border-t border-border-default">
-            <label className="block text-[11px] text-text-dim mb-1.5 flex items-center gap-1">
-              📦 {zh ? '脚本参数设置' : 'Script Parameter Settings'}
-            </label>
-            <div className="space-y-2">
-              <p className="text-[10px] text-text-dim italic">{zh ? '临时调整（仅用于当前执行，不会永久保存）' : 'Temporary adjustments (current execution only, not saved permanently)'}</p>
-              {(toolData.manifest.inputs as Array<{ id: string; name: string; type: string; default?: unknown; description?: string; required?: boolean }>).map((input) => {
-                const override = tempInputOverrides[input.id] || {}
-                const currentName = override.name ?? input.name
-                const currentDefault = override.default !== undefined ? override.default : input.default
-                const currentDescription = override.description ?? input.description
-                const currentRequired = override.required ?? input.required
-                
-                return (
-                  <div key={input.id} className="bg-bg-tertiary rounded border border-border-default/50 p-2 space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={currentName}
-                        onChange={(e) => setTempInputOverrides(prev => ({
-                          ...prev,
-                          [input.id]: { ...prev[input.id], name: e.target.value }
-                        }))}
-                        className="flex-1 px-2 py-1 rounded bg-bg-secondary text-text-primary text-[11px] border border-border-default focus:border-accent focus:outline-none"
-                        placeholder="Parameter name"
-                      />
-                      <span className="px-1 py-0.5 bg-bg-quaternary rounded text-[10px] text-text-dim shrink-0">{input.type}</span>
-                      <label className="flex items-center gap-1 text-[10px] text-text-dim">
+        {/* ── Script Parameters (tool only, editable meta-info) ── */}
+        {/* Hidden when executionContext.parameters already covers all manifest inputs.
+            Only shown when there are extra script-level inputs not in the parameters above. */}
+        {isTool && toolData?.manifest?.inputs && (() => {
+          const manifestInputs = toolData.manifest.inputs as Array<{ id: string; name: string; type: string; default?: unknown; description?: string; required?: boolean }>
+          const paramIds = new Set(parameters.map((p) => p.id))
+          const extraInputs = manifestInputs.filter((inp) => !paramIds.has(inp.id))
+          if (extraInputs.length === 0) return null
+          return (
+            <div className="pt-2 border-t border-border-default">
+              <label className="block text-[11px] text-text-dim mb-1.5 flex items-center gap-1">
+                📦 {zh ? '脚本参数设置' : 'Script Parameter Settings'}
+              </label>
+              <div className="space-y-2">
+                <p className="text-[10px] text-text-dim italic">{zh ? '临时调整（仅用于当前执行，不会永久保存）' : 'Temporary adjustments (current execution only, not saved permanently)'}</p>
+                {extraInputs.map((input) => {
+                  const override = tempInputOverrides[input.id] || {}
+                  const currentName = override.name ?? input.name
+                  const currentDefault = override.default !== undefined ? override.default : input.default
+                  const currentDescription = override.description ?? input.description
+                  const currentRequired = override.required ?? input.required
+                  
+                  return (
+                    <div key={input.id} className="bg-bg-tertiary rounded border border-border-default/50 p-2 space-y-1.5">
+                      <div className="flex items-center gap-2">
                         <input
-                          type="checkbox"
-                          checked={currentRequired}
+                          type="text"
+                          value={currentName}
                           onChange={(e) => setTempInputOverrides(prev => ({
                             ...prev,
-                            [input.id]: { ...prev[input.id], required: e.target.checked }
+                            [input.id]: { ...prev[input.id], name: e.target.value }
                           }))}
-                          className="w-3 h-3"
+                          className="flex-1 px-2 py-1 rounded bg-bg-secondary text-text-primary text-[11px] border border-border-default focus:border-accent focus:outline-none"
+                          placeholder="Parameter name"
                         />
-                        {zh ? '必需' : 'Required'}
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-text-dim shrink-0">{zh ? '默认值:' : 'Default:'}</span>
-                      <input
-                        type="text"
-                        value={currentDefault !== undefined ? String(currentDefault) : ''}
-                        onChange={(e) => setTempInputOverrides(prev => ({
-                          ...prev,
-                          [input.id]: { ...prev[input.id], default: e.target.value }
-                        }))}
-                        className="flex-1 px-2 py-1 rounded bg-bg-secondary text-text-primary text-[11px] border border-border-default focus:border-accent focus:outline-none"
-                        placeholder={zh ? '默认值' : 'Default value'}
-                      />
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span className="text-[10px] text-text-dim shrink-0 mt-1">{zh ? '描述:' : 'Description:'}</span>
-                      <textarea
-                        value={currentDescription || ''}
-                        onChange={(e) => setTempInputOverrides(prev => ({
-                          ...prev,
-                          [input.id]: { ...prev[input.id], description: e.target.value }
-                        }))}
-                        rows={2}
-                        className="flex-1 px-2 py-1 rounded bg-bg-secondary text-text-primary text-[11px] border border-border-default focus:border-accent focus:outline-none resize-y"
-                        placeholder={zh ? '参数描述' : 'Parameter description'}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ── Trigger Rules (tool only, editable) ── */}
-        {isTool && (
-          <div className="pt-2 border-t border-border-default">
-            <label className="block text-[11px] text-text-dim mb-1.5 flex items-center justify-between">
-              <span className="flex items-center gap-1"><Zap className="w-3 h-3" /> {zh ? '触发规则' : 'Trigger Rules'}</span>
-              <button
-                onClick={() => setShowAddTrigger(!showAddTrigger)}
-                className="text-accent hover:text-accent-hover transition-colors"
-                title={zh ? '添加规则' : 'Add Rule'}
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </label>
-
-            {/* Existing triggers */}
-            {triggers.length > 0 && (
-              <div className="space-y-1.5 mb-2">
-                {triggers.map((t) => {
-                  const tAny = t as TriggerRuleData & { dcc?: string }
-                  const dccName = tAny.dcc ? (DCC_DISPLAY_NAMES[tAny.dcc] ?? tAny.dcc) : ''
-                  const eventLabel = tAny.dcc && t.eventType
-                    ? getEventLabel(tAny.dcc, t.eventType, language)
-                    : t.eventType
-                  const isExpanded = expandedTriggerId === t.id
-                  const conditions = t.conditions as Record<string, unknown> | undefined
-                  const hasConditions = conditions && (
-                    (conditions.fileRules as unknown[] | undefined)?.length ||
-                    (conditions.sceneRules as unknown[] | undefined)?.length ||
-                    conditions.typeFilter ||
-                    conditions.pathGlob ||
-                    conditions.nameRegex
-                  )
-                  return (
-                    <div key={t.id} className="bg-bg-tertiary rounded border border-border-default/50">
-                      <div className="flex items-center gap-1.5 px-2 py-1.5">
-                        <button
-                          onClick={() => handleToggleTrigger(t)}
-                          className={cn('w-2 h-2 rounded-full shrink-0 cursor-pointer transition-colors', t.isEnabled ? 'bg-success' : 'bg-text-dim')}
-                          title={t.isEnabled ? (zh ? '点击禁用' : 'Disable') : (zh ? '点击启用' : 'Enable')}
-                        />
-                        <button
-                          onClick={() => setExpandedTriggerId(isExpanded ? null : t.id)}
-                          className="flex-1 min-w-0 text-left"
-                        >
-                          <span className="text-[11px] text-text-primary truncate block">{t.name || (zh ? '未命名' : 'Unnamed')}</span>
-                          <span className="text-[10px] text-text-dim">
-                            {TRIGGER_TYPE_LABEL[t.triggerType] ?? t.triggerType}
-                            {dccName && ` · ${dccName}`}
-                            {eventLabel && ` · ${eventLabel}`}
-                            {` · ${EXEC_MODE_LABEL[t.executionMode] ?? t.executionMode}`}
-                          </span>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTrigger(t.id)}
-                          className="p-1 rounded text-text-dim hover:text-error transition-colors shrink-0"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                        <span className="px-1 py-0.5 bg-bg-quaternary rounded text-[10px] text-text-dim shrink-0">{input.type}</span>
+                        <label className="flex items-center gap-1 text-[10px] text-text-dim">
+                          <input
+                            type="checkbox"
+                            checked={currentRequired}
+                            onChange={(e) => setTempInputOverrides(prev => ({
+                              ...prev,
+                              [input.id]: { ...prev[input.id], required: e.target.checked }
+                            }))}
+                            className="w-3 h-3"
+                          />
+                          {zh ? '必需' : 'Required'}
+                        </label>
                       </div>
-                      {/* Expanded: show inline conditions */}
-                      {isExpanded && (
-                        <div className="px-2 pb-2 text-[10px] text-text-dim space-y-0.5">
-                          {hasConditions ? (
-                            <>
-                              {conditions.pathGlob && <div>📁 {String(conditions.pathGlob)}</div>}
-                              {conditions.nameRegex && <div>📝 {String(conditions.nameRegex)}</div>}
-                              {(conditions.fileRules as Array<{ pattern: string }> | undefined)?.map((r, i) => <div key={i}>📁 {r.pattern}</div>)}
-                              {(conditions.sceneRules as Array<{ pattern: string; isRegex?: boolean }> | undefined)?.map((r, i) => <div key={i}>🎯 {r.pattern}{r.isRegex ? ' (regex)' : ''}</div>)}
-                              {conditions.typeFilter && <div>📦 {((conditions.typeFilter as { types?: string[] }).types ?? []).join(', ')}</div>}
-                            </>
-                          ) : (
-                            <span className="italic">{zh ? '无筛选条件（对所有对象生效）' : 'No filter (applies to all)'}</span>
-                          )}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-text-dim shrink-0">{zh ? '默认值:' : 'Default:'}</span>
+                        <input
+                          type="text"
+                          value={currentDefault !== undefined ? String(currentDefault) : ''}
+                          onChange={(e) => setTempInputOverrides(prev => ({
+                            ...prev,
+                            [input.id]: { ...prev[input.id], default: e.target.value }
+                          }))}
+                          className="flex-1 px-2 py-1 rounded bg-bg-secondary text-text-primary text-[11px] border border-border-default focus:border-accent focus:outline-none"
+                          placeholder={zh ? '默认值' : 'Default value'}
+                        />
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-[10px] text-text-dim shrink-0 mt-1">{zh ? '描述:' : 'Description:'}</span>
+                        <textarea
+                          value={currentDescription || ''}
+                          onChange={(e) => setTempInputOverrides(prev => ({
+                            ...prev,
+                            [input.id]: { ...prev[input.id], description: e.target.value }
+                          }))}
+                          rows={2}
+                          className="flex-1 px-2 py-1 rounded bg-bg-secondary text-text-primary text-[11px] border border-border-default focus:border-accent focus:outline-none resize-y"
+                          placeholder={zh ? '参数描述' : 'Parameter description'}
+                        />
+                      </div>
                     </div>
                   )
                 })}
               </div>
-            )}
+            </div>
+          )
+        })()}
 
-            {triggers.length === 0 && !showAddTrigger && (
-              <p className="text-[10px] text-text-dim mb-2">{zh ? '暂无触发规则，点 + 添加' : 'No rules. Click + to add'}</p>
-            )}
+        {/* ── Trigger Rules (tool only, editable — full editor matching detail dialog) ── */}
+        {isTool && (
+          <div className="pt-2 border-t border-border-default">
+            <button
+              onClick={() => setTriggerSectionExpanded(!triggerSectionExpanded)}
+              className="w-full flex items-center justify-between text-[11px] text-text-dim mb-1.5"
+            >
+              <span className="flex items-center gap-1">
+                <Zap className="w-3 h-3" /> {zh ? '触发规则' : 'Trigger Rules'}
+                {triggers.length > 0 && (
+                  <span className="px-1.5 py-0.5 bg-bg-tertiary rounded-full text-[10px]">{triggers.length}</span>
+                )}
+              </span>
+              {triggerSectionExpanded
+                ? <ChevronDown className="w-3.5 h-3.5" />
+                : <ChevronRight className="w-3.5 h-3.5" />}
+            </button>
 
-            {/* Add trigger inline form */}
-            {showAddTrigger && (
-              <div className="border border-border-default rounded p-2 bg-bg-secondary space-y-1.5 mb-2">
-                <input value={newTriggerName} onChange={(e) => setNewTriggerName(e.target.value)} placeholder={zh ? '规则名称' : 'Rule name'} className={inputCls} />
-                <div className="flex gap-1 flex-wrap">
-                  {(['manual', 'event', 'schedule', 'watch'] as const).map((tt) => (
-                    <button key={tt} onClick={() => setNewTriggerType(tt)}
-                      className={cn('px-2 py-0.5 rounded text-[10px] transition-colors',
-                        newTriggerType === tt ? 'bg-accent text-white' : 'bg-bg-tertiary text-text-dim hover:text-text-secondary')}>
-                      {TRIGGER_TYPE_LABEL[tt]}
-                    </button>
-                  ))}
-                </div>
-                {newTriggerType === 'event' && (
-                  <div className="space-y-1">
-                    <select value={newTriggerDcc} onChange={(e) => { setNewTriggerDcc(e.target.value); setNewTriggerEvent('') }} className={inputCls}>
-                      <option value="">DCC</option>
-                      {Object.keys(DCC_EVENTS).map((d) => <option key={d} value={d}>{DCC_DISPLAY_NAMES[d] ?? d}</option>)}
-                    </select>
-                    {newTriggerDcc && (
-                      <select value={newTriggerEvent} onChange={(e) => setNewTriggerEvent(e.target.value)} className={inputCls}>
-                        <option value="">{zh ? '事件类型' : 'Event'}</option>
-                        {(DCC_EVENTS[newTriggerDcc] ?? []).map((e) => <option key={e.event} value={e.event}>{zh ? e.label : e.labelEn}</option>)}
-                      </select>
-                    )}
-                    <div className="flex gap-1">
-                      {['pre', 'post'].map((t) => (
-                        <button key={t} onClick={() => setNewTriggerTiming(t)}
-                          className={cn('px-2 py-0.5 rounded text-[10px] transition-colors',
-                            newTriggerTiming === t ? 'bg-accent text-white' : 'bg-bg-tertiary text-text-dim')}>
-                          {t === 'pre' ? (zh ? '事件前' : 'Before') : (zh ? '事件后' : 'After')}
-                        </button>
-                      ))}
-                    </div>
+            {triggerSectionExpanded && (
+              <>
+                {/* Existing triggers */}
+                {triggers.length > 0 && (
+                  <div className="space-y-1.5 mb-2">
+                    {triggers.map((t) => {
+                      const tAny = t as TriggerRuleData & { dcc?: string; parameterPresetId?: string }
+                      const dccName = tAny.dcc ? (DCC_DISPLAY_NAMES[tAny.dcc] ?? tAny.dcc) : ''
+                      const eventLabel = tAny.dcc && t.eventType
+                        ? getEventLabel(tAny.dcc, t.eventType, language)
+                        : t.eventType
+                      const isExpanded = expandedTriggerId === t.id
+                      const ppName = tAny.parameterPresetId ? presets.find((p) => p.id === tAny.parameterPresetId)?.name : undefined
+                      const conditions = t.conditions as Record<string, unknown> | undefined
+                      const hasConditions = conditions && (
+                        (conditions.fileRules as unknown[] | undefined)?.length ||
+                        (conditions.sceneRules as unknown[] | undefined)?.length ||
+                        conditions.typeFilter ||
+                        conditions.pathGlob ||
+                        conditions.nameRegex
+                      )
+                      const scheduleConfig = t.scheduleConfig as Record<string, unknown> | undefined
+                      return (
+                        <div key={t.id} className="bg-bg-tertiary rounded border border-border-default/50">
+                          <div className="flex items-center gap-1.5 px-2 py-1.5">
+                            <button
+                              onClick={() => handleToggleTrigger(t)}
+                              className={cn('w-2 h-2 rounded-full shrink-0 cursor-pointer transition-colors', t.isEnabled ? 'bg-success' : 'bg-text-dim')}
+                              title={t.isEnabled ? (zh ? '点击禁用' : 'Disable') : (zh ? '点击启用' : 'Enable')}
+                            />
+                            <button
+                              onClick={() => setExpandedTriggerId(isExpanded ? null : t.id)}
+                              className="flex-1 min-w-0 text-left"
+                            >
+                              <span className="text-[11px] text-text-primary truncate block">{t.name || (zh ? '未命名' : 'Unnamed')}</span>
+                              <span className="text-[10px] text-text-dim">
+                                {TRIGGER_TYPE_LABEL[t.triggerType] ?? t.triggerType}
+                                {dccName && ` · ${dccName}`}
+                                {eventLabel && ` · ${eventLabel}`}
+                                {t.eventTiming && ` (${t.eventTiming})`}
+                                {` · ${EXEC_MODE_LABEL[t.executionMode] ?? t.executionMode}`}
+                              </span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTrigger(t.id)}
+                              className="p-1 rounded text-text-dim hover:text-error transition-colors shrink-0"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                          {/* Expanded: show full details */}
+                          {isExpanded && (
+                            <div className="px-2 pb-2 text-[10px] text-text-dim space-y-1">
+                              {/* Schedule config */}
+                              {t.triggerType === 'schedule' && scheduleConfig && (
+                                <div className="flex items-center gap-1">
+                                  <span>⏱</span>
+                                  {scheduleConfig.type === 'interval' && <span>{zh ? '间隔' : 'Every'}: {String(scheduleConfig.interval || '')}</span>}
+                                  {scheduleConfig.type === 'cron' && <span>Cron: {String(scheduleConfig.cron || '')}</span>}
+                                  {scheduleConfig.type === 'once' && <span>{zh ? '执行时间' : 'At'}: {String(scheduleConfig.runAt || '')}</span>}
+                                </div>
+                              )}
+                              {/* Conditions */}
+                              {hasConditions ? (
+                                <>
+                                  {conditions.pathGlob && <div>📁 {String(conditions.pathGlob)}</div>}
+                                  {conditions.nameRegex && <div>📝 {String(conditions.nameRegex)}</div>}
+                                  {(conditions.fileRules as Array<{ pattern: string }> | undefined)?.map((r, i) => <div key={i}>📁 {r.pattern}</div>)}
+                                  {(conditions.sceneRules as Array<{ pattern: string; isRegex?: boolean }> | undefined)?.map((r, i) => <div key={i}>🎯 {r.pattern}{r.isRegex ? ' (regex)' : ''}</div>)}
+                                  {conditions.typeFilter && <div>📦 {((conditions.typeFilter as { types?: string[] }).types ?? []).join(', ')}</div>}
+                                </>
+                              ) : (
+                                <span className="italic">{zh ? '无筛选条件（对所有对象生效）' : 'No filter (applies to all)'}</span>
+                              )}
+                              {/* Parameter preset reference */}
+                              {ppName && <div>⭐ {zh ? '参数预设' : 'Preset'}: {ppName}</div>}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
-                <div className="flex gap-1 flex-wrap">
-                  {(['silent', 'notify', 'interactive'] as const).map((m) => (
-                    <button key={m} onClick={() => setNewTriggerMode(m)}
-                      className={cn('px-2 py-0.5 rounded text-[10px] transition-colors',
-                        newTriggerMode === m ? 'bg-accent text-white' : 'bg-bg-tertiary text-text-dim')}>
-                      {EXEC_MODE_LABEL[m]}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-1.5 pt-1">
-                  <button onClick={handleAddTrigger} className="px-2 py-1 rounded text-[10px] bg-accent text-white hover:bg-accent/90">{zh ? '添加' : 'Add'}</button>
-                  <button onClick={() => setShowAddTrigger(false)} className="px-2 py-1 rounded text-[10px] text-text-dim hover:bg-bg-tertiary">{zh ? '取消' : 'Cancel'}</button>
-                </div>
-              </div>
-            )}
 
-            {/* Tip */}
-            <p className="text-[10px] text-text-dim italic">
-              {zh ? '💡 完整筛选条件编辑请进入工具详情面板' : '💡 Full filter editing in tool detail panel'}
-            </p>
+                {triggers.length === 0 && !showAddTrigger && (
+                  <p className="text-[10px] text-text-dim mb-2">{zh ? '暂无触发规则' : 'No trigger rules yet'}</p>
+                )}
+
+                {/* Add trigger — use full TriggerRuleEditor */}
+                {showAddTrigger ? (
+                  <div className="mb-2">
+                    <TriggerRuleEditor
+                      parameterPresets={presets.map((p) => ({ id: p.id, name: p.name }))}
+                      onSave={handleAddTrigger}
+                      onCancel={() => setShowAddTrigger(false)}
+                    />
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowAddTrigger(true)}
+                    className="flex items-center gap-1 text-[12px] text-accent hover:text-accent-hover transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />{zh ? '添加规则' : 'Add Rule'}
+                  </button>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>
@@ -420,20 +452,36 @@ export default function ParameterPanel({
       {/* Hint */}
       <div className="shrink-0 px-4 py-2">
         <p className="text-[11px] text-text-dim">
-          {zh
-            ? '💡 你可以说"帮我填写参数"让 AI 协助'
-            : '💡 Say "help me fill parameters" to get AI assistance'}
+          {executionContext.needsAI
+            ? (zh
+              ? '💡 此工具需要 AI 协助执行，请在对话面板中发送消息'
+              : '💡 This tool requires AI to execute. Please use the chat panel.')
+            : (zh
+              ? '💡 你可以说"帮我填写参数"让 AI 协助'
+              : '💡 Say "help me fill parameters" to get AI assistance')}
         </p>
       </div>
 
       {/* Actions */}
       <div className="shrink-0 px-4 py-3 border-t border-border-default flex items-center gap-2">
         <button
-          onClick={handleExecute}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded text-small font-medium bg-accent text-white hover:bg-accent/90 transition-colors"
+          onClick={executionContext.needsAI ? onSubmit : handleExecute}
+          disabled={executing}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded text-small font-medium transition-colors disabled:opacity-50 disabled:cursor-wait',
+            executionContext.needsAI
+              ? 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary hover:text-text-primary border border-border-default'
+              : 'bg-accent text-white hover:bg-accent/90',
+          )}
         >
-          <Play className="w-3.5 h-3.5" />
-          {zh ? '执行' : 'Execute'}
+          {executing
+            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            : <Play className="w-3.5 h-3.5" />}
+          {executing
+            ? (zh ? '执行中...' : 'Executing...')
+            : executionContext.needsAI
+              ? (zh ? '发送到对话' : 'Send to Chat')
+              : (zh ? '执行' : 'Execute')}
         </button>
         <button
           onClick={onReset}
@@ -568,6 +616,7 @@ function ParameterField({
       )
 
     case 'enum':
+    case 'select':
       return (
         <div>
           {label}

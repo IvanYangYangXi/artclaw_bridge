@@ -6,6 +6,10 @@ description: >
   (3) check current level/file, (4) inspect viewport state. Works with UE (run_ue_python),
   Maya and Max (run_python). Replaces old MCP tools: get_editor_context, get_selected_objects,
   get_scene_info.
+metadata:
+  artclaw:
+    version: 0.1.1
+    author: ArtClaw
 ---
 
 # ArtClaw 编辑器上下文查询

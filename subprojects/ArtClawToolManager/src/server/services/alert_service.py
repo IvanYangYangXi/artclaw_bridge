@@ -88,12 +88,37 @@ class AlertService:
         return None
     
     def create_alert(self, request: AlertCreateRequest) -> Optional[Alert]:
-        """Create a new alert."""
+        """Create a new alert (or update existing duplicate).
+
+        Deduplication: if an unresolved alert with the same ``source`` and
+        ``title`` already exists, update its detail/metadata/level in-place
+        instead of creating a duplicate.
+        """
         data = self._load_alerts()
-        
-        # Generate unique ID
-        alert_id = f"alert-{uuid.uuid4().hex[:8]}"
         now = datetime.now(timezone.utc).isoformat()
+
+        # --- Dedup: find existing unresolved alert with same source+level ---
+        # Title may change between runs (e.g. count differs), so we match on
+        # source + level only.  This keeps at most one active alert per
+        # source+level combination.
+        for alert_dict in data.get("alerts", []):
+            if (
+                alert_dict.get("source") == request.source
+                and alert_dict.get("level") == request.level
+                and alert_dict.get("resolvedAt") is None
+            ):
+                # Update in-place
+                alert_dict["title"] = request.title
+                alert_dict["detail"] = request.detail
+                alert_dict["metadata"] = request.metadata
+                alert_dict["updatedAt"] = now
+                if self._save_alerts(data):
+                    logger.info("Dedup-updated alert: %s", alert_dict["id"])
+                    return Alert(**alert_dict)
+                return None
+
+        # --- No duplicate — create new ---
+        alert_id = f"alert-{uuid.uuid4().hex[:8]}"
         
         # Create alert object
         alert = Alert(

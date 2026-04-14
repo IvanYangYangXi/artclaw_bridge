@@ -48,16 +48,35 @@ async def list_tools(
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ):
     """Get paginated tool list with optional filters."""
-    items, total = _tool_svc.list_tools(
-        source=source,
-        search=search,
-        page=page,
-        limit=limit,
-        sort_by=sort_by,
-        sort_order=sort_order,
-    )
+    try:
+        items, total = _tool_svc.list_tools(
+            source=source,
+            search=search,
+            page=page,
+            limit=limit,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=err("TOOLS_UNAVAILABLE", str(exc)),
+        )
     data = [t.to_dict() for t in items]
     return ok_list(data, page=page, limit=limit, total=total)
+
+
+# ------------------------------------------------------------------
+# Recent usage  (must be before /{tool_id:path})
+# ------------------------------------------------------------------
+
+@router.get("/recent")
+async def get_recent_tools(
+    limit: int = Query(10, ge=1, le=50),
+):
+    """Get recently used tools (by last_used timestamp)."""
+    tools, _ = _tool_svc.list_tools(sort_by="last_used", sort_order="desc", limit=limit)
+    return ok([t.to_dict() for t in tools])
 
 
 # ------------------------------------------------------------------
@@ -356,23 +375,208 @@ async def unfavorite_tool(tool_id: str):
 
 
 # ------------------------------------------------------------------
-# Execute (returns jump instruction to Chat page)
+# Execute (script tools run directly; AI-driven tools return navigate)
 # ------------------------------------------------------------------
 
 @router.post("/{tool_id:path}/execute")
 async def execute_tool(tool_id: str, body: ToolExecuteRequest):
-    """Execute a tool. Returns a jump instruction to the Chat page."""
+    """Execute a tool.
+
+    - script tools with needsAI=False: actually run the Python entry point,
+      return stdout/stderr and exit code.
+    - skill_wrapper / composite / any needsAI=True tool: return a navigate
+      instruction so the frontend opens the chat panel.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
     tool = _tool_svc.get_tool(tool_id)
     if not tool:
         raise HTTPException(
             status_code=404,
             detail=err("TOOL_NOT_FOUND", f"Tool not found: {tool_id}"),
         )
-    tool.use_count += 1
 
+    impl_type = tool.implementation_type or "script"
+    manifest = tool.manifest or {}
+    impl = manifest.get("implementation", {})
+    entry = impl.get("entry", "main.py")
+    function = impl.get("function", "")
+
+    # Determine if this requires AI
+    # skill_wrapper and composite types need AI;
+    # script tools bound to a DCC run directly via MCP (no AI needed)
+    needs_ai = impl_type in ("skill_wrapper", "composite")
+
+    if needs_ai:
+        # Return navigate instruction – frontend handles the rest
+        tool.use_count += 1
+        return ok({
+            "action": "navigate",
+            "target": "/chat",
+            "command": f"/run tool:{tool_id}",
+            "parameters": body.parameters,
+        })
+
+    # --- Script tool ---
+    target_dccs = manifest.get("targetDCCs", [])
+
+    # "general" means platform-independent — run locally, not via DCC MCP.
+    # Only route to DCC when targetDCCs contains real DCC identifiers.
+    real_dcc_targets = [d for d in target_dccs if d and d != "general"]
+
+    if real_dcc_targets:
+        # DCC-bound script: execute via MCP on the connected DCC
+        return await _execute_on_dcc(tool, entry, function, body.parameters or {}, real_dcc_targets)
+    else:
+        # Generic script: run locally via subprocess
+        return await _execute_locally(tool, entry, function, body.parameters or {})
+
+
+# ------------------------------------------------------------------
+# Execute helpers
+# ------------------------------------------------------------------
+
+async def _execute_locally(tool, entry: str, function: str, params: dict):
+    """Run a generic (non-DCC) script tool via subprocess."""
+    import sys
+    from pathlib import Path
+
+    if not tool.tool_path:
+        raise HTTPException(
+            status_code=500,
+            detail=err("TOOL_PATH_MISSING", "Tool has no tool_path configured"),
+        )
+
+    entry_path = Path(tool.tool_path) / entry
+    if not entry_path.exists():
+        raise HTTPException(
+            status_code=500,
+            detail=err("ENTRY_NOT_FOUND", f"Entry script not found: {entry_path}"),
+        )
+
+    params_repr = repr(params)
+
+    # Resolve artclaw_sdk path so tool scripts can import it
+    sdk_path = Path(__file__).resolve().parents[4] / "DCCClawBridge" / "core"
+    extra_paths = [str(entry_path.parent), str(sdk_path)]
+
+    if function:
+        sys_path_insert = "; ".join(
+            f"sys.path.insert(0, {repr(p)})" for p in extra_paths
+        )
+        code = (
+            f"import sys; {sys_path_insert}; "
+            f"import importlib.util; "
+            f"spec = importlib.util.spec_from_file_location('_tool', {repr(str(entry_path))}); "
+            f"mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); "
+            f"result = mod.{function}(**{params_repr}); "
+            f"import json; print(json.dumps(result) if not isinstance(result, str) else result)"
+        )
+        cmd = [sys.executable, "-c", code]
+    else:
+        cmd = [sys.executable, str(entry_path)]
+        for k, v in params.items():
+            cmd += [f"--{k}", str(v)]
+
+    env = {**__import__("os").environ, "PYTHONPATH": str(sdk_path)}
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=str(entry_path.parent),
+            env=env,
+        )
+        tool.use_count += 1
+        return ok({
+            "action": "executed",
+            "exit_code": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "success": proc.returncode == 0,
+        })
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=504,
+            detail=err("EXECUTION_TIMEOUT", "Script execution timed out (120s)"),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=err("EXECUTION_ERROR", str(exc)),
+        )
+
+
+async def _execute_on_dcc(tool, entry: str, function: str, params: dict, target_dccs: list):
+    """Run a DCC-bound script tool via MCP WebSocket on the target DCC."""
+    from pathlib import Path
+    from ..services.dcc_manager import DCCManager
+
+    # Get DCCManager instance from app state
+    from ..main import dcc_manager as _dcc_manager
+    if _dcc_manager is None:
+        raise HTTPException(
+            status_code=500,
+            detail=err("DCC_MANAGER_UNAVAILABLE", "DCC manager not initialized"),
+        )
+
+    # Find a connected DCC matching targetDCCs
+    dcc_type = _dcc_manager.get_connected_dcc(target_dccs)
+    if not dcc_type:
+        dcc_names = ", ".join(target_dccs)
+        raise HTTPException(
+            status_code=503,
+            detail=err(
+                "DCC_NOT_CONNECTED",
+                f"No connected DCC found for [{dcc_names}]. Please open the target DCC application first.",
+            ),
+        )
+
+    # Read the script file
+    if not tool.tool_path:
+        raise HTTPException(
+            status_code=500,
+            detail=err("TOOL_PATH_MISSING", "Tool has no tool_path configured"),
+        )
+
+    entry_path = Path(tool.tool_path) / entry
+    if not entry_path.exists():
+        raise HTTPException(
+            status_code=500,
+            detail=err("ENTRY_NOT_FOUND", f"Entry script not found: {entry_path}"),
+        )
+
+    script_source = entry_path.read_text(encoding="utf-8")
+
+    # Build execution code: define the script, then call the function with params
+    params_repr = repr(params)
+    if function:
+        # Wrap: exec the script source to define functions, then call the target function
+        exec_code = (
+            f"{script_source}\n\n"
+            f"# --- ArtClaw Tool Manager: auto-call ---\n"
+            f"import json as _json\n"
+            f"_result = {function}(**{params_repr})\n"
+            f"if _result is not None:\n"
+            f"    print(_json.dumps(_result, ensure_ascii=False, default=str))\n"
+        )
+    else:
+        # No function specified, just run the script
+        exec_code = script_source
+
+    # Execute via MCP
+    result = await _dcc_manager.execute_on_dcc(dcc_type, exec_code, timeout=120.0)
+
+    tool.use_count += 1
     return ok({
-        "action": "navigate",
-        "target": "/chat",
-        "command": f"/run tool:{tool_id}",
-        "parameters": body.parameters,
+        "action": "executed",
+        "exit_code": 0 if result["success"] else 1,
+        "stdout": result.get("output", ""),
+        "stderr": result.get("error", ""),
+        "success": result["success"],
+        "dcc": dcc_type,
     })

@@ -6,11 +6,13 @@ import { X, Plus, Trash2 } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { DCC_EVENTS, DCC_DISPLAY_NAMES, DCC_TYPE_PRESETS } from '../../constants/dccTypes'
 import { useAppStore } from '../../stores/appStore'
+import PathVariablesHelp from '../common/PathVariablesHelp'
 import type { TriggerType, EventTiming, ExecutionMode, FilterConfig } from '../../types'
 
 interface TriggerRuleEditorProps {
   initialData?: TriggerFormData
   parameterPresets?: Array<{ id: string; name: string }>
+  defaultFilters?: FilterConfig   // Tool-level default filter conditions
   onSave?: (data: TriggerFormData) => void
   onCancel?: () => void
 }
@@ -22,6 +24,7 @@ export interface TriggerFormData {
   eventType: string
   eventTiming: EventTiming
   executionMode: ExecutionMode
+  useDefaultFilters: boolean
   conditions: FilterConfig
   parameterPreset: Array<{ key: string; value: string }>
   parameterPresetId: string
@@ -30,7 +33,6 @@ export interface TriggerFormData {
 }
 
 const TRIGGER_TYPES: { value: TriggerType; labelZh: string; labelEn: string }[] = [
-  { value: 'manual', labelZh: '手动触发', labelEn: 'Manual' },
   { value: 'event', labelZh: '事件触发', labelEn: 'Event' },
   { value: 'schedule', labelZh: '定时触发', labelEn: 'Schedule' },
   { value: 'watch', labelZh: '文件监听', labelEn: 'Watch' },
@@ -50,11 +52,12 @@ const SCHEDULE_TYPES: { value: string; labelZh: string; labelEn: string }[] = [
 
 const DEFAULT_FORM: TriggerFormData = {
   name: '',
-  triggerType: 'manual',
+  triggerType: 'event',
   dcc: '',
   eventType: '',
   eventTiming: 'post',
   executionMode: 'notify',
+  useDefaultFilters: true,
   conditions: { fileRules: [], sceneRules: [], typeFilter: undefined },
   parameterPreset: [],
   parameterPresetId: '',
@@ -65,6 +68,7 @@ const DEFAULT_FORM: TriggerFormData = {
 export default function TriggerRuleEditor({
   initialData,
   parameterPresets,
+  defaultFilters,
   onSave,
   onCancel,
 }: TriggerRuleEditorProps) {
@@ -85,26 +89,27 @@ export default function TriggerRuleEditor({
   const [filterIsRegex, setFilterIsRegex] = useState(false)
   const [filterDcc, setFilterDcc] = useState('')
 
-  // Initialize filter state from form
+  // Initialize filter state from initialData (once on mount, not on every conditions change)
   useEffect(() => {
-    if (form.conditions) {
-      setFilterFileRules(form.conditions.fileRules?.map(r => r.pattern).join('\n') || '')
-      setFilterSceneRules(form.conditions.sceneRules?.map(r => r.pattern).join('\n') || '')
-      
-      if (form.conditions.typeFilter) {
-        const predefined = form.conditions.typeFilter.types.filter(t => 
-          form.conditions.typeFilter?.dcc && DCC_TYPE_PRESETS[form.conditions.typeFilter.dcc]?.includes(t)
-        )
-        const custom = form.conditions.typeFilter.types.filter(t => 
-          !form.conditions.typeFilter?.dcc || !DCC_TYPE_PRESETS[form.conditions.typeFilter.dcc]?.includes(t)
-        )
-        setFilterTypes(predefined)
-        setFilterCustomTypes(custom.join('\n'))
-        setFilterIsRegex(form.conditions.typeFilter.isRegex || false)
-        setFilterDcc(form.conditions.typeFilter.dcc || '')
-      }
+    const cond = initialData?.conditions
+    if (!cond) return
+    setFilterFileRules(cond.fileRules?.map(r => r.pattern).join('\n') || '')
+    setFilterSceneRules(cond.sceneRules?.map(r => r.pattern).join('\n') || '')
+    
+    if (cond.typeFilter) {
+      const predefined = cond.typeFilter.types.filter(t => 
+        cond.typeFilter?.dcc && DCC_TYPE_PRESETS[cond.typeFilter.dcc]?.includes(t)
+      )
+      const custom = cond.typeFilter.types.filter(t => 
+        !cond.typeFilter?.dcc || !DCC_TYPE_PRESETS[cond.typeFilter.dcc]?.includes(t)
+      )
+      setFilterTypes(predefined)
+      setFilterCustomTypes(custom.join('\n'))
+      setFilterIsRegex(cond.typeFilter.isRegex || false)
+      setFilterDcc(cond.typeFilter.dcc || '')
     }
-  }, [form.conditions])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Run once on mount
 
   // Compute available events based on selected DCC
   const availableEvents = form.dcc ? (DCC_EVENTS[form.dcc] ?? []) : []
@@ -242,31 +247,33 @@ export default function TriggerRuleEditor({
               </FieldRow>
             )}
 
-            {/* Event timing (only when event type is selected) */}
-            {form.eventType && (
-              <FieldRow label={language === 'zh' ? '事件时机' : 'Event Timing'}>
-                <div className="flex gap-2">
-                  {(
-                    availableEvents.find((e) => e.event === form.eventType)?.timing ?? ['pre', 'post']
-                  ).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => updateField('eventTiming', t as EventTiming)}
-                      className={cn(
-                        'px-3 py-1.5 rounded text-small transition-colors',
-                        form.eventTiming === t
-                          ? 'bg-accent text-white'
-                          : 'bg-bg-tertiary text-text-secondary hover:text-text-primary',
-                      )}
-                    >
-                      {t === 'pre'
-                        ? (language === 'zh' ? '事件前 (可拦截)' : 'Before (interceptable)')
-                        : (language === 'zh' ? '事件后' : 'After')}
-                    </button>
-                  ))}
-                </div>
-              </FieldRow>
-            )}
+            {/* Event timing (only when event type is selected AND multiple timings available) */}
+            {form.eventType && (() => {
+              const timings = availableEvents.find((e) => e.event === form.eventType)?.timing ?? []
+              if (timings.length <= 1) return null
+              return (
+                <FieldRow label={language === 'zh' ? '事件时机' : 'Event Timing'}>
+                  <div className="flex gap-2">
+                    {timings.map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => updateField('eventTiming', t as EventTiming)}
+                        className={cn(
+                          'px-3 py-1.5 rounded text-small transition-colors',
+                          form.eventTiming === t
+                            ? 'bg-accent text-white'
+                            : 'bg-bg-tertiary text-text-secondary hover:text-text-primary',
+                        )}
+                      >
+                        {t === 'pre'
+                          ? (language === 'zh' ? '事件前 (可拦截)' : 'Before (interceptable)')
+                          : (language === 'zh' ? '事件后' : 'After')}
+                      </button>
+                    ))}
+                  </div>
+                </FieldRow>
+              )
+            })()}
           </>
         )}
 
@@ -337,17 +344,13 @@ export default function TriggerRuleEditor({
           </>
         )}
 
-        {/* Watch-specific fields */}
+        {/* Watch-specific: no separate path input — uses filter conditions below */}
         {form.triggerType === 'watch' && (
-          <FieldRow label={language === 'zh' ? '监听路径' : 'Watch Path'}>
-            <input
-              type="text"
-              value={form.conditions.fileRules?.[0]?.pattern || ''}
-              onChange={(e) => setFilterFileRules(e.target.value)}
-              placeholder={language === 'zh' ? '例: D:/Projects/**/*.fbx' : 'e.g. D:/Projects/**/*.fbx'}
-              className={inputCls}
-            />
-          </FieldRow>
+          <div className="text-[11px] text-text-dim px-1 py-2 bg-bg-tertiary rounded border border-border-default">
+            {language === 'zh'
+              ? '💡 监听路径请在下方「筛选条件 → 文件筛选规则」中填写，支持 $variable 路径变量（如 $skills_installed/**/*.md）'
+              : '💡 Set watch paths in "Filter Conditions → File filter rules" below. Supports $variable path variables.'}
+          </div>
         )}
 
         {/* Execution Mode */}
@@ -370,29 +373,65 @@ export default function TriggerRuleEditor({
           </div>
         </FieldRow>
 
-        {/* Inline Filter Conditions */}
+        {/* Inline Filter Conditions — only for watch (file paths) and event (scene objects) */}
+        {(form.triggerType === 'watch' || form.triggerType === 'event') && (
         <FieldRow label={language === 'zh' ? '筛选条件' : 'Filter Conditions'}>
           <div className="space-y-3 border rounded-lg p-3 bg-bg-tertiary">
-            <div>
-              <label className="block text-[11px] text-text-dim mb-1">{language === 'zh' ? '文件筛选规则 (每行一条, gitignore 风格)' : 'File filter rules (one per line, gitignore style)'}</label>
-              <textarea 
-                value={filterFileRules} 
-                onChange={(e) => setFilterFileRules(e.target.value)} 
-                rows={2} 
-                placeholder="/Characters/**/*.fbx&#10;!backup/" 
-                className={cn(inputCls, 'font-mono text-[11px] resize-y')} />
-            </div>
-            
-            <div>
-              <label className="block text-[11px] text-text-dim mb-1">{language === 'zh' ? '场景对象筛选 (每行一条正则)' : 'Scene object filter (one regex per line)'}</label>
-              <textarea 
-                value={filterSceneRules} 
-                onChange={(e) => setFilterSceneRules(e.target.value)} 
-                rows={2} 
-                placeholder="^SM_.*" 
-                className={cn(inputCls, 'font-mono text-[11px] resize-y')} />
-            </div>
-            
+            {/* Use default filters toggle (only show when tool has defaultFilters) */}
+            {defaultFilters && (
+              <div className="flex items-center gap-2 pb-2 border-b border-border-default/50">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.useDefaultFilters}
+                    onChange={(e) => updateField('useDefaultFilters', e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-border-default bg-bg-tertiary accent-accent"
+                  />
+                  <span className="text-small text-text-secondary">
+                    {language === 'zh' ? '使用工具默认筛选条件' : 'Use tool default filters'}
+                  </span>
+                </label>
+                {form.useDefaultFilters && defaultFilters.path && defaultFilters.path.length > 0 && (
+                  <span className="text-[10px] text-text-dim ml-auto">
+                    {defaultFilters.path.map(p => p.pattern).join(', ')}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Custom filter fields — hidden when useDefaultFilters is on */}
+            {!form.useDefaultFilters && (
+              <>
+                <div>
+                  <label className="block text-[11px] text-text-dim mb-1.5">
+                    {form.triggerType === 'watch'
+                      ? (language === 'zh' ? '文件路径规则 (支持 $variable 和 glob)' : 'File path rules (supports $variable and glob)')
+                      : (language === 'zh' ? '文件筛选规则 (gitignore 风格)' : 'File filter rules (gitignore style)')}
+                  </label>
+                  <PathRuleList
+                    rules={filterFileRules.split('\n').filter(Boolean)}
+                    onChange={(rules) => setFilterFileRules(rules.join('\n'))}
+                    placeholder={form.triggerType === 'watch' ? '$project_root/tools/**/*' : '/Characters/**/*.fbx'}
+                    inputCls={inputCls}
+                    language={language}
+                  />
+                </div>
+                
+                {/* Scene object filter — only for event triggers (DCC scene context), not watch/schedule */}
+                {(form.triggerType === 'event') && (
+                  <div>
+                    <label className="block text-[11px] text-text-dim mb-1">{language === 'zh' ? '场景对象筛选 (每行一条正则)' : 'Scene object filter (one regex per line)'}</label>
+                    <textarea 
+                      value={filterSceneRules} 
+                      onChange={(e) => setFilterSceneRules(e.target.value)} 
+                      rows={2} 
+                      placeholder="^SM_.*" 
+                      className={cn(inputCls, 'font-mono text-[11px] resize-y')} />
+                  </div>
+                )}
+                
+                {/* Object type filter — only for event triggers */}
+                {(form.triggerType === 'event') && (
             <div>
               <label className="block text-[11px] text-text-dim mb-1">{language === 'zh' ? '对象类型筛选' : 'Object type filter'}</label>
               <div className="flex items-center gap-2 mb-2">
@@ -400,7 +439,7 @@ export default function TriggerRuleEditor({
                   value={filterDcc} 
                   onChange={(e) => { setFilterDcc(e.target.value); setFilterTypes([]) }} 
                   className={cn(inputCls, 'w-32')}>
-                  <option value="">DCC</option>
+                  <option value="">{language === 'zh' ? '选择DCC' : 'Select DCC'}</option>
                   {Object.keys(DCC_TYPE_PRESETS).map((d) => <option key={d} value={d}>{DCC_DISPLAY_NAMES[d] ?? d}</option>)}
                 </select>
                 <label className="flex items-center gap-1.5 text-[11px] text-text-secondary cursor-pointer">
@@ -438,8 +477,15 @@ export default function TriggerRuleEditor({
                   className={cn(inputCls, 'font-mono text-[11px] resize-y')} />
               </div>
             </div>
+            )}
+              </>
+            )}
+            
+            {/* Path variables help link */}
+            <PathVariablesHelp language={language} />
           </div>
         </FieldRow>
+        )}
 
         {/* Parameter Presets (inline key-value) */}
         <FieldRow label={language === 'zh' ? '参数预设' : 'Parameter Preset'}>
@@ -531,6 +577,72 @@ export default function TriggerRuleEditor({
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+// ---------- Path rule list (input list instead of textarea) ----------
+
+function PathRuleList({
+  rules,
+  onChange,
+  placeholder,
+  inputCls,
+  language,
+}: {
+  rules: string[]
+  onChange: (rules: string[]) => void
+  placeholder: string
+  inputCls: string
+  language: string
+}) {
+  const zh = language === 'zh'
+  
+  const updateRule = (index: number, value: string) => {
+    const next = [...rules]
+    next[index] = value
+    onChange(next)
+  }
+  
+  const removeRule = (index: number) => {
+    onChange(rules.filter((_, i) => i !== index))
+  }
+  
+  const addRule = () => {
+    onChange([...rules, ''])
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {rules.map((rule, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={rule}
+            onChange={(e) => updateRule(i, e.target.value)}
+            placeholder={placeholder}
+            className={cn(inputCls, 'flex-1 font-mono text-[11px]')}
+          />
+          <button
+            onClick={() => removeRule(i)}
+            className="p-1 rounded text-error/60 hover:text-error hover:bg-error/10 transition-colors shrink-0"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      ))}
+      {rules.length === 0 && (
+        <div className="text-[11px] text-text-dim py-1">
+          {zh ? '暂无路径规则' : 'No path rules'}
+        </div>
+      )}
+      <button
+        onClick={addRule}
+        className="flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+      >
+        <Plus className="w-3 h-3" />
+        {zh ? '添加路径规则' : 'Add path rule'}
+      </button>
     </div>
   )
 }

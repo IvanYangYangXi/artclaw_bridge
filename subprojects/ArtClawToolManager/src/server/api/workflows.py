@@ -61,6 +61,19 @@ async def list_workflows(
 
 
 # ------------------------------------------------------------------
+# Recent usage  (must be before /{workflow_id:path})
+# ------------------------------------------------------------------
+
+@router.get("/recent")
+async def get_recent_workflows(
+    limit: int = Query(10, ge=1, le=50),
+):
+    """Get recently used workflows (by last_used timestamp)."""
+    workflows, _ = _svc.list_workflows(sort_by="last_used", sort_order="desc", limit=limit)
+    return ok([w.to_dict() for w in workflows])
+
+
+# ------------------------------------------------------------------
 # Batch  (must be registered BEFORE /{workflow_id} routes)
 # ------------------------------------------------------------------
 

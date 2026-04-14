@@ -142,7 +142,7 @@ interface SkillsState {
   doPin: (id: string) => Promise<void>
   doUnpin: (id: string) => Promise<void>
   doSyncFromSource: (id: string) => Promise<void>
-  doPublishToSource: (id: string) => Promise<void>
+  doPublishToSource: (id: string, options?: { version?: string; description?: string; target?: string; dcc?: string }) => Promise<void>
 }
 
 const TAB_SOURCE_MAP: Record<SkillTab, ToolSource | null> = {
@@ -187,7 +187,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       list = list.filter((s) => s.targetDCCs.includes(dccFilter))
     }
 
-    if (statusFilter) {
+    if (statusFilter === 'pending_publish') {
+      list = list.filter((s) => s.syncStatus === 'installed_newer' || s.syncStatus === 'modified')
+    } else if (statusFilter) {
       list = list.filter((s) => s.status === statusFilter)
     }
 
@@ -273,7 +275,11 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
         sk.id === id ? { ...sk, status: 'installed' as ToolStatus, runtimeStatus: { enabled: true, pinned: false, favorited: false } } : sk,
       ),
     }))
-    try { await installSkill(id) } catch { /* rollback if needed */ }
+    try {
+      await installSkill(id)
+      // Re-fetch to get correct skill_path and sync_status
+      await get().fetchSkillsList()
+    } catch { /* rollback if needed */ }
   },
 
   doUninstall: async (id) => {
@@ -282,7 +288,11 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
         sk.id === id ? { ...sk, status: 'not_installed' as ToolStatus, runtimeStatus: undefined } : sk,
       ),
     }))
-    try { await uninstallSkill(id) } catch { /* rollback if needed */ }
+    try {
+      await uninstallSkill(id)
+      // Re-fetch to get updated state
+      await get().fetchSkillsList()
+    } catch { /* rollback if needed */ }
   },
 
   doUpdate: async (id) => {
@@ -348,9 +358,18 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     }
   },
 
-  doPublishToSource: async (id) => {
+  doPublishToSource: async (id, options) => {
     try {
-      await fetch(`/api/v1/skills/${encodeURIComponent(id)}/publish-to-source`, { method: 'POST' })
+      await fetch(`/api/v1/skills/${encodeURIComponent(id)}/publish-to-source`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          version: options?.version,
+          description: options?.description,
+          target: options?.target,
+          dcc: options?.dcc,
+        }),
+      })
       // Re-fetch to get updated sync status
       await get().fetchSkillsList()
     } catch (error) {

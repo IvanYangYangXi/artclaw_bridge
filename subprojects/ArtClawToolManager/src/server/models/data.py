@@ -63,6 +63,9 @@ class ToolData:
     is_pinned: bool = False
     is_favorited: bool = False
     use_count: int = 0
+    author: str = ""
+    created_at: str = ""
+    updated_at: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return vars(self).copy()
@@ -114,6 +117,7 @@ class TriggerRuleData:
     conditions: Dict[str, Any] = field(default_factory=dict)
     parameter_preset: Dict[str, Any] = field(default_factory=dict)
     is_enabled: bool = True
+    use_default_filters: bool = False
     schedule_config: Dict[str, Any] = field(default_factory=dict)
     dcc: str = ""  # DCC this rule applies to
     filter_preset_id: str = ""  # reference to global filter preset

@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "artclaw_knowledge",
+  "display_name": "Artclaw Knowledge",
+  "description": "Search ArtClaw local knowledge base for UE/Maya/Max API docs, code examples, naming conventions, and best practices. Use when AI needs to: (1) look up correct API usage before writing code, (2) find code examples for specific operations, (3) check naming conventions or project standards. Replaces old MCP tool: knowledge_search.",
+  "version": "0.2.3",
+  "author": "ArtClaw",
+  "software": "universal",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "artclaw_knowledge",
+      "description": "Search ArtClaw local knowledge base for UE/Maya/Max API docs, code examples, naming conventions, and best practices. Use when AI needs to: (1) look up correct API usage before writing code, (2) find code examples for specific operations, (3) check naming conventions or project standards. Replaces old MCP tool: knowledge_search."
+    }
+  ]
+}

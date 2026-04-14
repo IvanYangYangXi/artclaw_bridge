@@ -13,10 +13,10 @@ import platform
 import os
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Body
 
 from ..schemas.common import err, ok, ok_list
-from ..schemas.skill import SkillBatchRequest
+from ..schemas.skill import SkillBatchRequest, SkillPublishRequest
 from ..services.config_manager import ConfigManager
 from ..services.recent_usage_service import RecentUsageService
 from ..services.skill_service import SkillService
@@ -103,6 +103,34 @@ async def get_recent_skills(
 
 
 # ------------------------------------------------------------------
+# Install / Uninstall (must be before /{skill_id:path} routes)
+# ------------------------------------------------------------------
+
+@router.post("/{skill_id:path}/install")
+async def install_skill(skill_id: str):
+    """Install a skill from source directory."""
+    try:
+        result = _svc.install_skill(skill_id)
+        return ok(result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=err("INSTALL_FAILED", str(e)))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=err("INTERNAL_ERROR", str(e)))
+
+
+@router.post("/{skill_id:path}/uninstall")
+async def uninstall_skill(skill_id: str):
+    """Uninstall a skill (remove from installed directory)."""
+    try:
+        result = _svc.uninstall_skill(skill_id)
+        return ok(result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=err("UNINSTALL_FAILED", str(e)))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=err("INTERNAL_ERROR", str(e)))
+
+
+# ------------------------------------------------------------------
 # Directory Operations (must be before /{skill_id:path} routes)
 # ------------------------------------------------------------------
 
@@ -174,10 +202,21 @@ async def sync_from_source(skill_id: str):
 
 
 @router.post("/{skill_id:path}/publish-to-source")
-async def publish_to_source(skill_id: str):
+async def publish_to_source(
+    skill_id: str,
+    body: Optional[SkillPublishRequest] = Body(None),
+):
     """Publish skill from installed directory to source directory."""
     try:
-        result = _svc.publish_to_source(skill_id)
+        b = body or SkillPublishRequest()
+        result = _svc.publish_to_source(
+            skill_id,
+            version=b.version,
+            bump=b.bump,
+            changelog=b.description,
+            target_layer=b.target,
+            dcc=b.dcc,
+        )
         return ok(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=err("PUBLISH_FAILED", str(e)))

@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "ue57_artclaw_context",
+  "display_name": "Ue57 Artclaw Context",
+  "description": "Query DCC editor context: current selection, scene info, level/file name, viewport camera, object counts. Use when AI needs to: (1) get selected objects, (2) get scene overview, (3) check current level/file, (4) inspect viewport state. Works with UE (run_ue_python), Maya and Max (run_python). Replaces old MCP tools: get_editor_context, get_selected_objects, get_scene_info.",
+  "version": "0.1.1",
+  "author": "ArtClaw",
+  "software": "unreal_engine",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "ue57_artclaw_context",
+      "description": "Query DCC editor context: current selection, scene info, level/file name, viewport camera, object counts. Use when AI needs to: (1) get selected objects, (2) get scene overview, (3) check current level/file, (4) inspect viewport state. Works with UE (run_ue_python), Maya and Max (run_python). Replaces old MCP tools: get_editor_context, get_selected_objects, get_scene_info."
+    }
+  ]
+}

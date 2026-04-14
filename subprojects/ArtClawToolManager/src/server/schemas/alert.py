@@ -33,6 +33,7 @@ class Alert(AlertBase):
     id: str = Field(..., min_length=1)  # 唯一 ID
     createdAt: str = Field(...)  # 创建时间 (ISO)
     resolvedAt: Optional[str] = None  # 解决时间 (ISO)
+    updatedAt: Optional[str] = None  # 最后更新时间 (ISO, 去重更新时写入)
     
     class Config:
         """Pydantic config."""

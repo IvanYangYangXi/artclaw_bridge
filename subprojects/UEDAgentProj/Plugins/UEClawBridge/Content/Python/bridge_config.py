@@ -177,8 +177,199 @@ def get_platform_config_path() -> str:
 
 
 # ---------------------------------------------------------------------------
-# 统一 Gateway 连接 API（跨平台配置差异屏蔽）
+# Skill 检查目录 API（平台侧统一查询接口）
 # ---------------------------------------------------------------------------
+
+def get_skill_checker_dirs() -> dict:
+    """
+    返回当前平台下 Skill 检查所需的全部目录信息。
+
+    此函数是平台侧插件向检查工具（skill-version-checker、Tool Manager）
+    提供目录信息的统一 API。所有需要检查的路径由平台插件的
+    _PLATFORM_DEFAULTS 和用户配置决定，检查工具不得硬编码任何路径。
+
+    返回结构::
+
+        {
+            "platform_type": "openclaw",          # 当前平台
+            "skills_installed_path": "/abs/path", # 已安装 Skill 目录
+            "project_root": "/abs/path",          # 项目源码根目录（可能为 ""）
+            "dcc_install_dirs": [                 # 各 DCC 安装副本目录
+                {
+                    "label": "Maya 2024",
+                    "dcc": "maya",
+                    "path": "/abs/path/to/DCCClawBridge",
+                    "install_path": "/abs/path/to/maya/scripts/DCCClawBridge",
+                },
+                ...
+            ],
+            "core_module_copies": [               # 核心模块的各副本位置
+                {
+                    "label": "DCC core",
+                    "src": "/abs/path/core/skill_sync.py",
+                    "dst": "/abs/path/DCCClawBridge/core/skill_sync.py",
+                },
+                ...
+            ],
+        }
+
+    Notes:
+        - 所有路径均为绝对路径（已展开 ~）。
+        - 若路径不存在，照常返回（调用方自行判断）。
+        - DCC 安装目录通过自动检测得到，未安装的 DCC 不会出现在列表中。
+    """
+    ac = load_artclaw_config()
+    platform_type = ac.get("platform", {}).get("type", "openclaw")
+    project_root = ac.get("project_root", "")
+    skills_installed = get_skills_installed_path()
+
+    result = {
+        "platform_type": platform_type,
+        "skills_installed_path": skills_installed,
+        "project_root": project_root,
+        "dcc_install_dirs": [],
+        "core_module_copies": [],
+    }
+
+    if not project_root:
+        return result
+
+    pr = Path(project_root)
+    dcc_src = pr / "subprojects" / "DCCClawBridge"
+    ue_py = pr / "subprojects" / "UEDAgentProj" / "Plugins" / "UEClawBridge" / "Content" / "Python"
+
+    # ── Core module copies ──────────────────────────────────────────────
+    CORE_MODULES = ["skill_sync.py", "bridge_core.py", "bridge_config.py", "memory_core.py"]
+    for mod in CORE_MODULES:
+        src = pr / "core" / mod
+        result["core_module_copies"].append({
+            "label": f"core → DCC  {mod}", "src": str(src),
+            "dst": str(dcc_src / "core" / mod),
+        })
+        result["core_module_copies"].append({
+            "label": f"core → UE   {mod}", "src": str(src),
+            "dst": str(ue_py / mod),
+        })
+
+    # ── DCC install dirs（自动检测） ──────────────────────────────────────
+    import os as _os
+
+    # Maya
+    maya_base = Path(_os.path.expanduser("~/Documents/maya"))
+    if maya_base.exists():
+        ver_dirs = sorted(
+            [d for d in maya_base.iterdir() if d.is_dir() and d.name.isdigit()],
+            key=lambda d: d.name, reverse=True,
+        )
+        for vd in ver_dirs[:2]:  # 检查最近两个版本
+            scripts = vd / "scripts" / "DCCClawBridge"
+            if scripts.exists():
+                result["dcc_install_dirs"].append({
+                    "label": f"Maya {vd.name}",
+                    "dcc": "maya",
+                    "path": str(dcc_src),
+                    "install_path": str(scripts),
+                })
+            for locale_d in sorted(vd.iterdir()):
+                if locale_d.is_dir() and "_" in locale_d.name and locale_d.name[0].islower():
+                    lscripts = locale_d / "scripts" / "DCCClawBridge"
+                    if lscripts.exists():
+                        result["dcc_install_dirs"].append({
+                            "label": f"Maya {vd.name}/{locale_d.name}",
+                            "dcc": "maya",
+                            "path": str(dcc_src),
+                            "install_path": str(lscripts),
+                        })
+
+    # 3ds Max
+    max_base = Path(_os.path.expanduser("~/AppData/Roaming/Autodesk"))
+    if max_base.exists():
+        for entry in sorted(max_base.iterdir(), reverse=True):
+            if entry.is_dir() and entry.name.startswith("3dsMax"):
+                scripts = entry / "scripts" / "DCCClawBridge"
+                if scripts.exists():
+                    result["dcc_install_dirs"].append({
+                        "label": f"3ds Max {entry.name}",
+                        "dcc": "max",
+                        "path": str(dcc_src),
+                        "install_path": str(scripts),
+                    })
+                    break
+
+    # Blender
+    bl_base = Path(_os.path.expanduser("~/AppData/Roaming/Blender Foundation/Blender"))
+    if not bl_base.exists():
+        bl_base = Path(_os.path.expanduser("~/.config/blender"))
+    if bl_base.exists():
+        for vd in sorted(bl_base.iterdir(), reverse=True):
+            addon = vd / "scripts" / "addons" / "artclaw_bridge"
+            if addon.exists():
+                result["dcc_install_dirs"].append({
+                    "label": f"Blender {vd.name}",
+                    "dcc": "blender",
+                    "path": str(dcc_src),
+                    "install_path": str(addon),
+                })
+                break
+
+    # Houdini
+    docs = Path(_os.path.expanduser("~/Documents"))
+    if docs.exists():
+        for entry in sorted(docs.iterdir(), reverse=True):
+            if entry.is_dir() and entry.name.startswith("houdini"):
+                dcc_dir = entry / "scripts" / "python" / "DCCClawBridge"
+                if dcc_dir.exists():
+                    result["dcc_install_dirs"].append({
+                        "label": f"Houdini {entry.name}",
+                        "dcc": "houdini",
+                        "path": str(dcc_src),
+                        "install_path": str(dcc_dir),
+                    })
+                    break
+
+    # Substance Painter
+    sp_dir = Path(_os.path.expanduser(
+        "~/Documents/Adobe/Adobe Substance 3D Painter/python/plugins/artclaw_bridge"))
+    if sp_dir.exists():
+        result["dcc_install_dirs"].append({
+            "label": "Substance Painter",
+            "dcc": "sp",
+            "path": str(dcc_src),
+            "install_path": str(sp_dir),
+        })
+
+    # Substance Designer
+    sd_dir = Path(_os.path.expanduser(
+        "~/Documents/Adobe/Adobe Substance 3D Designer/python/sduserplugins/artclaw_bridge"))
+    if sd_dir.exists():
+        result["dcc_install_dirs"].append({
+            "label": "Substance Designer",
+            "dcc": "sd",
+            "path": str(dcc_src),
+            "install_path": str(sd_dir),
+        })
+
+    # ComfyUI
+    comfyui_dirs = [
+        Path(_os.path.expanduser("~/ComfyUI/custom_nodes/artclaw_bridge")),
+        Path(_os.path.expanduser("~/Desktop/ComfyUI/custom_nodes/artclaw_bridge")),
+    ]
+    # 也从 artclaw config 读取 ComfyUI 路径
+    comfyui_custom_path = ac.get("comfyui", {}).get("custom_nodes_path", "")
+    if comfyui_custom_path:
+        comfyui_dirs.insert(0, Path(_os.path.expanduser(comfyui_custom_path)) / "artclaw_bridge")
+    for cu_dir in comfyui_dirs:
+        if cu_dir.exists():
+            result["dcc_install_dirs"].append({
+                "label": "ComfyUI",
+                "dcc": "comfyui",
+                "path": str(dcc_src),
+                "install_path": str(cu_dir),
+            })
+            break
+
+    return result
+
 
 def get_gateway_url() -> str:
     """获取 Gateway WebSocket URL。

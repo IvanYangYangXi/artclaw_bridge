@@ -111,7 +111,7 @@ Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 +
 | **Houdini** | — | ⚠️ Not Verified | DCCClawBridge | 8084 | Code implemented, hdefereval main-thread scheduling, not tested |
 | **Substance Painter** | 11.0.1 | ✅ Verified | DCCClawBridge | 8085 | SP built-in Qt + QTimer polling |
 | **Substance Designer** | 12.1.0 | ✅ Verified | DCCClawBridge | 8086 | SD built-in Qt + QTimer polling, pre-injected sd.api vars |
-| **ComfyUI** | Latest | ✅ Verified | ComfyUIClawBridge | 8087 | Custom node, Python-only, WS MCP Server, no visible nodes |
+| **ComfyUI** | V0.19.0 | ✅ Verified | ComfyUIClawBridge | 8087 | Custom node, Python-only, WS MCP Server, no visible nodes |
 | **Other UE / Maya Versions** | — | ⚠️ Not Verified | — | — | Theoretically compatible with UE 5.3+ / Maya 2022+, not tested |
 
 ### Agent Platforms

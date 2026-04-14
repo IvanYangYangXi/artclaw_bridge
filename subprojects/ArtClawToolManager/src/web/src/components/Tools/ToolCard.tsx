@@ -159,6 +159,18 @@ export default function ToolCard({ tool, onRun, onEdit }: ToolCardProps) {
         <span>{SOURCE_LABEL[tool.source]}</span>
         <span>·</span>
         <span>v{tool.version ?? '0.0.0'}</span>
+        {tool.author && (
+          <>
+            <span>·</span>
+            <span>{tool.author}</span>
+          </>
+        )}
+        {tool.updatedAt && (
+          <>
+            <span>·</span>
+            <span>{tool.updatedAt.slice(0, 10)}</span>
+          </>
+        )}
         {tool.targetDCCs.length > 0 && (
           <>
             <span>·</span>

@@ -12,6 +12,7 @@ Handles:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -106,11 +107,16 @@ class MessageRouter:
             {"type": "typing", "is_typing": True, "source": "assistant"},
         )
 
-        await self._gw.send_chat_message(
-            session_id=session_id,
-            content=content,
-            agent_id=message.get("agent_id"),
-            attachments=message.get("attachments"),
+        # Fire-and-forget: do NOT await here, so cancel messages can be
+        # processed concurrently while the SSE stream is running.
+        asyncio.create_task(
+            self._gw.send_chat_message(
+                session_id=session_id,
+                content=content,
+                agent_id=message.get("agent_id"),
+                attachments=message.get("attachments"),
+            ),
+            name=f"chat-{session_id}",
         )
 
     # ------------------------------------------------------------------

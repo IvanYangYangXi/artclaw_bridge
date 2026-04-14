@@ -861,20 +861,43 @@ def _update_skill_md_version(skill_md_path: Path, new_version: str) -> bool:
 
 
 def _infer_dcc_from_name(skill_name: str) -> str:
-    """从 Skill 名称推断 DCC 类型"""
-    if skill_name.startswith("ue"):
+    """从 Skill 名称推断 DCC 类型（仅用于发布时确定目标子目录，非 source 分类）。
+
+    优先从已安装目录的 SKILL.md metadata.artclaw.software 字段读取，
+    读不到时才用名称前缀作为 fallback。
+    """
+    # 先尝试从已安装目录的 SKILL.md 读取 software 字段
+    installed_dir = _get_openclaw_skills_dir() / skill_name
+    skill_md_path = installed_dir / "SKILL.md"
+    if skill_md_path.exists():
+        fm = _parse_frontmatter_light(skill_md_path)
+        software = fm.get("software", "")
+        _SOFTWARE_TO_DCC_DIR = {
+            "unreal_engine": "unreal", "ue": "unreal", "ue5": "unreal",
+            "maya": "maya", "3ds_max": "max", "3dsmax": "max",
+            "blender": "blender", "houdini": "houdini",
+            "substance_painter": "substance_painter",
+            "substance_designer": "substance_designer",
+            "comfyui": "comfyui", "universal": "universal",
+        }
+        if software:
+            return _SOFTWARE_TO_DCC_DIR.get(software.lower(), "universal")
+
+    # Fallback: 名称前缀推断（仅做最终兜底，精度有限）
+    low = skill_name.lower()
+    if low.startswith("ue"):
         return "unreal"
-    elif skill_name.startswith("maya"):
+    elif low.startswith("maya"):
         return "maya"
-    elif skill_name.startswith("max"):
+    elif low.startswith("max"):
         return "max"
-    elif skill_name.startswith("sd-") or skill_name.startswith("sd_"):
+    elif low.startswith("sd-") or low.startswith("sd_"):
         return "substance_designer"
-    elif skill_name.startswith("sp-") or skill_name.startswith("sp_"):
+    elif low.startswith("sp-") or low.startswith("sp_"):
         return "substance_painter"
-    elif skill_name.startswith("blender"):
+    elif low.startswith("blender"):
         return "blender"
-    elif skill_name.startswith("houdini"):
+    elif low.startswith("houdini"):
         return "houdini"
     else:
         return "universal"

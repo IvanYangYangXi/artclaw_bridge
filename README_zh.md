@@ -109,7 +109,7 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
 | **Houdini** | — | ⚠️ 未验证 | DCCClawBridge | 8084 | 代码已实现，hdefereval 主线程调度，未测试 |
 | **Substance Painter** | 11.0.1 | ✅ 已验证 | DCCClawBridge | 8085 | SP 内置 Qt + QTimer 轮询 |
 | **Substance Designer** | 12.1.0 | ✅ 已验证 | DCCClawBridge | 8086 | SD 内置 Qt + QTimer 轮询，预注入 sd.api 变量 |
-| **ComfyUI** | 最新版 | ✅ 已验证 | ComfyUIClawBridge | 8087 | 自定义节点，纯 Python，MCP WS Server，无可见节点 |
+| **ComfyUI** | V0.19.0 | ✅ 已验证 | ComfyUIClawBridge | 8087 | 自定义节点，纯 Python，MCP WS Server，无可见节点 |
 | **其他 UE / Maya 版本** | — | ⚠️ 未验证 | — | — | 理论上兼容 UE 5.3+ / Maya 2022+，未测试 |
 
 ### Agent 平台

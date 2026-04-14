@@ -5,6 +5,10 @@ description: >
   conventions, and best practices. Use when AI needs to: (1) look up correct API usage
   before writing code, (2) find code examples for specific operations, (3) check naming
   conventions or project standards. Replaces old MCP tool: knowledge_search.
+metadata:
+  artclaw:
+    version: 0.2.3
+    author: ArtClaw
 ---
 
 # ArtClaw 知识库搜索

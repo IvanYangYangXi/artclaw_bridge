@@ -73,7 +73,7 @@ export default function ToolsPage() {
       const params = (tool.manifest?.inputs ?? []).map((inp) => ({
         id: inp.id,
         name: inp.name,
-        type: inp.type as 'string' | 'number' | 'boolean' | 'enum' | 'image',
+        type: inp.type as 'string' | 'number' | 'boolean' | 'enum' | 'select' | 'image',
         required: inp.required,
         default: inp.default,
         min: inp.min,
@@ -95,10 +95,10 @@ export default function ToolsPage() {
         // Check if composite contains skill references
         const tools = tool.manifest?.implementation?.tools ?? []
         needsAI = tools.some((toolRef: string) => toolRef.startsWith('skill:'))
-      } else if (tool.implementationType === 'script') {
-        needsAI = false
       }
       
+      // Extract implementation details for AI execution context
+      const impl = tool.manifest?.implementation
       setExecutionContext({
         type: 'tool',
         id: tool.id,
@@ -106,6 +106,11 @@ export default function ToolsPage() {
         parameters: params,
         values: defaults,
         needsAI,
+        toolPath: tool.toolPath,
+        entryScript: impl?.entry,
+        aiPrompt: impl?.aiPrompt,
+        skillRef: impl?.skill,
+        implementationType: tool.implementationType,
       })
       
       // Set prefill message

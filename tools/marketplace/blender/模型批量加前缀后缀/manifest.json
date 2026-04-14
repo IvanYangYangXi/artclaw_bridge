@@ -1,13 +1,15 @@
 {
   "id": "user/blender-rename-prefix-suffix",
   "name": "模型批量加前缀后缀",
-  "description": "批量为 Blender 选中的对象名称添加前缀和/或后缀。支持自定义分隔符，适用于资产命名规范化。",
+  "description": "批量为 Blender 选中的对象添加命名前缀和/或后缀，支持自定义指定字符，符合资产命名规范标准",
   "version": "1.0.1",
+  "author": "ArtClaw",
   "source": "marketplace",
   "targetDCCs": [
     "blender"
   ],
-  "author": "User",
+  "createdAt": "2026-04-13 18:00:00",
+  "updatedAt": "2026-04-13 21:30:00",
   "implementation": {
     "type": "script",
     "entry": "main.py",
@@ -20,7 +22,7 @@
       "type": "string",
       "required": false,
       "default": "",
-      "description": "添加到对象名称前面的文本，留空则不添加"
+      "description": "添加到对象名称前面的文本（留空则不添加）"
     },
     {
       "id": "suffix",
@@ -28,7 +30,7 @@
       "type": "string",
       "required": false,
       "default": "",
-      "description": "添加到对象名称后面的文本，留空则不添加"
+      "description": "添加到对象名称后面的文本（留空则不添加）"
     },
     {
       "id": "separator",
@@ -55,7 +57,7 @@
         "all",
         "collection"
       ],
-      "description": "selected=仅选中对象，all=场景全部对象，collection=当前活跃集合"
+      "description": "selected=当前选中对象 all=场景全部对象 collection=当前活跃集合"
     }
   ],
   "outputs": [

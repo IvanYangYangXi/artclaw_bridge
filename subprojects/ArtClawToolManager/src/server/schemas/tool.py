@@ -50,6 +50,7 @@ class ToolUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     version: Optional[str] = None
+    author: Optional[str] = None
     target_dccs: Optional[List[str]] = None
     implementation_type: Optional[ImplementationTypeEnum] = None
     manifest: Optional[Dict[str, Any]] = None
@@ -83,6 +84,7 @@ class ToolResponse(BaseModel):
     name: str
     description: str = ""
     version: str = "0.0.0"
+    author: str = ""
     source: ToolSourceEnum = ToolSourceEnum.USER
     target_dccs: List[str] = Field(default_factory=list)
     status: ToolStatusEnum = ToolStatusEnum.INSTALLED
@@ -95,7 +97,7 @@ class ToolResponse(BaseModel):
     manifest: Dict[str, Any] = Field(default_factory=dict)
     implementation_type: ImplementationTypeEnum = ImplementationTypeEnum.SCRIPT
     priority: int = 0
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
     model_config = {"from_attributes": True}

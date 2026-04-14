@@ -247,6 +247,36 @@ AI: [开始执行 Workflow...]
     [显示结果图片]
 ```
 
+### 2.3 AI 执行消息格式
+
+前端发送给 AI Agent 的消息会自动附带工具的定位信息，确保 AI 能精确找到并执行工具脚本：
+
+```
+请执行Tool "批量重命名"
+
+工具目录: C:\Users\xxx\.artclaw\tools\user\batch-rename
+入口脚本: main.py
+实现方式: script
+关联 Skill: blender-operation-rules     ← 仅 skill_wrapper 类型
+AI 执行指引: 读取入口脚本并执行...       ← 来自 manifest.implementation.aiPrompt
+
+参数:
+{ "prefix": "SM_", "start_number": 1 }
+
+参数定义:
+[ { "id": "prefix", "name": "前缀", "type": "string", "required": true } ]
+```
+
+**消息中包含的关键字段**:
+
+| 字段 | 来源 | 用途 |
+|------|------|------|
+| 工具目录 `toolPath` | 后端扫描的磁盘路径 | AI 定位脚本文件 |
+| 入口脚本 `entryScript` | manifest.implementation.entry | AI 知道执行哪个文件 |
+| 实现方式 `implementationType` | manifest.implementation.type | AI 选择执行策略 |
+| 关联 Skill `skillRef` | manifest.implementation.skill | skill_wrapper 引用的 Skill |
+| AI 执行指引 `aiPrompt` | manifest.implementation.aiPrompt | 自定义的 AI 执行指令 |
+
 ---
 
 ## 3. 数据模型

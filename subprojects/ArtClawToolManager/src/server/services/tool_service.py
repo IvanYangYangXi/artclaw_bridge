@@ -18,6 +18,7 @@ import uuid
 from ..models.data import ToolData
 from ..services.config_manager import ConfigManager
 from ..services.tool_scanner import scan_tools
+from ..services.trigger_service import TriggerService
 
 from ..core.config import settings
 
@@ -28,6 +29,7 @@ class ToolService:
     def __init__(self, config: ConfigManager):
         self.config = config
         self._cache: List[ToolData] = []
+        self._last_sync_time: float = 0  # epoch seconds
 
     # ------------------------------------------------------------------
     # Scan & build
@@ -60,10 +62,25 @@ class ToolService:
                 is_enabled=not is_disabled,
                 is_pinned=tool_id in pinned_set,
                 is_favorited=tool_id in fav_set,
+                author=s.author,
+                created_at=s.created_at,
+                updated_at=s.updated_at,
             )
             result.append(td)
 
         self._cache = result
+
+        # Auto-sync manifest triggers on every scan (insert/update/delete)
+        # Throttle: skip if synced within last 5 seconds
+        import time
+        now = time.time()
+        if now - self._last_sync_time > 5:
+            try:
+                TriggerService().sync_manifest_triggers(scanned)
+                self._last_sync_time = now
+            except Exception:
+                pass  # non-critical, don't block tool listing
+
         return result
 
     # ------------------------------------------------------------------
@@ -145,12 +162,17 @@ class ToolService:
                     manifest: Dict[str, Any] = None) -> ToolData:
         """Create a new tool by writing manifest.json to disk.
 
-        User tools go to ~/.artclaw/tools/user/{name}/.
+        Tools are stored under ~/.artclaw/tools/{source}/{name}/.
+        The ``source`` field in manifest.json always mirrors the folder layer.
         """
+        # Normalise source to one of the valid layer names
+        if source not in ("official", "marketplace", "user"):
+            source = "user"
+
         tool_id = f"{source}/{name}"
 
-        # User tools always go under ~/.artclaw/tools/user/
-        tools_root = settings.data_path / "tools" / "user" / name
+        # Tools go under ~/.artclaw/tools/{source}/{name}/
+        tools_root = settings.data_path / "tools" / source / name
         if tools_root.exists():
             raise ValueError(f"Tool already exists: {tool_id}")
 
@@ -159,8 +181,16 @@ class ToolService:
         manifest.setdefault("name", name)
         manifest.setdefault("description", description)
         manifest.setdefault("version", version)
+        # source in manifest always mirrors folder layer (authoritative)
+        manifest["source"] = source
         manifest.setdefault("targetDCCs", target_dccs or [])
         manifest.setdefault("implementation", {"type": implementation_type})
+
+        # Set author and timestamps
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        manifest.setdefault("author", "")
+        manifest.setdefault("createdAt", now)
+        manifest["updatedAt"] = now
 
         tools_root.mkdir(parents=True, exist_ok=True)
         manifest_path = tools_root / "manifest.json"
@@ -178,8 +208,13 @@ class ToolService:
             tool_path=str(tools_root),
             implementation_type=implementation_type,
             manifest=manifest,
+            author=manifest.get("author", ""),
+            created_at=now,
+            updated_at=now,
         )
         self._cache.append(td)
+        # Force trigger sync on next scan
+        self._last_sync_time = 0
         return td
 
     def update_tool(self, tool_id: str, **kwargs: Any) -> Optional[ToolData]:
@@ -203,16 +238,25 @@ class ToolService:
                     manifest["description"] = kwargs["description"]
                 if "version" in kwargs and kwargs["version"]:
                     manifest["version"] = kwargs["version"]
+                if "author" in kwargs and kwargs["author"] is not None:
+                    manifest["author"] = kwargs["author"]
+                    tool.author = kwargs["author"]
                 if "target_dccs" in kwargs and kwargs["target_dccs"] is not None:
                     manifest["targetDCCs"] = kwargs["target_dccs"]
                 if "implementation_type" in kwargs and kwargs["implementation_type"]:
                     manifest.setdefault("implementation", {})["type"] = kwargs["implementation_type"]
                 if "manifest" in kwargs and kwargs["manifest"]:
                     manifest.update(kwargs["manifest"])
+                # Bump updatedAt on every update
+                now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                manifest["updatedAt"] = now
+                tool.updated_at = now
                 tool.manifest = manifest
                 with open(manifest_path, "w", encoding="utf-8") as f:
                     json.dump(manifest, f, indent=2, ensure_ascii=False)
 
+        # Force trigger sync on next scan
+        self._last_sync_time = 0
         return tool
 
     def delete_tool(self, tool_id: str) -> bool:
@@ -227,6 +271,8 @@ class ToolService:
         self._set_tool_pref("disabled", tool_id, False)
         self._set_tool_pref("pinned", tool_id, False)
         self._set_tool_pref("favorites", tool_id, False)
+        # Force trigger sync on next scan (will remove orphaned triggers)
+        self._last_sync_time = 0
         return True
 
     # ------------------------------------------------------------------
@@ -336,12 +382,15 @@ class ToolService:
     ) -> Dict[str, Any]:
         """Publish a user tool to official or marketplace.
 
-        Publish = move (not copy). The tool is moved from
-        ~/.artclaw/tools/user/{name}/ to {project_root}/tools/{target}/{dcc}/{name}/
-        and removed from the user directory.
+        Moves the tool from ~/.artclaw/tools/user/{name}/ into
+        {project_root}/tools/{target}/{dcc}/{name}/ (source repo).
+        The user copy is deleted after the move — the tool now lives in the
+        repo only and is served from there.
         """
         from pathlib import Path
-        from ..services.config_manager import ConfigManager
+
+        if target not in ("official", "marketplace"):
+            raise ValueError(f"Invalid publish target: {target}. Must be 'official' or 'marketplace'")
 
         tool = self.get_tool(tool_id)
         if not tool:
@@ -350,20 +399,28 @@ class ToolService:
         if tool.source != "user":
             raise ValueError("Only user tools can be published")
 
-        # Source path (user dir)
         source_path = Path(tool.tool_path)
         if not source_path.exists():
             raise ValueError(f"Source tool directory not found: {source_path}")
 
-        # Read project_root
+        from ..services.config_manager import ConfigManager
         cfg = ConfigManager().load()
         project_root = cfg.get("project_root", "")
         if not project_root:
-            raise ValueError("project_root not configured in config.json")
+            raise ValueError(
+                "project_root 未配置，无法发布到源码目录。"
+                "请在 ArtClaw 设置中指定项目根目录。"
+            )
 
-        # Determine DCC from target_dccs or default to 'universal'
-        dcc = tool.target_dccs[0] if tool.target_dccs else "universal"
-        # Map DCC ids to directory names
+        repo_root = Path(project_root) / "tools"
+        if not repo_root.exists():
+            raise ValueError(
+                f"project_root/tools 目录不存在: {repo_root}\n"
+                "请确认 ArtClaw 项目已正确安装。"
+            )
+
+        # Determine DCC sub-directory (universal for general)
+        dcc = tool.target_dccs[0] if tool.target_dccs else "general"
         dcc_dir_map = {
             "ue57": "unreal", "maya2024": "maya", "max2024": "max",
             "blender": "blender", "comfyui": "comfyui",
@@ -372,34 +429,37 @@ class ToolService:
         }
         dcc_dir_name = dcc_dir_map.get(dcc, dcc)
 
-        # Target directory: {project_root}/tools/{target}/{dcc}/{name}/
-        target_dir = Path(project_root) / "tools" / target / dcc_dir_name / tool.name
-        if target_dir.exists():
-            shutil.rmtree(target_dir)
+        # Destination: {project_root}/tools/{target}/{dcc}/{name}/
+        repo_target = repo_root / target / dcc_dir_name / tool.name
+        if repo_target.exists():
+            shutil.rmtree(repo_target)
+        repo_target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(str(source_path), str(repo_target))
 
-        # Move (not copy!)
-        target_dir.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(source_path), str(target_dir))
-
-        # Update manifest.json with new source + version
-        manifest_path = target_dir / "manifest.json"
+        # Update manifest.json in the repo copy: bump version, set source
+        manifest_path = repo_target / "manifest.json"
         if manifest_path.exists():
             with open(manifest_path, "r", encoding="utf-8") as f:
                 manifest_data = json.load(f)
             manifest_data["source"] = target
             manifest_data["version"] = version
+            if description:
+                manifest_data["description"] = description
             with open(manifest_path, "w", encoding="utf-8") as f:
                 json.dump(manifest_data, f, indent=2, ensure_ascii=False)
 
-        # Clear cache to refresh
+        # Remove the user copy – tool now lives in the repo only
+        shutil.rmtree(str(source_path), ignore_errors=True)
+
+        # Clear cache so next list_tools picks up the repo copy
         self._cache = []
 
         return {
             "tool_id": f"{target}/{tool.name}",
-            "message": f"Tool '{tool.name}' published to {target}/{dcc_dir_name} successfully",
+            "message": f"Tool '{tool.name}' published to {target} ({dcc_dir_name}) successfully",
             "version": version,
             "target": target,
-            "description": description,
+            "repo_path": str(repo_target),
         }
 
     # ------------------------------------------------------------------

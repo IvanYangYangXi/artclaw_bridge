@@ -1,0 +1,107 @@
+{
+  "id": "official/tool-compliance-checker",
+  "name": "artclaw-工具合规检查器",
+  "description": "定时/变更触发，硬编码检测工具是否合规（manifest格式、必填字段、脚本文件存在性等）",
+  "agentHint": "通过 Tool Manager API 执行: POST /api/v1/tools/official%2Ftool-compliance-checker/execute。或从工具详情 API 获取 tool_path 字段，执行 {tool_path}/main.py。不要运行 openclaw skills check。",
+  "version": "3.0.0",
+  "targetDCCs": [
+    "general"
+  ],
+  "defaultFilters": {
+    "path": [
+      {
+        "pattern": "$project_root/tools/**/*"
+      },
+      {
+        "pattern": "$tools_dir/**/*"
+      }
+    ]
+  },
+  "implementation": {
+    "type": "script",
+    "entry": "main.py",
+    "function": "check_compliance"
+  },
+  "inputs": [
+    {
+      "id": "tools_dir",
+      "name": "工具目录",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "扫描的工具根目录（为空时从 manifest defaultFilters 自动读取）"
+    },
+    {
+      "id": "fix_simple",
+      "name": "自动修复简单问题",
+      "type": "boolean",
+      "required": false,
+      "default": false,
+      "description": "如version格式错误则自动修正"
+    },
+    {
+      "id": "source_only",
+      "name": "仅检查源码工具",
+      "type": "boolean",
+      "required": false,
+      "default": false,
+      "description": "只检查在项目源码目录里有源码的工具，跳过平台安装但无源码的工具"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "total_checked",
+      "name": "检查工具数",
+      "type": "number"
+    },
+    {
+      "id": "issues_found",
+      "name": "问题数",
+      "type": "number"
+    },
+    {
+      "id": "report",
+      "name": "检查报告",
+      "type": "string"
+    }
+  ],
+  "triggers": [
+    {
+      "id": "on-change",
+      "name": "工具变更时检查",
+      "enabled": true,
+      "trigger": {
+        "type": "watch",
+        "events": [
+          "created",
+          "modified"
+        ],
+        "debounceMs": 3000
+      },
+      "useDefaultFilters": true,
+      "filters": {},
+      "execution": {
+        "mode": "notify",
+        "timeout": 30
+      }
+    },
+    {
+      "id": "periodic",
+      "name": "每30分钟全量检查",
+      "enabled": true,
+      "trigger": {
+        "type": "schedule",
+        "mode": "interval",
+        "interval": 1800000
+      },
+      "execution": {
+        "mode": "silent",
+        "timeout": 60
+      }
+    }
+  ],
+  "presets": [],
+  "updatedAt": "2026-04-14 10:31:43",
+  "author": "ArtClaw",
+  "source": "official"
+}

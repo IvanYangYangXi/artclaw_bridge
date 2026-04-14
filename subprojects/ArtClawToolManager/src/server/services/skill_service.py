@@ -41,6 +41,18 @@ class SkillService:
         for s in scanned:
             skill_id = s.name
             is_disabled = skill_id in disabled_set
+
+            # Determine status: not_installed skills have no skill_path
+            if s.sync_status == "not_installed" or not s.skill_path:
+                status = "not_installed"
+                is_enabled = False
+            elif is_disabled:
+                status = "disabled"
+                is_enabled = False
+            else:
+                status = "installed"
+                is_enabled = True
+
             sd = SkillData(
                 id=skill_id,
                 name=s.name,
@@ -50,11 +62,11 @@ class SkillService:
                 updated_at=s.updated_at,
                 source=s.source or "official",
                 target_dccs=s.target_dccs,
-                status="disabled" if is_disabled else "installed",
+                status=status,
                 skill_path=s.skill_path,
                 source_path=s.source_path,
                 sync_status=s.sync_status,
-                is_enabled=not is_disabled,
+                is_enabled=is_enabled,
                 is_pinned=skill_id in pinned_set,
                 is_favorited=skill_id in fav_set,
             )
@@ -135,6 +147,67 @@ class SkillService:
             if s.id == skill_id:
                 return s
         return None
+
+    # ------------------------------------------------------------------
+    # Install / Uninstall
+    # ------------------------------------------------------------------
+
+    def install_skill(self, skill_id: str, force: bool = False) -> Dict[str, Any]:
+        """Install a skill from source directory to ~/.openclaw/skills/."""
+        # Re-scan to find the skill (may be not_installed)
+        items = self._scan_and_build()
+        skill = None
+        for s in items:
+            if s.id == skill_id:
+                skill = s
+                break
+
+        if not skill:
+            raise ValueError(f"Skill not found: {skill_id}")
+        if skill.status == "installed" and not force:
+            raise ValueError(f"Skill already installed: {skill_id}. Use force=True to reinstall.")
+        if not skill.source_path:
+            raise ValueError(f"No source path for skill: {skill_id}. Cannot install without source.")
+
+        src = Path(skill.source_path)
+        if not src.exists():
+            raise ValueError(f"Source directory does not exist: {src}")
+
+        from ..core.config import settings
+        dst = settings.skills_path / skill_id
+        if dst.exists():
+            shutil.rmtree(dst)
+
+        shutil.copytree(
+            str(src), str(dst),
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+
+        self._cache = []  # clear cache
+        return {
+            "skill_id": skill_id,
+            "installed_path": str(dst),
+            "message": f"Skill '{skill_id}' installed successfully",
+        }
+
+    def uninstall_skill(self, skill_id: str) -> Dict[str, Any]:
+        """Uninstall a skill by removing it from ~/.openclaw/skills/."""
+        skill = self.get_skill(skill_id)
+        if not skill:
+            raise ValueError(f"Skill not found: {skill_id}")
+        if skill.status == "not_installed":
+            raise ValueError(f"Skill is not installed: {skill_id}")
+
+        skill_path = Path(skill.skill_path)
+        if not skill_path.exists():
+            raise ValueError(f"Skill directory does not exist: {skill_path}")
+
+        shutil.rmtree(skill_path)
+        self._cache = []  # clear cache
+        return {
+            "skill_id": skill_id,
+            "message": f"Skill '{skill_id}' uninstalled successfully",
+        }
 
     # ------------------------------------------------------------------
     # Toggle operations
@@ -294,11 +367,65 @@ class SkillService:
             "message": f"Synced {copied} files from source to installed directory",
         }
 
-    def publish_to_source(self, skill_id: str) -> Dict[str, Any]:
-        """Copy all files from installed directory to source directory (skip __pycache__)."""
+    def publish_to_source(self, skill_id: str, *, version: str = None,
+                          bump: str = "patch", changelog: str = "",
+                          target_layer: str = "", dcc: str = "") -> Dict[str, Any]:
+        """Publish skill via ``skill_sync.publish_skill`` (version bump + copy
+        + SKILL.md update + git commit).
+
+        Falls back to a simple file-copy when ``skill_sync`` is not available
+        (e.g. project_root unconfigured).
+        """
         skill = self.get_skill(skill_id)
         if not skill:
             raise ValueError(f"Skill not found: {skill_id}")
+
+        # --- Try skill_sync.publish_skill (full DCC-plugin pipeline) ---
+        try:
+            import sys
+            # Ensure DCCClawBridge/core is importable
+            _core_candidates = []
+            if skill.source_path:
+                # infer project_root from source_path  .../<project>/skills/<layer>/<dcc>/<name>
+                _src = Path(skill.source_path)
+                for parent in _src.parents:
+                    candidate = parent / "subprojects" / "DCCClawBridge" / "core"
+                    if candidate.is_dir():
+                        _core_candidates.append(str(candidate))
+                        break
+            for p in _core_candidates:
+                if p not in sys.path:
+                    sys.path.insert(0, p)
+
+            from skill_sync import publish_skill as _sync_publish  # type: ignore
+
+            # Determine bump type from explicit version vs current version
+            effective_bump = bump
+            if version and skill.version:
+                effective_bump = self._infer_bump(skill.version, version)
+
+            # skill_sync uses the filesystem directory name, not the skill_id
+            skill_dir_name = Path(skill.skill_path).name if skill.skill_path else skill_id
+
+            result = _sync_publish(
+                skill_dir_name,
+                target_layer=target_layer or (skill.source_layer or "marketplace"),
+                bump=effective_bump,
+                changelog=changelog,
+                dcc=dcc,
+            )
+            self._cache = []  # clear cache
+            if not result.get("ok"):
+                raise ValueError(result.get("message", "publish_skill failed"))
+            return {
+                "skill_id": skill_id,
+                "version": result.get("new_version", version),
+                "message": result.get("message", "Published"),
+            }
+        except ImportError:
+            pass  # skill_sync not available, fallback below
+
+        # --- Fallback: simple file copy (no git, no bump) ---
         if not skill.source_path:
             raise ValueError(f"No source path found for skill: {skill_id}")
 
@@ -308,6 +435,65 @@ class SkillService:
             raise ValueError(f"Installed directory does not exist: {src}")
         if not dst.exists():
             raise ValueError(f"Source directory does not exist: {dst}")
+
+        if version:
+            self._update_skill_version(src, version)
+
+        copied = 0
+        for item in src.rglob("*"):
+            rel = item.relative_to(src)
+            skip = False
+            for part_name in rel.parts:
+                if part_name in ("__pycache__", ".git") or part_name.endswith(".pyc"):
+                    skip = True
+                    break
+            if skip:
+                continue
+            target = dst / rel
+            if item.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, target)
+                copied += 1
+
+        for item in list(dst.rglob("*")):
+            if item.is_dir():
+                continue
+            rel = item.relative_to(dst)
+            skip = False
+            for part_name in rel.parts:
+                if part_name in ("__pycache__", ".git") or part_name.endswith(".pyc"):
+                    skip = True
+                    break
+            if skip:
+                continue
+            if not (src / rel).exists():
+                item.unlink(missing_ok=True)
+
+        self._cache = []
+        return {
+            "skill_id": skill_id,
+            "copied_files": copied,
+            "version": version,
+            "message": f"Published {copied} files (fallback mode)",
+        }
+
+    @staticmethod
+    def _infer_bump(old_ver: str, new_ver: str) -> str:
+        """Infer bump type from old→new version strings."""
+        def _parse(v):
+            try:
+                return tuple(int(x) for x in v.split(".")[:3])
+            except Exception:
+                return (0, 0, 0)
+        o = _parse(old_ver)
+        n = _parse(new_ver)
+        if n[0] > o[0]:
+            return "major"
+        if n[1] > o[1]:
+            return "minor"
+        return "patch"
 
         copied = 0
         for item in src.rglob("*"):
@@ -350,5 +536,55 @@ class SkillService:
         return {
             "skill_id": skill_id,
             "copied_files": copied,
+            "version": version,
             "message": f"Published {copied} files from installed to source directory",
         }
+
+    @staticmethod
+    def _update_skill_version(skill_dir: Path, new_version: str) -> None:
+        """Update version in SKILL.md YAML frontmatter.
+
+        Handles two layouts:
+          1. metadata.artclaw.version: X.Y.Z  (preferred)
+          2. top-level version: X.Y.Z         (legacy)
+        """
+        import re
+
+        skill_md = skill_dir / "SKILL.md"
+        if not skill_md.exists():
+            return
+
+        content = skill_md.read_text(encoding="utf-8")
+        m = re.match(r"^(---\s*\n)(.*?)(\n---)", content, re.DOTALL)
+        if not m:
+            return
+
+        front = m.group(2)
+        updated = False
+
+        # Try metadata.artclaw.version first
+        new_front, n = re.subn(
+            r"([ \t]+version\s*:\s*)([^\n]+)",
+            lambda mg: mg.group(1) + new_version,
+            front,
+            count=1,
+        )
+        if n > 0:
+            updated = True
+            front = new_front
+        else:
+            # Try top-level version
+            new_front, n = re.subn(
+                r"^(version\s*:\s*)(.+)$",
+                lambda mg: mg.group(1) + new_version,
+                front,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            if n > 0:
+                updated = True
+                front = new_front
+
+        if updated:
+            new_content = m.group(1) + front + m.group(3) + content[m.end():]
+            skill_md.write_text(new_content, encoding="utf-8")

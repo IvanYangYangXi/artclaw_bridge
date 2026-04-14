@@ -66,6 +66,17 @@ async def lifespan(app: FastAPI):
     # 3. Start DCC health-check monitoring
     await dcc_manager.start_monitoring()
 
+    # 3.5 Sync manifest triggers into triggers.json (idempotent)
+    try:
+        from .services.tool_scanner import scan_tools
+        from .services.trigger_service import TriggerService
+        scanned_tools = scan_tools()
+        imported = TriggerService().sync_manifest_triggers(scanned_tools)
+        if imported:
+            print(f"[ArtClaw] Synced {imported} manifest triggers")
+    except Exception as e:
+        logger.warning("Manifest trigger sync failed: %s", e)
+
     # 4. Start trigger engine (loads from triggers.json)
     global trigger_engine
     trigger_engine = TriggerEngine()

@@ -175,10 +175,13 @@ def _parse_skill_md(skill_dir: Path) -> Optional[ScannedSkill]:
     if not dccs:
         dccs = _infer_dccs_from_name(fm["name"])
 
-    # Source: from frontmatter or heuristic
+    # Source: from frontmatter only (no name-prefix heuristics).
+    # scan_skills() will override this with the authoritative source derived
+    # from the project_root/skills/{layer}/ directory structure when available.
     source = artclaw.get("source", "") or fm.get("source", "")
     if not source:
-        source = _guess_source(fm["name"])
+        # Conservative default – treated as user-created until proven otherwise
+        source = "user"
 
     return ScannedSkill(
         name=fm["name"],
@@ -207,7 +210,8 @@ _SOFTWARE_TO_DCC = {
     "comfyui": "comfyui",
 }
 
-# Skill name prefix → DCC id mapping (fallback when no dcc/software in frontmatter)
+# Skill name prefix → DCC id mapping (fallback when no dcc/software in frontmatter).
+# NOTE: used only for DCC inference, NOT for source classification.
 _NAME_PREFIX_TO_DCC = {
     "ue57": "ue57",
     "blender-": "blender",
@@ -221,13 +225,6 @@ _NAME_PREFIX_TO_DCC = {
     "get-material": "ue57",
 }
 
-# Skills that are truly cross-DCC (general purpose)
-_GENERAL_SKILLS = {
-    "artclaw-knowledge", "artclaw-memory", "artclaw-skill-manage",
-    "artclaw-tool-creator", "subagent-manager", "web-fetch",
-    "scene-vision-analyzer",
-}
-
 # Explicit overrides for skills whose name prefix is misleading
 _NAME_DCC_OVERRIDES = {
     "artclaw-material": ["ue57"],
@@ -235,39 +232,29 @@ _NAME_DCC_OVERRIDES = {
 
 
 def _infer_dccs_from_name(name: str) -> List[str]:
-    """Infer DCC from skill name prefix. Returns ['general'] for cross-DCC skills."""
+    """Infer DCC from skill name prefix. Returns ['general'] for cross-DCC skills.
+
+    NOTE: This is used only for DCC inference, never for source classification.
+    """
     low = name.lower()
     # Explicit overrides first
     if low in _NAME_DCC_OVERRIDES:
         return _NAME_DCC_OVERRIDES[low]
-    if low in _GENERAL_SKILLS:
-        return ["general"]
     for prefix, dcc_id in _NAME_PREFIX_TO_DCC.items():
         if low.startswith(prefix):
             return [dcc_id]
     return ["general"]  # Unknown → general
 
 
-# Known official skill name prefixes
-_OFFICIAL_PREFIXES = (
-    "ue57", "blender-", "maya-", "max-", "comfyui-", "sp-", "sd-",
-    "artclaw-", "scene-vision", "web-fetch", "subagent-",
-)
-
-
-def _guess_source(name: str) -> str:
-    """Heuristic source classification based on skill name."""
-    low = name.lower()
-    for prefix in _OFFICIAL_PREFIXES:
-        if low.startswith(prefix):
-            return "official"
-    if low.startswith("my-") or low.startswith("custom-"):
-        return "user"
-    return "marketplace"
-
-
 def scan_skills(skills_dir: Optional[Path] = None) -> List[ScannedSkill]:
-    """Scan the skills directory and return all discovered skills."""
+    """Scan the skills directory and return all discovered skills.
+
+    Source classification priority (highest → lowest):
+      1. source_map: derived from project_root/skills/{layer}/ directory structure
+         (authoritative – the folder position defines official/marketplace/user)
+      2. SKILL.md frontmatter ``source`` field (explicit declaration in file)
+      3. Name-prefix heuristic (_guess_source) – fallback only
+    """
     root = skills_dir or settings.skills_path
     if not root.exists():
         return []
@@ -280,18 +267,36 @@ def scan_skills(skills_dir: Optional[Path] = None) -> List[ScannedSkill]:
         if parsed is not None:
             results.append(parsed)
 
-    # Build source path map from project repo
+    # Build source path+layer map from project repo
     source_map = _scan_source_directories()
+    installed_names = {skill.name for skill in results}
+
     for skill in results:
-        src_path = source_map.get(skill.name, "")
-        if src_path:
-            skill.source_path = src_path
+        entry = source_map.get(skill.name)
+        if entry is not None:
+            # Authoritative: use folder-derived layer as source
+            skill.source_path = entry.path
+            skill.source = entry.layer
             skill.sync_status = _compare_directories(
-                Path(skill.skill_path), Path(src_path)
+                Path(skill.skill_path), Path(entry.path)
             )
         else:
             skill.source_path = ""
             skill.sync_status = "no_source"
+            # source already set by _parse_skill_md (frontmatter → heuristic)
+
+    # Add source-only skills (exist in project repo but not installed)
+    for name, entry in source_map.items():
+        if name in installed_names:
+            continue
+        source_dir = Path(entry.path)
+        parsed = _parse_skill_md(source_dir)
+        if parsed is not None:
+            parsed.source = entry.layer
+            parsed.source_path = entry.path
+            parsed.skill_path = ""  # not installed
+            parsed.sync_status = "not_installed"
+            results.append(parsed)
 
     return results
 
@@ -300,11 +305,14 @@ def scan_skills(skills_dir: Optional[Path] = None) -> List[ScannedSkill]:
 # Source directory scanning & sync detection
 # ------------------------------------------------------------------
 
-def _scan_source_directories() -> Dict[str, str]:
+def _scan_source_directories() -> Dict[str, "SourceEntry"]:
     """Scan project_root/skills/ for source skill directories.
 
-    Returns a map of {skill_name: source_dir_path}.
+    Returns a map of {skill_name: SourceEntry(path, layer)}.
     Source tree structure: skills/{layer}/{dcc}/{skill_dir}/SKILL.md
+
+    ``layer`` ∈ {official, marketplace, user} – this is the authoritative
+    source classification for the skill.
     """
     from ..services.config_manager import ConfigManager
     cfg = ConfigManager().load()
@@ -316,10 +324,13 @@ def _scan_source_directories() -> Dict[str, str]:
     if not skills_root.exists():
         return {}
 
-    result: Dict[str, str] = {}
+    result: Dict[str, "SourceEntry"] = {}
     # Walk: skills/{layer}/{dcc}/{skill_dir}/SKILL.md
     for layer_dir in skills_root.iterdir():
         if not layer_dir.is_dir():
+            continue
+        layer_name = layer_dir.name  # official / marketplace / user / templates …
+        if layer_name not in ("official", "marketplace", "user"):
             continue
         for dcc_dir in layer_dir.iterdir():
             if not dcc_dir.is_dir():
@@ -337,9 +348,18 @@ def _scan_source_directories() -> Dict[str, str]:
                 fm = _parse_frontmatter(text)
                 name = fm.get("name", "")
                 if name:
-                    result[name] = str(skill_dir)
+                    result[name] = SourceEntry(path=str(skill_dir), layer=layer_name)
 
     return result
+
+
+class SourceEntry:
+    """Holds source directory path and layer classification."""
+    __slots__ = ("path", "layer")
+
+    def __init__(self, path: str, layer: str):
+        self.path = path
+        self.layer = layer
 
 
 def _file_hash(path: Path) -> str:
@@ -379,9 +399,24 @@ def _collect_file_hashes(root: Path) -> Dict[str, str]:
 
 
 def _compare_directories(installed: Path, source: Path) -> str:
-    """Compare installed and source directories.
+    """Compare installed and source directories using hash-first logic.
 
-    Returns: 'synced' | 'source_newer' | 'installed_newer' | 'conflict'
+    Hash is authoritative: if hashes differ, there is a real change regardless
+    of version numbers.  Version numbers are used only to determine *direction*
+    when hashes disagree.
+
+    Returns one of:
+      'synced'           – hashes identical, no action needed
+      'source_newer'     – source repo is ahead (source_ver > installed_ver);
+                           action: update installed from source
+      'installed_newer'  – installed is ahead (installed_ver > source_ver);
+                           action: publish installed to source
+      'modified'         – hashes differ but versions are identical (or both
+                           missing); local edits not yet published;
+                           action: publish installed to source
+      'conflict'         – both sides modified (hashes differ, mtime on both
+                           sides newer than the other); requires manual decision
+      'no_source'        – source directory missing
     """
     if not installed.exists() or not source.exists():
         return "no_source"
@@ -389,47 +424,105 @@ def _compare_directories(installed: Path, source: Path) -> str:
     installed_hashes = _collect_file_hashes(installed)
     source_hashes = _collect_file_hashes(source)
 
+    # ── Fast path: hashes identical → synced ──────────────────────────────
     if installed_hashes == source_hashes:
         return "synced"
 
-    # Check which side has differences
+    # ── Hashes differ: determine direction via version numbers ────────────
+    inst_ver = _read_version(installed)
+    src_ver = _read_version(source)
+
+    if inst_ver and src_ver and inst_ver != src_ver:
+        if _version_tuple(src_ver) > _version_tuple(inst_ver):
+            return "source_newer"
+        elif _version_tuple(inst_ver) > _version_tuple(src_ver):
+            return "installed_newer"
+
+    # ── Version identical (or missing): check mtime to detect conflict ────
+    # If *both* sides have files that are newer than the other side, it's a
+    # true conflict requiring manual resolution. Otherwise it's a one-sided
+    # modification (most commonly: installed edited, not yet published).
     all_files = set(installed_hashes.keys()) | set(source_hashes.keys())
-    source_only_or_newer = False
-    installed_only_or_newer = False
+    inst_ahead = False
+    src_ahead = False
 
     for f in all_files:
         ih = installed_hashes.get(f, "")
         sh = source_hashes.get(f, "")
-        if ih != sh:
-            if not ih:
-                # File exists only in source
-                source_only_or_newer = True
-            elif not sh:
-                # File exists only in installed
-                installed_only_or_newer = True
+        if ih == sh:
+            continue
+        if not ih:
+            src_ahead = True
+            continue
+        if not sh:
+            inst_ahead = True
+            continue
+        # Both exist but differ – use mtime to guess direction
+        inst_file = installed / f
+        src_file = source / f
+        try:
+            i_mt = inst_file.stat().st_mtime
+            s_mt = src_file.stat().st_mtime
+            if s_mt > i_mt:
+                src_ahead = True
+            elif i_mt > s_mt:
+                inst_ahead = True
             else:
-                # Both exist but differ – check mtime to guess direction
-                installed_file = installed / f.replace("/", "\\") if "\\" in str(installed) else installed / f
-                source_file = source / f.replace("/", "\\") if "\\" in str(source) else source / f
-                try:
-                    i_mtime = installed_file.stat().st_mtime
-                    s_mtime = source_file.stat().st_mtime
-                    if s_mtime > i_mtime:
-                        source_only_or_newer = True
-                    elif i_mtime > s_mtime:
-                        installed_only_or_newer = True
-                    else:
-                        # Same mtime but different hash – conflict
-                        source_only_or_newer = True
-                        installed_only_or_newer = True
-                except Exception:
-                    source_only_or_newer = True
-                    installed_only_or_newer = True
+                # Same mtime, different hash → treat as mutual modification
+                inst_ahead = True
+                src_ahead = True
+        except Exception:
+            inst_ahead = True
+            src_ahead = True
 
-    if source_only_or_newer and installed_only_or_newer:
+    if inst_ahead and src_ahead:
         return "conflict"
-    elif source_only_or_newer:
+    elif src_ahead:
         return "source_newer"
-    elif installed_only_or_newer:
-        return "installed_newer"
-    return "synced"
+    else:
+        # installed_ahead only, or undecidable → local edit not yet published
+        return "modified"
+
+
+def _read_version(skill_dir: Path) -> str:
+    """Read version from a skill directory (manifest.json first, then SKILL.md)."""
+    manifest = skill_dir / "manifest.json"
+    if manifest.exists():
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            v = data.get("version", "")
+            if v:
+                return str(v)
+        except Exception:
+            pass
+    skill_md = skill_dir / "SKILL.md"
+    if skill_md.exists():
+        try:
+            text = skill_md.read_text(encoding="utf-8")
+            # metadata.artclaw.version (new format)
+            import re as _re
+            m = _re.search(
+                r'metadata\s*:\s*\n(?:[ \t]+\S.*\n)*?'
+                r'[ \t]+artclaw\s*:\s*\n(?:[ \t]+\S.*\n)*?'
+                r'[ \t]+version\s*:\s*([^\n]+)',
+                text, _re.MULTILINE
+            )
+            if m:
+                return m.group(1).strip().strip('"\'')
+            # top-level version (legacy)
+            m2 = _re.search(r'^version\s*:\s*(.+)$', text, _re.MULTILINE)
+            if m2:
+                return m2.group(1).strip().strip('"\'')
+        except Exception:
+            pass
+    return ""
+
+
+def _version_tuple(v: str):
+    """Convert version string to comparable tuple of ints."""
+    import re as _re
+    try:
+        parts = v.strip().lstrip('v').split('-')[0].split('.')
+        return tuple(int(_re.match(r'\d+', p).group()) for p in parts[:3])
+    except Exception:
+        return (0, 0, 0)

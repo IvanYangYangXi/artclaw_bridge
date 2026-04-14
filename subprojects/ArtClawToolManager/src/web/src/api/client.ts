@@ -204,8 +204,24 @@ export async function batchToolOperation(operation: string, toolIds: string[]): 
 
 // ---------- Triggers ----------
 
+/** Convert snake_case keys to camelCase (shallow, for API responses) */
+function snakeToCamel(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+    result[camelKey] = value
+  }
+  return result
+}
+
 export async function fetchTriggers(toolId: string): Promise<ApiResponse<unknown[]>> {
   const { data: resp } = await api.get(`/tools/${encodeURIComponent(toolId)}/triggers`)
+  // Backend returns snake_case, frontend expects camelCase
+  if (resp?.success && Array.isArray(resp.data)) {
+    resp.data = resp.data.map((t: unknown) =>
+      typeof t === 'object' && t !== null ? snakeToCamel(t as Record<string, unknown>) : t
+    )
+  }
   return resp
 }
 
@@ -273,8 +289,14 @@ export async function syncSkillFromSource(skillId: string): Promise<ApiResponse<
   return resp
 }
 
-export async function publishSkillToSource(skillId: string): Promise<ApiResponse<unknown>> {
-  const { data: resp } = await api.post(`/skills/${encodeURIComponent(skillId)}/publish-to-source`)
+export async function publishSkillToSource(
+  skillId: string,
+  options?: { version?: string; description?: string },
+): Promise<ApiResponse<unknown>> {
+  const { data: resp } = await api.post(
+    `/skills/${encodeURIComponent(skillId)}/publish-to-source`,
+    options ?? {},
+  )
   return resp
 }
 
@@ -333,6 +355,16 @@ export async function executeWorkflow(id: string, params: Record<string, unknown
 export async function fetchRecentSkills(limit: number = 10): Promise<ApiResponse<unknown[]>> {
   const { data } = await api.get('/skills/recent', { params: { limit } })
   return data
+}
+
+export async function fetchRecentWorkflows(limit: number = 5): Promise<any[]> {
+  const { data } = await api.get('/workflows/recent', { params: { limit } })
+  return data?.data ?? []
+}
+
+export async function fetchRecentTools(limit: number = 5): Promise<any[]> {
+  const { data } = await api.get('/tools/recent', { params: { limit } })
+  return data?.data ?? []
 }
 
 // ---------- DCC Events (Phase 5) ----------

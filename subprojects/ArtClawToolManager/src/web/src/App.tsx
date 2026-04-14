@@ -15,15 +15,19 @@ function AppInit() {
   const fetchDCCOptions = useAppStore((s) => s.fetchDCCOptions)
   const fetchAgents = useAppStore((s) => s.fetchAgents)
   const connect = useChatStore((s) => s.connect)
+  const activeSessionId = useChatStore((s) => s.activeSessionId)
 
   useEffect(() => {
     // Fetch DCC options and agents from backend
     fetchDCCOptions()
     fetchAgents()
-    // Auto-connect WebSocket
-    const wsUrl = `ws://${window.location.host}/ws/chat/default`
+  }, [fetchDCCOptions, fetchAgents])
+
+  // Re-connect WebSocket whenever active session changes
+  useEffect(() => {
+    const wsUrl = `ws://${window.location.host}/ws/chat/${activeSessionId}`
     connect(wsUrl)
-  }, [fetchDCCOptions, fetchAgents, connect])
+  }, [activeSessionId, connect])
 
   return null
 }

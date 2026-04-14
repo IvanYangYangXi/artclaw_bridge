@@ -7,6 +7,10 @@ description: >
   for master materials, (3) create handoff documentation for material setups. Saves output
   to Saved/MaterialDocs/. Only reads material data (no modifications). Requires UE Editor
   running with ArtClaw plugin.
+metadata:
+  artclaw:
+    version: 1.0.3
+    author: ArtClaw
 ---
 
 # 生成材质使用文档

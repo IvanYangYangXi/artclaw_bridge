@@ -78,7 +78,7 @@ export interface ContextUsage {
 
 // ---------- Sync Status ----------
 
-export type SyncStatus = 'synced' | 'source_newer' | 'installed_newer' | 'conflict' | 'no_source'
+export type SyncStatus = 'synced' | 'source_newer' | 'installed_newer' | 'modified' | 'conflict' | 'no_source' | 'not_installed'
 
 // ---------- Skill / Workflow / Tool ----------
 
@@ -146,6 +146,9 @@ export interface ToolItem {
   paths?: { installed: string; source?: string }
   stats: ToolItemStats
   version?: string
+  author?: string
+  createdAt?: string
+  updatedAt?: string
   lastUsed?: string
 }
 
@@ -200,7 +203,7 @@ export interface NavItem {
 export interface WorkflowParameter {
   id: string
   name: string
-  type: 'string' | 'number' | 'boolean' | 'enum' | 'image'
+  type: 'string' | 'number' | 'boolean' | 'enum' | 'select' | 'image'
   required: boolean
   default?: unknown
   description?: string
@@ -227,6 +230,12 @@ export interface ExecutionContext {
   values: Record<string, unknown>
   presetId?: string
   needsAI?: boolean
+  // Tool execution context: paths and AI guidance
+  toolPath?: string           // Tool directory on disk (e.g. ~/.artclaw/tools/user/my-tool/)
+  entryScript?: string        // Entry script filename (e.g. main.py)
+  aiPrompt?: string           // AI guidance prompt from manifest
+  skillRef?: string           // Referenced skill name (for skill_wrapper type)
+  implementationType?: string // script | skill_wrapper | composite
 }
 
 // ---------- DCC Status (Phase 5) ----------
@@ -267,6 +276,7 @@ export interface ToolManifest {
   description?: string
   version?: string
   targetDCCs?: string[]
+  defaultFilters?: FilterConfig   // Tool-level default filter conditions
   implementation?: {
     type: ImplementationType
     entry?: string
@@ -347,6 +357,8 @@ export interface TriggerRuleData {
   conditions: FilterConfig
   parameterPreset: Record<string, unknown>
   isEnabled: boolean
+  useDefaultFilters?: boolean
+  use_default_filters?: boolean
   scheduleConfig: Record<string, unknown>
   createdAt?: string
   updatedAt?: string
@@ -388,6 +400,8 @@ export interface FilterConfig {
   sceneRules?: SceneFilterRule[]
   typeFilter?: TypeFilter
   selectionOnly?: boolean
+  path?: Array<{ pattern: string; exclude?: boolean }>
+  name?: Array<{ pattern: string; exclude?: boolean }>
 }
 
 export interface FilterPreset {

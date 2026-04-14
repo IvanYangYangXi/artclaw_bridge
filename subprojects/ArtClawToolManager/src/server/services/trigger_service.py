@@ -3,10 +3,14 @@
 Trigger rule business-logic service (JSON file, no database).
 
 Stores rules in ``~/.artclaw/triggers.json``.
+
+On startup, manifest triggers are synced into triggers.json
+(keyed by manifest_id + tool_id to avoid duplicates).
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -16,6 +20,8 @@ from typing import Any, Dict, List, Optional
 from ..core.config import settings
 from ..models.data import TriggerRuleData
 from ..schemas.trigger import TriggerCreateRequest, TriggerUpdateRequest
+
+logger = logging.getLogger(__name__)
 
 
 def _triggers_path():
@@ -197,8 +203,166 @@ class TriggerService:
             conditions=d.get("conditions", {}),
             parameter_preset=d.get("parameter_preset", {}),
             is_enabled=d.get("is_enabled", True),
+            use_default_filters=d.get("use_default_filters", False),
             schedule_config=d.get("schedule_config", {}),
             dcc=d.get("dcc", ""),
             filter_preset_id=d.get("filter_preset_id", ""),
             parameter_preset_id=d.get("parameter_preset_id", ""),
         )
+
+    # ------------------------------------------------------------------
+    # Manifest trigger sync
+    # ------------------------------------------------------------------
+
+    def sync_manifest_triggers(self, tools: List[Any]) -> int:
+        """Sync manifest triggers into triggers.json (full reconciliation).
+
+        For each tool with ``triggers`` in its manifest.json:
+        - Insert new triggers (by manifest_id + tool_id)
+        - Update existing triggers if manifest content changed
+        - Remove triggers whose manifest_id no longer exists in manifest
+
+        Args:
+            tools: list of ScannedTool (or any object with .manifest dict
+                   and a tool id derivable from manifest["id"]).
+
+        Returns:
+            Number of changes (inserts + updates + deletes).
+        """
+        changes = 0
+
+        with _lock:
+            all_rules = _load_all()
+
+            # Build index: (tool_id, manifest_id) → rule index in all_rules
+            existing_index: Dict[tuple, int] = {}
+            for idx, r in enumerate(all_rules):
+                mid = r.get("manifest_id", "")
+                tid = r.get("tool_id", "")
+                if mid and tid:
+                    existing_index[(tid, mid)] = idx
+
+            # Collect all valid (tool_id, manifest_id) from current manifests
+            current_manifest_keys: set = set()
+
+            for tool in tools:
+                manifest = getattr(tool, "manifest", None) or {}
+                tool_source = getattr(tool, "source", "") or manifest.get("source", "user")
+                tool_name = manifest.get("name", "")
+                if not tool_name:
+                    continue
+                tool_id = f"{tool_source}/{tool_name}"
+                manifest_triggers = manifest.get("triggers", [])
+                if not isinstance(manifest_triggers, list):
+                    continue
+
+                for mt in manifest_triggers:
+                    manifest_id = mt.get("id", "")
+                    if not manifest_id:
+                        continue
+                    key = (tool_id, manifest_id)
+                    current_manifest_keys.add(key)
+
+                    if key in existing_index:
+                        # Update existing rule with latest manifest content
+                        idx = existing_index[key]
+                        old_rule = all_rules[idx]
+                        new_rule = self._manifest_trigger_to_rule(tool_id, mt)
+                        # Preserve internal id and user-modified fields
+                        new_rule["id"] = old_rule["id"]
+                        if old_rule != {**old_rule, **{k: v for k, v in new_rule.items() if k != "id"}}:
+                            all_rules[idx] = {**old_rule, **new_rule}
+                            changes += 1
+                    else:
+                        # Insert new trigger
+                        rule = self._manifest_trigger_to_rule(tool_id, mt)
+                        all_rules.append(rule)
+                        changes += 1
+
+            # Remove triggers whose manifest_id no longer exists in any manifest
+            # (only for tools that have manifests — don't touch user-created triggers without manifest_id)
+            tool_ids_with_manifests = {k[0] for k in current_manifest_keys}
+            cleaned = []
+            for r in all_rules:
+                mid = r.get("manifest_id", "")
+                tid = r.get("tool_id", "")
+                if mid and tid in tool_ids_with_manifests:
+                    # This is a manifest-synced trigger; keep only if still in manifest
+                    if (tid, mid) in current_manifest_keys:
+                        cleaned.append(r)
+                    else:
+                        changes += 1  # deleted
+                else:
+                    # User-created trigger (no manifest_id) or tool without manifest — keep
+                    cleaned.append(r)
+            all_rules = cleaned
+
+            if changes > 0:
+                _save_all(all_rules)
+
+        if changes > 0:
+            logger.info("Synced manifest triggers: %d changes", changes)
+        return changes
+
+    @staticmethod
+    def _manifest_trigger_to_rule(
+        tool_id: str, mt: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Convert a manifest trigger to the internal triggers.json format.
+
+        Manifest format:
+          { id, name, enabled, trigger: {type, ...}, filters: {...}, execution: {mode, ...} }
+
+        Internal format:
+          { id, tool_id, manifest_id, name, trigger_type, event_type, event_timing,
+            execution_mode, is_enabled, conditions, schedule_config, dcc, ... }
+        """
+        trigger_block = mt.get("trigger", {})
+        trigger_type = trigger_block.get("type", "manual")
+        execution_block = mt.get("execution", {})
+        filters_block = mt.get("filters", {})
+
+        # Map trigger type specifics
+        event_type = ""
+        event_timing = "post"
+        dcc = ""
+        schedule_config: Dict[str, Any] = {}
+
+        if trigger_type == "event":
+            event_type = trigger_block.get("event", "")
+            event_timing = trigger_block.get("timing", "post")
+            dcc = trigger_block.get("dcc", "")
+        elif trigger_type == "schedule":
+            schedule_config = {
+                k: v for k, v in trigger_block.items() if k != "type"
+            }
+        elif trigger_type == "watch":
+            # watch specifics go into schedule_config as storage
+            schedule_config = {
+                "watch_events": trigger_block.get("events", []),
+                "debounce_ms": trigger_block.get("debounceMs", 1000),
+            }
+
+        # Map filters to conditions
+        conditions: Dict[str, Any] = {}
+        if filters_block:
+            conditions = filters_block  # pass through as-is
+
+        return {
+            "id": str(uuid.uuid4()),
+            "manifest_id": mt.get("id", ""),  # for dedup
+            "tool_id": tool_id,
+            "name": mt.get("name", ""),
+            "trigger_type": trigger_type,
+            "event_type": event_type,
+            "event_timing": event_timing,
+            "execution_mode": execution_block.get("mode", "notify"),
+            "is_enabled": mt.get("enabled", True),
+            "use_default_filters": mt.get("useDefaultFilters", False),
+            "conditions": conditions,
+            "parameter_preset": {},
+            "schedule_config": schedule_config,
+            "dcc": dcc,
+            "filter_preset_id": "",
+            "parameter_preset_id": mt.get("presetId", ""),
+        }

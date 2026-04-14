@@ -8,6 +8,7 @@ description: >
   Blender only (run_python).
 metadata:
   artclaw:
+    version: 0.1.0
     author: ArtClaw
     software: blender
 ---

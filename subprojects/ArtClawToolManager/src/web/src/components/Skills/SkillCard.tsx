@@ -6,6 +6,8 @@ import { cn } from '../../utils/cn'
 import type { SkillItem, SyncStatus } from '../../types'
 import { useSkillsStore } from '../../stores/skillsStore'
 import { useAppStore } from '../../stores/appStore'
+import PublishDialog from '../common/PublishDialog'
+import type { PublishData } from '../common/PublishDialog'
 
 interface SkillCardProps {
   skill: SkillItem
@@ -26,10 +28,12 @@ const SOURCE_BADGE: Record<string, { zh: string; en: string; color: string }> = 
 
 const SYNC_BADGE: Record<SyncStatus, { zh: string; en: string; color: string } | null> = {
   synced:           null, // Don't show anything when synced
-  source_newer:     { zh: '源码有更新', en: 'Source Updated', color: 'bg-yellow-500/20 text-yellow-400' },
-  installed_newer:  { zh: '本地已修改', en: 'Local Modified', color: 'bg-blue-500/20 text-blue-400' },
-  conflict:         { zh: '存在冲突',   en: 'Conflict',      color: 'bg-red-500/20 text-red-400' },
-  no_source:        { zh: '无源码',     en: 'No Source',     color: 'bg-gray-700/50 text-gray-500' },
+  not_installed:    null, // Status badge already shows "可安装"
+  source_newer:     { zh: '源码有更新', en: 'Source Updated',  color: 'bg-yellow-500/20 text-yellow-400' },
+  installed_newer:  { zh: '本地版本新', en: 'Local Newer',     color: 'bg-blue-500/20 text-blue-400' },
+  modified:         { zh: '本地已修改', en: 'Local Modified',  color: 'bg-blue-500/20 text-blue-400' },
+  conflict:         { zh: '存在冲突',   en: 'Conflict',        color: 'bg-red-500/20 text-red-400' },
+  no_source:        { zh: '无源码',     en: 'No Source',       color: 'bg-gray-700/50 text-gray-500' },
 }
 
 // Format relative time (e.g., "2天前", "3 hours ago")
@@ -61,6 +65,7 @@ export default function SkillCard({ skill }: SkillCardProps) {
     useSkillsStore()
   const language = useAppStore((s) => s.language)
   const [showDirectoryDropdown, setShowDirectoryDropdown] = useState(false)
+  const [showPublish, setShowPublish] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   const isSelected = selectedSkillIds.has(skill.id)
@@ -95,6 +100,24 @@ export default function SkillCard({ skill }: SkillCardProps) {
       console.error('Failed to open directory:', error)
     }
   }
+
+  const handlePublish = async (data: PublishData) => {
+    await doPublishToSource(skill.id, {
+      version: data.version,
+      description: data.description,
+      target: data.target,
+      dcc: data.dcc,
+    })
+  }
+
+  // Infer DCC dir from sourcePath: ...skills/{layer}/{dcc}/{name}
+  const inferredDcc = (() => {
+    if (!skill.sourcePath) return 'universal'
+    const parts = skill.sourcePath.replace(/\\/g, '/').split('/')
+    const idx = parts.lastIndexOf('skills')
+    // parts[idx+1]=layer, parts[idx+2]=dcc
+    return idx >= 0 && parts[idx + 2] ? parts[idx + 2] : 'universal'
+  })()
 
   return (
     <div
@@ -135,7 +158,7 @@ export default function SkillCard({ skill }: SkillCardProps) {
             <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-1', syncBadge.color)}>
               {syncStatus === 'conflict' && <AlertTriangle className="w-2.5 h-2.5" />}
               {syncStatus === 'source_newer' && <ArrowDownToLine className="w-2.5 h-2.5" />}
-              {syncStatus === 'installed_newer' && <ArrowUpFromLine className="w-2.5 h-2.5" />}
+              {(syncStatus === 'installed_newer' || syncStatus === 'modified') && <ArrowUpFromLine className="w-2.5 h-2.5" />}
               {language === 'zh' ? syncBadge.zh : syncBadge.en}
             </span>
           )}
@@ -226,11 +249,11 @@ export default function SkillCard({ skill }: SkillCardProps) {
             accent
           />
         )}
-        {syncStatus === 'installed_newer' && (
+        {(syncStatus === 'installed_newer' || syncStatus === 'modified') && (
           <ActionBtn
             icon={<ArrowUpFromLine className="w-3.5 h-3.5" />}
             label={t('发布', 'Publish')}
-            onClick={() => doPublishToSource(skill.id)}
+            onClick={() => setShowPublish(true)}
             accent
           />
         )}
@@ -244,13 +267,13 @@ export default function SkillCard({ skill }: SkillCardProps) {
             <ActionBtn
               icon={<ArrowUpFromLine className="w-3.5 h-3.5" />}
               label={t('发布到源码', 'To Source')}
-              onClick={() => doPublishToSource(skill.id)}
+              onClick={() => setShowPublish(true)}
             />
           </>
         )}
 
-        {/* Directory dropdown (for installed/update_available/disabled skills) */}
-        {skill.status !== 'not_installed' && (
+        {/* Directory dropdown (for installed/update_available/disabled skills, or not_installed with source) */}
+        {(skill.status !== 'not_installed' || skill.sourcePath) && (
           <div className="relative" ref={dropdownRef}>
             <ActionBtn
               icon={<FolderOpen className="w-3.5 h-3.5" />}
@@ -259,14 +282,16 @@ export default function SkillCard({ skill }: SkillCardProps) {
             />
             {showDirectoryDropdown && (
               <div className="absolute right-0 top-8 mt-1 w-48 bg-gray-800 border border-gray-600 rounded-md shadow-lg z-10">
-                <button
-                  onClick={() => handleOpenDirectory('installed')}
-                  className="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 flex items-center gap-2"
-                >
-                  <FolderOpen className="w-3 h-3" />
-                  {t('打开安装目录', 'Open Install Dir')}
-                </button>
-                {syncStatus !== 'no_source' && (
+                {skill.status !== 'not_installed' && (
+                  <button
+                    onClick={() => handleOpenDirectory('installed')}
+                    className="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                  >
+                    <FolderOpen className="w-3 h-3" />
+                    {t('打开安装目录', 'Open Install Dir')}
+                  </button>
+                )}
+                {(syncStatus !== 'no_source' || skill.sourcePath) && (
                   <button
                     onClick={() => handleOpenDirectory('source')}
                     className="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 flex items-center gap-2"
@@ -280,6 +305,19 @@ export default function SkillCard({ skill }: SkillCardProps) {
           </div>
         )}
       </div>
+
+      {/* Publish dialog */}
+      <PublishDialog
+        open={showPublish}
+        itemName={skill.name}
+        itemType="skill"
+        currentVersion={skill.version}
+        currentDcc={inferredDcc}
+        currentSource={skill.source}
+        currentSourcePath={skill.sourcePath}
+        onClose={() => setShowPublish(false)}
+        onPublish={handlePublish}
+      />
     </div>
   )
 }

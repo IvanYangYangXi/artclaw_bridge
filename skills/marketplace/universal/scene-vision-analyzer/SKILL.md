@@ -7,6 +7,10 @@ description: >
   (2) converting 2D concept art to UE/3D engine scene layout,
   (3) extracting object lists, positions, and spatial relationships from game art.
   Triggers: "分析场景", "场景原画分析", "scene analysis", "图片分析", "结构化分析", "2D to 3D".
+metadata:
+  artclaw:
+    version: 0.0.2
+    author: ArtClaw
 ---
 
 # Scene Vision Analyzer

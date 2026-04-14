@@ -1,0 +1,112 @@
+{
+  "id": "official/artclaw-skill-compliance-checker",
+  "name": "artclaw-Skill合规检查器",
+  "description": "自动检查已安装Skill与源码版本同步、格式合规、文件一致性。无需配置参数，全自动从平台配置读取路径。",
+  "agentHint": "通过 Tool Manager API 执行: POST /api/v1/tools/official%2Fartclaw-skill-compliance-checker/execute。或从工具详情 API 获取 tool_path 字段，执行 {tool_path}/main.py。不要运行 openclaw skills check。",
+  "version": "1.3.0",
+  "targetDCCs": [
+    "general"
+  ],
+  "defaultFilters": {
+    "path": [
+      {
+        "pattern": "$skills_installed/**/*"
+      },
+      {
+        "pattern": "$project_root/skills/**/*"
+      }
+    ]
+  },
+  "implementation": {
+    "type": "script",
+    "entry": "main.py",
+    "function": "check_skill_versions"
+  },
+  "inputs": [],
+  "outputs": [
+    {
+      "id": "total_checked",
+      "name": "检查Skill数",
+      "type": "number"
+    },
+    {
+      "id": "updates_available",
+      "name": "可更新数",
+      "type": "number"
+    },
+    {
+      "id": "conflicts",
+      "name": "冲突数",
+      "type": "number"
+    },
+    {
+      "id": "report",
+      "name": "检查报告",
+      "type": "string"
+    }
+  ],
+  "triggers": [
+    {
+      "id": "periodic",
+      "name": "每2小时检查",
+      "enabled": true,
+      "trigger": {
+        "type": "schedule",
+        "mode": "interval",
+        "interval": 7200000
+      },
+      "execution": {
+        "mode": "silent",
+        "timeout": 60
+      }
+    },
+    {
+      "id": "on-skill-change",
+      "name": "Skill文件变化时检查",
+      "enabled": true,
+      "trigger": {
+        "type": "watch",
+        "events": [
+          "created",
+          "modified",
+          "deleted"
+        ],
+        "debounceMs": 3000
+      },
+      "useDefaultFilters": false,
+      "filters": {
+        "path": [
+          {
+            "pattern": "$skills_installed/**/*.py"
+          },
+          {
+            "pattern": "$skills_installed/**/*.md"
+          },
+          {
+            "pattern": "$skills_installed/**/*.json"
+          },
+          {
+            "pattern": "$project_root/skills/**/*.py"
+          },
+          {
+            "pattern": "$project_root/skills/**/*.md"
+          },
+          {
+            "pattern": "$project_root/skills/**/*.json"
+          }
+        ],
+        "name": [
+          {
+            "pattern": ".*\\.(py|md|json)$"
+          }
+        ]
+      },
+      "execution": {
+        "mode": "notify",
+        "timeout": 30
+      }
+    }
+  ],
+  "author": "ArtClaw",
+  "source": "official"
+}

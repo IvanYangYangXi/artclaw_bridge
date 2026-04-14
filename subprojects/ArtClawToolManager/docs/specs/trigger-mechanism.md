@@ -1,8 +1,8 @@
 # ArtClaw Tool Manager - 工具触发机制设计
 
-> 版本: 1.0
-> 日期: 2026-04-10
-> 说明: 定义工具的触发方式、条件筛选、参数预设的架构设计
+> 版本: 2.0
+> 日期: 2026-04-14
+> 说明: 定义工具的触发方式、条件筛选、参数预设、路径变量、manifest 同步的架构设计
 
 ---
 
@@ -21,10 +21,21 @@
 ```
 工具触发机制 = 触发方式（When） + 条件筛选（What） + 参数预设（How）
 
-触发方式: 手动 / 事件 / 定时
-条件筛选: 目录 / 命名 / 类型 / 选择对象 等
+触发方式: 手动 / 事件 / 定时 / 文件监听
+条件筛选: 路径($variable) / 命名 / 类型 / 选择对象 等
 参数预设: 工具参数的默认值组合
 ```
+
+### 1.3 关键设计原则
+
+| 原则 | 说明 |
+|------|------|
+| **路径统一** | 所有路径声明统一在 `filters.path` 中，watch trigger 不含 `paths` 字段 |
+| **$variable 路径变量** | filters.path 支持 `$skills_installed`、`$project_root` 等变量前缀，运行时解析 |
+| **脚本不硬编码** | 工具脚本从自身 manifest 的 filters.path 读取路径，不在代码中硬编码 |
+| **manifest 自动同步** | manifest.json 中的 triggers 在服务启动时自动同步到 triggers.json |
+| **DCC 类型一致性** | event trigger 的 dcc 必须与 targetDCCs 兼容，通用工具不绑定 DCC 事件 |
+| **筛选条件分场景** | 文件路径筛选适用于 watch/所有类型，场景对象筛选仅适用于 event/manual |
 
 ---
 
@@ -34,10 +45,11 @@
 
 | 类型 | 说明 | 示例 |
 |------|------|------|
-| **manual** | 手动点击运行 | 用户在管理器中点击[运行] |
 | **event** | DCC 事件触发 | UE 保存资源时、Maya 导出 FBX 时 |
 | **schedule** | 定时/周期触发 | 每30分钟、每天凌晨2点 |
 | **watch** | 文件/目录监听触发 | 目录下有新文件时自动运行 |
+
+> **手动执行**不是触发规则，直接点击工具的"运行"按钮即可。
 
 ### 2.2 事件触发（Event Trigger）
 
@@ -93,11 +105,16 @@
 
 ### 2.4 文件监听触发（Watch Trigger）
 
+**监听路径由 filters.path 统一指定**（不在 trigger 中重复声明 `paths`），watch 只声明监听哪些文件事件和防抖时间。
+
 | 事件 | 说明 |
 |------|------|
 | `file.created` | 新文件创建 |
 | `file.modified` | 文件修改 |
 | `file.deleted` | 文件删除 |
+
+> ⚠️ watch trigger 不包含 `paths` 字段。监听范围等同于该触发规则的 `filters.path`。
+> 如果没有 filters.path，则 watch 无法确定监听范围，规则无效。
 
 ---
 
@@ -107,12 +124,68 @@
 
 | 维度 | 说明 | 示例 |
 |------|------|------|
-| **path** | 目录路径匹配 | `/Game/Characters/**`、`/scenes/*.ma` |
+| **path** | 目录路径匹配（glob） | `$skills_installed/**/*.md`、`/Game/Characters/**` |
 | **name** | 命名正则匹配 | `^SM_.*`、`*_LOD0` |
 | **type** | 资源/对象类型 | `StaticMesh`、`Material`、`mesh`、`joint` |
 | **selection** | 当前选中对象 | 只对选中的对象运行 |
 | **property** | 属性条件 | `vertex_count > 10000`、`has_uv2 == false` |
 | **tag** | 标签匹配 | `production`、`wip` |
+
+### 3.1.1 路径变量（Path Variables）
+
+filters.path 的 pattern 支持 `$variable` 前缀，运行时由引擎解析为实际路径。
+
+| 变量 | 解析来源 | 示例值 |
+|------|----------|--------|
+| `$skills_installed` | `~/.openclaw/skills` 或平台配置 | `C:/Users/x/.openclaw/skills` |
+| `$project_root` | `~/.artclaw/config.json` → `project_root` | `D:/MyProject_D/artclaw_bridge` |
+| `$tools_dir` | `~/.artclaw/tools` | `C:/Users/x/.artclaw/tools` |
+| `$home` | 用户主目录 | `C:/Users/x` |
+
+**解析规则**:
+1. `$variable/...` → 替换为对应绝对路径
+2. 不含 `$` 前缀的路径视为 DCC 内资源路径（如 `/Game/Characters/**`）
+3. 变量不存在或路径不存在 → 跳过该 filter 条目，不报错
+
+**运行时统一读取**: 无论手动运行还是自动触发，工具执行时都应从 manifest 的 `defaultFilters`（工具级）或 `triggers[].filters`（规则级）读取目标路径范围，**不在脚本中硬编码路径**。
+
+详见独立文档: [路径变量参考](path-variables.md)
+
+### 3.1.2 工具级默认筛选条件（defaultFilters）
+
+manifest 顶层支持 `defaultFilters` 字段，定义工具级的默认筛选条件：
+
+```json
+{
+  "defaultFilters": {
+    "path": [
+      { "pattern": "$project_root/tools/**/*" },
+      { "pattern": "$tools_dir/**/*" }
+    ]
+  }
+}
+```
+
+触发规则可通过 `useDefaultFilters: true` 继承此条件，或设为 `false` 自定义覆盖：
+
+```json
+{
+  "triggers": [
+    {
+      "id": "on-change",
+      "useDefaultFilters": true,
+      "filters": {}
+    },
+    {
+      "id": "special",
+      "useDefaultFilters": false,
+      "filters": { "path": [{ "pattern": "$tools_dir/user/**/*" }] }
+    }
+  ]
+}
+```
+
+**脚本读取**: 脚本运行时只从 `defaultFilters.path` 读取路径范围。`triggers[].filters` 由触发引擎处理，脚本不关心。
 
 ### 3.2 筛选组合逻辑
 
@@ -188,10 +261,13 @@ interface TriggerRule {
   enabled: boolean;              // 是否启用
   toolId: string;                // 关联的工具 ID
   
-  // 触发方式
-  trigger: ManualTrigger | EventTrigger | ScheduleTrigger | WatchTrigger;
+  // 触发方式（不含 manual，手动执行直接点运行按钮）
+  trigger: EventTrigger | ScheduleTrigger | WatchTrigger;
   
-  // 条件筛选（可选）
+  // 默认筛选条件继承
+  useDefaultFilters?: boolean;   // true = 继承工具级 defaultFilters，false/省略 = 使用下方 filters
+  
+  // 条件筛选（useDefaultFilters=true 时可为空）
   filters?: FilterConfig;
   
   // 参数预设（可选，不指定则使用工具默认参数）
@@ -204,11 +280,6 @@ interface TriggerRule {
     retryCount: number;          // 失败重试次数
     onError: 'ignore' | 'notify' | 'block';     // 错误处理
   };
-}
-
-// 手动触发
-interface ManualTrigger {
-  type: 'manual';
 }
 
 // 事件触发
@@ -228,15 +299,14 @@ interface ScheduleTrigger {
   at?: string;                   // ISO 时间（once 模式）
 }
 
-// 文件监听触发
+// 文件监听触发（监听路径由 filters.path 统一指定）
 interface WatchTrigger {
   type: 'watch';
-  paths: string[];               // 监听路径
   events: ('created' | 'modified' | 'deleted')[];
   debounceMs?: number;           // 防抖时间
 }
 
-// 条件筛选配置
+// 条件筛选配置（path 支持 $variable 前缀，watch 和手动运行共用）
 interface FilterConfig {
   path?: PathFilter[];
   name?: NameFilter[];
@@ -342,14 +412,15 @@ class DCCEventManager:
         dcc = self._adapter.get_software_name()
         
         for rule in self._rules:
-            if rule.trigger.type != 'event':
-                continue
-            if rule.trigger.dcc != dcc:
-                continue
             if not rule.enabled:
                 continue
             
-            self._register_dcc_event(rule)
+            if rule.trigger.type == 'event':
+                if rule.trigger.dcc != dcc:
+                    continue
+                self._register_dcc_event(rule)
+            elif rule.trigger.type == 'watch':
+                self._register_file_watch(rule)
     
     def _register_dcc_event(self, rule):
         """注册具体 DCC 事件"""
@@ -401,6 +472,31 @@ class DCCEventManager:
                     om.MSceneMessage.kAfterExport,
                     lambda *_: self._on_event(rule, {}))
     
+    def _register_file_watch(self, rule):
+        """
+        注册文件监听 — 监听路径从 rule.filters.path 解析（$variable 展开）。
+        watch trigger 自身不含 paths，统一由 filters.path 驱动。
+        """
+        evaluator = FilterEvaluator()
+        watch_dirs = evaluator.get_watch_paths(rule.filters)
+        
+        if not watch_dirs:
+            return  # 没有有效路径，规则无效
+        
+        events = rule.trigger.events  # ['created', 'modified', 'deleted']
+        debounce = rule.trigger.debounceMs or 1000
+        
+        for watch_dir in watch_dirs:
+            self._file_watcher.add_watch(
+                path=watch_dir,
+                events=events,
+                debounce_ms=debounce,
+                callback=lambda changed_file: self._on_event(rule, {
+                    'asset_path': changed_file,
+                    'asset_name': os.path.basename(changed_file),
+                }),
+            )
+    
     def _on_event(self, rule, context):
         """事件触发回调"""
         # 1. 评估筛选条件
@@ -434,6 +530,41 @@ class DCCEventManager:
 class FilterEvaluator:
     """条件筛选评估器"""
     
+    # 路径变量映射（运行时由引擎从配置解析）
+    PATH_VARIABLES = {
+        "$skills_installed": "~/.openclaw/skills",   # 或平台配置值
+        "$project_root": "",                          # ~/.artclaw/config.json
+        "$tools_dir": "~/.artclaw/tools",
+        "$home": "~",
+    }
+    
+    def resolve_path_variable(self, pattern: str) -> str:
+        """解析 $variable 前缀为绝对路径"""
+        for var, value in self.PATH_VARIABLES.items():
+            if pattern.startswith(var):
+                import os
+                resolved = os.path.expanduser(pattern.replace(var, value, 1))
+                return resolved
+        return pattern
+    
+    def get_watch_paths(self, filters: FilterConfig) -> list[str]:
+        """
+        从 filters.path 中提取并解析监听路径（供 FileWatcher 使用）。
+        watch trigger 的监听范围 = filters.path 解析后的目录列表。
+        """
+        if not filters or not filters.path:
+            return []
+        paths = []
+        for pf in filters.path:
+            if pf.exclude:
+                continue
+            # 取 glob 之前的基础目录
+            base = pf.pattern.split("/**")[0].split("/*")[0]
+            resolved = self.resolve_path_variable(base)
+            if resolved:
+                paths.append(resolved)
+        return paths
+    
     def evaluate(self, filters: FilterConfig, context: dict) -> bool:
         """评估筛选条件，返回 True 表示通过"""
         if not filters:
@@ -456,12 +587,13 @@ class FilterEvaluator:
         return True
     
     def _match_path(self, path_filters, context):
-        """目录路径匹配（glob 模式）"""
+        """目录路径匹配（glob 模式，支持 $variable 解析）"""
         import fnmatch
         asset_path = context.get('asset_path', '')
         
         for pf in path_filters:
-            matched = fnmatch.fnmatch(asset_path, pf.pattern)
+            resolved_pattern = self.resolve_path_variable(pf.pattern)
+            matched = fnmatch.fnmatch(asset_path, resolved_pattern)
             if pf.exclude:
                 if matched:
                     return False
@@ -905,7 +1037,85 @@ class ComfyUIAdapter(BaseDCCAdapter):
 
 ---
 
-## 11. 更新记录
+## 11. Manifest 触发规则同步
+
+### 11.1 同步机制
+
+manifest.json 中声明的 `triggers` 在 Tool Manager 启动时自动同步到 `~/.artclaw/triggers.json`。
+
+**同步流程**:
+1. `main.py` lifespan → `scan_tools()` 扫描所有工具
+2. `TriggerService.sync_manifest_triggers(tools)` 遍历每个工具的 manifest triggers
+3. 按 `(tool_id, manifest_id)` 去重，已存在则跳过
+4. `tool_id` 格式为 `{source}/{name}`（与 tool_service 一致，如 `official/artclaw-Skill合规检查器`）
+5. manifest trigger 格式 → 内部格式映射（见下表）
+
+**字段映射**:
+
+| manifest 字段 | triggers.json 字段 | 说明 |
+|---|---|---|
+| `id` | `manifest_id` | 用于去重，不覆盖内部 `id`（UUID） |
+| `trigger.type` | `trigger_type` | manual/event/schedule/watch |
+| `trigger.dcc` | `dcc` | 仅 event 类型 |
+| `trigger.event` | `event_type` | 仅 event 类型 |
+| `trigger.timing` | `event_timing` | 仅 event 类型 |
+| `filters` | `conditions` | 直接透传（path/name/type 等） |
+| `execution.mode` | `execution_mode` | silent/notify/interactive |
+| `enabled` | `is_enabled` | — |
+| `trigger.events` + `trigger.debounceMs` | `schedule_config.watch_events` + `schedule_config.debounce_ms` | 仅 watch 类型 |
+
+### 11.2 前端数据格式
+
+后端 API 返回 snake_case，前端通过 `snakeToCamel()` 转换为 camelCase。
+
+**编辑器数据映射**（ToolDetailDialog ↔ TriggerRuleEditor）:
+- 打开编辑: `conditions.path` → `fileRules`，`conditions.name` → `sceneRules`
+- 保存: watch 类型 `fileRules` → `conditions.path`，`sceneRules` → `conditions.name`
+
+---
+
+## 12. 合规性检查规则
+
+`tool-compliance-checker` 对触发规则的检查项（第 9 类规则）:
+
+| 编号 | 级别 | 检查项 | 说明 |
+|------|------|--------|------|
+| 9a | warning | trigger 缺少 `id` | manifest 同步去重需要 |
+| 9a | error | trigger `id` 重复 | 同一工具内不能重复 |
+| 9b | error | watch 使用 `trigger.paths` | 已废弃，改用 `filters.path` |
+| 9b | error | watch 缺少 `filters.path` | 无法确定监听范围 |
+| 9c | error | event 的 dcc 与 targetDCCs 不匹配 | 包括：通用工具绑定了特定 DCC |
+| 9d | warning | execution 缺少 `mode` | — |
+
+---
+
+## 13. 筛选条件适用场景
+
+| 筛选维度 | watch | event | schedule | manual |
+|----------|-------|-------|----------|--------|
+| **path**（文件路径，支持 $variable） | ✅ 主要用途 | ✅ | ❌ | ❌ |
+| **name**（文件名正则） | ✅ | ✅ | ❌ | ❌ |
+| **type**（场景对象类型） | ❌ | ✅ | ❌ | ❌ |
+| **selection**（当前选中） | ❌ | ✅ | ❌ | ❌ |
+| **property**（属性条件） | ❌ | ✅ | ❌ | ❌ |
+
+> - **watch**: filters.path 决定监听哪些文件路径
+> - **event**: filters 决定什么条件下响应 DCC 事件（路径/类型/选中对象）
+> - **schedule/manual**: 不需要筛选条件。定时触发"到点就跑"，手动触发"用户主动运行"。扫描范围由工具脚本从 manifest 的其他触发规则的 filters.path 读取，或通过参数预设指定。
+
+---
+
+## 14. 更新记录
+
+### v2.0 (2026-04-14)
+- WatchTrigger 移除 `paths` 字段，监听路径统一由 `filters.path` 驱动
+- 新增路径变量体系（$skills_installed / $project_root / $tools_dir / $home）
+- FilterEvaluator 新增 `resolve_path_variable()` 和 `get_watch_paths()` 方法
+- DCCEventManager 新增 `_register_file_watch()` 从 filters.path 解析监听目录
+- 新增 manifest 触发规则自动同步机制（§11）
+- 新增合规性检查规则（§12）
+- 新增筛选条件适用场景矩阵（§13）
+- 新增设计原则（§1.3）
 
 ### v1.0 (2026-04-10)
 - 初始版本

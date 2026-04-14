@@ -40,7 +40,20 @@ class SkillUpdateRequest(BaseModel):
     is_favorited: Optional[bool] = None
 
 
+class SkillPublishRequest(BaseModel):
+    version: Optional[str] = None
+    bump: str = "patch"
+    target: str = "marketplace"   # "official" | "marketplace"
+    dcc: str = ""                  # target DCC directory (e.g. "universal", "unreal")
+    description: str = ""
+
+
 class SkillBatchRequest(BaseModel):
+    operation: str = Field(
+        ...,
+        description="install|uninstall|enable|disable|pin|unpin|favorite|unfavorite",
+    )
+    skill_ids: List[str]
     operation: str = Field(
         ...,
         description="install|uninstall|enable|disable|pin|unpin|favorite|unfavorite",

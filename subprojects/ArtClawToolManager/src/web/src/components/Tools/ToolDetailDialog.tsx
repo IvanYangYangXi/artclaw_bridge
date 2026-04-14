@@ -3,7 +3,7 @@
 // Sections: Info, Parameter Presets, Trigger Rules
 import { useState, useEffect, useCallback } from 'react'
 import {
-  X, Plus, Trash2, Star, Save, Copy, Package, Code, Layers,
+  X, Plus, Trash2, Star, Save, Copy, Package, Code, Layers, Pencil,
 } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { useAppStore } from '../../stores/appStore'
@@ -12,9 +12,10 @@ import type {
   ToolItemExtended, ParameterPreset, TriggerRuleData, ImplementationType, ToolParameter,
 } from '../../types'
 import TriggerRuleEditor, { type TriggerFormData } from './TriggerRuleEditor'
+import PathVariablesHelp from '../common/PathVariablesHelp'
 import {
   fetchPresets, fetchTriggers,
-  createTrigger, deleteTrigger, updateTool, createTool,
+  createTrigger, deleteTrigger, updateTrigger, updateTool, createTool,
 } from '../../api/client'
 
 // ---------- Props ----------
@@ -43,6 +44,7 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
   // -- Editable state (all changes buffered until save) --
   const [name, setName] = useState(tool.name)
   const [description, setDescription] = useState(tool.description ?? '')
+  const [author, setAuthor] = useState(tool.author ?? '')
   const [presets, setPresets] = useState<ParameterPreset[]>([])
   const [triggers, setTriggers] = useState<TriggerRuleData[]>([])
 
@@ -50,6 +52,7 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
   const [activePresetId, setActivePresetId] = useState<string | null>(null)
   const [showNewPreset, setShowNewPreset] = useState(false)
   const [showNewTrigger, setShowNewTrigger] = useState(false)
+  const [editingTriggerId, setEditingTriggerId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
 
@@ -68,6 +71,7 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
     if (!open) return
     setName(tool.name)
     setDescription(tool.description ?? '')
+    setAuthor(tool.author ?? '')
     setEditedInputs(null)
     setDirty(false)
     // Load presets
@@ -82,7 +86,7 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
   const handleSave = async () => {
     setSaving(true)
     try {
-      await updateTool(tool.id, { name, description, manifest: { ...(tool.manifest ?? {}), inputs: editedInputs ?? tool.manifest?.inputs, presets } })
+      await updateTool(tool.id, { name, description, author, manifest: { ...(tool.manifest ?? {}), inputs: editedInputs ?? tool.manifest?.inputs, presets } })
       setDirty(false)
       onPresetsChange?.()
     } catch { /* ignore */ }
@@ -132,13 +136,34 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
     markDirty()
   }
 
+  /** Convert editor conditions to API format.
+   *  For watch triggers, map fileRules → conditions.path (manifest filters format). */
+  const conditionsToApi = (data: TriggerFormData): Record<string, unknown> => {
+    const cond: Record<string, unknown> = {}
+    if (data.triggerType === 'watch') {
+      // Watch triggers use filters.path format
+      if (data.conditions.fileRules?.length) {
+        cond.path = data.conditions.fileRules.map((r) => ({ pattern: r.pattern }))
+      }
+      if (data.conditions.sceneRules?.length) {
+        cond.name = data.conditions.sceneRules.map((r) => ({ pattern: r.pattern }))
+      }
+    } else {
+      // Event/manual triggers use legacy format
+      if (data.conditions.fileRules?.length) cond.fileRules = data.conditions.fileRules
+      if (data.conditions.sceneRules?.length) cond.sceneRules = data.conditions.sceneRules
+    }
+    if (data.conditions.typeFilter) cond.typeFilter = data.conditions.typeFilter
+    return cond
+  }
+
   // -- Trigger CRUD (API calls) --
   const handleCreateTrigger = async (data: TriggerFormData) => {
     try {
       const resp = await createTrigger(tool.id, {
         name: data.name, trigger_type: data.triggerType, dcc: data.dcc, event_type: data.eventType,
         event_timing: data.eventTiming, execution_mode: data.executionMode, is_enabled: data.isEnabled,
-        conditions: data.conditions, parameter_preset_id: data.parameterPresetId,
+        conditions: conditionsToApi(data), parameter_preset_id: data.parameterPresetId,
         schedule_config: data.scheduleConfig,
       })
       if (resp.success && resp.data) setTriggers((prev) => [...prev, resp.data as TriggerRuleData])
@@ -148,6 +173,73 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
 
   const handleDeleteTrigger = async (id: string) => {
     try { await deleteTrigger(id); setTriggers((prev) => prev.filter((t) => t.id !== id)) } catch { /* ignore */ }
+    if (editingTriggerId === id) setEditingTriggerId(null)
+  }
+
+  const handleUpdateTrigger = async (id: string, data: TriggerFormData) => {
+    try {
+      const resp = await updateTrigger(id, {
+        name: data.name, trigger_type: data.triggerType, dcc: data.dcc, event_type: data.eventType,
+        event_timing: data.eventTiming, execution_mode: data.executionMode, is_enabled: data.isEnabled,
+        conditions: conditionsToApi(data), parameter_preset_id: data.parameterPresetId,
+        schedule_config: data.scheduleConfig,
+      })
+      if (resp.success && resp.data) {
+        // snakeToCamel the response
+        const updated = Object.fromEntries(
+          Object.entries(resp.data as Record<string, unknown>).map(([k, v]) => [k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()), v])
+        ) as unknown as TriggerRuleData
+        setTriggers((prev) => prev.map((t) => t.id === id ? updated : t))
+      }
+    } catch { /* ignore */ }
+    setEditingTriggerId(null)
+  }
+
+  const handleToggleTrigger = async (id: string, currentEnabled: boolean) => {
+    try {
+      const resp = await updateTrigger(id, { is_enabled: !currentEnabled })
+      if (resp.success) {
+        setTriggers((prev) => prev.map((t) => t.id === id ? { ...t, isEnabled: !currentEnabled } : t))
+      }
+    } catch { /* ignore */ }
+  }
+
+  /** Convert TriggerRuleData → TriggerFormData for the editor.
+   *  Maps both new format (conditions.path/name) and legacy (conditions.fileRules/sceneRules). */
+  const triggerToFormData = (t: TriggerRuleData): TriggerFormData => {
+    const cond = t.conditions || {}
+
+    // Map conditions.path → fileRules (manifest filters format → editor format)
+    let fileRules: Array<{ pattern: string }> = cond.fileRules || []
+    if (!fileRules.length && Array.isArray(cond.path)) {
+      fileRules = cond.path.map((p: { pattern: string }) => ({ pattern: p.pattern }))
+    }
+
+    let sceneRules: Array<{ pattern: string }> = cond.sceneRules || []
+    if (!sceneRules.length && Array.isArray(cond.name)) {
+      sceneRules = cond.name.map((n: { pattern: string }) => ({ pattern: n.pattern }))
+    }
+
+    return {
+      name: t.name || '',
+      triggerType: (t.triggerType || 'manual') as TriggerFormData['triggerType'],
+      dcc: (t as TriggerRuleData & { dcc?: string }).dcc || '',
+      eventType: t.eventType || '',
+      eventTiming: (t.eventTiming || 'post') as TriggerFormData['eventTiming'],
+      executionMode: (t.executionMode || 'notify') as TriggerFormData['executionMode'],
+      useDefaultFilters: (t as TriggerRuleData & { useDefaultFilters?: boolean; use_default_filters?: boolean }).useDefaultFilters
+        ?? (t as TriggerRuleData & { use_default_filters?: boolean }).use_default_filters
+        ?? false,
+      conditions: {
+        fileRules,
+        sceneRules,
+        typeFilter: cond.typeFilter,
+      },
+      parameterPreset: [],
+      parameterPresetId: (t as TriggerRuleData & { parameterPresetId?: string }).parameterPresetId || '',
+      isEnabled: t.isEnabled ?? true,
+      scheduleConfig: (t.scheduleConfig as TriggerFormData['scheduleConfig']) || { type: 'interval' },
+    }
   }
 
   if (!open) return null
@@ -181,11 +273,17 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
             <input value={name} onChange={(e) => { setName(e.target.value); markDirty() }} className={inputCls} />
             <label className="block text-[11px] text-text-dim mb-1 mt-3">{zh ? '描述' : 'Description'}</label>
             <textarea value={description} onChange={(e) => { setDescription(e.target.value); markDirty() }} rows={2} className={cn(inputCls, 'resize-y')} />
-            <div className="flex items-center gap-4 mt-3 text-[11px] text-text-dim">
+            <label className="block text-[11px] text-text-dim mb-1 mt-3">{zh ? '作者' : 'Author'}</label>
+            <input value={author} onChange={(e) => { setAuthor(e.target.value); markDirty() }} placeholder={zh ? '作者名称' : 'Author name'} className={inputCls} />
+            <div className="flex items-center gap-4 mt-3 text-[11px] text-text-dim flex-wrap">
               <span>{zh ? '版本' : 'Version'}: {tool.version ?? '0.0.0'}</span>
               <span>{zh ? '来源' : 'Source'}: {tool.source}</span>
               <span className="flex items-center gap-1">{IMPL_ICONS[tool.implementationType ?? 'script']} {tool.implementationType ?? 'script'}</span>
-              {tool.targetDCCs && <span>DCC: {tool.targetDCCs.map((d) => DCC_DISPLAY_NAMES[d] ?? d).join(', ')}</span>}
+              {tool.targetDCCs && tool.targetDCCs.length > 0 && <span>DCC: {tool.targetDCCs.map((d) => DCC_DISPLAY_NAMES[d] ?? d).join(', ')}</span>}
+            </div>
+            <div className="flex items-center gap-4 mt-2 text-[11px] text-text-dim flex-wrap">
+              {tool.createdAt && <span>{zh ? '创建' : 'Created'}: {tool.createdAt.slice(0, 10)}</span>}
+              {tool.updatedAt && <span>{zh ? '更新' : 'Updated'}: {tool.updatedAt.slice(0, 10)}</span>}
             </div>
           </Section>
 
@@ -339,41 +437,99 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
             )}
           </Section>
 
+          {/* ── Section 3.5: Default Filters ── */}
+          <Section title={zh ? '🔍 默认筛选条件' : '🔍 Default Filters'}>
+            <p className="text-[11px] text-text-dim mb-2">
+              {zh
+                ? '工具级默认筛选条件，触发规则可选择继承此条件或自定义覆盖。脚本可统一读取此配置。'
+                : 'Tool-level default filter conditions. Trigger rules can inherit or override. Scripts read this as the canonical source.'}
+            </p>
+            <DefaultFiltersEditor
+              filters={tool.manifest?.defaultFilters}
+              onSave={async (filters) => {
+                const manifest = { ...(tool.manifest || { name: tool.name }), defaultFilters: filters }
+                try {
+                  await updateTool(tool.id, { manifest })
+                  // Update local tool reference
+                  tool.manifest = manifest
+                } catch { /* ignore */ }
+              }}
+              language={language}
+            />
+          </Section>
+
           {/* ── Section 4: Trigger Rules ── */}
           <Section title={zh ? '⚡ 触发规则' : '⚡ Trigger Rules'}>
             {triggers.length > 0 ? (
               <div className="space-y-2 mb-3">
                 {triggers.map((t) => {
-                  const tAny = t as TriggerRuleData & { dcc?: string; parameterPresetId?: string }
+                  const tAny = t as TriggerRuleData & { dcc?: string; parameterPresetId?: string; trigger_type?: string }
+                  const triggerType = tAny.trigger_type || (tAny.dcc ? 'event' : 'manual')
                   const dccLabel = tAny.dcc ? (DCC_DISPLAY_NAMES[tAny.dcc] ?? tAny.dcc) : ''
                   const eventLabel = tAny.dcc && t.eventType ? getEventLabel(tAny.dcc, t.eventType, language) : t.eventType
                   const ppName = tAny.parameterPresetId ? presets.find((p) => p.id === tAny.parameterPresetId)?.name : undefined
                   const hasInlineFilter = t.conditions && (
                     t.conditions.fileRules?.length ||
                     t.conditions.sceneRules?.length ||
-                    t.conditions.typeFilter
+                    t.conditions.typeFilter ||
+                    t.conditions.path?.length
                   )
+                  const triggerTypeLabels: Record<string, string> = zh
+                    ? { manual: '手动', event: '事件', schedule: '定时', watch: '监听' }
+                    : { manual: 'Manual', event: 'Event', schedule: 'Schedule', watch: 'Watch' }
+                  const typeLabel = triggerTypeLabels[triggerType] ?? triggerType
                   return (
-                    <div key={t.id} className="flex items-start gap-2 p-2.5 rounded border border-border-default bg-bg-secondary">
-                      <span className={cn('w-2 h-2 rounded-full mt-1.5 shrink-0', t.isEnabled ? 'bg-success' : 'bg-text-dim')} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-small text-text-primary truncate">{t.name || (zh ? '未命名' : 'Unnamed')}</div>
-                        <div className="text-[11px] text-text-dim mt-0.5">
-                          {dccLabel && <span className="mr-2">{dccLabel}</span>}
-                          {eventLabel && <span className="mr-2">{eventLabel}</span>}
-                          <span>({t.eventTiming})</span>
-                          <span className="ml-2">{t.executionMode}</span>
-                        </div>
-                        {(hasInlineFilter || ppName) && (
-                          <div className="text-[10px] text-text-dim mt-0.5">
-                            {hasInlineFilter && <span className="mr-3">🔍 {zh ? '内联筛选' : 'Inline filter'}</span>}
-                            {ppName && <span>⭐ {ppName}</span>}
+                    <div key={t.id}>
+                      <div className="flex items-start gap-2 p-2.5 rounded border border-border-default bg-bg-secondary hover:border-accent/30 transition-colors">
+                        {/* Enable/disable toggle */}
+                        <button
+                          onClick={() => handleToggleTrigger(t.id, t.isEnabled ?? true)}
+                          title={t.isEnabled ? (zh ? '点击禁用' : 'Click to disable') : (zh ? '点击启用' : 'Click to enable')}
+                          className="mt-1 shrink-0"
+                        >
+                          <span className={cn('block w-2.5 h-2.5 rounded-full transition-colors', t.isEnabled !== false ? 'bg-success hover:bg-success/60' : 'bg-text-dim hover:bg-text-dim/60')} />
+                        </button>
+                        {/* Clickable content area */}
+                        <div
+                          className="flex-1 min-w-0 cursor-pointer"
+                          onClick={() => setEditingTriggerId(editingTriggerId === t.id ? null : t.id)}
+                        >
+                          <div className="text-small text-text-primary truncate">{t.name || (zh ? '未命名' : 'Unnamed')}</div>
+                          <div className="text-[11px] text-text-dim mt-0.5 flex items-center gap-1.5 flex-wrap">
+                            <span className="px-1.5 py-0.5 rounded bg-bg-quaternary text-[10px]">{typeLabel}</span>
+                            {dccLabel && <span>{dccLabel}</span>}
+                            {eventLabel && <span>{eventLabel}</span>}
+                            {triggerType === 'event' && <span>({t.eventTiming})</span>}
+                            <span>{t.executionMode}</span>
                           </div>
-                        )}
+                          {(hasInlineFilter || ppName) && (
+                            <div className="text-[10px] text-text-dim mt-0.5">
+                              {hasInlineFilter && <span className="mr-3">🔍 {zh ? '内联筛选' : 'Inline filter'}</span>}
+                              {ppName && <span>⭐ {ppName}</span>}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button onClick={() => setEditingTriggerId(editingTriggerId === t.id ? null : t.id)} className="p-1 rounded text-text-dim hover:text-accent transition-colors">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => handleDeleteTrigger(t.id)} className="p-1 rounded text-text-dim hover:text-error transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <button onClick={() => handleDeleteTrigger(t.id)} className="p-1 rounded text-text-dim hover:text-error transition-colors shrink-0">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {/* Inline editor when expanded */}
+                      {editingTriggerId === t.id && (
+                        <div className="mt-2 mb-1">
+                          <TriggerRuleEditor
+                            initialData={triggerToFormData(t)}
+                            parameterPresets={presets.map((p) => ({ id: p.id, name: p.name }))}
+                            defaultFilters={tool.manifest?.defaultFilters}
+                            onSave={(data) => handleUpdateTrigger(t.id, data)}
+                            onCancel={() => setEditingTriggerId(null)}
+                          />
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -385,11 +541,12 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
             {showNewTrigger ? (
               <TriggerRuleEditor
                 parameterPresets={presets.map((p) => ({ id: p.id, name: p.name }))}
+                defaultFilters={tool.manifest?.defaultFilters}
                 onSave={handleCreateTrigger}
                 onCancel={() => setShowNewTrigger(false)}
               />
-            ) : (
-              <button onClick={() => setShowNewTrigger(true)}
+            ) : !editingTriggerId && (
+              <button onClick={() => { setShowNewTrigger(true); setEditingTriggerId(null) }}
                 className="flex items-center gap-1 text-[12px] text-accent hover:text-accent-hover transition-colors">
                 <Plus className="w-3.5 h-3.5" />{zh ? '添加规则' : 'Add Rule'}
               </button>
@@ -413,6 +570,98 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
         </div>
       </div>
     </>
+  )
+}
+
+// ---------- Default Filters Editor ----------
+
+function DefaultFiltersEditor({
+  filters,
+  onSave,
+  language,
+}: {
+  filters?: import('../../types').FilterConfig
+  onSave: (filters: import('../../types').FilterConfig) => Promise<void>
+  language: string
+}) {
+  const zh = language === 'zh'
+  const [rules, setRules] = useState<string[]>(() => {
+    const paths = filters?.path || []
+    return paths.map(p => p.pattern)
+  })
+  const [dirty, setDirty] = useState(false)
+
+  const inputCls = 'w-full px-3 py-2 rounded bg-bg-tertiary text-text-primary text-small border border-border-default focus:border-accent focus:outline-none placeholder:text-text-dim transition-colors'
+
+  const updateRule = (index: number, value: string) => {
+    const next = [...rules]
+    next[index] = value
+    setRules(next)
+    setDirty(true)
+  }
+
+  const removeRule = (index: number) => {
+    setRules(rules.filter((_, i) => i !== index))
+    setDirty(true)
+  }
+
+  const addRule = () => {
+    setRules([...rules, ''])
+    setDirty(true)
+  }
+
+  const handleSave = async () => {
+    const pathEntries = rules.filter(r => r.trim()).map(pattern => ({ pattern: pattern.trim() }))
+    await onSave({ ...filters, path: pathEntries })
+    setDirty(false)
+  }
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-[11px] text-text-dim">
+        {zh ? '路径规则 (支持 $variable 和 glob)' : 'Path rules (supports $variable and glob)'}
+      </label>
+      {rules.map((rule, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={rule}
+            onChange={(e) => updateRule(i, e.target.value)}
+            placeholder="$project_root/tools/**/*"
+            className={cn(inputCls, 'flex-1 font-mono text-[11px]')}
+          />
+          <button
+            onClick={() => removeRule(i)}
+            className="p-1 rounded text-error/60 hover:text-error hover:bg-error/10 transition-colors shrink-0"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      ))}
+      {rules.length === 0 && (
+        <div className="text-[11px] text-text-dim py-1">
+          {zh ? '暂无默认路径规则，触发规则将使用自定义筛选条件' : 'No default path rules. Trigger rules will use custom filters.'}
+        </div>
+      )}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={addRule}
+          className="flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+        >
+          <Plus className="w-3 h-3" />
+          {zh ? '添加路径规则' : 'Add path rule'}
+        </button>
+        {dirty && (
+          <button
+            onClick={handleSave}
+            className="text-[11px] px-2 py-0.5 rounded bg-accent text-white hover:bg-accent/90 transition-colors"
+          >
+            {zh ? '保存' : 'Save'}
+          </button>
+        )}
+      </div>
+      <PathVariablesHelp language={language} />
+    </div>
   )
 }
 

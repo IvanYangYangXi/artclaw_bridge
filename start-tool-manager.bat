@@ -9,6 +9,15 @@ echo.
 
 cd /d "%~dp0subprojects\ArtClawToolManager"
 
+:: Check if server is already running on port 9876
+netstat -ano | findstr ":9876 " | findstr "LISTENING" >nul 2>&1
+if not errorlevel 1 (
+    echo [Info] ArtClaw Tool Manager is already running.
+    echo [Info] Opening browser...
+    start http://localhost:9876
+    exit /b 0
+)
+
 :: Check Python
 python --version >nul 2>&1
 if errorlevel 1 (

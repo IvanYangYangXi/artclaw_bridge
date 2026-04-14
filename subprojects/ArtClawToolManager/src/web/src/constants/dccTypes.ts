@@ -20,12 +20,14 @@ export interface DCCEventDef {
 
 export const DCC_EVENTS: Record<string, DCCEventDef[]> = {
   ue57: [
-    { event: 'asset.save', label: '资源保存', labelEn: 'Asset Save', timing: ['pre', 'post'] },
-    { event: 'asset.import', label: '资源导入', labelEn: 'Asset Import', timing: ['pre', 'post'] },
-    { event: 'asset.delete', label: '资源删除', labelEn: 'Asset Delete', timing: ['pre', 'post'] },
-    { event: 'level.save', label: '关卡保存', labelEn: 'Level Save', timing: ['pre', 'post'] },
-    { event: 'level.load', label: '关卡加载', labelEn: 'Level Load', timing: ['post'] },
-    { event: 'editor.startup', label: '编辑器启动', labelEn: 'Editor Startup', timing: ['post'] },
+    { event: 'asset.save.pre',   label: '保存拦截',   labelEn: 'Save Intercept',    timing: ['pre'] },
+    { event: 'asset.save',       label: '资源保存',   labelEn: 'Asset Save',         timing: ['post'] },
+    { event: 'asset.import.pre', label: '导入拦截',   labelEn: 'Import Intercept',   timing: ['pre'] },
+    { event: 'asset.import',     label: '资源导入',   labelEn: 'Asset Import',        timing: ['post'] },
+    { event: 'asset.delete.pre', label: '删除拦截',   labelEn: 'Delete Intercept',   timing: ['pre'] },
+    { event: 'asset.delete',     label: '资源删除',   labelEn: 'Asset Delete',        timing: ['post'] },
+    { event: 'level.load',       label: '关卡加载',   labelEn: 'Level Load',          timing: ['post'] },
+    { event: 'editor.startup',   label: '编辑器启动', labelEn: 'Editor Startup',      timing: ['post'] },
   ],
   maya2024: [
     { event: 'file.save', label: '文件保存', labelEn: 'File Save', timing: ['pre', 'post'] },

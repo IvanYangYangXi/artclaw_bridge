@@ -7,12 +7,17 @@ Periodically pings known DCC adapter HTTP endpoints to determine which
 DCC applications are online.  State changes are emitted through a
 callback so the rest of the system (e.g. MessageRouter) can push
 real-time ``dcc_status`` events to frontend clients.
+
+Also provides ``execute_on_dcc()`` to run Python code on a connected DCC
+via its MCP WebSocket server (JSON-RPC 2.0 ``tools/call`` → ``run_python``).
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
@@ -198,3 +203,135 @@ class DCCManager:
                 await cb(dcc_type, status)
             except Exception:
                 logger.exception("DCC status-change callback error")
+
+    # ------------------------------------------------------------------
+    # Code execution via MCP WebSocket
+    # ------------------------------------------------------------------
+
+    # Map manifest targetDCCs values → dcc_type keys in _statuses
+    _TARGET_DCC_MAP: Dict[str, str] = {
+        "ue57": "ue57",
+        "maya": "maya2024",
+        "max": "max2024",
+        "blender": "blender",
+        "houdini": "houdini",
+        "substance-painter": "sp",
+        "substance-designer": "sd",
+        "comfyui": "comfyui",
+    }
+
+    def resolve_dcc_type(self, target_dcc: str) -> Optional[str]:
+        """Resolve a manifest targetDCCs value to an internal dcc_type key."""
+        return self._TARGET_DCC_MAP.get(target_dcc, None)
+
+    def get_connected_dcc(self, target_dccs: List[str]) -> Optional[str]:
+        """Find the first connected DCC from a list of target DCC identifiers.
+
+        Returns the internal dcc_type key, or None if none are connected.
+        """
+        for td in target_dccs:
+            dcc_type = self.resolve_dcc_type(td)
+            if dcc_type and self._statuses.get(dcc_type, DCCStatus(dcc_type="")).connected:
+                return dcc_type
+        return None
+
+    async def execute_on_dcc(
+        self,
+        dcc_type: str,
+        code: str,
+        timeout: float = 60.0,
+    ) -> Dict[str, Any]:
+        """Execute Python code on a DCC via MCP WebSocket ``tools/call`` → ``run_python``.
+
+        Args:
+            dcc_type: Internal key (e.g. "blender", "maya2024").
+            code: Python source code to execute.
+            timeout: Seconds to wait for a response.
+
+        Returns:
+            Dict with "success", "output", "error" keys.
+        """
+        status = self._statuses.get(dcc_type)
+        if not status or not status.connected:
+            return {"success": False, "output": "", "error": f"DCC '{dcc_type}' is not connected"}
+
+        ws_url = f"ws://{status.host}:{status.port}/ws"
+        request_id = str(uuid.uuid4())
+
+        # JSON-RPC 2.0: initialize → tools/call → close
+        try:
+            import websockets  # type: ignore
+        except ImportError:
+            return {"success": False, "output": "", "error": "websockets package not installed"}
+
+        try:
+            async with websockets.connect(ws_url, open_timeout=5, close_timeout=3) as ws:
+                # 1. Initialize handshake
+                init_msg = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": f"init-{request_id}",
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "ArtClawToolManager", "version": "1.0.0"},
+                    },
+                })
+                await ws.send(init_msg)
+                # Read init response (ignore content)
+                await asyncio.wait_for(ws.recv(), timeout=5.0)
+
+                # 2. Send initialized notification
+                await ws.send(json.dumps({
+                    "jsonrpc": "2.0",
+                    "method": "initialized",
+                    "params": {},
+                }))
+
+                # 3. Call run_python
+                call_msg = json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "run_python",
+                        "arguments": {"code": code},
+                    },
+                })
+                await ws.send(call_msg)
+
+                # 4. Wait for the matching response
+                deadline = time.time() + timeout
+                while time.time() < deadline:
+                    remaining = deadline - time.time()
+                    raw = await asyncio.wait_for(ws.recv(), timeout=max(remaining, 0.1))
+                    resp = json.loads(raw)
+                    if resp.get("id") == request_id:
+                        # Parse MCP result
+                        if "error" in resp:
+                            err = resp["error"]
+                            return {
+                                "success": False,
+                                "output": "",
+                                "error": err.get("message", str(err)),
+                            }
+                        result = resp.get("result", {})
+                        is_error = result.get("isError", False)
+                        content_parts = result.get("content", [])
+                        text_parts = [
+                            c.get("text", "") for c in content_parts if c.get("type") == "text"
+                        ]
+                        output = "\n".join(text_parts)
+                        return {
+                            "success": not is_error,
+                            "output": output,
+                            "error": output if is_error else "",
+                        }
+                    # else: notification or other message, keep reading
+
+                return {"success": False, "output": "", "error": f"Timeout waiting for DCC response ({timeout}s)"}
+
+        except asyncio.TimeoutError:
+            return {"success": False, "output": "", "error": f"Connection/response timeout ({timeout}s)"}
+        except Exception as exc:
+            return {"success": False, "output": "", "error": f"DCC execution error: {exc}"}

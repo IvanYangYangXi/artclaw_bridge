@@ -1,7 +1,7 @@
 // Ref: docs/ui/ui-design.md#ChatPage
 // Chat page: StatusBar + PinnedSkills + MessageList + QuickInput + ChatInput + Toolbar
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Paperclip, Square, Send, ChevronDown, Pin, X, Pencil, Zap, Trash2, RotateCcw, MessageSquare } from 'lucide-react'
+import { Paperclip, Square, Send, ChevronDown, Pin, X, Pencil, Zap, RotateCcw, Plus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '../../utils/cn'
 import StatusBar from '../../components/Chat/StatusBar'
@@ -149,123 +149,33 @@ function QuickInputPanel({ onSelect }: { onSelect: (text: string) => void }) {
   )
 }
 
-// ---------- Session Menu ----------
-
-function SessionMenu() {
-  const [open, setOpen] = useState(false)
-  const [renamingId, setRenamingId] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const language = useAppStore((s) => s.language)
-  const { sessionEntries, activeSessionId, switchSession, deleteSessionEntry, renameSession, createNewSession } = useChatStore()
-
-  const handleRename = (id: string) => {
-    if (renameValue.trim()) {
-      renameSession(id, renameValue.trim())
-    }
-    setRenamingId(null)
-  }
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2 py-1.5 rounded text-sm text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors"
-      >
-        <MessageSquare className="w-4 h-4" />
-        <span className="max-w-[120px] truncate">
-          {sessionEntries.find((s) => s.id === activeSessionId)?.label ?? (language === 'zh' ? '对话' : 'Chat')}
-        </span>
-        <ChevronDown className="w-3 h-3" />
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 mb-1 w-64 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-20 max-h-[300px] flex flex-col">
-            <div className="flex-1 overflow-y-auto py-1">
-              {sessionEntries.map((s) => (
-                <div
-                  key={s.id}
-                  className={cn(
-                    'flex items-center gap-2 px-3 py-2 text-sm cursor-pointer transition-colors group',
-                    s.id === activeSessionId ? 'bg-blue-500/20 text-blue-300' : 'text-gray-300 hover:bg-gray-700',
-                  )}
-                  onClick={() => { switchSession(s.id); setOpen(false) }}
-                >
-                  {renamingId === s.id ? (
-                    <input
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleRename(s.id)
-                        if (e.key === 'Escape') setRenamingId(null)
-                      }}
-                      onBlur={() => handleRename(s.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      autoFocus
-                      className="flex-1 bg-gray-700 text-gray-200 px-2 py-0.5 rounded text-sm border border-gray-500 focus:border-blue-500 outline-none"
-                    />
-                  ) : (
-                    <span className="flex-1 truncate">{s.label}</span>
-                  )}
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setRenamingId(s.id); setRenameValue(s.label) }}
-                      className="p-1 rounded hover:bg-gray-600"
-                      title={language === 'zh' ? '重命名' : 'Rename'}
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                    {sessionEntries.length > 1 && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteSessionEntry(s.id) }}
-                        className="p-1 rounded hover:bg-red-900/50 text-gray-400 hover:text-red-400"
-                        title={language === 'zh' ? '删除' : 'Delete'}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="border-t border-gray-600 p-2">
-              <button
-                onClick={() => { createNewSession(); setOpen(false) }}
-                className="w-full flex items-center gap-1.5 px-3 py-1.5 rounded text-sm text-blue-400 hover:bg-blue-500/10 transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                {language === 'zh' ? '新建对话' : 'New Chat'}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
 // ---------- Toolbar ----------
 
-function Toolbar({ onNewChat, onSend, isTyping, onStop, onResume, cancelledStreamId }: {
-  onNewChat: () => void; onSend: () => void; isTyping: boolean; onStop: () => void;
-  onResume: () => void; cancelledStreamId: string | null;
+function Toolbar({ onSend, isTyping, onStop, onResume, onNewSession }: {
+  onSend: () => void; isTyping: boolean; onStop: () => void;
+  onResume: () => void; onNewSession: () => void;
 }) {
   const { sendMode, setSendMode } = useAppStore()
   const language = useAppStore((s) => s.language)
   const [showSendMenu, setShowSendMenu] = useState(false)
 
+  // 停止：isTyping 时可用
+  const canStop = isTyping
+  // 恢复：非 typing 时始终可用
+  const canResume = !isTyping
+
   return (
     <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-700">
       {/* Left actions */}
-      <SessionMenu />
       <button
-        onClick={onNewChat}
+        onClick={onNewSession}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors"
+        title={language === 'zh' ? '新建会话' : 'New session'}
       >
         <Plus className="w-4 h-4" />
         <span>{language === 'zh' ? '新对话' : 'New'}</span>
       </button>
+
       <button
         onClick={() => alert(language === 'zh' ? '附件功能即将推出' : 'Attachment coming soon')}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors"
@@ -276,26 +186,37 @@ function Toolbar({ onNewChat, onSend, isTyping, onStop, onResume, cancelledStrea
 
       <div className="flex-1" />
 
-      {/* Right actions */}
-      {isTyping && (
-        <button
-          onClick={onStop}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm bg-red-900/50 text-red-300 hover:bg-red-900/80 transition-colors"
-        >
-          <Square className="w-3.5 h-3.5" />
-          <span>{language === 'zh' ? '停止' : 'Stop'}</span>
-        </button>
-      )}
+      {/* Stop — always visible, dim when unavailable */}
+      <button
+        onClick={canStop ? onStop : undefined}
+        className={cn(
+          'flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors',
+          canStop
+            ? 'bg-red-900/50 text-red-300 hover:bg-red-900/80 cursor-pointer'
+            : 'bg-gray-800/40 text-gray-600 cursor-not-allowed',
+        )}
+        title={language === 'zh' ? '停止' : 'Stop'}
+        disabled={!canStop}
+      >
+        <Square className="w-3.5 h-3.5" />
+        <span>{language === 'zh' ? '停止' : 'Stop'}</span>
+      </button>
 
-      {!isTyping && cancelledStreamId && (
-        <button
-          onClick={onResume}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm bg-blue-900/50 text-blue-300 hover:bg-blue-900/80 transition-colors"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span>{language === 'zh' ? '恢复' : 'Resume'}</span>
-        </button>
-      )}
+      {/* Resume — always visible, dim when unavailable */}
+      <button
+        onClick={canResume ? onResume : undefined}
+        className={cn(
+          'flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors',
+          canResume
+            ? 'bg-blue-900/50 text-blue-300 hover:bg-blue-900/80 cursor-pointer'
+            : 'bg-gray-800/40 text-gray-600 cursor-not-allowed',
+        )}
+        title={language === 'zh' ? '恢复' : 'Resume'}
+        disabled={!canResume}
+      >
+        <RotateCcw className="w-3.5 h-3.5" />
+        <span>{language === 'zh' ? '恢复' : 'Resume'}</span>
+      </button>
 
       {/* Send button + mode dropdown */}
       <div className="relative flex items-center h-8">
@@ -355,8 +276,7 @@ function Toolbar({ onNewChat, onSend, isTyping, onStop, onResume, cancelledStrea
 // ---------- Chat Page ----------
 
 export default function ChatPage() {
-  const { sendMessage, isTyping, prefillMessage, prefillGuide, clearPrefill } = useChatStore()
-  const cancelledStreamId = useChatStore((s) => s.cancelledStreamId)
+  const { sendMessage, isTyping, prefillMessage, prefillGuide, clearPrefill, createNewSession } = useChatStore()
   const sendMode = useAppStore((s) => s.sendMode)
   const chatInputRef = useRef<ChatInputHandle>(null)
 
@@ -369,17 +289,12 @@ export default function ChatPage() {
     clearPrefill()
   }
 
-  const handleNewChat = () => {
-    useChatStore.getState().createNewSession()
-    clearPrefill()
-  }
-
   const handleStop = () => {
     useChatStore.getState().cancelRequest()
   }
 
   const handleResume = () => {
-    useChatStore.getState().resumeReceiving()
+    void useChatStore.getState().resumeReceiving()
   }
 
   const handleQuickInput = (text: string) => {
@@ -388,6 +303,10 @@ export default function ChatPage() {
 
   const handleToolbarSend = () => {
     chatInputRef.current?.triggerSend()
+  }
+
+  const handleNewSession = () => {
+    createNewSession()
   }
 
   return (
@@ -414,7 +333,13 @@ export default function ChatPage() {
       <div className="px-4 py-2">
         <ChatInput ref={chatInputRef} onSend={handleSend} sendMode={sendMode} initialValue={prefillMessage ?? undefined} />
       </div>
-      <Toolbar onNewChat={handleNewChat} onSend={handleToolbarSend} isTyping={isTyping} onStop={handleStop} onResume={handleResume} cancelledStreamId={cancelledStreamId} />
+      <Toolbar
+        onSend={handleToolbarSend}
+        isTyping={isTyping}
+        onStop={handleStop}
+        onResume={handleResume}
+        onNewSession={handleNewSession}
+      />
     </div>
   )
 }

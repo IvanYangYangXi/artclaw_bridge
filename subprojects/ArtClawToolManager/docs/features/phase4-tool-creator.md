@@ -155,4 +155,54 @@ interface ConfirmAction {
 - 创建流程状态机
 - 三种创建方式的对话模板
 - artclaw_sdk API 速查表（AI 生成脚本时参考）
-- manifest.json Schema
+- manifest.json Schema（含触发规则范式）
+- 触发规则验证清单
+
+## 6. 触发规则创建范式
+
+Agent 创建工具时生成的触发规则**必须遵守以下范式**（详见 [trigger-mechanism.md v2.0](../specs/trigger-mechanism.md)）:
+
+### 6.1 watch 类型 — 路径统一走 filters.path
+
+```json
+{
+  "id": "on-file-change",
+  "name": "文件变化时运行",
+  "enabled": true,
+  "trigger": { "type": "watch", "events": ["created", "modified"], "debounceMs": 3000 },
+  "filters": { "path": [{ "pattern": "$tools_dir/**/*.json" }] },
+  "execution": { "mode": "notify", "timeout": 30 }
+}
+```
+
+⛔ **禁止**: `trigger.paths`（已废弃）
+✅ **正确**: `filters.path` + `$variable` 前缀
+
+### 6.2 路径变量
+
+| 变量 | 解析值 |
+|------|--------|
+| `$skills_installed` | `~/.openclaw/skills` |
+| `$project_root` | config.json → project_root |
+| `$tools_dir` | `~/.artclaw/tools` |
+| `$home` | 用户主目录 |
+
+### 6.3 event 类型 — dcc 必须匹配
+
+- event trigger 的 `dcc` 必须在 `targetDCCs` 范围内
+- `targetDCCs` 为 `[]` 或 `["general"]` 时**不能用** event trigger
+
+### 6.4 脚本路径来源
+
+脚本**不硬编码路径**，从自身 manifest 的 filters.path 读取:
+
+```python
+manifest = json.loads((Path(__file__).parent / "manifest.json").read_text())
+for t in manifest.get("triggers", []):
+    for pf in t.get("filters", {}).get("path", []):
+        dirs.append(resolve_variable(pf["pattern"].split("/**")[0]))
+```
+
+### 6.5 每个 trigger 必须有 id
+
+manifest 同步到 triggers.json 时按 `(tool_id, manifest_id)` 去重，没有 id 无法同步。

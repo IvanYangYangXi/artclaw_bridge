@@ -1,7 +1,7 @@
 # ArtClaw Tool Manager - 官方系统工具设计
 
-> 版本: 1.0  
-> 日期: 2026-04-12  
+> 版本: 2.0  
+> 日期: 2026-04-14  
 > 说明: 状态栏报警机制、工具合规性检查器、Skill 版本同步检查器的整体设计
 
 ## 1. 概述
@@ -141,16 +141,17 @@ interface SkillVersionInfo {
 
 1. **manifest.json 存在性**: 工具目录下必须有 manifest.json
 2. **JSON 格式**: manifest.json 必须是有效的 JSON
-3. **必填字段检查**:
-   - `id`: 工具唯一标识
-   - `name`: 工具名称
-   - `version`: 语义化版本 (semver)
-   - `implementation.type`: script | skill_wrapper | ai_generated
-   - `implementation.entry`: 入口文件路径
+3. **必填字段检查**: `name`, `implementation`, `implementation.type`, `implementation.entry`
 4. **入口文件存在性**: implementation.entry 指向的文件必须存在
 5. **inputs 参数格式**: 每个参数必须有 id, name, type 字段
-6. **targetDCCs 有效性**: 只能包含已知的 DCC 类型
-7. **version 格式**: 符合 semver 规范 (x.y.z)
+6. **version 格式**: 符合 semver 规范 (x.y.z)
+7. **targetDCCs 有效性**: 只能包含已知的 DCC 类型
+8. **触发规则合规性**（v1.2.0 新增）:
+   - 每个 trigger 必须有 `id`（manifest 同步去重需要）
+   - watch trigger 禁止 `trigger.paths`（已废弃），必须用 `filters.path`
+   - watch trigger 必须有 `filters.path`（否则无监听范围）
+   - event trigger 的 `dcc` 必须与 `targetDCCs` 兼容（通用工具不绑定特定 DCC）
+   - execution 必须有 `mode` 字段
 
 **输出行为**:
 - 发现问题 → 调用 `POST /api/v1/alerts` 创建报警
@@ -161,12 +162,11 @@ interface SkillVersionInfo {
 
 ```json
 {
-  "id": "system/tool-compliance-checker",
-  "name": "工具合规性检查器",
+  "id": "official/tool-compliance-checker",
+  "name": "artclaw-工具合规检查器",
   "description": "检查工具 manifest.json 的格式和配置合规性",
-  "version": "1.0.0",
-  "targetDCCs": ["*"],
-  "type": "official",
+  "version": "1.2.0",
+  "targetDCCs": ["general"],
   
   "implementation": {
     "type": "script",
@@ -178,33 +178,29 @@ interface SkillVersionInfo {
   
   "triggers": [
     {
-      "id": "watch-tools-dir",
-      "name": "监听工具目录变化",
+      "id": "on-change",
+      "name": "工具变更时检查",
       "enabled": true,
       "trigger": {
         "type": "watch",
-        "paths": ["~/.artclaw/tools/**"],
         "events": ["created", "modified"],
-        "debounceMs": 2000
+        "debounceMs": 3000
       },
-      "execution": {
-        "mode": "silent",
-        "timeout": 30
-      }
+      "filters": {
+        "path": [{ "pattern": "$tools_dir/**/*" }]
+      },
+      "execution": { "mode": "notify", "timeout": 30 }
     },
     {
-      "id": "scheduled-scan",
-      "name": "定时全量扫描",
+      "id": "periodic",
+      "name": "每30分钟全量检查",
       "enabled": true,
       "trigger": {
         "type": "schedule",
         "mode": "interval",
         "interval": 1800000
       },
-      "execution": {
-        "mode": "silent",
-        "timeout": 60
-      }
+      "execution": { "mode": "silent", "timeout": 60 }
     }
   ]
 }
@@ -239,12 +235,11 @@ interface SkillVersionInfo {
 
 ```json
 {
-  "id": "system/skill-version-checker",
-  "name": "Skill 版本同步检查器",
+  "id": "official/artclaw-skill-compliance-checker",
+  "name": "artclaw-Skill合规检查器",
   "description": "检查已安装 Skill 是否有更新或版本冲突",
-  "version": "1.0.0",
-  "targetDCCs": ["*"],
-  "type": "official",
+  "version": "1.2.0",
+  "targetDCCs": ["general"],
   
   "implementation": {
     "type": "script",
@@ -256,33 +251,43 @@ interface SkillVersionInfo {
   
   "triggers": [
     {
-      "id": "on-dcc-startup",
-      "name": "DCC 启动时检查",
-      "enabled": true,
-      "trigger": {
-        "type": "event",
-        "dcc": "*",
-        "event": "editor.startup",
-        "timing": "post"
-      },
-      "execution": {
-        "mode": "silent",
-        "timeout": 30
-      }
-    },
-    {
-      "id": "scheduled-check",
-      "name": "定时检查",
+      "id": "periodic",
+      "name": "每2小时检查",
       "enabled": true,
       "trigger": {
         "type": "schedule",
         "mode": "interval",
         "interval": 7200000
       },
-      "execution": {
-        "mode": "silent",
-        "timeout": 60
-      }
+      "execution": { "mode": "silent", "timeout": 60 }
+    },
+    {
+      "id": "on-skill-installed-change",
+      "name": "已安装Skill文件变化时检查",
+      "enabled": true,
+      "trigger": {
+        "type": "watch",
+        "events": ["created", "modified", "deleted"],
+        "debounceMs": 3000
+      },
+      "filters": {
+        "path": [{ "pattern": "$skills_installed/**/*.{py,md,json}" }]
+      },
+      "execution": { "mode": "notify", "timeout": 30 }
+    },
+    {
+      "id": "on-skill-source-change",
+      "name": "源码Skill文件变化时检查",
+      "enabled": true,
+      "trigger": {
+        "type": "watch",
+        "events": ["created", "modified", "deleted"],
+        "debounceMs": 3000
+      },
+      "filters": {
+        "path": [{ "pattern": "$project_root/skills/**/*.{py,md,json}" }]
+      },
+      "execution": { "mode": "notify", "timeout": 30 }
     }
   ]
 }
@@ -387,21 +392,25 @@ interface AlertStore {
 
 ### 6.2 官方工具存储
 
-**位置**: `~/.artclaw/tools/system/`  
+**位置**: `{project_root}/tools/official/{dcc}/{tool-name}/`（源码目录，非本地安装）  
 **结构**:
 ```
-~/.artclaw/tools/system/
-├── tool-compliance-checker/
-│   ├── manifest.json
-│   ├── main.py
-│   └── lib/
-│       └── compliance_rules.py
-└── skill-version-checker/
-    ├── manifest.json
-    ├── main.py
-    └── lib/
-        └── version_utils.py
+{project_root}/tools/official/
+├── universal/
+│   ├── artclaw-skill-compliance-checker/
+│   │   ├── manifest.json
+│   │   └── main.py
+│   └── tool-compliance-checker/
+│       ├── manifest.json
+│       └── main.py
+└── blender/
+    └── blender-save-guard/
+        ├── manifest.json
+        └── main.py
 ```
+
+> 用户工具存储在 `~/.artclaw/tools/user/{tool-name}/`。
+> 官方和市集工具不复制到本地，直接从 project_root 加载。
 
 ### 6.3 检查结果缓存
 

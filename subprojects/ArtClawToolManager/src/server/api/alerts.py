@@ -39,6 +39,31 @@ async def get_alerts(
         raise HTTPException(status_code=500, detail=f"Failed to get alerts: {str(e)}")
 
 
+@router.get("/alerts/stats")
+async def get_alert_stats():
+    """Get alert statistics."""
+    try:
+        stats = alert_service.get_stats()
+        return JSONResponse(stats)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get alert stats: {str(e)}")
+
+
+@router.post("/alerts/cleanup")
+async def cleanup_alerts(
+    days: int = Query(7, ge=1, description="Days threshold for cleanup")
+):
+    """Clean up old resolved alerts."""
+    try:
+        cleaned_count = alert_service.cleanup_old_alerts(days)
+        return JSONResponse({
+            "message": f"Cleaned up {cleaned_count} old alerts",
+            "cleanedCount": cleaned_count
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup alerts: {str(e)}")
+
+
 @router.get("/alerts/{alert_id}", response_model=AlertResponse)
 async def get_alert(alert_id: str):
     """Get alert by ID."""
@@ -90,28 +115,3 @@ async def delete_alert(alert_id: str):
         return JSONResponse({"message": "Alert deleted successfully"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete alert: {str(e)}")
-
-
-@router.get("/alerts/stats")
-async def get_alert_stats():
-    """Get alert statistics."""
-    try:
-        stats = alert_service.get_stats()
-        return JSONResponse(stats)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get alert stats: {str(e)}")
-
-
-@router.post("/alerts/cleanup")
-async def cleanup_alerts(
-    days: int = Query(7, ge=1, description="Days threshold for cleanup")
-):
-    """Clean up old resolved alerts."""
-    try:
-        cleaned_count = alert_service.cleanup_old_alerts(days)
-        return JSONResponse({
-            "message": f"Cleaned up {cleaned_count} old alerts",
-            "cleanedCount": cleaned_count
-        })
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to cleanup alerts: {str(e)}")

@@ -1,6 +1,6 @@
 // Ref: docs/ui/ui-design.md#Skills
 // Skills management page: filters, tabs, search, skill cards, batch actions
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Loader2, Clock, Star } from 'lucide-react'
 import TabBar from '../../components/common/TabBar'
 import SearchBar from '../../components/common/SearchBar'
@@ -9,6 +9,7 @@ import BatchActionBar from '../../components/Skills/BatchActionBar'
 import { useSkillsStore } from '../../stores/skillsStore'
 import { useAppStore } from '../../stores/appStore'
 import { fetchRecentSkills } from '../../api/client'
+import { DCC_DISPLAY_NAMES } from '../../constants/dccTypes'
 import { cn } from '../../utils/cn'
 import type { SkillTab } from '../../types'
 
@@ -26,25 +27,13 @@ const TABS_EN: { key: SkillTab; label: string }[] = [
   { key: 'platform', label: 'Platform' },
 ]
 
-const DCC_OPTIONS = [
-  { id: '', label_zh: '全部 DCC', label_en: 'All DCCs' },
-  { id: 'general', label_zh: '通用', label_en: 'General' },
-  { id: 'ue57', label_zh: 'UE5', label_en: 'UE5' },
-  { id: 'maya2024', label_zh: 'Maya', label_en: 'Maya' },
-  { id: 'max2024', label_zh: '3ds Max', label_en: '3ds Max' },
-  { id: 'blender', label_zh: 'Blender', label_en: 'Blender' },
-  { id: 'houdini', label_zh: 'Houdini', label_en: 'Houdini' },
-  { id: 'sp', label_zh: 'SP', label_en: 'SP' },
-  { id: 'sd', label_zh: 'SD', label_en: 'SD' },
-  { id: 'comfyui', label_zh: 'ComfyUI', label_en: 'ComfyUI' },
-]
-
 const STATUS_OPTIONS = [
   { id: '', label_zh: '全部状态', label_en: 'All Status' },
   { id: 'installed', label_zh: '已安装', label_en: 'Installed' },
   { id: 'not_installed', label_zh: '未安装', label_en: 'Not Installed' },
   { id: 'disabled', label_zh: '已禁用', label_en: 'Disabled' },
   { id: 'update_available', label_zh: '有更新', label_en: 'Update Available' },
+  { id: 'pending_publish', label_zh: '待发布', label_en: 'Pending Publish' },
 ]
 
 interface RecentSkillItem {
@@ -64,6 +53,7 @@ const MOCK_RECENT_SKILLS: RecentSkillItem[] = [
 export default function SkillsPage() {
   const {
     loading,
+    skills: allSkills,
     activeTab,
     searchQuery,
     dccFilter,
@@ -81,6 +71,26 @@ export default function SkillsPage() {
   const language = useAppStore((s) => s.language)
   const skills = filteredSkills()
   const tabs = language === 'zh' ? TABS_ZH : TABS_EN
+
+  // 动态生成 DCC 选项：从所有 skills 的 targetDCCs 聚合，去重排序
+  const dccOptions = useMemo(() => {
+    const ids = new Set<string>()
+    for (const s of allSkills) {
+      for (const d of s.targetDCCs) {
+        if (d && d !== 'general') ids.add(d)
+      }
+    }
+    const dynamic = Array.from(ids).sort().map((id) => ({
+      id,
+      label_zh: DCC_DISPLAY_NAMES[id] ?? id,
+      label_en: DCC_DISPLAY_NAMES[id] ?? id,
+    }))
+    return [
+      { id: '', label_zh: '全部 DCC', label_en: 'All DCCs' },
+      { id: 'general', label_zh: '通用', label_en: 'General' },
+      ...dynamic,
+    ]
+  }, [allSkills])
 
   const [recentSkills, setRecentSkills] = useState<RecentSkillItem[]>(MOCK_RECENT_SKILLS)
 
@@ -124,7 +134,7 @@ export default function SkillsPage() {
             onChange={(e) => setDCCFilter(e.target.value)}
             className={filterSelectClass}
           >
-            {DCC_OPTIONS.map((opt) => (
+            {dccOptions.map((opt) => (
               <option key={opt.id} value={opt.id}>
                 {language === 'zh' ? opt.label_zh : opt.label_en}
               </option>
