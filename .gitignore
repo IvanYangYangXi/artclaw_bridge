@@ -143,3 +143,5 @@ IDENTITY.md
 SOUL.md
 TOOLS.md
 USER.md
+# OpenClaw local workspace state
+.openclaw/
