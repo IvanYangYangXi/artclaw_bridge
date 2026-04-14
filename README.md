@@ -124,12 +124,14 @@ Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 +
 
 ---
 
-## 🛠️ Official Skills (27 Total)
+## 🛠️ Official Skills (47 Total)
 
-### Universal Skills (3)
+### Universal Skills (5)
 - **artclaw-knowledge** — Project knowledge base queries
 - **artclaw-memory** — Memory management operations
 - **artclaw-skill-manage** — Skill management operations
+- **artclaw-tool-creator** — AI-guided tool creation
+- **artclaw-tool-executor** — Tool execution dispatcher
 
 ### Unreal Engine Skills (6)
 - **ue57-artclaw-context** — Editor context queries
@@ -142,8 +144,9 @@ Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 +
 ### Maya Skills (1)
 - **maya-operation-rules** — Maya operation guidelines
 
-### Blender Skills (3)
+### Blender Skills (4)
 - **blender-context** — Editor context queries
+- **blender-material-ops** — Material & node operations
 - **blender-operation-rules** — Blender operation guidelines
 - **blender-viewport-capture** — Viewport screenshot
 
@@ -162,11 +165,31 @@ Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 +
 - **sp-operation-rules** — SP operation guidelines
 - **sp-bake-export** — Baking and export
 
-### Substance Designer Skills (4)
+### Substance Designer Skills (9)
 - **sd-context** — Editor context queries
-- **sd-material-recipes** — Material recipe operations
+- **sd-learned-recipes** — Material recipe library
 - **sd-node-ops** — Node operations
+- **sd-node-catalog** — Node catalog reference
+- **sd-node-capture** — Node screenshot & analysis
 - **sd-operation-rules** — SD operation guidelines
+- **sd-generators** — Generator node reference
+- **sd-fxmap** — FX-Map creation guide
+- **sd-pixel-processor** — Pixel Processor guide
+
+### ComfyUI Skills (13)
+- **comfyui-operation-rules** — ComfyUI operation guidelines
+- **comfyui-context** — System info, models, queue status
+- **comfyui-workflow-builder** — Workflow JSON construction guide
+- **comfyui-txt2img** — Text-to-image workflow
+- **comfyui-img2img** — Image-to-image workflow
+- **comfyui-inpainting** — Inpainting workflow
+- **comfyui-controlnet** — ControlNet workflow
+- **comfyui-hires-fix** — High-resolution fix workflow
+- **comfyui-model-manager** — Model management
+- **comfyui-node-installer** — Missing node detection & install
+- **comfyui-workflow-repair** — Workflow diagnosis & repair
+- **comfyui-workflow-manager** — Workflow template library
+- **comfyui-workflow-validator** — Workflow validation
 
 ---
 
@@ -379,6 +402,8 @@ Your Agent will:
 2. Run the appropriate installation commands
 3. Configure the MCP bridge for your Agent platform
 4. Verify the installation
+
+**For AI Agents:** See [INSTALL_GUIDE.md](INSTALL_GUIDE.md) for step-by-step installation instructions with exact commands and configuration details.
 
 **Example prompts:**
 - *"Install ArtClaw Bridge for Unreal Engine 5.7, my project is at D:\\MyProject\\UE_Game"*

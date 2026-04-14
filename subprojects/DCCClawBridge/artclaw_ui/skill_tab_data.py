@@ -157,6 +157,7 @@ def query_all_skills() -> List[dict]:
                 })
             updatable = {i["name"] for i in diff.get("updatable", [])}
             modified = {i["name"] for i in diff.get("modified", [])}
+            orphaned = {i["name"] for i in diff.get("orphaned", [])}
             for s in result:
                 if s["name"] in updatable:
                     s["updatable"] = True
@@ -166,6 +167,8 @@ def query_all_skills() -> List[dict]:
                             break
                 if s["name"] in modified:
                     s["modified"] = True
+                if s["name"] in orphaned:
+                    s["orphaned"] = True
     except Exception:
         pass
 

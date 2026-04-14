@@ -242,7 +242,7 @@ def _file_hash(path: Path) -> str:
         return ""
 
 
-def _dir_hashes(root: Path) -> Dict[str, str]:
+def _dir_hashes(root: Path, exclude: Optional[set] = None) -> Dict[str, str]:
     result: Dict[str, str] = {}
     if not root.exists():
         return result
@@ -251,6 +251,8 @@ def _dir_hashes(root: Path) -> Dict[str, str]:
             continue
         rel = str(p.relative_to(root)).replace("\\", "/")
         if "__pycache__" in rel or rel.endswith(".pyc"):
+            continue
+        if exclude and rel in exclude:
             continue
         result[rel] = _file_hash(p)
     return result
@@ -263,6 +265,7 @@ def _dir_hashes(root: Path) -> Dict[str, str]:
 def _compare_dirs(
     dir_a: Path, dir_b: Path,
     ver_a: Optional[str] = None, ver_b: Optional[str] = None,
+    exclude: Optional[set] = None,
 ) -> Tuple[str, List[str]]:
     """
     比较两个目录，返回 (status, changed_files)。
@@ -274,8 +277,8 @@ def _compare_dirs(
       不同 + 版本同/均空            → modified  (本地有改动未发布，显示"发布")
       两侧都有更新                  → conflict  (需手动处理)
     """
-    hashes_a = _dir_hashes(dir_a)
-    hashes_b = _dir_hashes(dir_b)
+    hashes_a = _dir_hashes(dir_a, exclude)
+    hashes_b = _dir_hashes(dir_b, exclude)
 
     if hashes_a == hashes_b:
         return "synced", []
@@ -457,6 +460,10 @@ def _check_dcc_installs(dcc_install_dirs: List[Dict]) -> List[Dict[str, Any]]:
     """
     检查各 DCC 安装副本是否与 DCCClawBridge 源码同步（使用 get_skill_checker_dirs 提供的列表）。
     """
+    # DCC-specific entry files deployed by install.py from adapter directories,
+    # not part of the shared DCCClawBridge source tree.
+    DCC_ENTRY_FILES = {"__init__.py", "blender_manifest.toml"}
+
     issues: List[Dict[str, Any]] = []
     for item in dcc_install_dirs:
         label = item["label"]
@@ -466,7 +473,7 @@ def _check_dcc_installs(dcc_install_dirs: List[Dict]) -> List[Dict[str, Any]]:
         if not src_dir.exists() or not install_dir.exists():
             continue
 
-        status, changed = _compare_dirs(install_dir, src_dir)
+        status, changed = _compare_dirs(install_dir, src_dir, exclude=DCC_ENTRY_FILES)
         if status == "synced":
             continue
 

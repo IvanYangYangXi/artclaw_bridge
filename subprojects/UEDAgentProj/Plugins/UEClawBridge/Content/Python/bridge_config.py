@@ -8,6 +8,7 @@ bridge_config.py - ArtClaw Bridge 配置加载
 
 import json
 import os
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # 协议常量

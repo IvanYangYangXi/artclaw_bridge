@@ -13,6 +13,12 @@ FString SUEAgentDashboard::GetLastSessionFilePath() const
 
 void SUEAgentDashboard::SaveLastSession()
 {
+	// 安全检查：UE 关闭序列中 FPaths/IFileManager 依赖的 LazySingleton 可能已销毁
+	if (!FSlateApplication::IsInitialized() || !GEngine)
+	{
+		return;
+	}
+
 	// 从 C++ 缓存获取 session key（不调 Python，避免析构时 Python 已卸载）
 	FString SessionKey;
 	if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
@@ -20,14 +26,26 @@ void SUEAgentDashboard::SaveLastSession()
 		SessionKey = SessionEntries[ActiveSessionIndex].SessionKey;
 	}
 
-	TSharedRef<FJsonObject> JsonObj = MakeShared<FJsonObject>();
-	JsonObj->SetStringField(TEXT("session_key"), SessionKey);
-	JsonObj->SetStringField(TEXT("agent_id"), CurrentAgentId);
-	JsonObj->SetStringField(TEXT("session_label"), CurrentSessionLabel);
+	// 手拼 JSON 字符串，不使用 TJsonWriter/TMemoryWriterBase
+	// 原因：TJsonStringWriter 构造依赖 LazySingleton，在 UE 关闭序列中
+	// 调用会触发 "Assertion failed: Ptr [LazySingleton.h:109]" 断点
+	auto EscapeJson = [](const FString& S) -> FString
+	{
+		FString Out = S;
+		Out.ReplaceInline(TEXT("\\"), TEXT("\\\\"));
+		Out.ReplaceInline(TEXT("\""), TEXT("\\\""));
+		Out.ReplaceInline(TEXT("\n"), TEXT("\\n"));
+		Out.ReplaceInline(TEXT("\r"), TEXT("\\r"));
+		Out.ReplaceInline(TEXT("\t"), TEXT("\\t"));
+		return Out;
+	};
 
-	FString OutputStr;
-	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputStr);
-	FJsonSerializer::Serialize(JsonObj, Writer);
+	FString OutputStr = FString::Printf(
+		TEXT("{\"session_key\":\"%s\",\"agent_id\":\"%s\",\"session_label\":\"%s\"}"),
+		*EscapeJson(SessionKey),
+		*EscapeJson(CurrentAgentId),
+		*EscapeJson(CurrentSessionLabel)
+	);
 
 	FString FilePath = GetLastSessionFilePath();
 	FString Dir = FPaths::GetPath(FilePath);

@@ -515,6 +515,7 @@ private:
 
 	/** 设置弹窗回调: 打开设置 SWindow */
 	FReply OnSettingsClicked();
+	FReply OnOpenToolManagerClicked();
 
 	/** 设置面板窗口 */
 	TSharedPtr<SWindow> SettingsWindow;

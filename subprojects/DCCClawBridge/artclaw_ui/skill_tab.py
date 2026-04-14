@@ -72,6 +72,7 @@ class SkillEntry:
     source_version: str = ""
     updatable: bool = False
     modified: bool = False  # 运行时有未发布修改
+    orphaned: bool = False  # 运行时有但源码没有（无源码，可首次发布）
 
 
 if HAS_QT:
@@ -223,6 +224,8 @@ if HAS_QT:
             self._layer_row.insertWidget(self._layer_row.count(), inst_btn)
             ni_btn = self._make_filter_btn("未安装", "not_installed", "install")
             self._layer_row.insertWidget(self._layer_row.count(), ni_btn)
+            orphan_btn = self._make_filter_btn("无源码", "orphaned", "install")
+            self._layer_row.insertWidget(self._layer_row.count(), orphan_btn)
 
             # DCC buttons
             all_dcc = [("全部", "all")]
@@ -282,6 +285,8 @@ if HAS_QT:
                 if self._install_filter == "not_installed" and s.install_status != "not_installed":
                     continue
                 if self._install_filter == "installed" and s.install_status == "not_installed":
+                    continue
+                if self._install_filter == "orphaned" and not s.orphaned:
                     continue
                 if self._dcc_filter != "all":
                     norm = "unreal" if s.software == "unreal_engine" else s.software
@@ -458,7 +463,7 @@ if HAS_QT:
                 b.setStyleSheet(btn_style)
                 b.clicked.connect(lambda checked=False, e=s: self._on_uninstall(e))
                 btn_h.addWidget(b)
-            if is_inst and s.modified:
+            if is_inst and (s.modified or s.orphaned):
                 b = QPushButton("发布")
                 b.setStyleSheet(publish_style)
                 b.clicked.connect(lambda checked=False, e=s: self._on_publish(e))

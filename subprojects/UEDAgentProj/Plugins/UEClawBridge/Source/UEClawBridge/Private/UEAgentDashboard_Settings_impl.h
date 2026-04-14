@@ -30,6 +30,10 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 			.Padding(16.0f)
 			.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
 			[
+				SNew(SScrollBox)
+				.Orientation(Orient_Vertical)
+				+ SScrollBox::Slot()
+				[
 				SNew(SVerticalBox)
 
 			// --- AI 平台 ---
@@ -373,9 +377,11 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 
 			// --- 底部间距 + 关闭按钮 ---
 			+ SVerticalBox::Slot()
-			.FillHeight(1.0f)
+			.AutoHeight()
+			.Padding(0.0f, 8.0f, 0.0f, 0.0f)
 			[
 				SNew(SSpacer)
+				.Size(FVector2D(0.0f, 4.0f))
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
@@ -396,8 +402,9 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 				})
 				.ContentPadding(FMargin(16.0f, 4.0f))
 			]
-			]
-		];
+			] // SVerticalBox end
+			] // SScrollBox::Slot end
+		]; // SBorder end (SWindow content)
 
 	// 显示窗口，作为模态窗口
 	SettingsWindow->SetOnWindowClosed(FOnWindowClosed::CreateLambda(
@@ -935,4 +942,108 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 			.ContentPadding(FMargin(10.0f, 4.0f))
 		];
 	}
+}
+
+// ==================================================================
+// Tool Manager 入口
+// ==================================================================
+
+FReply SUEAgentDashboard::OnOpenToolManagerClicked()
+{
+	// 1. 从 ~/.artclaw/config.json 读取 project_root
+	//    bridge_config.get_project_root() 在 UE Python 环境不存在，直接读 config
+	FString BridgeRoot;
+	{
+		FString RootJson = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
+			"import os, json\n"
+			"_root = ''\n"
+			"try:\n"
+			"    _cfg_path = os.path.expanduser('~/.artclaw/config.json')\n"
+			"    with open(_cfg_path, 'r', encoding='utf-8') as _f:\n"
+			"        _cfg = json.load(_f)\n"
+			"    _root = _cfg.get('project_root', '')\n"
+			"except Exception:\n"
+			"    pass\n"
+			"_result = {'root': _root}\n"
+		));
+		TSharedPtr<FJsonObject> RootObj;
+		TSharedRef<TJsonReader<>> RootReader = TJsonReaderFactory<>::Create(RootJson);
+		if (FJsonSerializer::Deserialize(RootReader, RootObj) && RootObj.IsValid())
+		{
+			BridgeRoot = RootObj->GetStringField(TEXT("root"));
+		}
+	}
+
+	if (BridgeRoot.IsEmpty())
+	{
+		AddMessage(TEXT("system"), TEXT("[Tool Manager] 无法获取项目根目录，请检查 ~/.artclaw/config.json 中的 project_root 字段"));
+		return FReply::Handled();
+	}
+
+	const FString Url = TEXT("http://localhost:9876");
+
+	// 2. 检查端口 9876 是否已在监听
+	bool bAlreadyRunning = false;
+	{
+		FString CheckJson = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
+			"import socket\n"
+			"_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+			"_s.settimeout(0.5)\n"
+			"_running = _s.connect_ex(('127.0.0.1', 9876)) == 0\n"
+			"_s.close()\n"
+			"_result = {'running': _running}\n"
+		));
+		TSharedPtr<FJsonObject> CheckObj;
+		TSharedRef<TJsonReader<>> CheckReader = TJsonReaderFactory<>::Create(CheckJson);
+		if (FJsonSerializer::Deserialize(CheckReader, CheckObj) && CheckObj.IsValid())
+		{
+			bAlreadyRunning = CheckObj->GetBoolField(TEXT("running"));
+		}
+	}
+
+	// 3. 未运行则后台启动
+	if (!bAlreadyRunning)
+	{
+		FString BatPath = BridgeRoot / TEXT("start-tool-manager.bat");
+		// 转义反斜杠用于 Python r-string（实际路径不含引号，直接拼即可）
+		FString EscapedBat = BatPath.Replace(TEXT("\\"), TEXT("\\\\"));
+		FString LaunchScript = FString::Printf(
+			TEXT(
+				"import subprocess, os\n"
+				"_bat = '%s'\n"
+				"if os.path.exists(_bat):\n"
+				"    subprocess.Popen(\n"
+				"        ['cmd', '/c', _bat],\n"
+				"        creationflags=0x08000008,\n"
+				"        cwd=os.path.dirname(_bat)\n"
+				"    )\n"
+				"    _result = {'ok': True}\n"
+				"else:\n"
+				"    _result = {'ok': False, 'error': 'bat not found: ' + _bat}\n"
+			),
+			*EscapedBat
+		);
+		FString LaunchJson = FUEAgentManageUtils::RunPythonAndCapture(*LaunchScript);
+		TSharedPtr<FJsonObject> LaunchObj;
+		TSharedRef<TJsonReader<>> LaunchReader = TJsonReaderFactory<>::Create(LaunchJson);
+		if (FJsonSerializer::Deserialize(LaunchReader, LaunchObj) && LaunchObj.IsValid())
+		{
+			bool bOk = false;
+			LaunchObj->TryGetBoolField(TEXT("ok"), bOk);
+			if (!bOk)
+			{
+				FString ErrMsg;
+				LaunchObj->TryGetStringField(TEXT("error"), ErrMsg);
+				AddMessage(TEXT("system"),
+					FString::Printf(TEXT("[Tool Manager] 启动失败: %s"), *ErrMsg));
+				return FReply::Handled();
+			}
+		}
+		AddMessage(TEXT("system"), TEXT("[Tool Manager] 正在启动服务，请稍候..."));
+	}
+
+	// 4. 打开浏览器
+	FPlatformProcess::LaunchURL(*Url, nullptr, nullptr);
+
+	return FReply::Handled();
 }

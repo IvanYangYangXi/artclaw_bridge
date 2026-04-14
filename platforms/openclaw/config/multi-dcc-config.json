@@ -1,6 +1,6 @@
 {
-  "$comment": "多 DCC 实例配置示例 — UE + Maya 同时连接 OpenClaw Gateway",
-  "$doc": "将 plugins 部分合并到 ~/.openclaw/openclaw.json",
+  "$comment": "多 DCC 实例配置示例 — 所有支持的 DCC 同时连接 OpenClaw Gateway",
+  "$doc": "将 plugins 部分合并到 ~/.openclaw/openclaw.json，只保留实际使用的 DCC",
 
   "plugins": {
     "allow": ["mcp-bridge"],
@@ -9,16 +9,14 @@
         "enabled": true,
         "config": {
           "servers": {
-            "ue-editor": {
-              "type": "websocket",
-              "url": "ws://127.0.0.1:8080",
-              "$comment": "UE Editor MCP Server (自动端口探测 8080+)"
-            },
-            "maya-primary": {
-              "type": "websocket",
-              "url": "ws://127.0.0.1:8081",
-              "$comment": "Maya MCP Server (端口 8081, 避免与 UE 冲突)"
-            }
+            "ue-editor-agent": { "type": "websocket", "url": "ws://127.0.0.1:8080" },
+            "maya-primary":    { "type": "websocket", "url": "ws://127.0.0.1:8081" },
+            "max-primary":     { "type": "websocket", "url": "ws://127.0.0.1:8082" },
+            "blender-editor":  { "type": "websocket", "url": "ws://127.0.0.1:8083" },
+            "houdini-editor":  { "type": "websocket", "url": "ws://127.0.0.1:8084" },
+            "sp-editor":       { "type": "websocket", "url": "ws://127.0.0.1:8085" },
+            "sd-editor":       { "type": "websocket", "url": "ws://127.0.0.1:8086" },
+            "comfyui-editor":  { "type": "websocket", "url": "ws://127.0.0.1:8087" }
           }
         }
       }
@@ -26,10 +24,8 @@
   },
 
   "$tool_namespace_note": [
-    "工具命名空间自动隔离:",
-    "  UE 工具:   mcp_ue-editor_run_ue_python, mcp_ue-editor_get_scene_info",
-    "  Maya 工具: mcp_maya-primary_export_fbx, mcp_maya-primary_get_selection",
-    "",
-    "Agent tools.allow 白名单需要包含对应前缀的工具名"
+    "v2.6+ 每个 DCC 只暴露 1 个 MCP 工具 (run_python 或 run_ue_python)",
+    "Agent tools.allow 使用通配符: mcp_maya-primary_*, mcp_blender-editor_* 等",
+    "工具命名空间自动隔离，不同 DCC 的工具互不冲突"
   ]
 }

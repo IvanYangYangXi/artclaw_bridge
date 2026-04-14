@@ -132,6 +132,18 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 						return FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f));
 					})
 				]
+				// Tool Manager 按钮
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("ToolManagerBtn")); })
+					.OnClicked(this, &SUEAgentDashboard::OnOpenToolManagerClicked)
+					.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("ToolManagerTip")); })
+					.ContentPadding(FMargin(4.0f, 1.0f))
+				]
 				// 设置按钮
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
@@ -141,7 +153,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 					SNew(SButton)
 					.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("SettingsBtn")); })
 					.OnClicked(this, &SUEAgentDashboard::OnSettingsClicked)
-					.ToolTipText(FUEAgentL10n::Get(TEXT("SettingsTip")))
+					.ToolTipText_Lambda([]() { return FUEAgentL10n::Get(TEXT("SettingsTip")); })
 					.ContentPadding(FMargin(4.0f, 1.0f))
 				]
 			]
@@ -641,8 +653,12 @@ SUEAgentDashboard::~SUEAgentDashboard()
 	}
 	CachedSubsystem.Reset();
 
-	// 保存当前会话状态 — 纯文件 I/O，不调 Python，安全
-	SaveLastSession();
+	// 保存当前会话状态 — 仅在 Slate/路径子系统仍然可用时执行
+	// FPaths::ProjectSavedDir() 依赖 LazySingleton，引擎关闭序列中已失效
+	if (FSlateApplication::IsInitialized())
+	{
+		SaveLastSession();
+	}
 
 	// 主动清空消息列表 Widget — 必须在 Slate 还活着时执行，否则 STextBlock /
 	// SButton 子 Widget 在析构链中会访问已关闭的 Slate 字体/渲染服务导致崩溃
@@ -651,6 +667,22 @@ SUEAgentDashboard::~SUEAgentDashboard()
 		MessageScrollBox->ClearChildren();
 	}
 	MessageScrollBox.Reset();
+
+	// 主动释放所有 Slate Widget 共享指针 — 避免自然析构时 Slate 子系统已关闭导致崩溃
+	StatusDetailWidget.Reset();
+	InputTextBox.Reset();
+	SlashMenuAnchor.Reset();
+	SlashListView.Reset();
+	SendModeCheckBox.Reset();
+	QuickInputWrapBox.Reset();
+	QuickInputExpandableArea.Reset();
+	QuickInputEditNameBox.Reset();
+	QuickInputEditContentBox.Reset();
+	AttachmentPreviewBox.Reset();
+	AttachmentPreviewBorder.Reset();
+	SessionMenuAnchor.Reset();
+	PlatformListBox.Reset();
+	AgentListBox.Reset();
 
 	// 关闭管理面板窗口
 	if (ManageWindow.IsValid() && FSlateApplication::IsInitialized())

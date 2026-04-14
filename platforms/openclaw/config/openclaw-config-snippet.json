@@ -1,6 +1,6 @@
 {
   "$comment": "将以下内容合并到 ~/.openclaw/openclaw.json 的 plugins 部分",
-  "$doc": "详见 docs/specs/openClaw集成方案.md §5",
+  "$doc": "详见 INSTALL_GUIDE.md",
 
   "plugins": {
     "allow": ["mcp-bridge"],
@@ -11,8 +11,7 @@
           "servers": {
             "ue-editor-agent": {
               "type": "websocket",
-              "url": "ws://127.0.0.1:8080",
-              "$comment": "UE Editor Agent MCP Server (自动端口探测 8080+)"
+              "url": "ws://127.0.0.1:8080"
             }
           }
         }
@@ -21,31 +20,21 @@
   },
 
   "$agents_example": {
-    "$comment_1": "Agent 使用 tools.allow 白名单时，需要显式列出所有 MCP 工具名称",
-    "$comment_2": "下面的 allow 列表包含 Phase 0~2 的 10 个 Core Tools 和 Phase 3 的 7 个智能工具",
+    "$comment": "v2.6+ 每个 DCC 只有 1 个 MCP 工具，使用通配符即可",
     "agents": {
       "list": [
         {
-          "id": "ue-assistant",
+          "id": "my-agent",
           "tools": {
             "allow": [
-              "mcp_ue-editor-agent_run_ue_python",
-              "mcp_ue-editor-agent_get_selected_actors",
-              "mcp_ue-editor-agent_get_editor_context",
-              "mcp_ue-editor-agent_focus_on_actor",
-              "mcp_ue-editor-agent_highlight_actors",
-              "mcp_ue-editor-agent_get_viewport_camera",
-              "mcp_ue-editor-agent_set_viewport_camera",
-              "mcp_ue-editor-agent_get_dynamic_prompt",
-              "mcp_ue-editor-agent_assess_risk",
-              "mcp_ue-editor-agent_analyze_error",
-              "mcp_ue-editor-agent_knowledge_search",
-              "mcp_ue-editor-agent_knowledge_index",
-              "mcp_ue-editor-agent_knowledge_stats",
-              "mcp_ue-editor-agent_memory_get",
-              "mcp_ue-editor-agent_memory_set",
-              "mcp_ue-editor-agent_memory_search",
-              "mcp_ue-editor-agent_memory_list"
+              "mcp_ue-editor-agent_*",
+              "mcp_maya-primary_*",
+              "mcp_max-primary_*",
+              "mcp_blender-editor_*",
+              "mcp_houdini-editor_*",
+              "mcp_sp-editor_*",
+              "mcp_sd-editor_*",
+              "mcp_comfyui-editor_*"
             ]
           }
         }

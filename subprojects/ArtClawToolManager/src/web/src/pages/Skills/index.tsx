@@ -34,6 +34,7 @@ const STATUS_OPTIONS = [
   { id: 'disabled', label_zh: '已禁用', label_en: 'Disabled' },
   { id: 'update_available', label_zh: '有更新', label_en: 'Update Available' },
   { id: 'pending_publish', label_zh: '待发布', label_en: 'Pending Publish' },
+  { id: 'no_source', label_zh: '无源码', label_en: 'No Source' },
 ]
 
 interface RecentSkillItem {

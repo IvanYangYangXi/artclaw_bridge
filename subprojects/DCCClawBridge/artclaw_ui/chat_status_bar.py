@@ -95,9 +95,9 @@ class StatusBarWidget(QWidget):
         self._ctx_label = QLabel(f"{self._T('context_usage')}: --")
         self._ctx_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        self._settings_btn = QPushButton("⚙")
+        self._settings_btn = QPushButton(self._T("settings_btn"))
         self._settings_btn.setFlat(True)
-        self._settings_btn.setFixedSize(22, 22)
+        self._settings_btn.setFixedHeight(22)
         self._settings_btn.setCursor(Qt.PointingHandCursor)
         self._settings_btn.clicked.connect(self.settings_clicked)
 
@@ -282,6 +282,8 @@ class StatusBarWidget(QWidget):
         self._disconn_btn.setText(self._T("disconnect"))
         self._diag_btn.setText(self._T("diagnose"))
         self._logs_btn.setText(self._T("view_logs"))
+        # Row1 buttons
+        self._settings_btn.setText(self._T("settings_btn"))
         # Status + summary
         if self._connected:
             self._status_btn.setText(f"● {self._T('connected')}")

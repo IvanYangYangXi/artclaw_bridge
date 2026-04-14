@@ -212,6 +212,55 @@ class ChatPanelActionsMixin:
         from artclaw_ui.manage_panel import ManagePanel
         ManagePanel.show_as_window(parent=self)
 
+    def _on_open_tool_manager(self):
+        """启动 ArtClaw Tool Manager 后台服务并打开浏览器"""
+        import socket
+        import subprocess
+        import webbrowser
+        import os
+
+        url = "http://localhost:9876"
+
+        # 检查端口是否已监听
+        already_running = False
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.5)
+            already_running = s.connect_ex(("127.0.0.1", 9876)) == 0
+            s.close()
+        except Exception:
+            pass
+
+        if not already_running:
+            # 获取项目根目录
+            try:
+                from bridge_config import get_project_root
+                bridge_root = get_project_root()
+            except Exception:
+                bridge_root = os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                )
+
+            bat_path = os.path.join(bridge_root, "start-tool-manager.bat")
+            if not os.path.exists(bat_path):
+                self._msg_list.add_message(
+                    "system", f"[Tool Manager] 找不到启动脚本: {bat_path}"
+                )
+                return
+
+            try:
+                subprocess.Popen(
+                    ["cmd", "/c", bat_path],
+                    creationflags=0x08000008,  # CREATE_NO_WINDOW | DETACHED_PROCESS
+                    cwd=os.path.dirname(bat_path),
+                )
+                self._msg_list.add_message("system", "[Tool Manager] 正在启动服务，请稍候...")
+            except Exception as exc:
+                self._msg_list.add_message("system", f"[Tool Manager] 启动失败: {exc}")
+                return
+
+        webbrowser.open(url)
+
     def _on_settings(self):
         from artclaw_ui.settings_dialog import SettingsDialog
         dlg = SettingsDialog(bridge_manager=self._bridge, parent=self)

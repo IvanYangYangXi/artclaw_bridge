@@ -188,7 +188,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     }
 
     if (statusFilter === 'pending_publish') {
-      list = list.filter((s) => s.syncStatus === 'installed_newer' || s.syncStatus === 'modified')
+      list = list.filter((s) => s.syncStatus === 'installed_newer' || s.syncStatus === 'modified' || s.syncStatus === 'no_source')
+    } else if (statusFilter === 'no_source') {
+      list = list.filter((s) => s.syncStatus === 'no_source')
     } else if (statusFilter) {
       list = list.filter((s) => s.status === statusFilter)
     }

@@ -52,6 +52,7 @@ class ToolbarWidget(QWidget):
     # ── Signals ──────────────────────────────────────────────────────────────
     new_chat_clicked = Signal()
     manage_clicked = Signal()
+    tool_manager_clicked = Signal()
     attach_clicked = Signal(str)    # file path
     stop_clicked = Signal()
     send_clicked = Signal()
@@ -92,8 +93,14 @@ class ToolbarWidget(QWidget):
         _auto_width(self._manage_btn, 50)
         self._manage_btn.clicked.connect(self.manage_clicked)
 
+        self._tool_manager_btn = QPushButton(T("tool_manager_btn"))
+        self._tool_manager_btn.setFixedHeight(28)
+        _auto_width(self._tool_manager_btn, 50)
+        self._tool_manager_btn.clicked.connect(self.tool_manager_clicked)
+
         layout.addWidget(self._new_btn)
         layout.addWidget(self._manage_btn)
+        layout.addWidget(self._tool_manager_btn)
 
         # 附件按钮 — 靠左，紧跟管理按钮
         self._attach_btn = QPushButton(T("attach_btn"))
@@ -146,6 +153,7 @@ class ToolbarWidget(QWidget):
         )
         for btn in (self._new_btn, self._manage_btn, self._attach_btn):
             btn.setStyleSheet(default_style)
+        self._tool_manager_btn.setStyleSheet(default_style)
 
         # Stop button style (red-ish, disabled by default)
         self._stop_style = _btn_style(
@@ -221,6 +229,7 @@ class ToolbarWidget(QWidget):
         """语言切换后刷新所有按钮文本"""
         self._new_btn.setText(T("new_chat_btn"))
         self._manage_btn.setText(T("manage_btn"))
+        self._tool_manager_btn.setText(T("tool_manager_btn"))
         self._attach_btn.setText(T("attach_btn"))
         self._stop_btn.setText("⏹ " + T("stop"))
         self._resume_btn.setText(T("resume_btn"))

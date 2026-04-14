@@ -386,8 +386,10 @@ class TriggerEngine:
         if not success:
             result["error"] = error_msg
 
-        # ----- Notify mode → create alert -----
-        if exec_mode == "notify":
+        # ----- Notify mode → create alert only on failure -----
+        # Successful tools manage their own alerts via the Alert API;
+        # the engine only reports crashes / timeouts.
+        if exec_mode == "notify" and not success:
             await self._create_alert(rule, tool.name, success, exec_output, error_msg)
 
         return result
@@ -524,27 +526,21 @@ class TriggerEngine:
         output: str,
         error_msg: str,
     ) -> None:
-        """Create an alert entry for notify-mode executions.
+        """Create an alert entry for failed trigger executions.
 
-        Note: Alert.level only supports 'warning' | 'error'.
-        Successful notify-mode executions create a 'warning' (informational) alert;
-        failures create an 'error' alert.
+        Only called when the tool script crashes or times out.
+        Successful executions manage their own alerts via the Alert API.
         """
         try:
             from ..alert_service import AlertService
             from ...schemas.alert import AlertCreateRequest
             svc = AlertService()
-            level = "warning" if success else "error"
             trigger_name = rule.get("name", rule.get("id", "unknown"))
-            title = (
-                f"触发执行完成: {tool_name} ({trigger_name})"
-                if success
-                else f"触发执行失败: {tool_name} ({trigger_name})"
-            )
-            detail = (output[:1900] if output else "执行完成，无输出") if success else (error_msg or "Unknown error")
+            title = f"触发执行失败: {tool_name} ({trigger_name})"
+            detail = error_msg or "Unknown error"
             req = AlertCreateRequest(
                 source=f"trigger/{rule.get('tool_id', '')}",
-                level=level,
+                level="error",
                 title=title,
                 detail=detail,
                 metadata={

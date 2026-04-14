@@ -126,6 +126,7 @@ class ChatPanel(ChatPanelActionsMixin, QWidget):
         self._toolbar.stop_clicked.connect(self._on_stop)
         self._toolbar.new_chat_clicked.connect(self._on_new_chat)
         self._toolbar.manage_clicked.connect(self._on_manage)
+        self._toolbar.tool_manager_clicked.connect(self._on_open_tool_manager)
         self._toolbar.attach_clicked.connect(self._on_attach_file)
         self._toolbar.resume_clicked.connect(self._on_resume)
 

@@ -142,14 +142,15 @@ def _find_ue_python() -> str | None:
 
 
 def install_maya(maya_version: str, force: bool, platform_type: str = "openclaw"):
-    """安装 Maya 插件"""
+    """安装 Maya 插件（自动包含 zh_CN 等 locale 副本）"""
     print()
     print("  ── Maya 插件安装 ───────────────────────────────────")
     print()
 
-    scripts_dir = os.path.join(
-        os.path.expanduser("~"), "Documents", "maya", maya_version, "scripts"
+    maya_base = os.path.join(
+        os.path.expanduser("~"), "Documents", "maya", maya_version
     )
+    scripts_dir = os.path.join(maya_base, "scripts")
     dcc_dst = os.path.join(scripts_dir, "DCCClawBridge")
 
     cprint("信息", f"Maya 版本: {maya_version}")
@@ -181,11 +182,49 @@ def install_maya(maya_version: str, force: bool, platform_type: str = "openclaw"
     user_setup_dst = os.path.join(scripts_dir, "userSetup.py")
     inject_startup(user_setup_dst, user_setup_src, "userSetup.py")
 
+    # 自动同步 locale 副本（zh_CN 等中文版 Maya）
+    _sync_maya_locales(maya_base, scripts_dir)
+
     # 安装 DCC Skills
     install_dcc_skills(["maya", "universal"], platform_type)
 
     cprint("完成", "Maya 插件安装成功!", "green")
     return True
+
+
+def _sync_maya_locales(maya_base: str, scripts_dir: str):
+    """将 scripts/ 下的 DCCClawBridge + userSetup.py 同步到所有 locale 子目录。
+
+    Maya 中文版在 <version>/zh_CN/scripts/ 下查找脚本，
+    日文版在 ja_JP/scripts/，需要全部同步。
+    """
+    for entry in os.scandir(maya_base):
+        if not entry.is_dir():
+            continue
+        locale_scripts = os.path.join(entry.path, "scripts")
+        # 只处理含 scripts/ 子目录的 locale 文件夹（如 zh_CN/scripts/）
+        if not os.path.isdir(locale_scripts):
+            continue
+        # 跳过非 locale 目录（locale 通常是 xx_XX 格式）
+        name = entry.name
+        if len(name) < 2 or name == "scripts":
+            continue
+
+        cprint("同步", f"Maya locale: {name}")
+
+        # 同步 DCCClawBridge
+        src_dcc = os.path.join(scripts_dir, "DCCClawBridge")
+        dst_dcc = os.path.join(locale_scripts, "DCCClawBridge")
+        if os.path.isdir(src_dcc):
+            copy_dir(src_dcc, dst_dcc)
+            cprint("OK", f"DCCClawBridge → {name}/scripts/DCCClawBridge", "green")
+
+        # 同步 userSetup.py
+        src_setup = os.path.join(scripts_dir, "userSetup.py")
+        dst_setup = os.path.join(locale_scripts, "userSetup.py")
+        if os.path.isfile(src_setup):
+            shutil.copy2(src_setup, dst_setup)
+            cprint("OK", f"userSetup.py → {name}/scripts/userSetup.py", "green")
 
 
 def uninstall_maya(maya_version: str):

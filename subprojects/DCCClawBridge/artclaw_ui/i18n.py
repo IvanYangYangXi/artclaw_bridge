@@ -69,8 +69,9 @@ _STRINGS: dict[str, dict[str, str]] = {
     "send":            {"zh": "发送",         "en": "Send"},
     "stop":            {"zh": "停止",         "en": "Stop"},
     "new_chat_btn":    {"zh": "新对话",       "en": "New Chat"},
-    "manage_btn":      {"zh": "技能",         "en": "Skills"},
-    "attach_btn":      {"zh": "附件",         "en": "Attach"},
+    "manage_btn":          {"zh": "技能",              "en": "Skills"},
+    "tool_manager_btn":    {"zh": "工具",              "en": "Tools"},
+    "attach_btn":          {"zh": "附件",              "en": "Attach"},
     "resume_btn":      {"zh": "恢复",         "en": "Resume"},
     "waiting_btn":     {"zh": "等待...",       "en": "Wait..."},
 
@@ -78,6 +79,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "quick_input":     {"zh": "快捷输入",     "en": "Quick Input"},
 
     # ── Settings ──
+    "settings_btn":    {"zh": "设置",         "en": "Settings"},
     "settings_title":  {"zh": "设置",         "en": "Settings"},
     "language_label":  {"zh": "语言 / Language", "en": "Language"},
     "send_mode":       {"zh": "发送方式",     "en": "Send Mode"},

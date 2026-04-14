@@ -249,7 +249,7 @@ export default function SkillCard({ skill }: SkillCardProps) {
             accent
           />
         )}
-        {(syncStatus === 'installed_newer' || syncStatus === 'modified') && (
+        {(syncStatus === 'installed_newer' || syncStatus === 'modified' || syncStatus === 'no_source') && (
           <ActionBtn
             icon={<ArrowUpFromLine className="w-3.5 h-3.5" />}
             label={t('发布', 'Publish')}

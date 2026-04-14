@@ -728,10 +728,6 @@ def publish_skill(skill_name: str, target_layer: str = "marketplace",
             except Exception:
                 pass
 
-        # 6. git add + commit
-        _git_commit(project_root, skill_name, target_layer, new_version, changelog,
-                    dcc=target_dcc)
-
         _notify_skill_hub(force=True)
 
         return {

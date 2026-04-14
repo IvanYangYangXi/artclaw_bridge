@@ -362,6 +362,8 @@ void FUEAgentL10n::Initialize()
 	// ==================================================================
 	Reg(TEXT("SettingsBtn"),            TEXT("设置"),                      TEXT("Settings"));
 	Reg(TEXT("SettingsTip"),            TEXT("打开设置面板"),               TEXT("Open settings panel"));
+	Reg(TEXT("ToolManagerBtn"),         TEXT("工具"),                      TEXT("Tools"));
+	Reg(TEXT("ToolManagerTip"),         TEXT("打开 ArtClaw Tool Manager"), TEXT("Open ArtClaw Tool Manager"));
 	Reg(TEXT("SettingsTitle"),          TEXT("设置"),                      TEXT("Settings"));
 	Reg(TEXT("SettingsLanguage"),       TEXT("语言 / Language"),           TEXT("Language"));
 	Reg(TEXT("SettingsSendMode"),       TEXT("Enter 发送"),                TEXT("Enter to Send"));

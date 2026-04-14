@@ -202,6 +202,9 @@ copy /Y "%BRIDGE_MODULES_SRC%\bridge_config.py" "%PYTHON_DST%\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "%PYTHON_DST%\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "%PYTHON_DST%\" >nul 2>&1
 copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "%PYTHON_DST%\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\health_check.py" "%PYTHON_DST%\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\skill_sync.py" "%PYTHON_DST%\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\retry_tracker.py" "%PYTHON_DST%\" >nul 2>&1
 echo [OK] 共享模块已打包到: %PYTHON_DST%
 
 :: 安装 Python 依赖
@@ -321,6 +324,9 @@ copy /Y "%BRIDGE_MODULES_SRC%\bridge_config.py" "%DCC_DST%\core\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "%DCC_DST%\core\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "%DCC_DST%\core\" >nul 2>&1
 copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "%DCC_DST%\core\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\health_check.py" "%DCC_DST%\core\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\skill_sync.py" "%DCC_DST%\core\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\retry_tracker.py" "%DCC_DST%\core\" >nul 2>&1
 echo [OK] 共享模块已打包 (自包含部署)
 
 :: 如果有 locale 目录，也复制一份
@@ -333,6 +339,9 @@ if defined MAYA_LOCALE_SCRIPTS (
     copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "!LOCALE_DST!\core\" >nul
     copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "!LOCALE_DST!\core\" >nul 2>&1
     copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "!LOCALE_DST!\core\" >nul 2>&1
+    copy /Y "%BRIDGE_MODULES_SRC%\health_check.py" "!LOCALE_DST!\core\" >nul 2>&1
+    copy /Y "%BRIDGE_MODULES_SRC%\skill_sync.py" "!LOCALE_DST!\core\" >nul 2>&1
+    copy /Y "%BRIDGE_MODULES_SRC%\retry_tracker.py" "!LOCALE_DST!\core\" >nul 2>&1
     echo [OK] 已同步到: !LOCALE_DST!
     call :inject_maya_startup "!MAYA_LOCALE_SCRIPTS!"
 )
@@ -518,6 +527,9 @@ copy /Y "%BRIDGE_MODULES_SRC%\bridge_config.py" "%DCC_DST%\core\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "%DCC_DST%\core\" >nul
 copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "%DCC_DST%\core\" >nul 2>&1
 copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "%DCC_DST%\core\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\health_check.py" "%DCC_DST%\core\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\skill_sync.py" "%DCC_DST%\core\" >nul 2>&1
+copy /Y "%BRIDGE_MODULES_SRC%\retry_tracker.py" "%DCC_DST%\core\" >nul 2>&1
 echo [OK] 共享模块已打包 (自包含部署)
 
 :: 处理 startup.py (幂等注入)

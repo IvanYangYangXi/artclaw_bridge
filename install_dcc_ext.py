@@ -509,6 +509,31 @@ def uninstall_substance_designer():
 COMFYUI_BRIDGE_SRC = ROOT_DIR / "subprojects" / "ComfyUIClawBridge"
 
 
+def _detect_comfyui_path() -> str | None:
+    """自动检测 ComfyUI 安装目录。
+
+    搜索优先级:
+    1. ~/Documents/ComfyUI (ComfyUI Desktop 默认数据目录)
+    2. %LOCALAPPDATA%/Programs/ComfyUI/resources/ComfyUI (Desktop app 内置)
+    3. 常见安装路径: D:/ComfyUI, C:/ComfyUI
+    """
+    candidates = [
+        os.path.expanduser("~/Documents/ComfyUI"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "ComfyUI", "resources", "ComfyUI"),
+        "D:/ComfyUI",
+        "C:/ComfyUI",
+    ]
+    if platform.system() != "Windows":
+        candidates.extend([
+            os.path.expanduser("~/ComfyUI"),
+            "/opt/ComfyUI",
+        ])
+    for path in candidates:
+        if path and os.path.isdir(os.path.join(path, "custom_nodes")):
+            return path
+    return None
+
+
 def install_comfyui(comfyui_path: str, force: bool, platform_type: str = "openclaw"):
     """安装 ComfyUI 自定义节点
 
@@ -516,7 +541,7 @@ def install_comfyui(comfyui_path: str, force: bool, platform_type: str = "opencl
     同时复制 DCCClawBridge（adapters + core）作为依赖。
 
     Args:
-        comfyui_path: ComfyUI 安装目录（包含 main.py 的目录）
+        comfyui_path: ComfyUI 安装目录（包含 main.py 的目录），空则自动检测
         force: 跳过覆盖确认
         platform_type: 目标平台
     """
@@ -525,8 +550,14 @@ def install_comfyui(comfyui_path: str, force: bool, platform_type: str = "opencl
     print()
 
     if not comfyui_path:
-        cprint("错误", "--comfyui-path 未指定，请提供 ComfyUI 安装目录", "red")
-        return False
+        detected = _detect_comfyui_path()
+        if detected:
+            comfyui_path = detected
+            cprint("检测", f"自动发现 ComfyUI: {comfyui_path}", "cyan")
+        else:
+            cprint("错误", "--comfyui-path 未指定且未能自动检测到 ComfyUI 安装目录", "red")
+            cprint("提示", "请手动指定: --comfyui-path <ComfyUI目录>", "yellow")
+            return False
 
     # 验证 ComfyUI 目录
     comfyui_dir = os.path.abspath(comfyui_path)
@@ -698,14 +729,14 @@ def _install_comfyui_custom_nodes(comfyui_dir: str):
                     timeout=120,
                 )
                 if result.returncode == 0:
-                    print(f"    状态: ✓ 安装成功")
+                    print(f"    状态: [OK] 安装成功")
                 else:
-                    print(f"    状态: ✗ 安装失败")
+                    print(f"    状态: [X] 安装失败")
                     if repo["required"]:
                         cprint("警告", f"{repo['name']} 安装失败，但它是可选组件", "yellow")
                     continue
             except Exception as e:
-                print(f"    状态: ✗ 错误: {e}")
+                print(f"    状态: [X] 错误: {e}")
                 continue
 
         # 安装节点包的依赖
@@ -720,11 +751,11 @@ def _install_comfyui_custom_nodes(comfyui_dir: str):
                     timeout=180,
                 )
                 if result.returncode == 0:
-                    print(f"    依赖: ✓ 安装成功")
+                    print(f"    依赖: OK 安装成功")
                 else:
-                    print(f"    依赖: ⚠ 可能有问题")
+                    print(f"    依赖: [!] 可能有问题")
             except Exception as e:
-                print(f"    依赖: ⚠ 错误: {e}")
+                print(f"    依赖: [!] 错误: {e}")
 
     print()
     cprint("OK", "节点包安装完成", "green")

@@ -676,9 +676,8 @@ def publish_skill(skill_name: str, target_layer: str = "marketplace",
             json.dumps(manifest, indent=2, ensure_ascii=False),
             encoding="utf-8")
 
-        # 1b. 同步更新 SKILL.md frontmatter 中的 version 和 updated_at 字段
+        # 1b. 同步更新 SKILL.md frontmatter 中的 version 字段
         _update_skill_md_version(runtime_path / "SKILL.md", new_version)
-        _update_skill_md_updated_at(runtime_path / "SKILL.md")
 
         # 2. 确定目标路径 & 清理项目源码中旧位置（如果换了层级或 DCC 目录）
         source_target = project_root / "skills" / target_layer / target_dcc / skill_name
@@ -728,10 +727,6 @@ def publish_skill(skill_name: str, target_layer: str = "marketplace",
                     encoding="utf-8")
             except Exception:
                 pass
-
-        # 6. git add + commit
-        _git_commit(project_root, skill_name, target_layer, new_version, changelog,
-                    dcc=target_dcc)
 
         _notify_skill_hub(force=True)
 
@@ -861,120 +856,44 @@ def _update_skill_md_version(skill_md_path: Path, new_version: str) -> bool:
         return False
 
 
-def _update_skill_md_updated_at(skill_md_path: Path) -> bool:
-    """
-    更新 SKILL.md frontmatter 中的 updated_at 字段为当前时间。
-
-    支持两种格式:
-    1. metadata.artclaw.updated_at: "2026-04-12 01:52:00" (优先)
-    2. 顶层 updated_at: "2026-04-12 01:52:00" (fallback)
-
-    如果 frontmatter 中不存在 updated_at 字段，在 metadata.artclaw 块中插入。
-    如果没有 frontmatter，不修改文件。
-
-    返回: True 如果成功更新
-    """
-    if not skill_md_path.exists():
-        return False
-
-    try:
-        raw = skill_md_path.read_text(encoding="utf-8")
-    except Exception:
-        return False
-
-    if not raw.startswith("---"):
-        return False
-
-    end = raw.find("---", 3)
-    if end < 0:
-        return False
-
-    fm_block = raw[3:end]
-    body = raw[end:]  # includes closing "---" and everything after
-
-    # Generate current timestamp
-    import datetime
-    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    lines = fm_block.split("\n")
-    new_lines = []
-    updated_at_updated = False
-    in_metadata = False
-    in_artclaw = False
-    artclaw_indent = ""
-
-    for line in lines:
-        stripped = line.strip()
-        indent = len(line) - len(line.lstrip())
-
-        # 追踪 metadata / artclaw 块层级
-        if indent == 0 and stripped and not stripped.startswith("#"):
-            in_metadata = stripped == "metadata:"
-            in_artclaw = False
-        elif in_metadata and indent >= 2 and stripped == "artclaw:":
-            in_artclaw = True
-            artclaw_indent = " " * (indent + 2)
-
-        # 替换 updated_at 字段
-        if stripped.startswith("updated_at:"):
-            if in_artclaw and indent >= 4:
-                # metadata.artclaw.updated_at
-                new_lines.append(f"{line[:indent]}updated_at: {current_time}")
-                updated_at_updated = True
-                continue
-            elif indent == 0 and not in_metadata:
-                # 顶层 updated_at（旧格式）
-                new_lines.append(f"updated_at: {current_time}")
-                updated_at_updated = True
-                continue
-
-        new_lines.append(line)
-
-    # 如果没找到 updated_at 字段，尝试插入到 metadata.artclaw 块
-    if not updated_at_updated:
-        inserted = False
-        final_lines = []
-        for i, line in enumerate(new_lines):
-            final_lines.append(line)
-            stripped = line.strip()
-            # 找到 artclaw: 行后，在下一行插入 updated_at
-            if stripped == "artclaw:" and not inserted:
-                # 计算缩进
-                ac_indent = len(line) - len(line.lstrip()) + 2
-                final_lines.append(f"{' ' * ac_indent}updated_at: {current_time}")
-                inserted = True
-                updated_at_updated = True
-        if inserted:
-            new_lines = final_lines
-
-    if not updated_at_updated:
-        return False
-
-    try:
-        result = "---" + "\n".join(new_lines) + body
-        skill_md_path.write_text(result, encoding="utf-8")
-        logger.info(f"Updated SKILL.md updated_at to {current_time}: {skill_md_path}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to update SKILL.md updated_at: {e}")
-        return False
-
-
 def _infer_dcc_from_name(skill_name: str) -> str:
-    """从 Skill 名称推断 DCC 类型"""
-    if skill_name.startswith("ue"):
+    """从 Skill 名称推断 DCC 类型（仅用于发布时确定目标子目录，非 source 分类）。
+
+    优先从已安装目录的 SKILL.md metadata.artclaw.software 字段读取，
+    读不到时才用名称前缀作为 fallback。
+    """
+    # 先尝试从已安装目录的 SKILL.md 读取 software 字段
+    installed_dir = _get_openclaw_skills_dir() / skill_name
+    skill_md_path = installed_dir / "SKILL.md"
+    if skill_md_path.exists():
+        fm = _parse_frontmatter_light(skill_md_path)
+        software = fm.get("software", "")
+        _SOFTWARE_TO_DCC_DIR = {
+            "unreal_engine": "unreal", "ue": "unreal", "ue5": "unreal",
+            "maya": "maya", "3ds_max": "max", "3dsmax": "max",
+            "blender": "blender", "houdini": "houdini",
+            "substance_painter": "substance_painter",
+            "substance_designer": "substance_designer",
+            "comfyui": "comfyui", "universal": "universal",
+        }
+        if software:
+            return _SOFTWARE_TO_DCC_DIR.get(software.lower(), "universal")
+
+    # Fallback: 名称前缀推断（仅做最终兜底，精度有限）
+    low = skill_name.lower()
+    if low.startswith("ue"):
         return "unreal"
-    elif skill_name.startswith("maya"):
+    elif low.startswith("maya"):
         return "maya"
-    elif skill_name.startswith("max"):
+    elif low.startswith("max"):
         return "max"
-    elif skill_name.startswith("sd-") or skill_name.startswith("sd_"):
+    elif low.startswith("sd-") or low.startswith("sd_"):
         return "substance_designer"
-    elif skill_name.startswith("sp-") or skill_name.startswith("sp_"):
+    elif low.startswith("sp-") or low.startswith("sp_"):
         return "substance_painter"
-    elif skill_name.startswith("blender"):
+    elif low.startswith("blender"):
         return "blender"
-    elif skill_name.startswith("houdini"):
+    elif low.startswith("houdini"):
         return "houdini"
     else:
         return "universal"

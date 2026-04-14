@@ -25,11 +25,14 @@ BRIDGE_MODULES_SRC = ROOT_DIR / "core"
 PLATFORMS_DIR = ROOT_DIR / "platforms"
 SKILLS_SRC = ROOT_DIR / "skills"
 
-# 需要打包到每个目标的共享模块
+# 需要打包到每个目标的共享模块（与 install.bat 保持一致）
 SHARED_MODULES = [
     "bridge_core.py",
     "bridge_config.py",
     "bridge_diagnostics.py",
+    "memory_core.py",
+    "integrity_check.py",
+    "health_check.py",
     "skill_sync.py",
     "retry_tracker.py",
 ]

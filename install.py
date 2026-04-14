@@ -126,7 +126,7 @@ def _print_post_steps(installed: list[str]):
     if "ComfyUI" in joined:
         print("    ComfyUI:")
         print("      1. 启动 ComfyUI → ArtClaw Bridge 自动加载")
-        print("      2. 日志中应出现 MCP Server started on port 8083")
+        print("      2. 日志中应出现 MCP Server started on port 8087")
         print("      3. 配置 OpenClaw 连接: --comfyui")
         print()
     if "OpenClaw" in joined:
