@@ -3,7 +3,7 @@
   "name": "sd_operation_rules",
   "display_name": "Sd Operation Rules",
   "description": "Substance Designer 操作通用规则和最佳实践。所有涉及 SD 图操作的任务都必须遵守。 AI 在执行任何 SD 操作任务前应先读取此 Skill。 包含：API 模块、单线程约束、节点验证、常见陷阱、PBR 输出标准。 Use when AI needs to: (1) perform any SD graph modification, (2) check post-operation best practices, (3) understand SD API constraints. Substance Designer only (run_python).",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "author": "ArtClaw",
   "software": "substance_designer",
   "category": "utils",

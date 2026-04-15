@@ -44,9 +44,29 @@ AI (OpenClaw) ──MCP──▶ Skill Hub ──▶ material_node_ops.py (this 
 | `list_material_expressions` | low | List all nodes (flat, no connections) |
 | `recompile_material` | medium | Recompile + validate + save after edits |
 
-## Workflow
+## ✅ 核心工作流：先写伪代码，再创建节点
 
-Standard material creation flow:
+> 📋 **通用节点图工作流**（伪代码→映射→分组创建→验证→布局）见 `dcc-node-graph-workflow` skill。
+> 本 skill 专注 UE 材质的 **API 细节、节点类名和属性速查**。
+
+**UE 材质图是纯数据流节点图，伪代码示例：**
+
+```python
+# 伪代码
+base_color = tex_diffuse * tint_color
+roughness  = lerp(0.2, 0.9, tex_roughness.r)
+metallic   = param_metallic
+
+# 节点映射
+TextureSampleParameter2D  → tex_diffuse / tex_roughness
+Constant3Vector           → tint_color
+Multiply                  → base_color = tex * tint
+ComponentMask(R)          → .r channel
+Lerp                      → roughness
+ScalarParameter           → metallic
+```
+
+## Standard Workflow
 
 1. **Create material** → `create_material(asset_name, package_path)`
 2. **Set material properties** → `set_material_properties(material_path, {blend_mode, shading_model, ...})`
@@ -54,7 +74,7 @@ Standard material creation flow:
 4. **Set node properties** → `set_expression_property(material_path, node_name, property_name, value)`
 5. **Wire nodes together** → `connect_material_expressions(from_node, from_output, to_node, to_input)`
 6. **Wire to material outputs** → `connect_material_property(from_node, from_output, "BaseColor")`
-7. **Compile** → `recompile_material(material_path, save=true)`
+7. **Compile + verify** → `recompile_material(material_path, save=true)`
 
 Existing tools for read/query:
 - `get_material_nodes(material_path)` — full BFS traversal with connections

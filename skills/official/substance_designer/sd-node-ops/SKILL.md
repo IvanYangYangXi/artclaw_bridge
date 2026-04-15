@@ -7,14 +7,36 @@ description: >
   Substance Designer only (run_python).
 metadata:
   artclaw:
-    version: 0.2.0
+    version: 0.0.2
     author: ArtClaw
     software: substance_designer
 ---
 
 # SD 节点操作
 
-> ⚠️ **操作前必须先阅读 `sd-operation-rules`**
+> ⚠️ **操作前必须先阅读 `sd-operation-rules`（含工作流 + 陷阱 + API 速查）**
+
+---
+
+## ✅ 伪代码 → 节点映射
+
+SD 材质图是**有向数据流**，用伪代码能完整描述。每行伪代码对应一个或一组节点：
+
+```python
+# 伪代码
+weave   = mesh_1(tiling=20) + rotate(90°)           # 编织骨架
+smooth  = blur(weave, intensity=2.0)                  # 软化
+warped  = warp(weave, perlin_noise, intensity=0.05)  # 有机化
+color   = gradient_map(warped, dark→light)            # 着色
+
+# 节点映射
+pattern_mesh_1.sbs           → mesh_1
+sbs::compositing::transformation → rotate 90°
+sbs::compositing::blur        → smooth
+noise_perlin_noise.sbs        → perlin_noise
+sbs::compositing::warp        → warped
+sbs::compositing::gradient (colorswitch=True) → color
+```
 
 ---
 

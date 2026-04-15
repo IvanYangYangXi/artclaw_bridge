@@ -3,7 +3,7 @@
   "name": "sd_node_ops",
   "display_name": "Sd Node Ops",
   "description": "SD 节点创建、连接、参数设置指南。包含原子节点和库节点的使用方式。 Use when AI needs to: (1) create nodes, (2) connect nodes, (3) set parameters, (4) build material graphs. Substance Designer only (run_python).",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "author": "ArtClaw",
   "software": "substance_designer",
   "category": "utils",
