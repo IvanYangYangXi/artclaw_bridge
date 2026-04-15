@@ -38,7 +38,7 @@ public:
 		const FString& GraphType = TEXT(""),
 		const FString& NodeGuid = TEXT(""),
 		const FString& Search = TEXT(""),
-		bool bIncludePositions = false);
+		bool bIncludePositions = true);  // Default true: positions always included
 
 	/**
 	 * List all callable entries (events, functions, macros) in Blueprint.
