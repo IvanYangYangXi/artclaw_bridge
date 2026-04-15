@@ -20,18 +20,23 @@ ArtClaw Bridge provides a unified AI bridging layer for Digital Content Creation
 
 ![UEClawBridge](docs/示例/UE连接openClaw效果.png)
 
-**Cross-DCC Pipeline — AI-Driven Workflow**
-
-![ArtClawBridge Workflow](docs/示例/打通不同软件间的上下流交接.png)
-
 **Blender Integration — AI Operating in Blender Editor**
 
 ![Blender AI Integration](docs/示例/blender-bridge演示.gif)
+
+**Cross-DCC Pipeline — AI-Driven Workflow**
+
+![ArtClawBridge Workflow](docs/示例/打通不同软件间的上下流交接.png)
 
 **Substance Designer & Painter — AI Texture Generation Workflow**
 
 ![SD AI Integration](docs/示例/SD接入.png)
 ![SP AI Integration](docs/示例/SP接入.png)
+
+**Tool Manager — Web Skill、Tool Manager**
+![Web-based chat panel - Quick operation with tools - AI-assisted operation](docs/示例/tool manager chat面板-工具快捷运行-AI协助运行.png)
+![skill management - Team sharing - Category filtering](docs/示例/tool manager skill管理-团队共享-分类筛选.png)
+![Tool Management - Filtering Conditions + Trigger Rules Paradigm](docs/示例/tool manager tool管理-筛选条件+触发规则 范式.png)
 
 ⭐ *More demo videos coming soon!*
 

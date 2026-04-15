@@ -18,18 +18,23 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
 
 ![UEClawBridge](docs/示例/UE连接openClaw效果.png)
 
-**跨 DCC 上下流交接 — AI 驱动工作流**
-
-![ArtClawBridge Workflow](docs/示例/打通不同软件间的上下流交接.png)
-
 **Blender 集成 — AI 在 Blender 编辑器中操作**
 
 ![Blender AI 演示](docs/示例/blender-bridge演示.gif)
+
+**跨 DCC 上下流交接 — AI 驱动工作流**
+
+![ArtClawBridge Workflow](docs/示例/打通不同软件间的上下流交接.png)
 
 **Substance Designer & Painter — AI 材质生成工作流**
 
 ![SD AI 演示](docs/示例/SD接入.png)
 ![SP AI 演示](docs/示例/SP接入.png)
+
+**Tool Manager — Skill、Tool 管理器**
+![tool manager chat面板-工具快捷运行-AI协助运行](docs/示例/tool manager chat面板-工具快捷运行-AI协助运行.png)
+![tool manager skill管理-团队共享-分类筛选](docs/示例/tool manager skill管理-团队共享-分类筛选.png)
+![tool manager tool管理-筛选条件+触发规则 范式](docs/示例/tool manager tool管理-筛选条件+触发规则 范式.png)
 
 ⭐ *更多演示视频即将上线，敬请关注！*
 
