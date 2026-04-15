@@ -34,9 +34,9 @@ ArtClaw Bridge provides a unified AI bridging layer for Digital Content Creation
 ![SP AI Integration](docs/示例/SP接入.png)
 
 **Tool Manager — Web Skill、Tool Manager**
-![Web-based chat panel - Quick operation with tools - AI-assisted operation](docs/示例/tool manager chat面板-工具快捷运行-AI协助运行.png)
-![skill management - Team sharing - Category filtering](docs/示例/tool manager skill管理-团队共享-分类筛选.png)
-![Tool Management - Filtering Conditions + Trigger Rules Paradigm](docs/示例/tool manager tool管理-筛选条件+触发规则 范式.png)
+![Web-based chat panel - Quick operation with tools - AI-assisted operation](docs/示例/toolmanagerchat面板-工具快捷运行-AI协助运行.png)
+![skill management - Team sharing - Category filtering](docs/示例/toolmanagerskill管理-团队共享-分类筛选.png)
+![Tool Management - Filtering Conditions + Trigger Rules Paradigm](docs/示例/toolmanagertool管理-筛选条件+触发规则范式.png)
 
 ⭐ *More demo videos coming soon!*
 
