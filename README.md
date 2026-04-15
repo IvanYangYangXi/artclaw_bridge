@@ -248,23 +248,9 @@ A standalone web-based management interface for unified control of Skills, Tools
 - **ComfyUI Integration** — Direct AI control of ComfyUI through the web interface
 - **Cross-Platform** — Single dashboard manages all connected DCC software
 
-### Architecture
-
-```
-ArtClawToolManager/
-├── src/
-│   ├── server/           # FastAPI backend
-│   │   └── api/
-│   │       ├── skills.py    # Skill lifecycle management
-│   │       ├── tools.py     # Tool registry & execution
-│   │       └── workflows.py # Workflow template management
-│   └── web/             # Frontend (src/)
-└── docs/                # Documentation
-```
-
 ### Usage
 
-The web dashboard connects to the same Agent Gateway as DCC plugins, providing an alternative interface for AI interaction and tool/workflow management without needing to open DCC software.
+The web page panel is connected to the same Agent Gateway as the DCC plugin, providing an alternative interface for AI conversations and tool/workflow management. It needs to be used in conjunction with the DCC software.
 
 ---
 
@@ -294,50 +280,6 @@ This architecture enables powerful automation scenarios:
 - AI detects scene changes → triggers content validation workflow
 - New asset imported → runs automated QA tools
 - ComfyUI generation complete → triggers downstream DCC pipeline
-
----
-
-## 📦 Project Structure
-
-```
-artclaw_bridge/
-├── core/                            # 🔧 Shared core modules (single source, copied to DCCs during install)
-│   ├── bridge_core.py               #    WebSocket RPC communication core
-│   ├── bridge_config.py             #    Config loading & multi-platform defaults
-│   ├── bridge_dcc.py                #    DCC-side Bridge manager (Qt signal/slot)
-│   ├── memory_core.py               #    Memory management system v2 core
-│   ├── mcp_server.py                #    MCP Server (DCC-side, with tool event callbacks)
-│   ├── skill_sync.py                #    Skill install/uninstall/sync/publish
-│   └── ...                          #    Diagnostics, health check, integrity check, etc.
-├── platforms/                       # 🌐 Platform Bridges (replaceable)
-│   ├── openclaw/                    #    OpenClaw adapter (ws connection + chat API + diagnostics)
-│   ├── lobster/                     #    LobsterAI config injection
-│   └── claude/                      #    Claude Desktop stdio→WS bridge POC
-├── subprojects/                     # 💻 DCC plugin subprojects
-│   ├── UEDAgentProj/                #    Unreal Engine project
-│   │   └── Plugins/UEClawBridge/  #       UE plugin (C++ Slate UI + Python logic)
-│   ├── DCCClawBridge/               #    Maya / Max / Blender / Houdini / SP / SD shared plugin
-│   │   ├── artclaw_ui/              #       Generic Qt chat panel + Skill management panel
-│   │   ├── adapters/               #       DCC adapters (Maya / Max / Blender / Houdini / SP / SD)
-│   │   ├── core/                   #       Core module copies (synced from core/ during install)
-│   │   ├── maya_setup/             #       Maya deployment files
-│   │   └── max_setup/              #       Max deployment files
-│   ├── ComfyUIClawBridge/           #    ComfyUI custom node (Python-only MCP Server, no visible nodes)
-│   └── ArtClawToolManager/          #    🖥️ Web dashboard + Tool/Workflow management
-│       ├── src/
-│       │   ├── server/api/         #       FastAPI backend (skills, tools, workflows)
-│       │   └── web/src/            #       Frontend
-│       └── docs/                   #       Documentation
-├── skills/                          # 🛠️ Skill source repository
-│   ├── official/                    #    Official Skills (universal / unreal / maya / max / blender / houdini / SP / SD)
-│   ├── marketplace/                 #    Marketplace Skills
-│   └── templates/                   #    Skill templates (basic / advanced / material_doc)
-├── cli/                             # ⌨️ ArtClaw CLI tools
-├── docs/                            # 📚 Project docs (specs / features / troubleshooting)
-├── install.bat                      # 📦 One-click installer (Windows interactive menu, platform selection)
-├── install.py                       # 📦 Cross-platform installer (CLI, --platform openclaw/lobster)
-└── verify_sync.py                   # 🔍 Shared module sync verification (MD5 comparison, --fix auto-repair)
-```
 
 ---
 
@@ -449,45 +391,6 @@ The uninstall script removes plugin directories and **only removes ArtClaw code 
 ## 🛠️ Skill System
 
 ### Directory Structure
-
-```
-Project Source (Development):              Installed (Runtime):
-skills/                                    ~/.openclaw/skills/
-├── official/                               ├── ue57-camera-transform/
-│   ├── universal/                         ├── ue57-artclaw-context/
-│   │   ├── artclaw-memory/                 ├── artclaw-memory/
-│   │   └── scene-vision-analyzer/          ├── scene-vision-analyzer/
-│   ├── unreal/                             ├── maya-operation-rules/
-│   │   ├── ue57-camera-transform/          ├── blender-operation-rules/
-│   │   └── ue57-operation-rules/           ├── sp-operation-rules/
-│   ├── maya/                               ├── sd-operation-rules/
-│   │   └── maya-operation-rules/           └── ...
-│   ├── max/
-│   │   └── max-operation-rules/
-│   ├── blender/
-│   │   ├── blender-operation-rules/
-│   │   ├── blender-context/
-│   │   └── blender-viewport-capture/
-│   ├── houdini/
-│   │   ├── houdini-operation-rules/
-│   │   ├── houdini-context/
-│   │   ├── houdini-node-ops/
-│   │   └── houdini-simulation/
-│   ├── substance_painter/
-│   │   ├── sp-operation-rules/
-│   │   ├── sp-context/
-│   │   ├── sp-layer-ops/
-│   │   └── sp-bake-export/
-│   └── substance_designer/
-│       ├── sd-operation-rules/
-│       ├── sd-context/
-│       ├── sd-node-ops/
-│       └── sd-material-recipes/
-├── marketplace/
-│   └── universal/
-│       └── ...
-└── templates/
-```
 
 **Workflow**: Edit installed directory → `Publish` (installed→source + version increment + git commit) → `Update` (source→installed)
 

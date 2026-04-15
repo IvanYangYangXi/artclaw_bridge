@@ -223,23 +223,9 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
 - **ComfyUI 集成** — 通过网页界面直接用 AI 控制 ComfyUI
 - **跨平台** — 单一面板管理所有已连接的 DCC 软件
 
-### 架构
-
-```
-ArtClawToolManager/
-├── src/
-│   ├── server/           # FastAPI 后端
-│   │   └── api/
-│   │       ├── skills.py     # Skill 生命周期管理
-│   │       ├── tools.py      # 工具注册与执行
-│   │       └── workflows.py  # 工作流模板管理
-│   └── web/              # 前端（src/）
-└── docs/                 # 文档
-```
-
 ### 使用方式
 
-网页面板连接到与 DCC 插件相同的 Agent Gateway，提供替代界面用于 AI 对话和工具/工作流管理，无需打开 DCC 软件即可使用。
+网页面板连接到与 DCC 插件相同的 Agent Gateway，提供替代界面用于 AI 对话和工具/工作流管理，需打开 DCC 软件配合使用。
 
 ---
 
@@ -269,50 +255,6 @@ ArtClawToolManager/
 - AI 检测场景变化 → 触发内容验证工作流
 - 新资产导入 → 运行自动化 QA 工具
 - ComfyUI 生成完成 → 触发下游 DCC 流水线
-
----
-
-## 📦 项目结构
-
-```
-artclaw_bridge/
-├── core/                              # 🔧 共享核心模块（安装时复制到各 DCC）
-│   ├── bridge_core.py                 #    WebSocket RPC 通信核心
-│   ├── bridge_config.py               #    配置加载 & 多平台默认值
-│   ├── bridge_dcc.py                 #    DCC 端 Bridge 管理器（Qt 信号槽）
-│   ├── memory_core.py                #    记忆管理系统 v2 核心
-│   ├── mcp_server.py                 #    MCP Server（DCC 端，含工具事件回调）
-│   ├── skill_sync.py                 #    Skill 安装/卸载/同步/发布
-│   └── ...                           #    诊断、健康检查、完整性检查等
-├── platforms/                         # 🌐 平台桥接层（可替换）
-│   ├── openclaw/                     #    OpenClaw 适配器（ws 连接 + chat API + 诊断）
-│   ├── lobster/                      #    LobsterAI 配置注入
-│   └── claude/                       #    Claude Desktop stdio→WS bridge POC
-├── subprojects/                      # 💻 DCC 插件子项目
-│   ├── UEDAgentProj/                 #    Unreal Engine 项目
-│   │   └── Plugins/UEClawBridge/    #       UE 插件（C++ Slate UI + Python 逻辑）
-│   ├── DCCClawBridge/               #    Maya / Max / Blender / Houdini / SP / SD 共享插件
-│   │   ├── artclaw_ui/             #       通用 Qt 对话面板 + Skill 管理面板
-│   │   ├── adapters/               #       DCC 适配器（Maya / Max / Blender / Houdini / SP / SD）
-│   │   ├── core/                   #       核心模块副本（安装时从 core/ 同步）
-│   │   ├── maya_setup/             #       Maya 部署文件
-│   │   └── max_setup/              #       Max 部署文件
-│   ├── ComfyUIClawBridge/           #    ComfyUI 自定义节点（纯 Python MCP Server，无可见节点）
-│   └── ArtClawToolManager/          #    🖥️ 网页仪表盘 + 工具/工作流管理
-│       ├── src/
-│       │   ├── server/api/        #       FastAPI 后端（skills、tools、workflows）
-│       │   └── web/src/           #       前端
-│       └── docs/                  #       文档
-├── skills/                           # 🛠️ Skill 源码仓库
-│   ├── official/                    #    官方 Skills（通用 / unreal / maya / max / blender / houdini / SP / SD）
-│   ├── marketplace/                 #    市场 Skills
-│   └── templates/                   #    Skill 模板（基础 / 高级 / 材质文档）
-├── cli/                              # ⌨️ ArtClaw CLI 工具
-├── docs/                             # 📚 项目文档（规格 / 功能 / 故障排除）
-├── install.bat                       # 📦 一键安装脚本（Windows 交互式菜单，平台选择）
-├── install.py                        # 📦 跨平台安装脚本（CLI，--platform openclaw/lobster）
-└── verify_sync.py                    # 🔍 共享模块同步校验（MD5 比较，--fix 自动修复）
-```
 
 ---
 
@@ -422,45 +364,6 @@ python install.py --uninstall --comfyui --comfyui-path "C:\ComfyUI" # 卸载 Com
 ## 🛠️ Skill 系统
 
 ### 目录结构
-
-```
-项目源码（开发时）：                    已安装（运行时）：
-skills/                               ~/.openclaw/skills/
-├── official/                          ├── ue57-camera-transform/
-│   ├── universal/                     ├── ue57-artclaw-context/
-│   │   ├── artclaw-memory/             ├── artclaw-memory/
-│   │   └── scene-vision-analyzer/      ├── scene-vision-analyzer/
-│   ├── unreal/                         ├── maya-operation-rules/
-│   │   ├── ue57-camera-transform/      ├── blender-operation-rules/
-│   │   └── ue57-operation-rules/        ├── sp-operation-rules/
-│   ├── maya/                           ├── sd-operation-rules/
-│   │   └── maya-operation-rules/       └── ...
-│   ├── max/
-│   │   └── max-operation-rules/
-│   ├── blender/
-│   │   ├── blender-operation-rules/
-│   │   ├── blender-context/
-│   │   └── blender-viewport-capture/
-│   ├── houdini/
-│   │   ├── houdini-operation-rules/
-│   │   ├── houdini-context/
-│   │   ├── houdini-node-ops/
-│   │   └── houdini-simulation/
-│   ├── substance_painter/
-│   │   ├── sp-operation-rules/
-│   │   ├── sp-context/
-│   │   ├── sp-layer-ops/
-│   │   └── sp-bake-export/
-│   └── substance_designer/
-│       ├── sd-operation-rules/
-│       ├── sd-context/
-│       ├── sd-node-ops/
-│       └── sd-material-recipes/
-├── marketplace/
-│   └── universal/
-│       └── ...
-└── templates/
-```
 
 **工作流**：编辑安装目录 → `发布`（安装目录→源码 + 版本递增 + git commit）→ `更新`（源码→安装目录）
 
