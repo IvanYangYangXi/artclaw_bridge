@@ -277,6 +277,8 @@ def scan_skills(skills_dir: Optional[Path] = None) -> List[ScannedSkill]:
             # Authoritative: use folder-derived layer as source
             skill.source_path = entry.path
             skill.source = entry.layer
+            # Authoritative: use dcc_dir name as target_dccs (overrides frontmatter)
+            skill.target_dccs = entry.dccs
             skill.sync_status = _compare_directories(
                 Path(skill.skill_path), Path(entry.path)
             )
@@ -294,6 +296,7 @@ def scan_skills(skills_dir: Optional[Path] = None) -> List[ScannedSkill]:
         if parsed is not None:
             parsed.source = entry.layer
             parsed.source_path = entry.path
+            parsed.target_dccs = entry.dccs  # authoritative from dcc_dir
             parsed.skill_path = ""  # not installed
             parsed.sync_status = "not_installed"
             results.append(parsed)
@@ -348,18 +351,36 @@ def _scan_source_directories() -> Dict[str, "SourceEntry"]:
                 fm = _parse_frontmatter(text)
                 name = fm.get("name", "")
                 if name:
-                    result[name] = SourceEntry(path=str(skill_dir), layer=layer_name)
+                    dccs = _DIR_TO_DCC.get(dcc_dir.name, [dcc_dir.name])
+                    result[name] = SourceEntry(path=str(skill_dir), layer=layer_name, dccs=dccs)
 
     return result
 
 
-class SourceEntry:
-    """Holds source directory path and layer classification."""
-    __slots__ = ("path", "layer")
+# Mapping from skills/{layer}/{dcc_dir}/ directory names to standard DCC ids.
+# This is the authoritative source for target_dccs — takes priority over
+# frontmatter fields (dcc / software) and name-prefix heuristics.
+_DIR_TO_DCC: Dict[str, List[str]] = {
+    "unreal":             ["ue57"],
+    "maya":               ["maya2024"],
+    "max":                ["max2024"],
+    "blender":            ["blender"],
+    "houdini":            ["houdini"],
+    "substance_painter":  ["sp"],
+    "substance_designer": ["sd"],
+    "comfyui":            ["comfyui"],
+    "universal":          ["general"],  # cross-DCC skills
+}
 
-    def __init__(self, path: str, layer: str):
+
+class SourceEntry:
+    """Holds source directory path, layer and authoritative DCC list."""
+    __slots__ = ("path", "layer", "dccs")
+
+    def __init__(self, path: str, layer: str, dccs: List[str]):
         self.path = path
         self.layer = layer
+        self.dccs = dccs  # derived from dcc_dir name, authoritative
 
 
 def _file_hash(path: Path) -> str:

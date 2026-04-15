@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "dcc_node_graph_workflow",
+  "display_name": "Dcc Node Graph Workflow",
+  "description": "通用 DCC 节点图工作流：适用于所有节点图操作（UE 蓝图、SD 材质、UE 材质）。 核心思路：先写伪代码，再映射节点，再创建连接。 Use when AI needs to: build any node graph (Blueprint/SD/UE Material) from scratch or add complex logic to an existing graph. Activate BEFORE the DCC-specific skill to plan the approach, then switch to the specific skill for API details.",
+  "version": "1.0.1",
+  "author": "ArtClaw",
+  "software": "all",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "dcc_node_graph_workflow",
+      "description": "通用 DCC 节点图工作流：适用于所有节点图操作（UE 蓝图、SD 材质、UE 材质）。 核心思路：先写伪代码，再映射节点，再创建连接。 Use when AI needs to: build any node graph (Blueprint/SD/UE Material) from scratch or add complex logic to an existing graph. Activate BEFORE the DCC-specific skill to plan the approach, then switch to the specific skill for API details."
+    }
+  ]
+}

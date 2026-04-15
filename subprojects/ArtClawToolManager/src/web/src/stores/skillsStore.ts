@@ -149,7 +149,7 @@ const TAB_SOURCE_MAP: Record<SkillTab, ToolSource | null> = {
   all: null,
   official: 'official',
   marketplace: 'marketplace',
-  platform: null, // "平台"标签按 DCC 软件分类，不按 source 分类
+  platform: null, // 平台/用户：不是 official、也不是 marketplace 的所有 Skill，见 filteredSkills
 }
 
 export const useSkillsStore = create<SkillsState>((set, get) => ({
@@ -174,13 +174,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       list = list.filter((s) => s.source === source)
     }
 
-    // "平台"标签特殊处理：按 DCC 分组展示（如果没有设置 dccFilter，则按所有 DCC 展示）
+    // 平台/用户：排除 official 和 marketplace，剩下都归平台
     if (activeTab === 'platform') {
-      // 平台标签模式下，优先按 DCC 分组
-      if (!dccFilter) {
-        // 如果没有 DCC 筛选，显示所有 Skill，但可能需要按 targetDCCs 进行分组渲染
-        // 这里先简单显示所有，具体分组在组件层处理
-      }
+      list = list.filter((s) => s.source !== 'official' && s.source !== 'marketplace')
     }
 
     if (dccFilter) {

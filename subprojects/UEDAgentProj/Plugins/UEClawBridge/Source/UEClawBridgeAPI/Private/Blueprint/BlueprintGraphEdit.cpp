@@ -18,6 +18,9 @@
 #include "K2Node_VariableSet.h"
 #include "K2Node_FunctionEntry.h"
 #include "K2Node_FunctionResult.h"
+#include "K2Node_MacroInstance.h"
+#include "K2Node_IfThenElse.h"
+#include "K2Node_DynamicCast.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "UObject/UObjectIterator.h"
@@ -397,28 +400,248 @@ UEdGraphNode* UBlueprintGraphEdit::CreateBlueprintNode(
 		}
 	}
 
-	// Allocate pins (for CallFunction this now works because FunctionReference is set)
-	if (UK2Node* K2Node = Cast<UK2Node>(NewNode))
+	// --- K2Node_VariableGet / K2Node_VariableSet: set VariableReference before AllocateDefaultPins ---
+	UK2Node_Variable* VarNode = Cast<UK2Node_Variable>(NewNode);
+	if (VarNode && Properties.IsValid())
 	{
-		K2Node->AllocateDefaultPins();
-	}
-	else
-	{
-		NewNode->AllocateDefaultPins();
+		FString VarName;
+		// Accept "VariableName" (shorthand) or "VariableReference.MemberName"
+		if (Properties->TryGetStringField(TEXT("VariableName"), VarName) ||
+			Properties->TryGetStringField(TEXT("variable_name"), VarName))
+		{
+			// Good — we have a name from shorthand
+		}
+		else if (Properties->HasField(TEXT("VariableReference")))
+		{
+			const auto& VarRefVal = Properties->Values.FindChecked(TEXT("VariableReference"));
+			if (VarRefVal->Type == EJson::Object)
+			{
+				VarRefVal->AsObject()->TryGetStringField(TEXT("MemberName"), VarName);
+			}
+		}
+
+		if (!VarName.IsEmpty())
+		{
+			// Find the property on the Blueprint's generated class or its parents
+			UClass* VarOwnerClass = Blueprint->GeneratedClass
+				? Blueprint->GeneratedClass
+				: Blueprint->ParentClass;
+
+			FProperty* FoundProp = VarOwnerClass
+				? VarOwnerClass->FindPropertyByName(FName(*VarName))
+				: nullptr;
+
+			if (FoundProp)
+			{
+				// Use SetFromProperty for correct MemberGuid resolution on BP variables
+				FMemberReference VarRef;
+				VarRef.SetFromField<FProperty>(FoundProp, false);  // bSelfContext = false initially
+				VarNode->VariableReference = VarRef;
+				// Ensure self-context is set for own variables
+				if (FoundProp->GetOwnerClass() && Blueprint->GeneratedClass &&
+					FoundProp->GetOwnerClass()->IsChildOf(Blueprint->GeneratedClass->GetSuperClass()))
+				{
+					VarNode->VariableReference.SetSelfMember(FName(*VarName));
+				}
+			}
+			else
+			{
+				// Property not found on compiled class — set by name with self-context
+				// (works for BP variables when blueprint hasn't been compiled yet)
+				VarNode->VariableReference.SetSelfMember(FName(*VarName));
+			}
+		}
 	}
 
-	Graph->AddNode(NewNode, true, true);
+	// --- K2Node_MacroInstance: find macro graph (apply AFTER AddNode) ---
+	UK2Node_MacroInstance* MacroNode = Cast<UK2Node_MacroInstance>(NewNode);
+	UEdGraph* FoundMacroGraph = nullptr;
+	if (MacroNode && Properties.IsValid())
+	{
+		FString MacroName;
+		// Accept "MacroReference.MacroName" or "MacroName" shorthand
+		if (Properties->TryGetStringField(TEXT("MacroName"), MacroName) ||
+			Properties->TryGetStringField(TEXT("macro_name"), MacroName))
+		{
+			// Good
+		}
+		else if (Properties->HasField(TEXT("MacroReference")))
+		{
+			const auto& MacroRefVal = Properties->Values.FindChecked(TEXT("MacroReference"));
+			if (MacroRefVal->Type == EJson::Object)
+			{
+				MacroRefVal->AsObject()->TryGetStringField(TEXT("MacroName"), MacroName);
+			}
+		}
+
+		if (!MacroName.IsEmpty())
+		{
+			// Search for the macro graph: first in this BP, then in parent BPs, then engine macros
+			// Search in this blueprint
+			for (UEdGraph* Graph_ : Blueprint->MacroGraphs)
+			{
+				if (Graph_ && Graph_->GetFName() == FName(*MacroName))
+				{
+					FoundMacroGraph = Graph_;
+					break;
+				}
+			}
+
+			// Search in parent blueprints
+			if (!FoundMacroGraph)
+			{
+				TArray<UBlueprint*> ParentBPStack;
+				UBlueprint::GetBlueprintHierarchyFromClass(Blueprint->GeneratedClass
+					? Blueprint->GeneratedClass : Blueprint->ParentClass, ParentBPStack);
+
+				for (UBlueprint* ParentBP : ParentBPStack)
+				{
+					if (!ParentBP) continue;
+					for (UEdGraph* Graph_ : ParentBP->MacroGraphs)
+					{
+						if (Graph_ && Graph_->GetFName() == FName(*MacroName))
+						{
+							FoundMacroGraph = Graph_;
+							break;
+						}
+					}
+					if (FoundMacroGraph) break;
+				}
+			}
+
+			// Search in all loaded macro libraries (for engine macros like ForLoop, WhileLoop, etc.)
+			if (!FoundMacroGraph)
+			{
+				for (TObjectIterator<UBlueprint> It; It; ++It)
+				{
+					UBlueprint* BP_ = *It;
+					if (!BP_ || BP_->BlueprintType != BPTYPE_MacroLibrary) continue;
+					for (UEdGraph* Graph_ : BP_->MacroGraphs)
+					{
+						if (Graph_ && Graph_->GetFName() == FName(*MacroName))
+						{
+							FoundMacroGraph = Graph_;
+							break;
+						}
+					}
+					if (FoundMacroGraph) break;
+				}
+			}
+
+			if (!FoundMacroGraph)
+			{
+				OutError = FString::Printf(TEXT("Macro not found: %s"), *MacroName);
+			}
+		}
+	}
+
+	// --- K2Node_DynamicCast: set TargetType before AllocateDefaultPins ---
+	UK2Node_DynamicCast* CastNode = Cast<UK2Node_DynamicCast>(NewNode);
+	if (CastNode && Properties.IsValid())
+	{
+		FString TargetTypePath;
+		if (Properties->TryGetStringField(TEXT("TargetType"), TargetTypePath) ||
+			Properties->TryGetStringField(TEXT("target_type"), TargetTypePath))
+		{
+			UClass* TargetClass = FPropertySerializer::ResolveClass(TargetTypePath, OutError);
+			if (TargetClass)
+			{
+				CastNode->TargetType = TargetClass;
+			}
+		}
+	}
+
+	// Add node to graph first (some nodes need graph context for pin allocation)
+	Graph->AddNode(NewNode, true, false);
+
+	// For MacroInstance: SetMacroGraph AFTER AddNode (needs graph context)
+	// SetMacroGraph internally calls ReconstructNode which allocates pins
+	if (MacroNode && FoundMacroGraph)
+	{
+		UE_LOG(LogUEClawBridgeAPI, Log, TEXT("Setting macro graph: %s (nodes=%d)"),
+			*FoundMacroGraph->GetName(), FoundMacroGraph->Nodes.Num());
+		MacroNode->SetMacroGraph(FoundMacroGraph);
+		// Ensure pins are created — SetMacroGraph may not always call ReconstructNode
+		if (MacroNode->Pins.Num() == 0)
+		{
+			UE_LOG(LogUEClawBridgeAPI, Warning, TEXT("MacroNode has 0 pins after SetMacroGraph, forcing ReconstructNode"));
+			MacroNode->ReconstructNode();
+		}
+		UE_LOG(LogUEClawBridgeAPI, Log, TEXT("MacroNode pins after setup: %d"), MacroNode->Pins.Num());
+	}
+	else if (MacroNode)
+	{
+		UE_LOG(LogUEClawBridgeAPI, Warning, TEXT("FoundMacroGraph is null for MacroInstance"));
+	}
+
+	// Allocate pins for non-macro nodes (macro pins already set by SetMacroGraph)
+	// Skip K2Node_AddComponent — it requires ComponentTemplate and crashes without it
+	bool bIsUnsupportedNode = (NodeClassName == TEXT("K2Node_AddComponent"));
+	if (bIsUnsupportedNode)
+	{
+		// Remove the node we just added — it can't be properly initialized
+		Graph->RemoveNode(NewNode);
+		OutError = FString::Printf(TEXT("Node type '%s' is not supported for programmatic creation. Use AddComponentByClass + Cast instead."), *NodeClassName);
+		return nullptr;
+	}
+	if (!MacroNode || !FoundMacroGraph)
+	{
+		if (UK2Node* K2Node = Cast<UK2Node>(NewNode))
+		{
+			K2Node->AllocateDefaultPins();
+		}
+		else
+		{
+			NewNode->AllocateDefaultPins();
+		}
+	}
+
+	// Post-add: ReconstructNode for VariableGet/Set and DynamicCast to refresh pins
+	if (VarNode)
+	{
+		VarNode->ReconstructNode();
+	}
+	if (CastNode && CastNode->TargetType)
+	{
+		CastNode->ReconstructNode();
+	}
 
 	if (Properties.IsValid())
 	{
-		// For CallFunction, skip FunctionReference since it was already applied
+		// Skip properties that were already applied during node creation
 		TSharedPtr<FJsonObject> RemainingProps = Properties;
+		
+		// Collect keys to skip
+		TSet<FString> SkipKeys;
 		if (CallFuncNode && Properties->HasField(TEXT("FunctionReference")))
+		{
+			SkipKeys.Add(TEXT("FunctionReference"));
+		}
+		if (VarNode)
+		{
+			SkipKeys.Add(TEXT("VariableName"));
+			SkipKeys.Add(TEXT("variable_name"));
+			SkipKeys.Add(TEXT("VariableReference"));
+		}
+		if (MacroNode)
+		{
+			SkipKeys.Add(TEXT("MacroName"));
+			SkipKeys.Add(TEXT("macro_name"));
+			SkipKeys.Add(TEXT("MacroReference"));
+		}
+
+		if (CastNode)
+		{
+			SkipKeys.Add(TEXT("TargetType"));
+			SkipKeys.Add(TEXT("target_type"));
+		}
+
+		if (SkipKeys.Num() > 0)
 		{
 			RemainingProps = MakeShareable(new FJsonObject);
 			for (const auto& Pair : Properties->Values)
 			{
-				if (Pair.Key != TEXT("FunctionReference"))
+				if (!SkipKeys.Contains(Pair.Key))
 				{
 					RemainingProps->SetField(Pair.Key, Pair.Value);
 				}
@@ -450,6 +673,58 @@ TArray<FString> UBlueprintGraphEdit::ApplyNodeProperties(UObject* Node, const TS
 	{
 		const FString& PropertyName = Pair.Key;
 		const TSharedPtr<FJsonValue>& Value = Pair.Value;
+
+		// Priority: check if this matches a pin name first (for class/object pins)
+		UEdGraphNode* GraphNode_Inner = Cast<UEdGraphNode>(Node);
+		bool bHandledAsPin = false;
+		if (GraphNode_Inner && Value.IsValid())
+		{
+			for (UEdGraphPin* Pin : GraphNode_Inner->Pins)
+			{
+				if (Pin && Pin->PinName.ToString() == PropertyName &&
+					(Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class ||
+					 Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass ||
+					 Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object ||
+					 Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject))
+				{
+					FString StringValue = Value->AsString();
+					if (!StringValue.IsEmpty())
+					{
+						if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class ||
+							Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass)
+						{
+							FString ClassError;
+							UClass* ResolvedClass = FPropertySerializer::ResolveClass(StringValue, ClassError);
+							if (ResolvedClass)
+							{
+								Pin->DefaultObject = ResolvedClass;
+								Pin->DefaultValue.Empty();
+								bHandledAsPin = true;
+							}
+						}
+						else
+						{
+							UObject* ResolvedObj = StaticLoadObject(UObject::StaticClass(), nullptr, *StringValue);
+							if (ResolvedObj)
+							{
+								Pin->DefaultObject = ResolvedObj;
+								Pin->DefaultValue.Empty();
+								bHandledAsPin = true;
+							}
+						}
+					}
+					else
+					{
+						// Empty string = clear the default
+						Pin->DefaultObject = nullptr;
+						Pin->DefaultValue.Empty();
+						bHandledAsPin = true;
+					}
+					break;
+				}
+			}
+		}
+		if (bHandledAsPin) continue;
 
 		FProperty* Property = Node->GetClass()->FindPropertyByName(*PropertyName);
 		void* Container = Node;
@@ -500,8 +775,41 @@ TArray<FString> UBlueprintGraphEdit::ApplyNodeProperties(UObject* Node, const TS
 						else
 							StringValue = (*ValuePtr)->AsString();
 
-						Pin->DefaultValue = StringValue;
-						ResolvedByPin.Add(PropName);
+						// Special handling for class/object pins: set DefaultObject instead of DefaultValue
+						if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class ||
+							Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass)
+						{
+							FString ClassError;
+							UClass* ResolvedClass = FPropertySerializer::ResolveClass(StringValue, ClassError);
+							if (ResolvedClass)
+							{
+								Pin->DefaultObject = ResolvedClass;
+								Pin->DefaultValue.Empty();
+								ResolvedByPin.Add(PropName);
+							}
+							// else: leave in Errors
+						}
+						else if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object ||
+								 Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject)
+						{
+							UObject* ResolvedObj = StaticLoadObject(UObject::StaticClass(), nullptr, *StringValue);
+							if (ResolvedObj)
+							{
+								Pin->DefaultObject = ResolvedObj;
+								Pin->DefaultValue.Empty();
+								ResolvedByPin.Add(PropName);
+							}
+							else
+							{
+								Pin->DefaultValue = StringValue;
+								ResolvedByPin.Add(PropName);
+							}
+						}
+						else
+						{
+							Pin->DefaultValue = StringValue;
+							ResolvedByPin.Add(PropName);
+						}
 					}
 					break;
 				}

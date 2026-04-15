@@ -323,6 +323,55 @@ TArray<FString> UBlueprintNodeProperty::ApplyNodeProperties(UObject* Node, const
 		const FString& PropertyName = Pair.Key;
 		const TSharedPtr<FJsonValue>& Value = Pair.Value;
 
+		// Priority: check if this matches a class/object pin first (before UProperty lookup)
+		// because UProperty "Class" on K2Node may not be the same as the pin "Class"
+		if (UEdGraphNode* GN = Cast<UEdGraphNode>(Node))
+		{
+			bool bHandledAsPin = false;
+			for (UEdGraphPin* Pin : GN->Pins)
+			{
+				if (!Pin || Pin->PinName.ToString() != PropertyName) continue;
+				if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class ||
+					Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass)
+				{
+					FString StringValue = Value->AsString();
+					if (StringValue.IsEmpty())
+					{
+						Pin->DefaultObject = nullptr;
+						Pin->DefaultValue.Empty();
+					}
+					else
+					{
+						FString ClassError;
+						UClass* ResolvedClass = FPropertySerializer::ResolveClass(StringValue, ClassError);
+						if (ResolvedClass) { Pin->DefaultObject = ResolvedClass; Pin->DefaultValue.Empty(); }
+						else { Pin->DefaultValue = StringValue; }  // fallback
+					}
+					bHandledAsPin = true;
+					break;
+				}
+				else if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object ||
+						 Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject)
+				{
+					FString StringValue = Value->AsString();
+					if (StringValue.IsEmpty())
+					{
+						Pin->DefaultObject = nullptr;
+						Pin->DefaultValue.Empty();
+					}
+					else
+					{
+						UObject* Obj = StaticLoadObject(UObject::StaticClass(), nullptr, *StringValue);
+						if (Obj) { Pin->DefaultObject = Obj; Pin->DefaultValue.Empty(); }
+						else { Pin->DefaultValue = StringValue; }
+					}
+					bHandledAsPin = true;
+					break;
+				}
+			}
+			if (bHandledAsPin) continue;
+		}
+
 		FProperty* Property = Node->GetClass()->FindPropertyByName(*PropertyName);
 		void* Container = Node;
 
@@ -379,8 +428,44 @@ bool UBlueprintNodeProperty::SetPinDefaultValue(UEdGraphNode* Node, const FStrin
 
 void UBlueprintNodeProperty::CollectCompilationErrors(UBlueprint* Blueprint, TArray<FString>& OutErrors, TArray<FString>& OutWarnings)
 {
-	if (Blueprint->Status == BS_Error) OutErrors.Add(TEXT("Blueprint has compilation errors"));
-	if (Blueprint->Status == BS_Dirty) OutWarnings.Add(TEXT("Blueprint needs recompilation"));
+	if (!Blueprint) return;
+
+	// Collect detailed messages from compiler flags stored on each graph node
+	TArray<UEdGraph*> AllGraphs;
+	Blueprint->GetAllGraphs(AllGraphs);
+
+	for (UEdGraph* Graph : AllGraphs)
+	{
+		if (!Graph) continue;
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (!Node || !Node->bHasCompilerMessage) continue;
+			if (Node->ErrorMsg.IsEmpty()) continue;
+
+			FString NodeTitle = Node->GetNodeTitle(ENodeTitleType::ListView).ToString();
+			FString GraphName = Graph->GetName();
+			FString NodeGuid = Node->NodeGuid.ToString(EGuidFormats::DigitsWithHyphens);
+
+			FString FullMsg = FString::Printf(TEXT("[%s] %s (%s): %s"),
+				*GraphName, *NodeTitle, *NodeGuid, *Node->ErrorMsg);
+
+			// ErrorType maps to EMessageSeverity::Type (0=CriticalError, 1=Error, 2=Warning, 3=PerformanceWarning)
+			if (Node->ErrorType <= EMessageSeverity::Error)
+			{
+				OutErrors.Add(FullMsg);
+			}
+			else
+			{
+				OutWarnings.Add(FullMsg);
+			}
+		}
+	}
+
+	// Fallback: if no specific messages found but blueprint has error status
+	if (Blueprint->Status == BS_Error && OutErrors.Num() == 0)
+	{
+		OutErrors.Add(TEXT("Blueprint has compilation errors (no detailed messages available)"));
+	}
 }
 
 UClass* UBlueprintNodeProperty::FindInterfaceClass(const FString& InterfaceName, FString& OutError)

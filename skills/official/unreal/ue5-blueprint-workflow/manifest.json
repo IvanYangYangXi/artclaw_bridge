@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0",
+  "name": "ue5_blueprint_workflow",
+  "display_name": "Ue5 Blueprint Workflow",
+  "description": "UE5.6/UE5.7 Blueprint graph workflow for feature implementation, input events, node wiring, and graph validation. Use when requests involve adding Blueprint logic, keyboard input behavior, function chains, event graph edits, or pin-level connection guidance.",
+  "version": "0.0.1",
+  "author": "ArtClaw",
+  "software": "unreal_engine",
+  "category": "utils",
+  "risk_level": "low",
+  "entry_point": "__init__.py",
+  "tools": [
+    {
+      "name": "ue5_blueprint_workflow",
+      "description": "UE5.6/UE5.7 Blueprint graph workflow for feature implementation, input events, node wiring, and graph validation. Use when requests involve adding Blueprint logic, keyboard input behavior, function chains, event graph edits, or pin-level connection guidance."
+    }
+  ]
+}
