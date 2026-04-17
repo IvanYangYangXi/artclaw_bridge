@@ -129,6 +129,7 @@ class BlenderQtBridge:
             try:
                 self._chat_panel.show()
                 self._chat_panel.raise_()
+                self._chat_panel.activateWindow()
                 return
             except RuntimeError:
                 # C++ 对象已销毁

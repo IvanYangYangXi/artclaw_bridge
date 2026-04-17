@@ -100,6 +100,40 @@ interface SkillData {
 }
 ```
 
+### 与 skill-management-system 的目录映射关系
+
+**安装目录为扁平结构（OpenClaw 规范）**：Skill 安装后直接位于 `skills_installed_path` 下，不含来源子目录。`ToolItem.id` 中的 `{source}` 是来源标记，**不对应**安装路径中的目录层级。
+
+```
+ID 格式：  {source}/{name}                      ← source 仅作唯一性命名空间，非目录
+实际路径：  {skills_installed_path}/{name}/     ← 安装路径扁平，只有 name 一层
+
+示例：
+  ID:   "official/ue57_material_node_edit"
+  路径：  ~/.openclaw/skills/ue57_material_node_edit/
+
+  ID:   "marketplace/my_workflow_helper"
+  路径：  ~/.openclaw/skills/my_workflow_helper/
+
+  ID:   "user/my_custom_skill"
+  路径：  ~/.openclaw/skills/my_custom_skill/
+```
+
+**分层目录只在源码端存在**（项目 `skills/` 仓库）：
+
+```
+skills/
+├── official/unreal_engine/ue57_material_node_edit/   ← 源码端分层
+├── marketplace/universal/my_workflow_helper/
+└── user/universal/my_custom_skill/
+```
+
+安装时从源码端复制到扁平的 `skills_installed_path/{name}/`，层级信息不随安装保留。
+
+其中 `skills_installed_path` 由 `~/.artclaw/config.json` 的 `skills.installed_path` 字段指定（不同平台默认值不同，详见 `docs/specs/skill-platform-paths.md`）。
+
+`ToolItem.installPath` 字段存储解析后的完整绝对路径（即 `{skills_installed_path}/{name}/`，展开 `~`），`SkillData.skillPath` 存储相对于 `skills_installed_path` 的相对路径（即 `{name}`，不含 source 前缀）。
+
 ---
 
 ### 2.3 WorkflowData
@@ -204,7 +238,101 @@ interface ToolStep {
 
 ## 3. 存储模型
 
-### 3.1 本地存储结构
+### 3.1 三类资源的目录规范
+
+Skill、Tool、Workflow 的目录管理方式**不同**，核心差异在于运行时是否需要"安装"动作：
+
+#### Skill 目录规范
+
+Skill 需要显式**安装**：从源码仓库复制到运行时目录，安装后为**扁平结构**。
+
+```
+【源码仓库（分层，只在开发端存在）】
+{project_root}/skills/
+├── official/unreal_engine/ue57_material_node_edit/
+├── official/universal/artclaw_memory/
+├── marketplace/maya/my_rigging_helper/
+└── user/universal/my_custom_skill/
+
+【运行时安装目录（扁平，无层级子目录）】
+~/.openclaw/skills/               ← 由 ~/.artclaw/config.json skills.installed_path 指定
+├── ue57_material_node_edit/      ← 直接是 {skill_name}，无 official/user 前缀
+├── artclaw_memory/
+└── my_custom_skill/
+```
+
+- 安装 = 从源码仓库复制到运行时目录，层级信息不保留
+- `ToolItem.id` 中的 `{source}` 前缀（如 `"official/my_skill"`）是逻辑命名空间，不反映安装路径
+- `ToolItem.installPath` = `{skills_installed_path}/{name}/`（**无** source 前缀）
+
+---
+
+#### Tool 目录规范
+
+Tool **不需要安装**：官方/市集 Tool 直接从 `{project_root}/tools/` 读取，不复制。用户自建 Tool 写到 `~/.artclaw/tools/user/`。
+
+```
+【官方/市集 Tool（源即运行时，分层，不复制）】
+{project_root}/tools/
+├── official/
+│   ├── universal/artclaw-skill-compliance-checker/
+│   └── unreal_engine/ue_mesh_analyzer/
+└── marketplace/
+    └── universal/my_community_tool/
+
+【用户自建 Tool（写到本地，分层）】
+~/.artclaw/tools/
+└── user/
+    └── my_private_tool/
+```
+
+- 官方/市集 Tool 不需要安装，读 `{project_root}/tools/{layer}/{dcc}/{name}/`
+- 用户 Tool 存于 `~/.artclaw/tools/user/{name}/`（只有 user 一个层级）
+- `ToolItem.installPath` = 对应的实际路径（官方指向 project_root，用户指向 ~/.artclaw）
+
+---
+
+#### Workflow 目录规范
+
+Workflow 与 Tool 规则相同：官方/市集直接读源，不复制；用户自建写本地。
+
+```
+【官方/市集 Workflow（源即运行时，分层，不复制）】
+{project_root}/workflows/
+├── official/
+│   ├── comfyui/flux_portrait_workflow/
+│   └── universal/standard_render_pipeline/
+└── marketplace/
+    └── comfyui/community_upscale_workflow/
+
+【用户自建 Workflow（写到本地，分层）】
+~/.artclaw/workflows/
+└── user/
+    └── my_custom_workflow/
+
+【来自 Skill 的内嵌 Workflow】
+~/.openclaw/skills/{skill_name}/workflow.json  ← 部分 Skill 附带，跟随 Skill 安装
+```
+
+- 官方/市集 Workflow 读 `{project_root}/workflows/{layer}/{dcc}/{name}/`
+- 用户 Workflow 存于 `~/.artclaw/workflows/user/{name}/`
+- `ToolItem.installPath` = 对应的实际路径
+
+---
+
+#### 三者对比速查
+
+| 维度 | Skill | Tool | Workflow |
+|------|-------|------|----------|
+| 源码仓库结构 | `skills/{layer}/{dcc}/{name}/` | `tools/{layer}/{dcc}/{name}/` | `workflows/{layer}/{dcc}/{name}/` |
+| 官方/市集运行时 | **复制**到 `~/.openclaw/skills/{name}/`（扁平） | **不复制**，直接读 project_root | **不复制**，直接读 project_root |
+| 用户自建位置 | 由平台配置决定 | `~/.artclaw/tools/user/{name}/` | `~/.artclaw/workflows/user/{name}/` |
+| installPath 格式 | `{skills_installed_path}/{name}/` | 实际所在路径 | 实际所在路径 |
+| 是否需要"安装"动作 | ✅ 是 | ❌ 否 | ❌ 否 |
+
+---
+
+### 3.2 本地存储结构（Tool Manager 缓存）
 
 ```
 ~/.artclaw/tool-manager/

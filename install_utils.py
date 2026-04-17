@@ -35,6 +35,14 @@ SHARED_MODULES = [
     "health_check.py",
     "skill_sync.py",
     "retry_tracker.py",
+    "skill_decorator.py",
+    "version_manager.py",
+]
+
+# 共享子目录（interfaces/, schemas/ 等）
+SHARED_SUBDIRS = [
+    "interfaces",
+    "schemas",
 ]
 
 # userSetup / startup 注入标记
@@ -109,7 +117,7 @@ def write_file(path: str, content: str):
 
 
 def copy_shared_modules(dst_dir: str):
-    """将 bridge_core 等共享模块复制到目标目录"""
+    """将 bridge_core 等共享模块复制到目标目录（含 interfaces/ schemas/ 子目录）"""
     os.makedirs(dst_dir, exist_ok=True)
     for mod in SHARED_MODULES:
         src = BRIDGE_MODULES_SRC / mod
@@ -117,6 +125,14 @@ def copy_shared_modules(dst_dir: str):
             shutil.copy2(str(src), os.path.join(dst_dir, mod))
         else:
             cprint("警告", f"共享模块不存在: {src}", "yellow")
+
+    # 共享子目录
+    for subdir in SHARED_SUBDIRS:
+        src_sub = BRIDGE_MODULES_SRC / subdir
+        dst_sub = os.path.join(dst_dir, subdir)
+        if src_sub.is_dir():
+            copy_dir(str(src_sub), dst_sub)
+        # 子目录不存在是可接受的（某些构建环境可能没有）
 
 
 def copy_platform_bridge(platform_type: str, dst_dir: str):

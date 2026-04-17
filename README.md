@@ -103,7 +103,7 @@ Index API docs and project docs, semantic retrieval assists AI decision-making.
 
 ## 🎯 Supported Engines, DCCs & Agent Platforms
 
-Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 + Blender 5.1 + Substance Painter 11.0.1 + Substance Designer 12.1.0 + ComfyUI**. Other combinations are theoretically compatible but not tested — community feedback welcome.
+Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 + 3ds Max 2023 + Blender 5.1 + Substance Painter 11.0.1 + Substance Designer 12.1.0 + ComfyUI**. Other combinations are theoretically compatible but not tested — community feedback welcome.
 
 ### Engines & DCC Software
 
@@ -111,7 +111,7 @@ Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 +
 |----------|-----------------|--------|--------|----------|-------|
 | **Unreal Engine** | 5.7 | ✅ Verified | UEClawBridge | 8080 | C++ + Python, Slate UI chat panel |
 | **Maya** | 2023 | ✅ Verified | DCCClawBridge | 8081 | Python 3.9.7 + PySide2, Qt chat panel |
-| **3ds Max** | — | ⚠️ Not Verified | DCCClawBridge | 8082 | Code implemented, shares plugin with Maya, not tested |
+| **3ds Max** | 2023 | ✅ Verified | DCCClawBridge | 8082 | Python 3.9.7 + PySide2, Qt chat panel, MaxScript startup |
 | **Blender** | 5.1 | ✅ Verified | DCCClawBridge | 8083 | PySide6 standalone Qt window, bpy.app.timers driven |
 | **Houdini** | — | ⚠️ Not Verified | DCCClawBridge | 8084 | Code implemented, hdefereval main-thread scheduling, not tested |
 | **Substance Painter** | 11.0.1 | ✅ Verified | DCCClawBridge | 8085 | SP built-in Qt + QTimer polling |
@@ -294,7 +294,7 @@ This architecture enables powerful automation scenarios:
 - Target DCC software (choose as needed):
   - UE 5.7 (recommended, theoretically compatible with 5.3+)
   - Maya 2023 (recommended, theoretically compatible with 2022+)
-  - 3ds Max 2024+ (not tested)
+  - 3ds Max 2023 (verified, theoretically compatible with 2020+)
   - Blender 5.1 (verified, auto-installs PySide6)
   - Houdini (not tested)
   - Substance Painter 11.0.1 (verified)

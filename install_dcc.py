@@ -256,8 +256,44 @@ def uninstall_maya(maya_version: str):
 # ===========================================================================
 
 
+def _find_max_scripts_dirs(max_version: str) -> list[str]:
+    """查找 3ds Max 所有可能的 scripts 目录。
+
+    Max 的用户配置目录有两种格式：
+    - 旧版: %LOCALAPPDATA%/Autodesk/3dsMax/{version}/ENU/scripts/
+    - 新版: %LOCALAPPDATA%/Autodesk/3dsMax/{version} - 64bit/{locale}/scripts/
+      其中 {locale} 可以是 ENU(英文), CHS(中文), JPN(日文) 等
+
+    返回所有存在的 scripts 目录路径列表（不含 startup/ 子目录）。
+    第一个元素始终是主安装目录（用于 force 确认提示）。
+    """
+    local_app = os.environ.get("LOCALAPPDATA", "")
+    max_base = os.path.join(local_app, "Autodesk", "3dsMax")
+    dirs: list[str] = []
+
+    # 格式 1: {version}/ENU/scripts/
+    enu_dir = os.path.join(max_base, max_version, "ENU", "scripts")
+    dirs.append(enu_dir)  # 主安装目录始终在第一位
+
+    # 格式 2: {version} - 64bit/{locale}/scripts/
+    bit64_dir = os.path.join(max_base, f"{max_version} - 64bit")
+    if os.path.isdir(bit64_dir):
+        for entry in os.scandir(bit64_dir):
+            if not entry.is_dir():
+                continue
+            locale_scripts = os.path.join(entry.path, "scripts")
+            # 如果该 locale 目录下有配置文件(3dsMax.ini)，说明是活跃的
+            has_ini = os.path.exists(os.path.join(entry.path, "3dsMax.ini"))
+            has_scripts = os.path.isdir(locale_scripts)
+            if has_ini or has_scripts:
+                if locale_scripts not in dirs:
+                    dirs.append(locale_scripts)
+
+    return dirs
+
+
 def install_max(max_version: str, force: bool, platform_type: str = "openclaw"):
-    """安装 3ds Max 插件"""
+    """安装 3ds Max 插件（自动同步到所有 locale 目录）"""
     print()
     print("  ── 3ds Max 插件安装 ────────────────────────────────")
     print()
@@ -266,16 +302,17 @@ def install_max(max_version: str, force: bool, platform_type: str = "openclaw"):
         cprint("错误", "3ds Max 仅支持 Windows", "red")
         return False
 
-    scripts_dir = os.path.join(
-        os.environ.get("LOCALAPPDATA", ""),
-        "Autodesk", "3dsMax", max_version, "ENU", "scripts"
-    )
+    all_scripts_dirs = _find_max_scripts_dirs(max_version)
+    # 主安装目录
+    scripts_dir = all_scripts_dirs[0]
     startup_dir = os.path.join(scripts_dir, "startup")
     dcc_dst = os.path.join(scripts_dir, "DCCClawBridge")
 
     cprint("信息", f"3ds Max 版本: {max_version}")
     cprint("信息", f"平台: {platform_type}")
-    cprint("信息", f"目标目录: {dcc_dst}")
+    cprint("信息", f"主目录: {dcc_dst}")
+    if len(all_scripts_dirs) > 1:
+        cprint("信息", f"检测到 {len(all_scripts_dirs) - 1} 个额外 locale 目录，将自动同步")
 
     if not confirm_overwrite(dcc_dst, force):
         cprint("跳过", "Max 插件安装", "yellow")
@@ -298,10 +335,22 @@ def install_max(max_version: str, force: bool, platform_type: str = "openclaw"):
     cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
     copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
 
-    # 注入 startup.py（幂等追加）
+    # 注入 startup.py（Python 启动脚本）
     startup_src = str(DCC_BRIDGE_SRC / "max_setup" / "startup.py")
     startup_dst = os.path.join(startup_dir, "artclaw_startup.py")
     inject_startup(startup_dst, startup_src, "artclaw_startup.py")
+
+    # 部署 MaxScript 启动脚本（Max 只自动执行 .ms 文件）
+    ms_src = DCC_BRIDGE_SRC / "max_setup" / "artclaw_startup.ms"
+    ms_dst = os.path.join(startup_dir, "artclaw_startup.ms")
+    if ms_src.exists():
+        shutil.copy2(str(ms_src), ms_dst)
+        cprint("OK", "MaxScript 启动脚本已安装: artclaw_startup.ms", "green")
+    else:
+        cprint("警告", f"MaxScript 启动脚本不存在: {ms_src}", "yellow")
+
+    # 同步到所有 locale 目录（CHS/JPN 等）
+    _sync_max_locales(all_scripts_dirs, scripts_dir)
 
     # 安装 DCC Skills
     install_dcc_skills(["max", "universal"], platform_type)
@@ -310,27 +359,69 @@ def install_max(max_version: str, force: bool, platform_type: str = "openclaw"):
     return True
 
 
+def _sync_max_locales(all_scripts_dirs: list[str], primary_dir: str):
+    """将主安装目录的 DCCClawBridge + artclaw_startup.py 同步到所有 locale 目录。
+
+    3ds Max 中文版在 {version} - 64bit/CHS/scripts/ 下查找启动脚本，
+    英文版在 ENU/scripts/，需要全部同步。
+    """
+    for scripts_dir in all_scripts_dirs:
+        if scripts_dir == primary_dir:
+            continue
+
+        locale_name = os.path.basename(os.path.dirname(scripts_dir))
+        cprint("同步", f"Max locale: {locale_name}")
+
+        os.makedirs(scripts_dir, exist_ok=True)
+        startup_dir = os.path.join(scripts_dir, "startup")
+        os.makedirs(startup_dir, exist_ok=True)
+
+        # 同步 DCCClawBridge
+        src_dcc = os.path.join(primary_dir, "DCCClawBridge")
+        dst_dcc = os.path.join(scripts_dir, "DCCClawBridge")
+        if os.path.isdir(src_dcc):
+            copy_dir(src_dcc, dst_dcc)
+            cprint("OK", f"DCCClawBridge → {locale_name}/scripts/DCCClawBridge", "green")
+
+        # 同步 artclaw_startup.py
+        src_startup = os.path.join(primary_dir, "startup", "artclaw_startup.py")
+        dst_startup = os.path.join(startup_dir, "artclaw_startup.py")
+        if os.path.isfile(src_startup):
+            shutil.copy2(src_startup, dst_startup)
+            cprint("OK", f"artclaw_startup.py → {locale_name}/scripts/startup/", "green")
+
+        # 同步 artclaw_startup.ms（MaxScript 启动脚本）
+        src_ms = os.path.join(primary_dir, "startup", "artclaw_startup.ms")
+        dst_ms = os.path.join(startup_dir, "artclaw_startup.ms")
+        if os.path.isfile(src_ms):
+            shutil.copy2(src_ms, dst_ms)
+            cprint("OK", f"artclaw_startup.ms → {locale_name}/scripts/startup/", "green")
+
+
 def uninstall_max(max_version: str):
-    """卸载 3ds Max 插件"""
+    """卸载 3ds Max 插件（清理所有 locale 目录）"""
     print()
     print("  ── 3ds Max 插件卸载 ────────────────────────────────")
     print()
 
-    scripts_dir = os.path.join(
-        os.environ.get("LOCALAPPDATA", ""),
-        "Autodesk", "3dsMax", max_version, "ENU", "scripts"
-    )
-    startup_dir = os.path.join(scripts_dir, "startup")
-    dcc_dst = os.path.join(scripts_dir, "DCCClawBridge")
+    all_scripts_dirs = _find_max_scripts_dirs(max_version)
 
-    if os.path.isdir(dcc_dst):
-        shutil.rmtree(dcc_dst)
-        cprint("删除", f"已删除: {dcc_dst}", "green")
-    else:
-        cprint("跳过", f"DCCClawBridge 不存在: {dcc_dst}", "yellow")
+    for scripts_dir in all_scripts_dirs:
+        dcc_dst = os.path.join(scripts_dir, "DCCClawBridge")
+        startup_file = os.path.join(scripts_dir, "startup", "artclaw_startup.py")
+        ms_file = os.path.join(scripts_dir, "startup", "artclaw_startup.ms")
 
-    startup_file = os.path.join(startup_dir, "artclaw_startup.py")
-    remove_startup_injection(startup_file, "artclaw_startup.py")
+        if os.path.isdir(dcc_dst):
+            shutil.rmtree(dcc_dst)
+            cprint("删除", f"已删除: {dcc_dst}", "green")
+
+        if os.path.isfile(startup_file):
+            remove_startup_injection(startup_file, "artclaw_startup.py")
+            cprint("删除", f"已清理: {startup_file}", "green")
+
+        if os.path.isfile(ms_file):
+            os.remove(ms_file)
+            cprint("删除", f"已删除: {ms_file}", "green")
 
     cprint("完成", "3ds Max 插件卸载完成", "green")
     return True

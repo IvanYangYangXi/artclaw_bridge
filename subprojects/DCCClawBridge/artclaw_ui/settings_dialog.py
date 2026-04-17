@@ -20,7 +20,7 @@ try:
 except ImportError:
     raise ImportError("Qt (PySide2/PySide6) is required.")
 
-from artclaw_ui.theme import COLORS, get_theme
+from artclaw_ui.theme import COLORS, get_theme, get_stylesheet
 from artclaw_ui.utils import get_artclaw_config, save_artclaw_config
 
 logger = logging.getLogger(__name__)
@@ -87,8 +87,9 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------ #
 
     def _apply_theme(self):
-        theme = get_theme()
-        self.setStyleSheet(theme.get("dialog", ""))
+        cfg = get_artclaw_config()
+        dcc = cfg.get("dcc_name", "maya")
+        self.setStyleSheet(get_stylesheet(dcc))
 
     def _build_ui(self):
         root = QVBoxLayout(self)

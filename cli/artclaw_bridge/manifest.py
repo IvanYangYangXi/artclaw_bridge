@@ -24,6 +24,34 @@ from typing import Any, Optional
 
 logger = logging.getLogger("artclaw_bridge.manifest")
 
+# ---------------------------------------------------------------------------
+# 可选依赖：jsonschema（安装后自动启用 JSON Schema 校验）
+# ---------------------------------------------------------------------------
+try:
+    import jsonschema as _jsonschema          # noqa: F401
+    _JSONSCHEMA_AVAILABLE = True
+except ImportError:
+    _jsonschema = None                         # type: ignore[assignment]
+    _JSONSCHEMA_AVAILABLE = False
+
+# skills/manifest.schema.json 相对于本文件的路径
+_SCHEMA_PATH = Path(__file__).parent.parent.parent / "skills" / "manifest.schema.json"
+_CACHED_SCHEMA: Optional[dict] = None
+
+
+def _load_schema() -> Optional[dict]:
+    """加载并缓存 skills/manifest.schema.json。"""
+    global _CACHED_SCHEMA
+    if _CACHED_SCHEMA is not None:
+        return _CACHED_SCHEMA
+    try:
+        if _SCHEMA_PATH.exists():
+            _CACHED_SCHEMA = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+            return _CACHED_SCHEMA
+    except Exception as exc:
+        logger.debug("加载 manifest.schema.json 失败（非致命）: %s", exc)
+    return None
+
 # ── 枚举常量 ──────────────────────────────────────────────
 
 VALID_SOFTWARE = {"universal", "unreal_engine", "maya", "3ds_max"}
@@ -93,6 +121,11 @@ class ManifestValidator:
     def validate(self, data: dict[str, Any]) -> ValidationResult:
         """验证 manifest 数据字典。
 
+        验证顺序：
+        1. （可选）若 jsonschema 已安装且 skills/manifest.schema.json 存在，
+           先做 JSON Schema 校验（更严格，覆盖全量规则）。
+        2. 手动规则校验（必选，向后兼容，不依赖 jsonschema）。
+
         Args:
             data: 从 manifest.json 解析出的字典。
 
@@ -101,10 +134,30 @@ class ManifestValidator:
         """
         errors: list[str] = []
 
+        # ── 阶段 1：JSON Schema 校验（可选，jsonschema 可用时启用）──────
+        if _JSONSCHEMA_AVAILABLE:
+            schema = _load_schema()
+            if schema is not None:
+                try:
+                    _jsonschema.validate(instance=data, schema=schema)
+                    logger.debug("jsonschema 校验通过")
+                except _jsonschema.ValidationError as exc:
+                    # 将 jsonschema 错误转为与手动校验一致的格式
+                    path_str = " → ".join(str(p) for p in exc.absolute_path) if exc.absolute_path else "root"
+                    errors.append(f"[schema] {path_str}: {exc.message}")
+                except _jsonschema.SchemaError as exc:
+                    # Schema 文件本身有问题，记录警告后跳过 schema 校验
+                    logger.warning("manifest.schema.json 有误（跳过 schema 校验）: %s", exc.message)
+            else:
+                logger.debug("skills/manifest.schema.json 未找到，跳过 JSON Schema 校验")
+        else:
+            logger.debug("jsonschema 未安装，使用手动规则校验（pip install jsonschema 可启用 schema 校验）")
+
+        # ── 阶段 2：手动规则校验（始终执行，与 jsonschema 互补）─────────
         self._check_required_fields(data, errors)
 
         # 只有基础字段存在时才做深层校验
-        if not errors:
+        if not any(e for e in errors if not e.startswith("[schema]")):
             self._check_manifest_version(data, errors)
             self._check_name(data, errors)
             self._check_version(data, errors)
@@ -282,6 +335,30 @@ class ManifestValidator:
         for idx, tag in enumerate(tags):
             if not isinstance(tag, str):
                 errors.append(f"tags[{idx}] 必须是字符串")
+
+
+def check_skill_dependencies(
+    skill_manifest: dict,
+    available_skills: list[str],
+) -> list[str]:
+    """检查 skill 的依赖是否满足。
+
+    读取 skill_manifest 中的 "dependencies" 字段，检查每个依赖名是否
+    出现在 available_skills 中。
+
+    Args:
+        skill_manifest:   已解析的 manifest 字典。
+        available_skills: 当前已注册的 Skill 名称列表。
+
+    Returns:
+        缺失的依赖名列表（空列表表示全部满足）。
+    """
+    deps = skill_manifest.get("dependencies")
+    if not deps or not isinstance(deps, list):
+        return []
+
+    available_set = set(available_skills)
+    return [dep for dep in deps if isinstance(dep, str) and dep not in available_set]
 
 
 def load_manifest(path: Path) -> Optional[dict[str, Any]]:

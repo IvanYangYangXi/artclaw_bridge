@@ -14,7 +14,7 @@ import logging
 import os
 import sys
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger("artclaw")
 
 

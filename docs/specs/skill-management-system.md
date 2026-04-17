@@ -724,3 +724,100 @@ my_skill/
 - enable/disable 状态持久化（config.yaml 或 .disabled 标记文件）
 - `artclaw skill generate` 接入 AI 后端（当前为模板降级模式）
 - Skill 市场（远期）
+
+---
+
+## 13. VersionManager SDK（统一版本管理接口）
+
+### 13.1 背景与目标
+
+版本管理逻辑原本分散在三处独立实现：
+- `cli/artclaw_bridge/skill_hub.py`（最完整的实现）
+- `UEClawBridge/Content/Python/skill_version.py`（独立重新实现）
+- `DCCClawBridge/core/skill_sync.py`（简化版本）
+
+为消除重复代码和不一致性，统一提供 `core/version_manager.py` 作为所有端可复用的单一版本管理 SDK。
+
+### 13.2 模块位置
+
+`core/version_manager.py`
+
+所有公共符号通过 `core/__init__.py` 导出，可直接 `from core.version_manager import ...` 使用。
+
+### 13.3 模块级工具函数
+
+| 函数 | 说明 |
+|------|------|
+| `parse_version(v)` | 解析版本字符串为整数元组，忽略预发布后缀 |
+| `compare_versions(v1, v2)` | 返回 1/0/-1，与 v1 vs v2 大小关系对应 |
+| `version_gte/lte/gt/lt/eq(v1, v2)` | 版本比较便捷函数 |
+| `matches_skill(manifest, software, version)` | 检查 Skill 是否与当前 DCC 匹配 |
+| `matches_software_version(constraint, version)` | 检查版本是否在 min/max 范围内 |
+| `version_distance(constraint, version)` | 计算版本"距离"，用于多候选最佳匹配 |
+| `select_best_match(candidates, software, version, key)` | 从候选列表中选最佳匹配 Skill |
+| `compare_skill_dirs(installed_dir, source_dir)` | 比较已安装与源码目录，返回 SyncStatus |
+| `detect_layer_conflicts(layer_skills)` | 检测多层级命名冲突 |
+
+### 13.4 数据类
+
+| 类型 | 说明 |
+|------|------|
+| `SyncState` | 枚举：`synced / source_newer / installed_newer / modified / conflict / no_source / not_installed` |
+| `SyncStatus` | 同步状态（state, changed_files, source_version, installed_version, skill_name） |
+| `ConflictInfo` | 层级冲突（skill_name, layers, active_layer, shadowed_layers） |
+| `InstallResult` | 安装结果（success, skill_name, version, installed_to, deps_installed, error） |
+| `PublishResult` | 发布结果（success, skill_name, from_layer, to_layer, version, error） |
+
+### 13.5 VersionManager 类
+
+面向对象的统一入口，封装完整的 Skill 版本管理生命周期：
+
+```python
+mgr = VersionManager(
+    installed_path="~/.openclaw/skills",            # Skill 扁平安装目录
+    source_paths={
+        "00_official": "/path/to/project/skills/official",
+        "02_user":     "~/.artclaw/skills",
+    },
+    project_root="/path/to/artclaw_bridge",         # Tool/Workflow 官方/市集资源根目录
+)
+
+# ── Skill 操作（安装目录扁平，需显式安装）────────────────────────────
+ver = mgr.get_installed_version("my_skill")
+sync = mgr.check_skill_sync("my_skill")             # 返回 SyncStatus
+all_sync = mgr.check_all_sync()                     # 返回 List[SyncStatus]
+missing = mgr.check_dependencies(skill_dir)         # 返回缺失依赖列表
+result = mgr.install(Path("/path/to/skill"))        # 安装到扁平目录（无层级子目录）
+result = mgr.install(Path("/path/to/skill"), source_layer="00_official")
+result = mgr.publish("my_skill", target_layer="01_team")  # 发布回源码端分层目录
+mgr.uninstall("my_skill")
+mgr.disable("my_skill")
+mgr.enable("my_skill")
+conflicts = mgr.detect_conflicts()
+manifest = mgr.find_best_match("my_skill", "unreal_engine", "5.4.1")
+
+# ── Tool 操作（官方/市集不复制，用户Tool在 ~/.artclaw/tools/user/）────
+tools = mgr.list_tools()                            # 全部 Tool
+tools = mgr.list_tools(layer="official", dcc="unreal_engine")
+ver   = mgr.get_tool_version("my_tool", layer="user")
+sync  = mgr.check_tool_sync("my_tool")              # 用户Tool与仓库版本对比
+result = mgr.create_tool(Path("/path/to/my_tool"))  # 注册用户Tool
+result = mgr.publish_tool("my_tool", "official", dcc="universal", version="1.1.0")
+mgr.delete_tool("my_tool")                          # 只能删用户层Tool
+
+# ── Workflow 操作（规则同 Tool）──────────────────────────────────────
+wfs   = mgr.list_workflows()
+sync  = mgr.check_workflow_sync("my_workflow")
+result = mgr.create_workflow(Path("/path/to/wf"))
+result = mgr.publish_workflow("my_workflow", "marketplace", dcc="comfyui", version="1.0.0")
+mgr.delete_workflow("my_workflow")
+```
+
+### 13.6 各端使用建议
+
+| 端 | 建议使用方式 |
+|----|-------------|
+| **CLI** (`cli/artclaw_bridge/`) | 在 `skill_hub.py` 中将版本比较函数替换为 `from core.version_manager import parse_version, matches_skill` |
+| **DCC** (`DCCClawBridge/`) | `skill_sync.py` 中的 `_version_gt` 已自动委托 SDK，无需修改调用方 |
+| **UE Plugin** (`UEClawBridge/`) | UE Python 环境中将 `core/` 加入 `sys.path`，替换 `skill_version.py` 的独立实现 |
+| **Tool Manager** (`ArtClawToolManager/`) | 通过 REST API 调用结果中使用 `SyncState` 枚举值保持前后端一致 |

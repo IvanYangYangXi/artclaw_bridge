@@ -142,12 +142,23 @@ def _parse_frontmatter_light(skill_md_path: Path) -> dict:
 # ============================================================================
 
 def _version_gt(a: str, b: str) -> bool:
-    """a 是否严格大于 b？用 tuple 数值比较。"""
+    """比较版本号 a > b。优先使用 ArtClaw VersionManager SDK。"""
+    try:
+        _vm_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'core')
+        if os.path.isdir(_vm_dir):
+            import sys
+            if _vm_dir not in sys.path:
+                sys.path.insert(0, _vm_dir)
+            from version_manager import version_gt as _vgt
+            return _vgt(a, b)
+    except Exception:
+        pass
+    # 原有降级实现
     def _parse(v):
         try:
-            return tuple(int(x) for x in v.split("."))
-        except (ValueError, AttributeError):
-            return (0, 0, 0)
+            return tuple(int(x) for x in str(v).split('.') if x.isdigit())
+        except Exception:
+            return (0,)
     return _parse(a) > _parse(b)
 
 

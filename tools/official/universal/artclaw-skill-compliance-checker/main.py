@@ -362,6 +362,59 @@ def _scan_source_skills(project_root: str) -> Dict[str, Dict[str, Any]]:
 
 
 # ============================================================================
+# 检查 D：Skill 依赖完整性
+# ============================================================================
+
+def _check_skill_dependencies(installed_dir: Path, source_map: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    检查已安装 Skill 的依赖完整性。
+    返回缺失依赖的 issue 列表。
+    """
+    issues: List[Dict[str, Any]] = []
+    for skill_dir in sorted(installed_dir.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        manifest_path = skill_dir / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        dependencies = manifest.get("dependencies", [])
+        if not dependencies:
+            continue
+
+        skill_name = skill_dir.name
+        for dep in dependencies:
+            # 去掉版本约束
+            dep_name = re.split(r'[>=<]', dep)[0].strip()
+            if '.' in dep_name:
+                dep_name = dep_name.split('.')[-1]
+
+            # 检查是否已安装（在 installed_dir 中）
+            dep_installed = (installed_dir / dep_name).exists()
+            # 检查是否在源码库中
+            dep_in_source = dep_name in source_map
+
+            if not dep_installed:
+                issues.append({
+                    "type": "missing_dependency",
+                    "skill": skill_name,
+                    "dependency": dep,
+                    "dep_name": dep_name,
+                    "severity": "warning" if dep_in_source else "error",
+                    "detail": (
+                        f"依赖 '{dep_name}' 未安装（源码库中有，可运行 artclaw skill install {dep_name}）"
+                        if dep_in_source else
+                        f"依赖 '{dep_name}' 未安装且在源码库中未找到"
+                    ),
+                })
+    return issues
+
+
+# ============================================================================
 # 检查 A：Skill installed vs source repo
 # ============================================================================
 
@@ -524,7 +577,7 @@ def check_skill_versions() -> Dict[str, Any]:
         return {
             "platform_type": platform_type,
             "total_checked": 0, "updates_available": 0, "conflicts": 0,
-            "skills": [], "core_issues": [], "dcc_issues": [],
+            "skills": [], "core_issues": [], "dcc_issues": [], "dep_issues": [],
             "report": f"Skill 目录不存在: {installed_dir}（平台: {platform_type}）",
         }
 
@@ -538,8 +591,11 @@ def check_skill_versions() -> Dict[str, Any]:
     # ── C. DCC install dirs ────────────────────────────────────────────────
     dcc_issues = _check_dcc_installs(checker_dirs.get("dcc_install_dirs", []))
 
-    report = _generate_report(platform_type, skills, core_issues, dcc_issues)
-    _update_alerts(updates, conflicts, skills, core_issues, dcc_issues)
+    # ── D. Skill dependency check ─────────────────────────────────────────
+    dep_issues = _check_skill_dependencies(installed_dir, source_map)
+
+    report = _generate_report(platform_type, skills, core_issues, dcc_issues, dep_issues)
+    _update_alerts(updates, conflicts, skills, core_issues, dcc_issues, dep_issues)
 
     return {
         "platform_type": platform_type,
@@ -549,6 +605,7 @@ def check_skill_versions() -> Dict[str, Any]:
         "skills": skills,
         "core_issues": core_issues,
         "dcc_issues": dcc_issues,
+        "dep_issues": dep_issues,
         "report": report,
     }
 
@@ -562,7 +619,9 @@ def _generate_report(
     skills: List[Dict[str, Any]],
     core_issues: List[Dict[str, Any]],
     dcc_issues: List[Dict[str, Any]],
+    dep_issues: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
+    dep_issues = dep_issues or []
     total = len(skills)
     status_labels = {
         "synced": "✅ 已同步", "source_newer": "🔄 有新版本",
@@ -576,7 +635,7 @@ def _generate_report(
     synced_n = counts.get("synced", 0) + counts.get("no_source", 0)
     problem_n = total - synced_n
 
-    if problem_n == 0 and not core_issues and not dcc_issues:
+    if problem_n == 0 and not core_issues and not dcc_issues and not dep_issues:
         return f"✅ 全部检查通过。共 {total} 个 Skill 已同步，平台: {platform_type}，无风险项。"
 
     lines: List[str] = [
@@ -617,6 +676,13 @@ def _generate_report(
             lines.append(f"  {icon} {i['desc']}: {i['detail']} {cf}")
         lines.append("")
 
+    if dep_issues:
+        lines.append(f"【Skill 依赖缺失】（{len(dep_issues)} 处）")
+        for i in dep_issues:
+            icon = "🔴" if i["severity"] == "error" else "🟡"
+            lines.append(f"  {icon} {i['skill']} → 缺少依赖 {i['dependency']}: {i['detail']}")
+        lines.append("")
+
     return "\n".join(lines)
 
 
@@ -627,6 +693,7 @@ def _generate_report(
 def _update_alerts(
     updates: int, conflicts: int,
     skills: List[Dict], core_issues: List[Dict], dcc_issues: List[Dict],
+    dep_issues: Optional[List[Dict]] = None,
 ) -> None:
     api_url = "http://localhost:9876/api/v1/alerts"
     src_name = "skill-version-checker"
@@ -694,8 +761,20 @@ def _update_alerts(
                       {"count": len(items), "issues": [i["desc"] for i in items]})
                 break
 
+        # Skill 依赖缺失
+        _dep_issues = dep_issues or []
+        for severity in ("error", "warning"):
+            items = [i for i in _dep_issues if i["severity"] == severity]
+            if items:
+                level_label = "缺失（无源码库）" if severity == "error" else "未安装"
+                _post(severity,
+                      f"Skill 依赖{level_label} ({len(items)} 处)",
+                      "\n".join(f"  • {i['skill']} → {i['dep_name']}: {i['detail']}" for i in items[:5]),
+                      {"count": len(items), "issues": [f"{i['skill']}:{i['dep_name']}" for i in items]})
+                break
+
         # 全部通过 → 解决之前的报警
-        if not conflicts and not modified and updates == 0 and not core_issues and not dcc_issues:
+        if not conflicts and not modified and updates == 0 and not core_issues and not dcc_issues and not _dep_issues:
             _resolve_all()
 
     except Exception as e:

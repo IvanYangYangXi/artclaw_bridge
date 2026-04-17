@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://artclaw.dev/schemas/manifest.schema.json",
+  "title": "ArtClaw Skill Manifest",
+  "description": "ArtClaw Skill 包的 manifest.json 格式定义。参考规范：docs/specs/sdk-skill-spec.md S1",
+  "type": "object",
+  "required": ["manifest_version", "name", "version", "software", "category", "risk_level", "entry_point", "tools"],
+  "properties": {
+    "manifest_version": {
+      "type": "string",
+      "description": "Manifest 格式版本",
+      "const": "1.0"
+    },
+    "name": {
+      "type": "string",
+      "description": "Skill 唯一名称，snake_case，全局唯一",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Skill 的人类可读名称"
+    },
+    "description": {
+      "type": "string",
+      "description": "Skill 功能描述（英文），AI 可见"
+    },
+    "version": {
+      "type": "string",
+      "description": "Skill 版本号，遵循 semver",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "author": {
+      "type": "string",
+      "description": "Skill 作者"
+    },
+    "license": {
+      "type": "string",
+      "description": "许可证类型",
+      "examples": ["MIT", "Apache-2.0", "GPL-3.0"]
+    },
+    "software": {
+      "type": "string",
+      "description": "目标软件类型",
+      "enum": ["unreal_engine", "maya", "max", "blender", "houdini", "substance_painter", "substance_designer", "comfyui", "universal"]
+    },
+    "category": {
+      "type": "string",
+      "description": "Skill 功能分类",
+      "enum": ["material", "mesh", "scene", "animation", "rendering", "rigging", "vfx", "utility", "workflow", "knowledge", "memory", "debug"]
+    },
+    "risk_level": {
+      "type": "string",
+      "description": "Skill 操作风险等级：low=只读，medium=可撤销，high=不可撤销",
+      "enum": ["low", "medium", "high"]
+    },
+    "dependencies": {
+      "type": "array",
+      "description": "依赖的其他 Skill 名称列表",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "tags": {
+      "type": "array",
+      "description": "标签列表，用于搜索和分类",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "entry_point": {
+      "type": "string",
+      "description": "Skill 入口文件名",
+      "default": "__init__.py"
+    },
+    "tools": {
+      "type": "array",
+      "description": "Skill 提供的工具列表",
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "工具名称，snake_case，在 Skill 内唯一",
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "description": {
+            "type": "string",
+            "description": "工具功能描述（英文），AI 可见"
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "software_version": {
+      "type": "object",
+      "description": "软件版本约束",
+      "properties": {
+        "min": {
+          "type": "string",
+          "description": "最低支持的软件版本",
+          "examples": ["5.0", "2023"]
+        },
+        "max": {
+          "type": "string",
+          "description": "最高支持的软件版本（不填表示无上限）",
+          "examples": ["5.9", "2025"]
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

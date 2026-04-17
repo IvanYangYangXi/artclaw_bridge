@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from artclaw_bridge.config import artclaw_bridgeConfig
-from artclaw_bridge.manifest import ManifestValidator, load_manifest
+from artclaw_bridge.manifest import ManifestValidator, check_skill_dependencies, load_manifest
 
 logger = logging.getLogger("artclaw_bridge.skill_hub")
 
@@ -230,6 +230,7 @@ class SkillHub:
         """
         self._config = config or artclaw_bridgeConfig()
         self._validator = ManifestValidator()
+        self._disabled_skills: set[str] = self._load_disabled_skills()
 
         # name → 按优先级排序的 SkillEntry 列表（索引 0 优先级最高）
         self._skills: dict[str, list[SkillEntry]] = {}
@@ -457,6 +458,19 @@ class SkillHub:
                     continue
                 entry = self._load_skill_entry(layer, manifest_path)
                 if entry is not None:
+                    if entry.name in self._disabled_skills:
+                        logger.debug("跳过已禁用的 Skill: %s", entry.name)
+                        continue
+                    # S6: 依赖检查（不阻断加载，仅警告）
+                    missing = check_skill_dependencies(
+                        entry.manifest,
+                        list(self._skills.keys()),
+                    )
+                    if missing:
+                        print(
+                            f"[WARNING] Skill '{entry.name}' 缺少依赖: "
+                            f"{missing}（Skill 已加载，但功能可能不完整）"
+                        )
                     self._register_entry(entry)
                     count += 1
         except OSError as exc:
@@ -511,3 +525,49 @@ class SkillHub:
         if entry.name not in self._skills:
             self._skills[entry.name] = []
         self._skills[entry.name].append(entry)
+
+    @staticmethod
+    def _load_disabled_skills() -> set[str]:
+        """从 ~/.artclaw/config.json 读取 disabled_skills 列表。
+
+        Returns:
+            禁用的 Skill 名称集合（文件不存在或字段缺失时返回空集合）。
+        """
+        config_path = Path.home() / ".artclaw" / "config.json"
+        try:
+            if config_path.exists():
+                data = json.loads(config_path.read_text(encoding="utf-8"))
+                disabled = data.get("disabled_skills", [])
+                if isinstance(disabled, list):
+                    return {str(s) for s in disabled if isinstance(s, str)}
+        except Exception as exc:
+            logger.debug("读取 disabled_skills 失败（非致命）: %s", exc)
+        return set()
+
+
+# ---------------------------------------------------------------------------
+# artclaw_tool 别名导出
+#
+# 在 CLI / 纯 Python 环境中提供 @artclaw_tool 装饰器。
+# 新 Skill 推荐使用 @artclaw_tool；旧代码的 @ue_tool 保持不变，无需迁移。
+#
+# 导入方式:
+#   from artclaw_bridge.skill_hub import artclaw_tool
+#   @artclaw_tool(name="my_tool", description="...", category="scene")
+#   def my_tool(arguments: dict) -> str: ...
+# ---------------------------------------------------------------------------
+
+try:
+    import sys as _sys
+    import os as _os
+    _core_dir = _os.path.join(_os.path.dirname(__file__), "..", "..", "core")
+    if _core_dir not in _sys.path:
+        _sys.path.insert(0, _core_dir)
+    from skill_decorator import artclaw_tool  # noqa: F401
+except Exception:
+    # 最后兜底：提供一个无操作的透传装饰器，保证导入不出错
+    def artclaw_tool(name=None, description="", category="general", risk_level="low"):  # type: ignore[misc]
+        """artclaw_tool fallback stub（core/skill_decorator.py 不可用时）。"""
+        def decorator(func):
+            return func
+        return decorator

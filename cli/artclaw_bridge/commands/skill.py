@@ -37,6 +37,29 @@ from artclaw_bridge.config import artclaw_bridgeConfig
 from artclaw_bridge.manifest import ManifestValidator, load_manifest
 from artclaw_bridge.skill_hub import SkillHub, SkillEntry
 
+# VersionManager SDK（可选，找不到 core 目录时不崩溃）
+try:
+    import sys as _sys
+    import os as _os
+    _core_path = _os.path.normpath(
+        _os.path.join(_os.path.dirname(__file__), '..', '..', '..', '..', 'core')
+    )
+    if _os.path.isdir(_core_path) and _core_path not in _sys.path:
+        _sys.path.insert(0, _core_path)
+    from version_manager import (  # noqa: F401
+        VersionManager,
+        compare_versions,
+        matches_skill,
+        SyncStatus,
+        SyncState,
+        ConflictInfo,
+        parse_version,
+        version_distance,
+    )
+    _VERSION_MANAGER_AVAILABLE = True
+except ImportError:
+    _VERSION_MANAGER_AVAILABLE = False
+
 
 def dispatch(args: argparse.Namespace) -> None:
     """根据 subcommand 分发到对应处理函数。"""
@@ -157,17 +180,58 @@ def _cmd_info(args: argparse.Namespace) -> None:
 
 
 def _cmd_enable(args: argparse.Namespace) -> None:
-    """启用 Skill (TODO: 实际状态追踪待实现)。"""
-    # TODO: 实现 enable/disable 状态持久化 (config.yaml 或 .disabled 标记文件)
-    print(f"✅ Skill '{args.name}' 已启用")
-    print("   ⚠️ 注意: 状态持久化功能尚未实现，当前为占位操作")
+    """启用 Skill（从 ~/.artclaw/config.json 的 disabled_skills 中移除）。"""
+    skill_name: str = args.name
+
+    cfg_path = Path.home() / ".artclaw" / "config.json"
+    cfg: dict = {}
+    if cfg_path.exists():
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    disabled: list = cfg.get("disabled_skills", [])
+    if skill_name in disabled:
+        disabled.remove(skill_name)
+        cfg["disabled_skills"] = disabled
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"✅ Skill '{skill_name}' 已启用（重启 DCC 生效）")
+    else:
+        print(f"ℹ️  Skill '{skill_name}' 未在禁用列表中")
 
 
 def _cmd_disable(args: argparse.Namespace) -> None:
-    """禁用 Skill (TODO: 实际状态追踪待实现)。"""
-    # TODO: 实现 enable/disable 状态持久化
-    print(f"✅ Skill '{args.name}' 已禁用")
-    print("   ⚠️ 注意: 状态持久化功能尚未实现，当前为占位操作")
+    """禁用 Skill（写入 ~/.artclaw/config.json 的 disabled_skills）。"""
+    skill_name: str = args.name
+
+    # 检查 skill 是否存在
+    config = artclaw_bridgeConfig()
+    hub = SkillHub(config)
+    hub.scan_all_skills()
+    entry = hub.get_skill(skill_name)
+    if entry is None:
+        print(f"❌ Skill '{skill_name}' 未找到")
+        return
+
+    cfg_path = Path.home() / ".artclaw" / "config.json"
+    cfg: dict = {}
+    if cfg_path.exists():
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    disabled: list = cfg.get("disabled_skills", [])
+    if skill_name not in disabled:
+        disabled.append(skill_name)
+        cfg["disabled_skills"] = disabled
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"✅ Skill '{skill_name}' 已禁用（重启 DCC 生效）")
+    else:
+        print(f"ℹ️  Skill '{skill_name}' 已经是禁用状态")
 
 
 def _cmd_uninstall(args: argparse.Namespace) -> None:
@@ -822,14 +886,94 @@ def _check_dependencies(skill_dir: Path, config: artclaw_bridgeConfig) -> list[s
     return missing
 
 
-def _resolve_dependencies_for_install(skill_dir: Path, config: artclaw_bridgeConfig) -> None:
-    """安装前检查并报告依赖状态。"""
+def _resolve_dependencies_for_install(skill_dir: Path, config: artclaw_bridgeConfig, check_deps: bool = True) -> bool:
+    """
+    检查并自动安装缺失依赖。
+
+    :param check_deps: 内部递归调用时传 False，避免无限循环
+    :return: True 表示所有依赖满足（或已安装），False 表示有依赖安装失败
+    """
+    if not check_deps:
+        return True
+
     missing = _check_dependencies(skill_dir, config)
-    if missing:
-        print(f"\n⚠️ 缺失依赖:")
-        for dep in missing:
-            print(f"   - {dep}")
-        print(f"\n   请先安装这些依赖，或确认它们已在其他层级中可用")
+    if not missing:
+        return True
+
+    import re as _re
+
+    print(f"\n⚠️  发现 {len(missing)} 个缺失依赖:")
+    for dep in missing:
+        print(f"   - {dep}")
+
+    print(f"\n🔍 正在从本地源码库查找依赖...")
+    hub = SkillHub(config)
+    hub.scan_all_skills()
+
+    all_ok = True
+    for dep_name_raw in missing:
+        # 去掉版本约束，取 skill 名称部分
+        clean_name = _re.split(r'[>=<]', dep_name_raw)[0].strip()
+        # 如果是 "artclaw_bridge.layer.dcc.name" 格式，取最后一段
+        if '.' in clean_name:
+            clean_name = clean_name.split('.')[-1]
+
+        dep_entry = hub.get_skill(clean_name)
+        if dep_entry is None:
+            print(f"   ❌ 依赖 '{clean_name}' 在本地源码库中未找到，请手动安装")
+            all_ok = False
+            continue
+
+        print(f"   📦 正在安装依赖: {clean_name} (来自 {dep_entry.layer})")
+        try:
+            _install_skill_files(dep_entry.path, config, check_deps=False)
+            print(f"   ✅ 依赖 '{clean_name}' 安装成功")
+        except Exception as e:
+            print(f"   ❌ 依赖 '{clean_name}' 安装失败: {e}")
+            all_ok = False
+
+    return all_ok
+
+
+def _install_skill_files(src_dir: Path, config: artclaw_bridgeConfig, layer: str = "02_user", check_deps: bool = True) -> None:
+    """
+    将 src_dir 中的 Skill 复制到目标层级目录。
+    提取自 _cmd_install，供依赖自动安装复用。
+
+    :param src_dir: Skill 源目录（包含 manifest.json）
+    :param config: 项目配置
+    :param layer: 目标层级，默认 "02_user"
+    :param check_deps: 是否递归检查并安装依赖（False 避免无限循环）
+    :raises Exception: 目录不存在、manifest 缺失、复制失败等
+    """
+    manifest_path = src_dir / "manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"manifest.json 不存在: {src_dir}")
+
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    name = data["name"]
+
+    if layer == "02_user":
+        dest_dir = config.user_skills_dir / name
+    elif layer == "01_team":
+        if config.team_skills_dir is None:
+            raise RuntimeError("未找到团队目录")
+        dest_dir = config.team_skills_dir / name
+    else:
+        if config.skills_dir is None:
+            raise RuntimeError("未找到 Skill 库目录")
+        dest_dir = config.skills_dir / name
+
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir)
+
+    shutil.copytree(
+        src_dir, dest_dir,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+
+    if check_deps:
+        _resolve_dependencies_for_install(dest_dir, config, check_deps=True)
 
 
 def _cmd_check_deps(args: argparse.Namespace) -> None:

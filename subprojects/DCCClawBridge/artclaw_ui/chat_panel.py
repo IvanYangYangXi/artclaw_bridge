@@ -37,9 +37,11 @@ class ChatPanel(ChatPanelActionsMixin, QWidget):
 
     def __init__(self, parent=None, adapter=None):
         super().__init__(parent)
-        self.setWindowFlags(Qt.Window)
-        # 独立窗口模式（无父窗口，如 Blender）：关闭时销毁，触发 destroyed 信号
-        if parent is None:
+        if parent is not None:
+            self.setWindowFlags(Qt.Window)
+        else:
+            # 无父窗口（Max / Blender）: 置顶 DCC 主窗口
+            self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
             self.setAttribute(Qt.WA_DeleteOnClose, True)
         self._adapter = adapter
         init_language()  # 初始化 i18n

@@ -220,25 +220,14 @@ class QuickInputPanel(QWidget):
         header_layout.addWidget(lbl)
         header_layout.addStretch()
 
-        # "..." edit all button
-        btn_edit_all = QPushButton("···")
-        btn_edit_all.setFixedSize(24, 20)
-        btn_edit_all.setStyleSheet(
-            "QPushButton { background: transparent; color: #888; border: none; "
-            "font-size: 14px; padding: 0; min-height: 0; min-width: 0; }"
-            "QPushButton:hover { color: #e0e0e0; }"
-        )
-        btn_edit_all.setToolTip("管理全部快捷输入")
-        btn_edit_all.clicked.connect(self._on_edit_all)
-        header_layout.addWidget(btn_edit_all)
-
-        btn_add = QPushButton("+")
-        btn_add.setFixedSize(32, 24)
+        btn_add = QPushButton("+ 添加")
+        btn_add.setFixedHeight(24)
+        btn_add.setMinimumWidth(60)
         btn_add.setToolTip("添加快捷输入")
         btn_add.setStyleSheet(
             f"QPushButton {{ background-color: {COLORS.get('accent', '#4B7BAC')}; color: white; "
-            f"border-radius: 3px; font-size: 16px; font-weight: bold; "
-            f"padding: 0; min-height: 0; min-width: 0; border: none; }}"
+            f"border-radius: 3px; font-size: 11px; "
+            f"padding: 0 8px; min-height: 0; min-width: 0; border: none; }}"
             f"QPushButton:hover {{ background-color: {COLORS.get('accent_hover', '#5B8BBC')}; }}"
         )
         btn_add.clicked.connect(self._on_add)
@@ -382,7 +371,3 @@ class QuickInputPanel(QWidget):
             self._items.pop(idx)
             self._save()
             self._rebuild_items()
-
-    def _on_edit_all(self):
-        """Re-open edit dialog cycling through all items (simple: open add dialog)."""
-        self._on_add()

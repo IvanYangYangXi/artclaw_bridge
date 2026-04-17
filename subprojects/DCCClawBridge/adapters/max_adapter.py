@@ -32,6 +32,11 @@ class MaxAdapter(BaseDCCAdapter):
         self._panel = None
         self._menu_name = "ArtClaw"
 
+        # 主线程任务队列 + 轮询 timer
+        import queue as _queue
+        self._task_queue: _queue.Queue = _queue.Queue()
+        self._poll_timer = None
+
     # ── 基础信息 ──
 
     def get_software_name(self) -> str:
@@ -72,6 +77,9 @@ class MaxAdapter(BaseDCCAdapter):
         except Exception as e:
             logger.error(f"ArtClaw: MCP Server startup error: {e}")
 
+        # 启动主线程轮询 timer（MCP 工具调用需要通过此 timer 调度到主线程）
+        self._start_poll_timer()
+
         # Initialize event manager for Tool Manager triggers
         try:
             from core.dcc_event_manager import DCCEventManager, set_global_event_manager
@@ -108,39 +116,65 @@ class MaxAdapter(BaseDCCAdapter):
 
     # ── 主线程调度 ──
 
-    def execute_on_main_thread(self, fn: Callable, *args) -> Any:
-        """在 Max 主线程执行"""
-        # pymxs 本身在主线程调用是安全的
-        # 但如果从其他线程调用，需要用 QTimer
+    def _start_poll_timer(self):
+        """启动主线程轮询 timer（50ms 间隔，pump 任务队列）。
+
+        QTimer.singleShot(0, fn) 在 Max 中不可靠（主线程可能不及时处理 Qt 事件），
+        改用持久 QTimer 定期轮询任务队列，类似 Blender adapter 的方案。
+        """
+        if self._poll_timer is not None:
+            return
         try:
             from PySide2.QtCore import QTimer
-            import queue
-            result_queue = queue.Queue()
+            self._poll_timer = QTimer()
+            self._poll_timer.setInterval(50)
+            self._poll_timer.timeout.connect(self._pump_tasks)
+            self._poll_timer.start()
+            logger.info("ArtClaw: Main-thread poll timer started (50ms)")
+        except Exception as e:
+            logger.warning(f"ArtClaw: Failed to start poll timer: {e}")
 
-            def _run():
-                try:
-                    result_queue.put(("ok", fn(*args)))
-                except Exception as e:
-                    result_queue.put(("error", e))
+    def _pump_tasks(self):
+        """在主线程中执行队列里的所有待处理任务。"""
+        while not self._task_queue.empty():
+            try:
+                fn = self._task_queue.get_nowait()
+                fn()
+            except Exception as e:
+                logger.error(f"ArtClaw: Task execution error: {e}")
 
-            QTimer.singleShot(0, _run)
-            status, value = result_queue.get(timeout=30)
+    def execute_on_main_thread(self, fn: Callable, *args) -> Any:
+        """在 Max 主线程执行函数并阻塞等待结果。
+
+        pymxs 调用必须在主线程，通过任务队列 + 轮询 QTimer 实现跨线程调度。
+        """
+        import queue as _queue
+        result_queue: _queue.Queue = _queue.Queue()
+
+        def _run():
+            try:
+                result_queue.put(("ok", fn(*args)))
+            except Exception as e:
+                result_queue.put(("error", e))
+
+        self._task_queue.put(_run)
+        self._start_poll_timer()
+
+        try:
+            status, value = result_queue.get(timeout=60)
             if status == "error":
                 raise value
             return value
-        except ImportError:
-            # 无 Qt，直接调用（假设已在主线程）
-            return fn(*args)
+        except _queue.Empty:
+            raise TimeoutError("Max main thread execution timed out (60s)")
 
     def execute_deferred(self, fn: Callable, *args) -> None:
-        try:
-            from PySide2.QtCore import QTimer
-            if args:
-                QTimer.singleShot(0, lambda: fn(*args))
-            else:
-                QTimer.singleShot(0, fn)
-        except ImportError:
-            fn(*args)
+        """延迟到主线程执行（非阻塞）。"""
+        if args:
+            self._task_queue.put(lambda: fn(*args))
+        else:
+            self._task_queue.put(fn)
+        self._start_poll_timer()
 
     # ── 上下文采集 ──
 
@@ -225,13 +259,13 @@ class MaxAdapter(BaseDCCAdapter):
         return None
 
     def register_menu(self, menu_name: str, callback: Callable) -> None:
-        """在 Max 中注册菜单（通过 pymxs.runtime）"""
+        """在 Max 中注册宏 + 主菜单项（幂等，不重复创建）"""
         try:
             pymxs = _require_max()
             rt = pymxs.runtime
 
-            # 用 MaxScript 创建菜单
-            rt.execute(f'''
+            # 1. 注册 MacroScript
+            rt.execute('''
                 macroScript ArtClaw_OpenChat
                     category:"ArtClaw"
                     tooltip:"Open ArtClaw Chat Panel"
@@ -239,9 +273,35 @@ class MaxAdapter(BaseDCCAdapter):
                     python.execute "from adapters.max_adapter import _open_chat_panel_global; _open_chat_panel_global()"
                 )
             ''')
-            logger.info("ArtClaw: Max menu macro registered")
+
+            # 2. 添加到主菜单栏（幂等：先清理再创建）
+            rt.execute('''
+                -- 清理已有 ArtClaw 菜单
+                for i = 1 to 5 do (
+                    m = menuMan.findMenu "ArtClaw"
+                    if m != undefined do menuMan.unRegisterMenu m
+                )
+                mainMenu = menuMan.getMainMenuBar()
+                for i = mainMenu.numItems() to 1 by -1 do (
+                    item = mainMenu.getItem i
+                    if item != undefined and item.getTitle() == "ArtClaw" do
+                        mainMenu.removeItemByPosition i
+                )
+
+                -- 创建新菜单
+                artclawMenu = menuMan.createMenu "ArtClaw"
+                chatAction = menuMan.createActionItem "ArtClaw_OpenChat" "ArtClaw"
+                chatAction.setTitle "Chat Panel"
+                chatAction.setUseCustomTitle true
+                artclawMenu.addItem chatAction -1
+
+                subItem = menuMan.createSubMenuItem "ArtClaw" artclawMenu
+                mainMenu.addItem subItem (mainMenu.numItems())
+                menuMan.updateMenuBar()
+            ''')
+            logger.info("ArtClaw: Max menu registered (menu bar + macro)")
         except Exception as e:
-            logger.warning(f"ArtClaw: Failed to register Max menu: {e}")
+            logger.warning(f"ArtClaw: Menu registration failed: {e}")
 
     # ── 代码执行 ──
 
@@ -310,9 +370,12 @@ class MaxAdapter(BaseDCCAdapter):
     def _open_chat_panel(self):
         try:
             from artclaw_ui.chat_panel import show_chat_panel
-            self._panel = show_chat_panel(parent=self.get_main_window(), adapter=self)
+            # Max: 不传 parent（独立窗口），避免 shiboken2 wrapInstance 崩溃
+            self._panel = show_chat_panel(parent=None, adapter=self)
         except Exception as e:
             logger.error(f"ArtClaw: Failed to open Chat Panel: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 # 全局引用（供 MaxScript 宏调用）

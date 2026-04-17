@@ -10,3 +10,10 @@ __all__ = ["BaseDCCAdapter"]
 # from .houdini_adapter import HoudiniAdapter
 # from .substance_painter_adapter import SubstancePainterAdapter
 # from .substance_designer_adapter import SubstanceDesignerAdapter
+
+# UEAdapter: unreal 模块只在 Unreal Engine Python 运行时中可用
+try:
+    from .ue_adapter import UEAdapter
+    __all__ = __all__ + ["UEAdapter"]
+except ImportError:
+    pass
