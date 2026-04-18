@@ -1,0 +1,1 @@
+# Cursor platform adapter package

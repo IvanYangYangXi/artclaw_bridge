@@ -29,7 +29,8 @@ from pydantic_settings import BaseSettings
 _PLATFORM_SKILLS_DEFAULTS: dict = {
     "openclaw":   "~/.openclaw/skills",
     "workbuddy":  "~/.workbuddy/skills",
-    "claude":     "~/.claude/skills",
+    "claudecode": "~/.claude/skills",
+    "cursor":     "~/.cursor/skills",
     "lobster":    None,  # resolved dynamically via APPDATA
 }
 

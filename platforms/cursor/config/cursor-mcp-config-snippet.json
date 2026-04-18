@@ -1,0 +1,44 @@
+{
+  "mcpServers": {
+    "artclaw-ue": {
+      "command": "python",
+      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/common/artclaw_stdio_bridge.py", "--port", "8080"],
+      "env": {}
+    },
+    "artclaw-maya": {
+      "command": "python",
+      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/common/artclaw_stdio_bridge.py", "--port", "8081"],
+      "env": {}
+    },
+    "artclaw-max": {
+      "command": "python",
+      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/common/artclaw_stdio_bridge.py", "--port", "8082"],
+      "env": {}
+    },
+    "artclaw-blender": {
+      "command": "python",
+      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/common/artclaw_stdio_bridge.py", "--port", "8083"],
+      "env": {}
+    },
+    "artclaw-houdini": {
+      "command": "python",
+      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/common/artclaw_stdio_bridge.py", "--port", "8084"],
+      "env": {}
+    },
+    "artclaw-sp": {
+      "command": "python",
+      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/common/artclaw_stdio_bridge.py", "--port", "8085"],
+      "env": {}
+    },
+    "artclaw-sd": {
+      "command": "python",
+      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/common/artclaw_stdio_bridge.py", "--port", "8086"],
+      "env": {}
+    },
+    "artclaw-comfyui": {
+      "command": "python",
+      "args": ["${ARTCLAW_BRIDGE_ROOT}/platforms/common/artclaw_stdio_bridge.py", "--port", "8087"],
+      "env": {}
+    }
+  }
+}

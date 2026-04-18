@@ -528,6 +528,7 @@ private:
 		FString Type;        // "openclaw", "lobster", etc.
 		FString DisplayName; // "OpenClaw", "LobsterAI", etc.
 		FString GatewayUrl;
+		bool bConfigured = false; // 平台是否已配置 (gateway_url/token 等)
 	};
 
 	/** 可用平台列表 */

@@ -45,29 +45,46 @@ def _get_lobster_skills_path() -> str:
 
 _PLATFORM_DEFAULTS = {
     "openclaw": {
+        "display_name": "OpenClaw",
         "gateway_url": "ws://127.0.0.1:18789",
         "mcp_port": 8080,
+        "visible": True,
         "skills_installed_path": "~/.openclaw/skills",
         "mcp_config_path": "~/.openclaw/openclaw.json",
         "mcp_config_key": "mcp.servers",
     },
     "workbuddy": {
-        "gateway_url": "ws://127.0.0.1:18789",
+        "display_name": "WorkBuddy",
+        "gateway_url": "",
         "mcp_port": 8080,
+        "visible": False,
         "skills_installed_path": "~/.workbuddy/skills",
         "mcp_config_path": "~/.workbuddy/config.json",
         "mcp_config_key": "mcpServers",
     },
-    "claude": {
+    "claudecode": {
+        "display_name": "Claude Code",
         "gateway_url": "",
         "mcp_port": 8080,
+        "visible": False,
         "skills_installed_path": "~/.claude/skills",
-        "mcp_config_path": "~/.claude/config.json",
+        "mcp_config_path": "~/.claude.json",
+        "mcp_config_key": "mcpServers",
+    },
+    "cursor": {
+        "display_name": "Cursor",
+        "gateway_url": "",
+        "mcp_port": 8080,
+        "visible": False,
+        "skills_installed_path": "~/.cursor/skills",
+        "mcp_config_path": "~/.cursor/mcp.json",
         "mcp_config_key": "mcpServers",
     },
     "lobster": {
+        "display_name": "LobsterAI",
         "gateway_url": "ws://127.0.0.1:18790",
         "mcp_port": 8080,
+        "visible": True,
         "skills_installed_path": _get_lobster_skills_path(),
         "mcp_config_path": _get_lobster_config_path(),
         "mcp_config_key": "plugins.entries.mcp-bridge.config.servers",
@@ -453,6 +470,33 @@ def get_gateway_token() -> str:
 # 平台注册与切换 API（UI ComboBox 数据源 + 热切换）
 # ---------------------------------------------------------------------------
 
+def check_platform_configured(platform_type: str) -> bool:
+    """检查指定平台是否已配置（配置文件/工具是否存在）。
+
+    仅做本地文件/工具检测，不做网络探测。
+    """
+    import shutil
+
+    if platform_type == "openclaw":
+        return os.path.exists(os.path.expanduser("~/.openclaw/openclaw.json"))
+    elif platform_type == "lobster":
+        return os.path.exists(_get_lobster_config_path())
+    elif platform_type == "claudecode":
+        return (
+            shutil.which("claude") is not None
+            or os.path.exists(os.path.expanduser("~/.claude.json"))
+            or os.path.isdir(os.path.expanduser("~/.claude"))
+        )
+    elif platform_type == "cursor":
+        return (
+            os.path.exists(os.path.expanduser("~/.cursor/mcp.json"))
+            or os.path.isdir(os.path.expanduser("~/.cursor"))
+        )
+    elif platform_type == "workbuddy":
+        return os.path.exists(os.path.expanduser("~/.workbuddy/config.json"))
+    return False
+
+
 def get_available_platforms() -> list:
     """返回已注册的可用平台列表（UI ComboBox 数据源）。
 
@@ -460,23 +504,32 @@ def get_available_platforms() -> list:
     1. config.json → platforms_registry（install 脚本或用户手动注册）
     2. _PLATFORM_DEFAULTS keys（fallback）
 
-    返回 [{"type": "openclaw", "display_name": "OpenClaw", "gateway_url": "ws://..."}, ...]
+    返回 [{"type": "openclaw", "display_name": "OpenClaw", "gateway_url": "ws://...", "configured": True/False}, ...]
     """
     ac = load_artclaw_config()
     registry = ac.get("platforms_registry", [])
     if registry:
-        return registry
+        result = []
+        for entry in registry:
+            p_type = entry.get("type", "")
+            defaults = _PLATFORM_DEFAULTS.get(p_type, {})
+            if not defaults.get("visible", True):
+                continue
+            entry["configured"] = check_platform_configured(p_type)
+            result.append(entry)
+        return result
 
-    # fallback: 从默认配置生成（排除无 gateway 的平台如 claude）
+    # fallback: 从默认配置生成（包含所有 visible=True 的平台）
     result = []
     for k, v in _PLATFORM_DEFAULTS.items():
-        gw = v.get("gateway_url", "")
-        if gw:
-            result.append({
-                "type": k,
-                "display_name": k.title(),
-                "gateway_url": gw,
-            })
+        if not v.get("visible", True):
+            continue
+        result.append({
+            "type": k,
+            "display_name": v.get("display_name", k.title()),
+            "gateway_url": v.get("gateway_url", ""),
+            "configured": check_platform_configured(k),
+        })
     return result
 
 

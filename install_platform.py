@@ -58,8 +58,9 @@ PLATFORM_CONFIGS = {
     },
     "workbuddy": {
         "display_name": "WorkBuddy",
-        "gateway_url": "ws://127.0.0.1:18789",
+        "gateway_url": "",
         "mcp_port": 8080,
+        "visible": False,
         "skills_installed_path": "~/.workbuddy/skills",
         "mcp_config_path": "~/.workbuddy/config.json",
         "mcp_config_key": "mcpServers",
@@ -67,16 +68,29 @@ PLATFORM_CONFIGS = {
         "has_gateway": False,
         "has_setup_config": False,
     },
-    "claude": {
-        "display_name": "Claude Desktop",
+    "claudecode": {
+        "display_name": "Claude Code",
         "gateway_url": "",
         "mcp_port": 8080,
+        "visible": False,
         "skills_installed_path": "~/.claude/skills",
-        "mcp_config_path": "~/.claude/config.json",
+        "mcp_config_path": "~/.claude.json",
         "mcp_config_key": "mcpServers",
-        "bridge_file": "claude_bridge.py",
+        "bridge_file": "",
         "has_gateway": False,
-        "has_setup_config": False,
+        "has_setup_config": True,
+    },
+    "cursor": {
+        "display_name": "Cursor",
+        "gateway_url": "",
+        "mcp_port": 8080,
+        "visible": False,
+        "skills_installed_path": "~/.cursor/skills",
+        "mcp_config_path": "~/.cursor/mcp.json",
+        "mcp_config_key": "mcpServers",
+        "bridge_file": "",
+        "has_gateway": False,
+        "has_setup_config": True,
     },
     "lobster": {
         "display_name": "LobsterAI",
@@ -88,6 +102,7 @@ PLATFORM_CONFIGS = {
         "bridge_file": "",
         "has_gateway": False,
         "has_setup_config": True,
+        "setup_script": "setup_lobster_config.py",
     },
 }
 
@@ -134,16 +149,16 @@ def write_artclaw_config(platform_type: str):
         "config_key": pcfg["mcp_config_key"],
     }
 
-    # 写入 platforms_registry
+    # 写入 platforms_registry（排除 visible=False 的平台）
     registry = []
     for ptype, pconf in PLATFORM_CONFIGS.items():
-        gw = pconf.get("gateway_url", "")
-        if gw:
-            registry.append({
-                "type": ptype,
-                "display_name": pconf.get("display_name", ptype.title()),
-                "gateway_url": gw,
-            })
+        if not pconf.get("visible", True):
+            continue
+        registry.append({
+            "type": ptype,
+            "display_name": pconf.get("display_name", ptype.title()),
+            "gateway_url": pconf.get("gateway_url", ""),
+        })
     if registry:
         existing["platforms_registry"] = registry
 

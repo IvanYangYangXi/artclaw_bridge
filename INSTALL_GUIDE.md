@@ -67,7 +67,7 @@ python install.py --all --ue-project "C:\path\to\project" --comfyui-path "C:\Com
 - ComfyUI installation requires `--comfyui-path` pointing to the directory containing `main.py`
 - Blender version defaults to 4.2, Houdini to 20.5, Maya to 2023, Max to 2024
 
-### Step 3: Configure Agent Platform
+### Step 3: Configure Agent Platform (Automated MCP Configuration)
 
 ```bash
 # For OpenClaw (default):
@@ -77,40 +77,47 @@ python install.py --openclaw
 python install.py --openclaw --platform lobster
 ```
 
-This step:
+This step automatically:
 1. Copies the `mcp-bridge` Gateway plugin to `~/.openclaw/extensions/mcp-bridge/`
-2. Installs all official Skills to `~/.openclaw/skills/`
+2. Installs all official Skills to `~/.openclaw/skills/` (or LobsterAI SKILLs directory)
 3. Writes `~/.artclaw/config.json` with project root and platform settings
-4. Runs `setup_openclaw_config.py` to configure MCP servers in `~/.openclaw/openclaw.json`
+4. **Automatically configures MCP servers** in the platform's config file:
+   - OpenClaw: `~/.openclaw/openclaw.json`
+   - LobsterAI: `%APPDATA%\LobsterAI\openclaw\state\openclaw.json`
 
-### Step 4: Configure MCP Servers
+### Step 4: Verify MCP Server Configuration
 
-The `setup_openclaw_config.py` script configures which DCC MCP servers the Agent can connect to. **Run it with flags matching the DCCs installed in Step 2:**
-
-```bash
-cd platforms/openclaw
-python setup_openclaw_config.py --ue --maya --max --blender --houdini --sp --sd --comfyui
-```
-
-This adds the following MCP server entries to `~/.openclaw/openclaw.json`:
+The platform configuration script automatically adds MCP server entries for the DCCs you installed:
 
 | DCC | Server Name | Port |
 |-----|------------|------|
-| Unreal Engine | `ue-editor-agent` | 8080 |
-| Maya | `maya-primary` | 8081 |
-| 3ds Max | `max-primary` | 8082 |
-| Blender | `blender-editor` | 8083 |
-| Houdini | `houdini-editor` | 8084 |
-| Substance Painter | `sp-editor` | 8085 |
-| Substance Designer | `sd-editor` | 8086 |
-| ComfyUI | `comfyui-editor` | 8087 |
+| Unreal Engine | `artclaw-ue` | 8080 |
+| Maya | `artclaw-maya` | 8081 |
+| 3ds Max | `artclaw-max` | 8082 |
+| Blender | `artclaw-blender` | 8083 |
+| Houdini | `artclaw-houdini` | 8084 |
+| Substance Painter | `artclaw-sp` | 8085 |
+| Substance Designer | `artclaw-sd` | 8086 |
+| ComfyUI | `artclaw-comfyui` | 8087 |
 
-It also injects wildcard `tools.allow` entries (e.g., `mcp_maya-primary_*`) into all configured agents.
+**For LobsterAI users:** The configuration is automatically written to `openclaw.json`. You can verify by running:
+
+```bash
+# Check current MCP configuration
+python platforms\lobster\setup_lobster_config.py --status
+
+# Manually configure if needed
+python platforms\lobster\setup_lobster_config.py --ue --maya --max
+```
 
 ### Step 5: Restart Gateway
 
 ```bash
+# For OpenClaw:
 openclaw gateway restart
+
+# For LobsterAI:
+# Fully exit LobsterAI (including system tray), then restart
 ```
 
 ### Step 6: Verify Installation
@@ -138,29 +145,39 @@ Expected output: `Summary: XXX/XXX OK`
 
 ---
 
-## Manual OpenClaw Configuration
+## Manual Configuration (If Automation Fails)
 
-If the automatic config script doesn't work, manually edit `~/.openclaw/openclaw.json`:
+### LobsterAI Manual MCP Configuration
 
-### 1. Add mcp-bridge plugin
+If the automatic configuration doesn't work, manually configure via the script:
+
+```bash
+cd platforms\lobster
+python setup_lobster_config.py --ue --maya --max
+```
+
+Or manually edit `%APPDATA%\LobsterAI\openclaw\state\openclaw.json`:
+
+> **Note:** Replace `<artclaw_bridge_root>` below with the actual path where you cloned the repository.
 
 ```json
 {
   "plugins": {
-    "allow": ["mcp-bridge"],
     "entries": {
       "mcp-bridge": {
         "enabled": true,
         "config": {
           "servers": {
-            "ue-editor-agent": { "type": "websocket", "url": "ws://127.0.0.1:8080" },
-            "maya-primary":    { "type": "websocket", "url": "ws://127.0.0.1:8081" },
-            "max-primary":     { "type": "websocket", "url": "ws://127.0.0.1:8082" },
-            "blender-editor":  { "type": "websocket", "url": "ws://127.0.0.1:8083" },
-            "houdini-editor":  { "type": "websocket", "url": "ws://127.0.0.1:8084" },
-            "sp-editor":       { "type": "websocket", "url": "ws://127.0.0.1:8085" },
-            "sd-editor":       { "type": "websocket", "url": "ws://127.0.0.1:8086" },
-            "comfyui-editor":  { "type": "websocket", "url": "ws://127.0.0.1:8087" }
+            "artclaw-ue": {
+              "type": "stdio",
+              "command": "python",
+              "args": ["<artclaw_bridge_root>\\platforms\\common\\artclaw_stdio_bridge.py", "--port", "8080"]
+            },
+            "artclaw-maya": {
+              "type": "stdio",
+              "command": "python",
+              "args": ["<artclaw_bridge_root>\\platforms\\common\\artclaw_stdio_bridge.py", "--port", "8081"]
+            }
           }
         }
       }
@@ -169,34 +186,14 @@ If the automatic config script doesn't work, manually edit `~/.openclaw/openclaw
 }
 ```
 
-Only include servers for DCCs you actually use.
-
-### 2. Add tools.allow to agents
-
-For each agent in `agents.list`, add wildcard entries to `tools.allow`:
-
-```json
-{
-  "tools": {
-    "allow": [
-      "mcp_ue-editor-agent_*",
-      "mcp_maya-primary_*",
-      "mcp_max-primary_*",
-      "mcp_blender-editor_*",
-      "mcp_houdini-editor_*",
-      "mcp_sp-editor_*",
-      "mcp_sd-editor_*",
-      "mcp_comfyui-editor_*"
-    ]
-  }
-}
-```
-
-### 3. Restart Gateway
+### OpenClaw Manual MCP Configuration
 
 ```bash
-openclaw gateway restart
+cd platforms\openclaw
+python setup_openclaw_config.py --ue --maya --max
 ```
+
+Or manually edit `~/.openclaw/openclaw.json` as shown in the OpenClaw section above.
 
 ---
 
@@ -204,12 +201,75 @@ openclaw gateway restart
 
 | Problem | Solution |
 |---------|----------|
-| MCP tools show as "unknown" | DCC not running or port mismatch. Start the DCC first, then `openclaw gateway restart` |
-| "mcp-bridge not loaded" | Check `plugins.allow` includes `"mcp-bridge"` in openclaw.json |
-| Skills not found | Run `python install.py --openclaw` to reinstall Skills to `~/.openclaw/skills/` |
+| MCP tools show as "unknown" | DCC not running or port mismatch. Start the DCC first, then restart the Agent |
+| "mcp-bridge not loaded" | Check `plugins.allow` includes `"mcp-bridge"` in the platform config |
+| Skills not found | Run `python install.py --openclaw --platform <platform>` to reinstall Skills |
 | verify_sync shows DIFF | Run `python verify_sync.py --fix` to sync source → destination |
-| Port conflict | Check if another process uses the port: `netstat -ano \| findstr :8080` |
+| Port conflict | Check if another process uses the port: `netstat -ano | findstr :8080` |
 | ComfyUI MCP fails to start | Ensure `websockets` and `pydantic` are installed in ComfyUI's Python: `pip install websockets pydantic` |
+| LobsterAI config not applied | Fully exit LobsterAI (including system tray), then restart. Check config with `setup_lobster_config.py --status` |
+
+---
+
+## Upgrade
+
+When ArtClaw Bridge is updated:
+
+```bash
+# 1. Pull latest code
+git pull origin main
+
+# 2. Reinstall DCC plugins
+python install.py --maya --max --force
+
+# 3. Reconfigure platform
+python install.py --openclaw --platform lobster
+
+# 4. Verify sync
+python verify_sync.py
+
+# 5. Restart Gateway / LobsterAI
+```
+
+---
+
+## Uninstall
+
+### Remove DCC Plugins
+
+```bash
+# Single DCC
+python install.py --uninstall --maya
+
+# Multiple DCCs
+python install.py --uninstall --maya --max
+
+# All DCCs
+python install.py --uninstall --all
+```
+
+### Remove MCP Configuration
+
+```bash
+# LobsterAI
+python platforms\lobster\setup_lobster_config.py --remove
+
+# OpenClaw
+python platforms\openclaw\setup_openclaw_config.py --remove
+```
+
+### Full Uninstall
+
+```bash
+# 1. Uninstall all DCC plugins
+python install.py --uninstall --all
+
+# 2. Remove MCP configuration
+python platforms\lobster\setup_lobster_config.py --remove
+
+# 3. Delete global config directory (optional)
+rmdir /s %USERPROFILE%\.artclaw
+```
 
 ---
 
@@ -217,17 +277,50 @@ openclaw gateway restart
 
 ```
 artclaw_bridge/
-├── install.bat              # Windows interactive installer
-├── install.py               # CLI installer (cross-platform)
-├── verify_sync.py           # Shared module sync checker (--fix to repair)
-├── core/                    # Shared modules (source of truth)
-├── platforms/openclaw/      # OpenClaw adapter + config templates
-├── skills/official/         # Official Skill source (installed to ~/.openclaw/skills/)
-├── skills/marketplace/      # Marketplace Skills
+├── install.bat                    # Windows interactive installer
+├── install.py                     # CLI installer (cross-platform)
+├── post_install_configure.py      # Post-install MCP configuration
+├── verify_sync.py                 # Shared module sync checker (--fix to repair)
+├── core/                          # Shared modules (source of truth)
+├── platforms/
+│   ├── openclaw/
+│   │   ├── setup_openclaw_config.py   # OpenClaw MCP configuration
+│   │   └── gateway/
+│   ├── lobster/
+│   │   ├── setup_lobster_config.py    # LobsterAI MCP configuration (AUTO)
+│   │   └── lobster_adapter.py
+│   ├── claudecode/
+│   │   └── setup_claudecode_config.py # Claude Code MCP configuration
+│   ├── cursor/
+│   │   └── setup_cursor_config.py     # Cursor MCP configuration
+│   ├── workbuddy/
+│   │   └── workbuddy_adapter.py
+│   └── common/
+│       └── artclaw_stdio_bridge.py    # Universal stdio bridge for all DCCs
+├── skills/official/               # Official Skills (installed to platform dirs)
+├── skills/marketplace/            # Marketplace Skills
 ├── subprojects/
 │   ├── UEDAgentProj/Plugins/UEClawBridge/   # UE plugin
 │   ├── DCCClawBridge/                        # Maya/Max/Blender/Houdini/SP/SD plugin
 │   ├── ComfyUIClawBridge/                    # ComfyUI custom node
 │   └── ArtClawToolManager/                   # Web management dashboard
-└── docs/                    # Documentation
+└── docs/                          # Documentation
 ```
+
+---
+
+## Automation Summary
+
+The installation process is now **fully automated** for MCP configuration:
+
+1. **DCC Plugin Installation** → `install.py` copies plugin files to DCC directories
+2. **Platform Configuration** → `install.py --openclaw` installs Skills and runs MCP config script
+3. **MCP Server Registration** → Platform-specific scripts (`setup_*_config.py`) automatically add stdio server entries
+4. **No Manual Editing Required** → All configuration is handled by scripts
+
+**Supported Platforms:**
+- ✅ OpenClaw (via `setup_openclaw_config.py`)
+- ✅ LobsterAI (via `setup_lobster_config.py`)
+- ✅ Claude Code (via `setup_claudecode_config.py`)
+- ✅ Cursor (via `setup_cursor_config.py`)
+- ✅ WorkBuddy (via `setup_workbuddy_config.py`)

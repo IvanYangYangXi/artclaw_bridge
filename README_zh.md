@@ -72,9 +72,9 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
 
 ### 🌐 多 Agent 平台支持
 配置驱动的平台抽象层 — 在配置中注册新平台后自动出现在 UI：
-- **OpenClaw** — 主开发平台，通过 mcp-bridge 插件集成
-- **LobsterAI（有道）** — OpenClaw 打包版，Gateway 端口 18790
-- **Claude Desktop** — stdio→WebSocket bridge POC
+- **OpenClaw** — 主开发平台，通过 mcp-bridge 插件集成（全功能：编辑器内对话 + MCP）
+- **LobsterAI（有道）** — OpenClaw 打包版，Gateway 端口 18790（全功能）
+- **Claude Code / Cursor / WorkBuddy** — MCP-only 模式，通过 stdio bridge 在 IDE/终端中调用 DCC 工具
 - **编辑器内热切换** — 设置面板一键切换平台，自动断开/重连/刷新 Agent 列表
 
 ### 🔄 多会话与 Agent 管理
@@ -101,7 +101,7 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
 
 ## 🎯 支持的引擎、DCC 软件与 Agent 平台
 
-已验证 **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 + Blender 5.1 + Substance Painter 11.0.1 + Substance Designer 12.1.0 + ComfyUI**。其他组合理论上兼容但未经测试，欢迎社区反馈。
+已验证 **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 + 3ds Max 2023 + Blender 5.1 + Substance Painter 11.0.1 + Substance Designer 12.1.0 + ComfyUI**。MCP-only 平台（Claude Code、Cursor、WorkBuddy）已配置可部署。其他组合理论上兼容但未经测试，欢迎社区反馈。
 
 ### 引擎与 DCC 软件
 
@@ -119,20 +119,27 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
 
 ### Agent 平台
 
-| 平台 | 状态 | 备注 |
-|------|------|------|
-| **OpenClaw** | ✅ 已验证 | 主开发平台，通过 mcp-bridge 插件集成，全部功能已验证 |
-| **LobsterAI（有道）** | ✅ 已验证 | OpenClaw 打包版，Gateway 端口 18790，已验证基础功能 |
-| **Claude Desktop** | ⚠️ POC | stdio→WebSocket bridge 概念验证，尚未深度集成 |
+| 平台 | 接入模式 | 状态 | 备注 |
+|------|---------|------|------|
+| **OpenClaw** | 全功能（Gateway） | ✅ 已验证 | 主开发平台，编辑器内对话 + MCP 工具，全部功能 |
+| **LobsterAI（有道）** | 全功能（Gateway） | ✅ 已验证 | OpenClaw 打包版，Gateway 端口 18790，编辑器内对话 + MCP 工具 |
+| **Claude Code** | MCP-only（stdio） | ✅ 已配置 | CLI 工具，终端内 MCP 调用，无编辑器内对话 |
+| **Cursor** | MCP-only（stdio） | ✅ 已配置 | VSCode fork，IDE 内 MCP 调用，无编辑器内对话 |
+| **WorkBuddy（腾讯）** | MCP-only（stdio） | ✅ 已配置 | VSCode fork，IDE 内 MCP 调用，无编辑器内对话 |
+
+> **全功能模式** = 编辑器内 AI 对话面板 + MCP 工具调用（需要 Gateway）。
+> **MCP-only 模式** = 仅 MCP 工具调用，对话在平台自身 UI 中进行（通过 `artclaw_stdio_bridge.py` 桥接）。
 
 ---
 
-## 🛠️ 官方 Skills（27个）
+## 🛠️ 官方 Skills（47个）
 
-### 通用 Skills（3个）
+### 通用 Skills（5个）
 - **artclaw-knowledge** — 项目知识库查询
 - **artclaw-memory** — 记忆管理操作
 - **artclaw-skill-manage** — Skill 管理操作
+- **artclaw-tool-creator** — AI 引导创建工具
+- **artclaw-tool-executor** — 工具执行分发器
 
 ### Unreal Engine Skills（6个）
 - **ue57-artclaw-context** — 编辑器上下文查询
@@ -145,8 +152,9 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
 ### Maya Skills（1个）
 - **maya-operation-rules** — Maya 操作规范
 
-### Blender Skills（3个）
+### Blender Skills（4个）
 - **blender-context** — 编辑器上下文查询
+- **blender-material-ops** — 材质与节点操作
 - **blender-operation-rules** — Blender 操作规范
 - **blender-viewport-capture** — 视口截图
 
@@ -165,11 +173,31 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
 - **sp-operation-rules** — SP 操作规范
 - **sp-bake-export** — 烘焙与导出
 
-### Substance Designer Skills（4个）
+### Substance Designer Skills（9个）
 - **sd-context** — 编辑器上下文查询
-- **sd-material-recipes** — 材质配方操作
+- **sd-learned-recipes** — 材质配方库
 - **sd-node-ops** — 节点操作
+- **sd-node-catalog** — 节点选型目录
+- **sd-node-capture** — 节点截图与分析
 - **sd-operation-rules** — SD 操作规范
+- **sd-generators** — 生成器节点参考
+- **sd-fxmap** — FX-Map 创建指南
+- **sd-pixel-processor** — Pixel Processor 指南
+
+### ComfyUI Skills（13个）
+- **comfyui-operation-rules** — ComfyUI 操作规范
+- **comfyui-context** — 系统信息、模型、队列状态
+- **comfyui-workflow-builder** — Workflow JSON 构建指南
+- **comfyui-txt2img** — 文生图工作流
+- **comfyui-img2img** — 图生图工作流
+- **comfyui-inpainting** — 局部重绘工作流
+- **comfyui-controlnet** — ControlNet 工作流
+- **comfyui-hires-fix** — 高清修复工作流
+- **comfyui-model-manager** — 模型管理
+- **comfyui-node-installer** — 缺失节点检测与安装
+- **comfyui-workflow-repair** — Workflow 诊断与修复
+- **comfyui-workflow-manager** — Workflow 模板库
+- **comfyui-workflow-validator** — Workflow 验证
 
 ---
 
@@ -178,7 +206,7 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                         AI Agent (LLM)                        │
-│                    OpenClaw / LobsterAI                       │
+│          OpenClaw / LobsterAI / Claude Code / Cursor          │
 └──────────────────────────┬───────────────────────────────────┘
                            │ WebSocket（上游：Chat RPC / 下游：MCP Tool Calls）
 ┌──────────────────────────▼───────────────────────────────────┐
@@ -264,8 +292,9 @@ ArtClaw Bridge 为 Unreal Engine、Maya、3ds Max、Blender、Houdini、Substanc
 
 - **Python** 3.9+
 - **Agent 平台**（任选其一）：
-  - [OpenClaw](https://github.com/openclaw/openclaw)（`npm install -g openclaw`）
-  - [LobsterAI](https://lobsterai.com/)（网易有道）
+  - [OpenClaw](https://github.com/openclaw/openclaw)（`npm install -g openclaw`）— 全功能模式
+  - [LobsterAI](https://lobsterai.com/)（网易有道）— 全功能模式
+  - [Claude Code](https://claude.ai/code) / [Cursor](https://cursor.com/) / [WorkBuddy](https://codebuddy.ai/) — MCP-only 模式
 - 目标 DCC 软件（按需选择）：
   - UE 5.7（推荐，理论上兼容 5.3+）
   - Maya 2023（推荐，理论上兼容 2022+）

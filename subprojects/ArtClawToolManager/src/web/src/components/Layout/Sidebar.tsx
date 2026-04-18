@@ -141,15 +141,25 @@ export default function Sidebar() {
             <label className="block text-[11px] text-gray-500 mb-1 px-1">
               {language === 'zh' ? 'Agent 平台' : 'Platform'}
             </label>
-            <select
-              value={currentPlatform}
-              onChange={(e) => setCurrentPlatform(e.target.value)}
-              className={selectClass}
-            >
+            <div className="space-y-0.5">
               {agentPlatforms.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+                <button
+                  key={p.id}
+                  onClick={() => setCurrentPlatform(p.id)}
+                  className={cn(
+                    'w-full flex items-center justify-between px-2 py-1.5 rounded text-xs transition-colors',
+                    currentPlatform === p.id
+                      ? 'bg-blue-500/20 text-blue-400'
+                      : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+                  )}
+                >
+                  <span className="truncate">{p.name}</span>
+                  <span className={cn('text-[10px]', p.configured ? 'text-green-400' : 'text-gray-600')}>
+                    {p.configured ? '●' : '○'}
+                  </span>
+                </button>
               ))}
-            </select>
+            </div>
           </div>
 
           {/* Agent */}

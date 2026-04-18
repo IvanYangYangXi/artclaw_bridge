@@ -60,12 +60,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   ],
   currentDCC: 'comfyui',
 
-  agentPlatforms: [
-    { id: 'openclaw', name: 'OpenClaw' },
-    { id: 'lobsterai', name: 'LobsterAI' },
-    { id: 'claude', name: 'Claude' },
-  ],
-  currentPlatform: 'openclaw',
+  agentPlatforms: [],
+  currentPlatform: '',
 
   agents: [],
   currentAgent: '',
@@ -121,18 +117,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (json.success && json.data?.platforms) {
         const platforms: AgentPlatformOption[] = []
         const allAgents: AgentOption[] = []
-        for (const p of json.data.platforms as Array<{ id: string; name: string; agents: Array<{ id: string; name: string }> }>) {
-          platforms.push({ id: p.id, name: p.name })
+        for (const p of json.data.platforms as Array<{ id: string; name: string; configured?: boolean; agents: Array<{ id: string; name: string }> }>) {
+          platforms.push({ id: p.id, name: p.name, configured: p.configured ?? true })
           for (const a of p.agents) {
             allAgents.push({ id: a.id, name: a.name, platform: p.id })
           }
         }
         // Select first agent of current platform
-        const currentPlatform = get().currentPlatform
+        const currentPlatform = get().currentPlatform || (platforms.length > 0 ? platforms[0].id : '')
         const firstAgent = allAgents.find((a) => a.platform === currentPlatform)
         set({
           agentPlatforms: platforms,
           agents: allAgents,
+          currentPlatform: currentPlatform,
           currentAgent: firstAgent?.id ?? '',
         })
       }

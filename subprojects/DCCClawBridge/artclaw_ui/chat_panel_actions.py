@@ -338,15 +338,16 @@ class ChatPanelActionsMixin:
             self._msg_list.add_message("system", "Language changed to English")
 
     def _on_platform_changed(self, platform_type: str):
-        """平台切换 → 断开并重连到新平台 Gateway。"""
+        """平台切换 → 断开并重连到新平台 Gateway（MCP-only 平台跳过连接）。"""
         if not self._bridge:
             return
 
         # 显示切换中状态
         try:
-            from bridge_config import get_available_platforms
+            from bridge_config import get_available_platforms, get_gateway_url
+            platforms = get_available_platforms()
             name_map = {p["type"]: p.get("display_name", p["type"])
-                        for p in get_available_platforms()}
+                        for p in platforms}
             display_name = name_map.get(platform_type, platform_type)
         except Exception:
             display_name = platform_type
@@ -354,39 +355,26 @@ class ChatPanelActionsMixin:
         self._msg_list.add_message("system",
             f"正在切换到 {display_name}...")
 
-        # 断开并重连 + 重置
+        # 检查新平台是否有 Gateway（MCP-only 平台没有 gateway_url）
+        try:
+            gateway_url = get_gateway_url()
+        except Exception:
+            gateway_url = ""
+
+        # 断开旧连接
         self._bridge.disconnect()
         self._bridge._context_injected = False
-        connected = self._bridge.connect()
 
-        if connected:
-            # 从新平台查询 agent 列表并切换到第一个可用 agent
-            try:
-                agents = self._bridge.list_agents()
-                if agents:
-                    first_agent = agents[0]
-                    agent_id = first_agent.get("id", "")
-                    if agent_id:
-                        self._bridge.set_agent(agent_id)
-                        self._status_bar.set_agent_label(
-                            first_agent.get("emoji", ""),
-                            first_agent.get("name", agent_id))
-                        logger.info(f"Platform switch: agent set to {agent_id}")
-            except Exception as e:
-                logger.warning(f"Failed to query agents after platform switch: {e}")
-
-            # 重置 session（新平台 = 全新开始，清空旧会话列表）
-            self._bridge.reset_session()
-            self._session_mgr.entries.clear()
-            self._session_mgr.agent_session_cache.clear()
-            self._session_mgr.init_first_session()
-            self._status_bar.set_session_label(self._session_mgr.get_active_label())
-
-            self._msg_list.clear()
+        if not gateway_url:
+            # MCP-only 平台（Cursor/Claude Code/WorkBuddy 等）
+            # 不尝试 WebSocket 连接，只更新配置
             self._msg_list.add_message("system",
-                f"已切换到 {display_name}")
+                f"已切换到 {display_name}\n"
+                f"该平台通过自身 UI 进行对话，DCC 插件仅记录平台配置。\n"
+                f"Skill/配置路径已更新。")
+            self._status_bar.update_connection(False)
 
-            # 刷新 Skill 安装目录（不同平台 Skills 路径不同）
+            # 仍然刷新 Skill 目录
             try:
                 from core.skill_runtime import get_skill_runtime
                 rt = get_skill_runtime()
@@ -396,8 +384,48 @@ class ChatPanelActionsMixin:
             except Exception as e:
                 logger.warning(f"Failed to reload skills after platform switch: {e}")
         else:
-            self._msg_list.add_message("system",
-                f"切换到 {display_name} 失败：Gateway 未响应")
+            # Gateway 平台 → 正常重连
+            connected = self._bridge.connect()
+
+            if connected:
+                # 从新平台查询 agent 列表并切换到第一个可用 agent
+                try:
+                    agents = self._bridge.list_agents()
+                    if agents:
+                        first_agent = agents[0]
+                        agent_id = first_agent.get("id", "")
+                        if agent_id:
+                            self._bridge.set_agent(agent_id)
+                            self._status_bar.set_agent_label(
+                                first_agent.get("emoji", ""),
+                                first_agent.get("name", agent_id))
+                            logger.info(f"Platform switch: agent set to {agent_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to query agents after platform switch: {e}")
+
+                # 重置 session（新平台 = 全新开始，清空旧会话列表）
+                self._bridge.reset_session()
+                self._session_mgr.entries.clear()
+                self._session_mgr.agent_session_cache.clear()
+                self._session_mgr.init_first_session()
+                self._status_bar.set_session_label(self._session_mgr.get_active_label())
+
+                self._msg_list.clear()
+                self._msg_list.add_message("system",
+                    f"已切换到 {display_name}")
+
+                # 刷新 Skill 安装目录（不同平台 Skills 路径不同）
+                try:
+                    from core.skill_runtime import get_skill_runtime
+                    rt = get_skill_runtime()
+                    if rt:
+                        count = rt.reload_skills_dir()
+                        logger.info(f"Skills reloaded after platform switch: {count}")
+                except Exception as e:
+                    logger.warning(f"Failed to reload skills after platform switch: {e}")
+            else:
+                self._msg_list.add_message("system",
+                    f"切换到 {display_name} 失败：Gateway 未响应")
 
         # 更新状态栏
         self._status_bar.update_connection(connected)

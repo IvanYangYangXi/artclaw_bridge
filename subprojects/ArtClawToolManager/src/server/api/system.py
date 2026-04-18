@@ -134,38 +134,92 @@ def _read_json(path: str) -> dict:
         return {}
 
 
+def _check_platform_configured(platform_type: str) -> bool:
+    """Check if a platform's config file or tool exists (no network probes)."""
+    import shutil
+
+    if platform_type == "openclaw":
+        return os.path.exists(os.path.expanduser("~/.openclaw/openclaw.json"))
+    elif platform_type == "lobster":
+        appdata = os.environ.get("APPDATA", os.path.expanduser("~/AppData/Roaming"))
+        return os.path.exists(os.path.join(appdata, "LobsterAI", "openclaw", "state", "openclaw.json"))
+    elif platform_type == "claudecode":
+        return (
+            shutil.which("claude") is not None
+            or os.path.exists(os.path.expanduser("~/.claude.json"))
+            or os.path.isdir(os.path.expanduser("~/.claude"))
+        )
+    elif platform_type == "cursor":
+        return (
+            os.path.exists(os.path.expanduser("~/.cursor/mcp.json"))
+            or os.path.isdir(os.path.expanduser("~/.cursor"))
+        )
+    elif platform_type == "workbuddy":
+        return os.path.exists(os.path.expanduser("~/.workbuddy/config.json"))
+    return False
+
+
 @router.get("/agents")
 async def get_agents():
-    """Return agent lists per platform by reading real config files."""
+    """Return agent lists per platform by reading ~/.artclaw/config.json registry."""
+    # Read platform registry from artclaw config
+    artclaw_cfg = _read_json("~/.artclaw/config.json")
+    registry = artclaw_cfg.get("platforms_registry", [])
+
+    # Fallback: if registry is empty, use hardcoded defaults
+    if not registry:
+        registry = [
+            {"type": "openclaw", "display_name": "OpenClaw", "gateway_url": "ws://127.0.0.1:18789"},
+            {"type": "lobster", "display_name": "LobsterAI", "gateway_url": "ws://127.0.0.1:18790"},
+        ]
+
     platforms = []
-
-    # OpenClaw agents
-    oc_cfg = _read_json("~/.openclaw/openclaw.json")
-    oc_agents_raw = oc_cfg.get("agents", {}).get("list", [])
-    oc_agents = []
-    for a in oc_agents_raw:
-        aid = a.get("id", "")
-        if aid:
-            oc_agents.append({"id": aid, "name": a.get("name", aid)})
-    if not oc_agents:
-        oc_agents = [{"id": "default", "name": "Default Agent"}]
-    platforms.append({"id": "openclaw", "name": "OpenClaw", "agents": oc_agents})
-
-    # LobsterAI agents
-    appdata = os.environ.get("APPDATA", os.path.expanduser("~/AppData/Roaming"))
-    lobster_path = os.path.join(appdata, "LobsterAI", "openclaw", "state", "openclaw.json")
-    lb_cfg = _read_json(lobster_path)
-    lb_agents_raw = lb_cfg.get("agents", {}).get("list", [])
-    lb_agents = []
-    for a in lb_agents_raw:
-        aid = a.get("id", "")
-        if aid:
-            lb_agents.append({"id": aid, "name": a.get("name", aid)})
-    if not lb_agents:
-        lb_agents = [{"id": "default", "name": "Default Agent"}]
-    platforms.append({"id": "lobsterai", "name": "LobsterAI", "agents": lb_agents})
-
-    # Claude agents (static)
-    platforms.append({"id": "claude", "name": "Claude", "agents": [{"id": "claude", "name": "Claude"}]})
+    for plat in registry:
+        p_type = plat.get("type", "")
+        p_name = plat.get("display_name", p_type.title())
+        agents = _get_agents_for_platform(p_type)
+        configured = _check_platform_configured(p_type)
+        platforms.append({"id": p_type, "name": p_name, "agents": agents, "configured": configured})
 
     return ok({"platforms": platforms})
+
+
+def _get_agents_for_platform(platform_type: str) -> list:
+    """Get agent list for a given platform type."""
+    # Platform-specific config file paths
+    _CONFIG_PATHS = {
+        "openclaw": "~/.openclaw/openclaw.json",
+        "lobster": None,  # resolved dynamically
+        "workbuddy": "~/.workbuddy/config.json",
+    }
+
+    # MCP-only platforms (no agent management, return static entry)
+    _MCP_ONLY = {"claudecode", "cursor"}
+
+    if platform_type in _MCP_ONLY:
+        display_names = {"claudecode": "Claude Code", "cursor": "Cursor"}
+        name = display_names.get(platform_type, platform_type.title())
+        return [{"id": platform_type, "name": name}]
+
+    # LobsterAI special path
+    if platform_type == "lobster":
+        appdata = os.environ.get("APPDATA", os.path.expanduser("~/AppData/Roaming"))
+        config_path = os.path.join(appdata, "LobsterAI", "openclaw", "state", "openclaw.json")
+    else:
+        config_path = _CONFIG_PATHS.get(platform_type, "")
+
+    if not config_path:
+        return [{"id": "default", "name": "Default Agent"}]
+
+    cfg = _read_json(config_path)
+    agents_raw = cfg.get("agents", {}).get("list", [])
+    agents = []
+    for a in agents_raw:
+        aid = a.get("id", "")
+        if aid:
+            agents.append({"id": aid, "name": a.get("name", aid)})
+
+    if not agents:
+        agents = [{"id": "default", "name": "Default Agent"}]
+
+    return agents

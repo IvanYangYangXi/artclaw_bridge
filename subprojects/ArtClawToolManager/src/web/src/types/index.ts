@@ -31,6 +31,7 @@ export interface DCCOption {
 export interface AgentPlatformOption {
   id: string
   name: string
+  configured?: boolean
 }
 
 export interface AgentOption {

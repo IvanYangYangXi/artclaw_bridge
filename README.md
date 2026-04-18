@@ -74,9 +74,9 @@ Layered Skill hot-reloading system, shared across DCCs:
 
 ### 🌐 Multi-Agent Platform Support
 Configuration-driven platform abstraction layer — new platforms automatically appear in UI when registered in config:
-- **OpenClaw** — Primary platform, integrated via mcp-bridge plugin
-- **LobsterAI (Youdao)** — OpenClaw repackaged, Gateway port 18790
-- **Claude Desktop** — stdio→WebSocket bridge POC
+- **OpenClaw** — Primary platform, integrated via mcp-bridge plugin (Full mode: in-editor chat + MCP)
+- **LobsterAI (Youdao)** — OpenClaw repackaged, Gateway port 18790 (Full mode)
+- **Claude Code / Cursor / WorkBuddy** — MCP-only mode via stdio bridge, use DCC tools from IDE/terminal
 - **Hot-Swap in Editor** — One-click platform switch in Settings panel, auto disconnect/reconnect/refresh Agent list
 
 ### 🔄 Multi-Session & Agent Management
@@ -103,7 +103,7 @@ Index API docs and project docs, semantic retrieval assists AI decision-making.
 
 ## 🎯 Supported Engines, DCCs & Agent Platforms
 
-Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 + 3ds Max 2023 + Blender 5.1 + Substance Painter 11.0.1 + Substance Designer 12.1.0 + ComfyUI**. Other combinations are theoretically compatible but not tested — community feedback welcome.
+Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 + 3ds Max 2023 + Blender 5.1 + Substance Painter 11.0.1 + Substance Designer 12.1.0 + ComfyUI**. MCP-only platforms (Claude Code, Cursor, WorkBuddy) are configured and deployable. Other combinations are theoretically compatible but not tested — community feedback welcome.
 
 ### Engines & DCC Software
 
@@ -121,11 +121,16 @@ Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 +
 
 ### Agent Platforms
 
-| Platform | Status | Notes |
-|----------|--------|-------|
-| **OpenClaw** | ✅ Verified | Primary dev platform, integrated via mcp-bridge plugin, all features verified here |
-| **LobsterAI (Youdao)** | ✅ Verified | OpenClaw repackaged, Gateway port 18790, basic features verified |
-| **Claude Desktop** | ⚠️ POC | stdio→WebSocket bridge proof of concept, not deeply integrated |
+| Platform | Mode | Status | Notes |
+|----------|------|--------|-------|
+| **OpenClaw** | Full (Gateway) | ✅ Verified | Primary dev platform, in-editor chat + MCP tools, all features |
+| **LobsterAI (Youdao)** | Full (Gateway) | ✅ Verified | OpenClaw repackaged, Gateway port 18790, in-editor chat + MCP tools |
+| **Claude Code** | MCP-only (stdio) | ✅ Configured | CLI tool, MCP tools in terminal, no in-editor chat |
+| **Cursor** | MCP-only (stdio) | ✅ Configured | VSCode fork, MCP tools in IDE, no in-editor chat |
+| **WorkBuddy (Tencent)** | MCP-only (stdio) | ✅ Configured | VSCode fork, MCP tools in IDE, no in-editor chat |
+
+> **Full mode** = in-editor AI chat panel + MCP tool calls (requires Gateway).
+> **MCP-only mode** = MCP tool calls only, chat happens in the platform's own UI (via `artclaw_stdio_bridge.py`).
 
 ---
 
@@ -203,7 +208,7 @@ Currently verified with **OpenClaw + LobsterAI + Unreal Engine 5.7 + Maya 2023 +
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                        AI Agent (LLM)                        │
-│                   OpenClaw / LobsterAI                       │
+│          OpenClaw / LobsterAI / Claude Code / Cursor         │
 └──────────────────────────┬───────────────────────────────────┘
                            │ WebSocket (Upstream: Chat RPC / Downstream: MCP Tool Calls)
 ┌──────────────────────────▼───────────────────────────────────┐
@@ -289,8 +294,9 @@ This architecture enables powerful automation scenarios:
 
 - **Python** 3.9+
 - **Agent Platform** (choose one):
-  - [OpenClaw](https://github.com/openclaw/openclaw) (`npm install -g openclaw`)
-  - [LobsterAI](https://lobsterai.com/) (Youdao)
+  - [OpenClaw](https://github.com/openclaw/openclaw) (`npm install -g openclaw`) — Full mode
+  - [LobsterAI](https://lobsterai.com/) (Youdao) — Full mode
+  - [Claude Code](https://claude.ai/code) / [Cursor](https://cursor.com/) / [WorkBuddy](https://codebuddy.ai/) — MCP-only mode
 - Target DCC software (choose as needed):
   - UE 5.7 (recommended, theoretically compatible with 5.3+)
   - Maya 2023 (recommended, theoretically compatible with 2022+)

@@ -741,6 +741,7 @@ void SUEAgentDashboard::LoadAvailablePlatforms()
 					Entry.Type = (*PlatObj)->GetStringField(TEXT("type"));
 					Entry.DisplayName = (*PlatObj)->GetStringField(TEXT("display_name"));
 					Entry.GatewayUrl = (*PlatObj)->GetStringField(TEXT("gateway_url"));
+					(*PlatObj)->TryGetBoolField(TEXT("configured"), Entry.bConfigured);
 					AvailablePlatforms.Add(MoveTemp(Entry));
 				}
 			}
@@ -921,7 +922,10 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 	{
 		const bool bIsCurrent = (Plat.Type == CurrentPlatformType);
 		FString CapturedType = Plat.Type;
-		FString BtnText = Plat.DisplayName;
+
+		// 状态指示: ● (已配置/绿色) 或 ○ (未配置/灰色)
+		FString StatusDot = Plat.bConfigured ? TEXT("\u25CF ") : TEXT("\u25CB ");
+		FString BtnText = StatusDot + Plat.DisplayName;
 
 		FLinearColor BtnColor = bIsCurrent
 			? FLinearColor(0.2f, 0.45f, 0.7f)   // 蓝色高亮

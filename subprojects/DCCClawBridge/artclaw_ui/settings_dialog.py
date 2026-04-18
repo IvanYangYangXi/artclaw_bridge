@@ -13,7 +13,7 @@ try:
     from artclaw_ui.qt_compat import (
         QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
         QCheckBox, QFrame, QScrollArea, QWidget, QButtonGroup,
-        QSizePolicy, QSpacerItem
+        QSizePolicy, QSpacerItem, QListWidget, QListWidgetItem,
     )
     from artclaw_ui.qt_compat import Signal, Qt
     from artclaw_ui.qt_compat import QFont
@@ -72,7 +72,7 @@ class SettingsDialog(QDialog):
         self._silent_high = False
         self._ctx_buttons: List[QPushButton] = []
         self._agent_buttons: List[QPushButton] = []
-        self._platform_buttons: List[QPushButton] = []
+        self._platform_list: Optional[QListWidget] = None
         self._current_agent_id: Optional[str] = None
 
         self.setWindowTitle("设置")
@@ -109,11 +109,21 @@ class SettingsDialog(QDialog):
 
         # Platform switch
         layout.addWidget(_section_label("AI 平台 / Platform"))
-        platform_row = QHBoxLayout()
-        platform_row.setSpacing(6)
-        self._platform_row = platform_row
-        platform_row.addStretch()
-        layout.addLayout(platform_row)
+        self._platform_list = QListWidget()
+        self._platform_list.setFixedHeight(180)
+        self._platform_list.setStyleSheet(
+            "QListWidget {"
+            "  background: #1e1e2e;"
+            f"  border: 1px solid {COLORS.get('border', '#3a3a3a')};"
+            "  border-radius: 4px;"
+            "  outline: none;"
+            "}"
+            "QListWidget::item {"
+            "  border: none;"
+            "}"
+        )
+        self._platform_list.currentRowChanged.connect(self._on_platform_row_changed)
+        layout.addWidget(self._platform_list)
         layout.addWidget(_separator())
 
         # Language
@@ -405,10 +415,9 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------ #
 
     def _refresh_platforms(self):
-        """Load available platforms from config and build toggle buttons."""
-        for btn in self._platform_buttons:
-            btn.deleteLater()
-        self._platform_buttons.clear()
+        """Load available platforms and populate QListWidget with status indicators."""
+        self._platform_list.blockSignals(True)
+        self._platform_list.clear()
 
         try:
             import sys, os
@@ -424,29 +433,64 @@ class SettingsDialog(QDialog):
             platforms = []
             current = "openclaw"
 
-        for plat in platforms:
+        current_row = 0
+        for idx, plat in enumerate(platforms):
             p_type = plat.get("type", "")
             p_name = plat.get("display_name", p_type)
+            configured = plat.get("configured", False)
             is_current = p_type == current
-            btn = QPushButton(p_name)
-            btn.setFixedHeight(28)
-            btn.setCheckable(True)
-            btn.setChecked(is_current)
-            btn.setProperty("platform_type", p_type)
             if is_current:
-                btn.setStyleSheet(
-                    f"background-color: {COLORS.get('accent_blue', '#1e90ff')}; color: white;"
-                )
-            btn.clicked.connect(self._on_platform_clicked)
-            # Insert before the stretch
-            self._platform_row.insertWidget(self._platform_row.count() - 1, btn)
-            self._platform_buttons.append(btn)
+                current_row = idx
 
-    def _on_platform_clicked(self):
-        btn = self.sender()
-        if not btn:
+            # Create custom widget for this item
+            item_widget = QWidget()
+            item_layout = QHBoxLayout(item_widget)
+            item_layout.setContentsMargins(8, 4, 8, 4)
+            item_layout.setSpacing(8)
+
+            # Current indicator dot
+            dot_label = QLabel("●")
+            dot_color = COLORS.get('accent_blue', '#1e90ff') if is_current else COLORS.get('text_muted', '#555')
+            dot_label.setStyleSheet(f"color: {dot_color}; font-size: 10px;")
+            dot_label.setFixedWidth(14)
+            item_layout.addWidget(dot_label)
+
+            # Platform name
+            name_label = QLabel(p_name)
+            name_label.setStyleSheet(f"color: {COLORS.get('text_primary', '#e0e0e0')}; font-size: 12px;")
+            item_layout.addWidget(name_label)
+
+            item_layout.addStretch()
+
+            # Status text
+            if configured:
+                status_label = QLabel("已配置")
+                status_label.setStyleSheet(f"color: {COLORS.get('status_connected', '#33CC33')}; font-size: 10px;")
+            else:
+                status_label = QLabel("未配置")
+                status_label.setStyleSheet(f"color: {COLORS.get('status_disconnected', '#999')}; font-size: 10px;")
+            item_layout.addWidget(status_label)
+
+            item = QListWidgetItem()
+            item.setData(Qt.UserRole, p_type)
+            from artclaw_ui.qt_compat import QSize as _QSize
+            item.setSizeHint(_QSize(0, 36))
+            self._platform_list.addItem(item)
+            self._platform_list.setItemWidget(item, item_widget)
+
+        if platforms:
+            self._platform_list.setCurrentRow(current_row)
+
+        self._platform_list.blockSignals(False)
+
+    def _on_platform_row_changed(self, row: int):
+        """Handle platform list selection change."""
+        if row < 0:
             return
-        platform_type = btn.property("platform_type")
+        item = self._platform_list.item(row)
+        if not item:
+            return
+        platform_type = item.data(Qt.UserRole)
 
         try:
             from bridge_config import get_platform_type
@@ -465,14 +509,7 @@ class SettingsDialog(QDialog):
             logger.warning("Platform switch error: %s", exc)
             return
 
-        # Update button styles
-        for b in self._platform_buttons:
-            is_active = b.property("platform_type") == platform_type
-            b.setChecked(is_active)
-            b.setStyleSheet(
-                f"background-color: {COLORS.get('accent_blue', '#1e90ff')}; color: white;"
-                if is_active else ""
-            )
-
         self.platform_changed.emit(platform_type)
         logger.info("Platform switched to: %s", platform_type)
+        # Refresh to update visual indicators
+        self._refresh_platforms()

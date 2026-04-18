@@ -93,7 +93,7 @@ def get_platform_type() -> str:
     """获取当前平台类型（openclaw/claude/lobster 等）"""
 
 def get_available_platforms() -> list[dict]:
-    """获取已注册平台列表（供 UI ComboBox 使用）"""
+    """获取所有 visible=True 的已注册平台列表（供 UI ComboBox 使用）"""
 
 def switch_platform(platform_type: str) -> bool:
     """热切换平台"""
@@ -106,11 +106,14 @@ def get_skill_checker_dirs() -> dict:
 
 ### 配置 Schema（C2 待标准化）
 
+> `_PLATFORM_DEFAULTS` 每条记录包含 `display_name`（UI 显示名）和 `visible`（是否在平台选择列表中可见）字段。
+> `get_available_platforms()` 回退逻辑基于 `visible` 字段过滤（而非 `gateway_url` 是否非空）。
+
 ```json
 {
   "$schema": "artclaw-config.schema.json",
   "platform": {
-    "type": "string (enum: openclaw|claude|lobster|workbuddy)",
+    "type": "string (enum: openclaw|claude|lobster|claudecode|cursor|workbuddy)",
     "gateway_url": "string (ws:// URL)",
     "token": "string"
   },
