@@ -1,0 +1,17 @@
+{
+  "name": "com.artclaw.unity-claw-bridge",
+  "version": "0.2.0",
+  "displayName": "ArtClaw Bridge for Unity",
+  "description": "将 Unity Editor 接入 ArtClaw AI Agent 系统，通过 MCP 协议获得 AI 操作能力",
+  "unity": "2022.3",
+  "unityRelease": "0f1",
+  "author": {
+    "name": "ArtClaw Team"
+  },
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1",
+    "com.microsoft.codeanalysis.csharp.scripting": "4.11.0"
+  },
+  "keywords": ["ai", "artclaw", "mcp", "agent"],
+  "category": "Editor"
+}
