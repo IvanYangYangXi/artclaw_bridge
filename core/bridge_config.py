@@ -257,7 +257,7 @@ def get_skill_checker_dirs() -> dict:
     ue_py = pr / "subprojects" / "UEDAgentProj" / "Plugins" / "UEClawBridge" / "Content" / "Python"
 
     # ── Core module copies ──────────────────────────────────────────────
-    CORE_MODULES = ["skill_sync.py", "bridge_core.py", "bridge_config.py", "memory_core.py"]
+    CORE_MODULES = ["skill_sync.py", "bridge_core.py", "bridge_config.py", "memory_core.py", "tool_manager_launcher.py"]
     for mod in CORE_MODULES:
         src = pr / "core" / mod
         result["core_module_copies"].append({

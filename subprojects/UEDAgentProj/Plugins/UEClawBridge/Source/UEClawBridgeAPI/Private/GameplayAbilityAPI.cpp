@@ -76,7 +76,11 @@ namespace
 		}
 		else if (ModOpString == TEXT("Multiply") || ModOpString == TEXT("Multiplicative"))
 		{
+		#if ENGINE_MINOR_VERSION >= 5
 			return EGameplayModOp::MultiplyAdditive;
+		#else
+			return EGameplayModOp::Multiplicitive;
+		#endif
 		}
 		else if (ModOpString == TEXT("Divide") || ModOpString == TEXT("Division"))
 		{
@@ -94,7 +98,11 @@ namespace
 		switch (ModOp)
 		{
 		case EGameplayModOp::Additive: return TEXT("Add");
+	#if ENGINE_MINOR_VERSION >= 5
 		case EGameplayModOp::MultiplyAdditive: return TEXT("Multiply");
+	#else
+		case EGameplayModOp::Multiplicitive: return TEXT("Multiply");
+	#endif
 		case EGameplayModOp::Division: return TEXT("Divide");
 		case EGameplayModOp::Override: return TEXT("Override");
 		default: return TEXT("Unknown");

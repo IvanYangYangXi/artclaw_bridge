@@ -954,8 +954,8 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 
 FReply SUEAgentDashboard::OnOpenToolManagerClicked()
 {
-	// 1. 从 ~/.artclaw/config.json 读取 project_root
-	//    bridge_config.get_project_root() 在 UE Python 环境不存在，直接读 config
+	// 使用 core/tool_manager_launcher.py 统一启动逻辑
+	// 先将 core/ 加入 sys.path，然后调用 launch()
 	FString BridgeRoot;
 	{
 		FString RootJson = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
@@ -984,70 +984,45 @@ FReply SUEAgentDashboard::OnOpenToolManagerClicked()
 		return FReply::Handled();
 	}
 
-	const FString Url = TEXT("http://localhost:9876");
-
-	// 2. 检查端口 9876 是否已在监听
-	bool bAlreadyRunning = false;
+	FString EscapedRoot = BridgeRoot.Replace(TEXT("\\"), TEXT("\\\\"));
+	FString LaunchScript = FString::Printf(
+		TEXT(
+			"import sys, os, json\n"
+			"_core_dir = os.path.join('%s', 'core')\n"
+			"if _core_dir not in sys.path:\n"
+			"    sys.path.insert(0, _core_dir)\n"
+			"try:\n"
+			"    from tool_manager_launcher import launch\n"
+			"    _r = launch(open_browser=True)\n"
+			"    _result = {'ok': _r['ok'], 'already_running': _r.get('already_running', False), 'error': _r.get('error', '')}\n"
+			"except Exception as _e:\n"
+			"    _result = {'ok': False, 'already_running': False, 'error': str(_e)}\n"
+		),
+		*EscapedRoot
+	);
+	FString LaunchJson = FUEAgentManageUtils::RunPythonAndCapture(*LaunchScript);
+	TSharedPtr<FJsonObject> LaunchObj;
+	TSharedRef<TJsonReader<>> LaunchReader = TJsonReaderFactory<>::Create(LaunchJson);
+	if (FJsonSerializer::Deserialize(LaunchReader, LaunchObj) && LaunchObj.IsValid())
 	{
-		FString CheckJson = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
-			"import socket\n"
-			"_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
-			"_s.settimeout(0.5)\n"
-			"_running = _s.connect_ex(('127.0.0.1', 9876)) == 0\n"
-			"_s.close()\n"
-			"_result = {'running': _running}\n"
-		));
-		TSharedPtr<FJsonObject> CheckObj;
-		TSharedRef<TJsonReader<>> CheckReader = TJsonReaderFactory<>::Create(CheckJson);
-		if (FJsonSerializer::Deserialize(CheckReader, CheckObj) && CheckObj.IsValid())
+		bool bOk = false;
+		LaunchObj->TryGetBoolField(TEXT("ok"), bOk);
+		if (!bOk)
 		{
-			bAlreadyRunning = CheckObj->GetBoolField(TEXT("running"));
+			FString ErrMsg;
+			LaunchObj->TryGetStringField(TEXT("error"), ErrMsg);
+			AddMessage(TEXT("system"),
+				FString::Printf(TEXT("[Tool Manager] 启动失败: %s"), *ErrMsg));
+			return FReply::Handled();
+		}
+
+		bool bAlreadyRunning = false;
+		LaunchObj->TryGetBoolField(TEXT("already_running"), bAlreadyRunning);
+		if (!bAlreadyRunning)
+		{
+			AddMessage(TEXT("system"), TEXT("[Tool Manager] 正在启动服务，请稍候..."));
 		}
 	}
-
-	// 3. 未运行则后台启动
-	if (!bAlreadyRunning)
-	{
-		FString BatPath = BridgeRoot / TEXT("start-tool-manager.bat");
-		// 转义反斜杠用于 Python r-string（实际路径不含引号，直接拼即可）
-		FString EscapedBat = BatPath.Replace(TEXT("\\"), TEXT("\\\\"));
-		FString LaunchScript = FString::Printf(
-			TEXT(
-				"import subprocess, os\n"
-				"_bat = '%s'\n"
-				"if os.path.exists(_bat):\n"
-				"    subprocess.Popen(\n"
-				"        ['cmd', '/c', _bat],\n"
-				"        creationflags=0x08000008,\n"
-				"        cwd=os.path.dirname(_bat)\n"
-				"    )\n"
-				"    _result = {'ok': True}\n"
-				"else:\n"
-				"    _result = {'ok': False, 'error': 'bat not found: ' + _bat}\n"
-			),
-			*EscapedBat
-		);
-		FString LaunchJson = FUEAgentManageUtils::RunPythonAndCapture(*LaunchScript);
-		TSharedPtr<FJsonObject> LaunchObj;
-		TSharedRef<TJsonReader<>> LaunchReader = TJsonReaderFactory<>::Create(LaunchJson);
-		if (FJsonSerializer::Deserialize(LaunchReader, LaunchObj) && LaunchObj.IsValid())
-		{
-			bool bOk = false;
-			LaunchObj->TryGetBoolField(TEXT("ok"), bOk);
-			if (!bOk)
-			{
-				FString ErrMsg;
-				LaunchObj->TryGetStringField(TEXT("error"), ErrMsg);
-				AddMessage(TEXT("system"),
-					FString::Printf(TEXT("[Tool Manager] 启动失败: %s"), *ErrMsg));
-				return FReply::Handled();
-			}
-		}
-		AddMessage(TEXT("system"), TEXT("[Tool Manager] 正在启动服务，请稍候..."));
-	}
-
-	// 4. 打开浏览器
-	FPlatformProcess::LaunchURL(*Url, nullptr, nullptr);
 
 	return FReply::Handled();
 }
