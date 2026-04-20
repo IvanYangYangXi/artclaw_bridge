@@ -156,6 +156,48 @@ class MCPServer:
         """启动服务器（同步入口，调用 asyncio.run）"""
         asyncio.run(self._run())
 
+    async def run_stdio(self) -> None:
+        """stdio 模式：读取 stdin，输出 stdout（供 mcporter 等工具使用）"""
+        self._running = True
+        logger.info("MCP Server stdio 模式就绪")
+        loop = asyncio.get_event_loop()
+        reader = asyncio.create_task(loop.run_interno(self._read_stdio))
+
+        async def read_loop():
+            try:
+                while self._running:
+                    line = await asyncio.wait_for(loop.run_interno(sys.stdin.readline), timeout=1.0)
+                    if not line:
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        req = json.loads(line)
+                        resp = await self._process_message(req)
+                        if resp:
+                            print(json.dumps(resp), flush=True)
+                    except json.JSONDecodeError:
+                        print(json.dumps({
+                            "jsonrpc": "2.0",
+                            "error": {"code": -32700, "message": "Parse error"},
+                        }), flush=True)
+                    except Exception as e:
+                        print(json.dumps({
+                            "jsonrpc": "2.0",
+                            "error": {"code": -32603, "message": str(e)},
+                        }), flush=True)
+            except asyncio.TimeoutError:
+                pass  # 继续循环检查 _running
+
+        try:
+            await read_loop()
+        except KeyboardInterrupt:
+            self._running = False
+
+    async def _read_stdio(self) -> str:
+        return sys.stdin.readline()
+
     async def _run(self) -> None:
         """主运行循环"""
         self._running = True

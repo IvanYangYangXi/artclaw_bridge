@@ -8,10 +8,7 @@
   "author": {
     "name": "ArtClaw Team"
   },
-  "dependencies": {
-    "com.unity.nuget.newtonsoft-json": "3.2.1",
-    "com.microsoft.codeanalysis.csharp.scripting": "4.11.0"
-  },
+  "dependencies": {},
   "keywords": ["ai", "artclaw", "mcp", "agent"],
   "category": "Editor"
 }

@@ -1,40 +1,25 @@
 // CommandServer.cs
-// Unity C# 端 HTTP 命令服务器 - 接收 Python 端代码请求，在 EditorApplication.update 中执行
-// M1: 集成 Roslyn C# Scripting 执行引擎
-//
-// 改进（M1）:
-//   - Roslyn 执行引擎：支持完整 C# 代码执行
-//   - 持久命名空间：跨调用保持变量
-//   - 上下文注入：Selection/Scene/AssetDatabase 等快捷变量
-//   - Undo 支持：每次执行前 RecordObject
-//   - validate_script：语法预验证
+// Unity C# 端 HTTP 命令服务器 - 使用 TcpListener（避免 HttpListener/HTTP.sys 僵尸端口问题）
+// 接收 Python 端代码请求，在 EditorApplication.update 中执行 Roslyn 编译
+// 依赖: Editor/Assemblies/ 下的 Roslyn DLL
 
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net;
+using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.CodeAnalysis.CSharp.Scripting;
-using Microsoft.CodeAnalysis.Scripting;
-using Newtonsoft.Json;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using UnityEditor;
 using UnityEngine;
 
 namespace ArtClaw.Unity
 {
-    /// <summary>
-    /// Unity 主线程命令执行服务器（Roslyn 执行引擎）。
-    ///
-    /// 架构：
-    ///   Python MCP Server --HTTP POST /execute--> CommandServer
-    ///   CommandServer --EditorApplication.update--> Roslyn 执行
-    ///   Roslyn --→ Unity API
-    ///   Python MCP Server --HTTP GET /result/{id}--> CommandServer
-    ///
-    /// 端口：8089（默认，端口冲突时自动递增）
-    /// </summary>
     [InitializeOnLoad]
     public static class CommandServer
     {
@@ -43,200 +28,302 @@ namespace ArtClaw.Unity
         private const int MAX_LOG_ENTRIES = 100;
         private static int _httpPort = HTTP_PORT_DEFAULT;
         public static int ActivePort => _httpPort;
+        private static string _cachedProductName;
+        private static bool _cachedIsPlaying;
+        private static bool _cachedIsCompiling;
+        private static string _cachedUnityVersion;
 
-        // 待执行命令队列
-        private static readonly ConcurrentQueue<PendingCommand> _commandQueue =
-            new ConcurrentQueue<PendingCommand>();
+        private static readonly ConcurrentQueue<PendingCommand> _commandQueue = new ConcurrentQueue<PendingCommand>();
+        private static readonly ConcurrentDictionary<string, CommandResult> _results = new ConcurrentDictionary<string, CommandResult>();
 
-        // 已完成结果字典（id → 结果）
-        private static readonly ConcurrentDictionary<string, CommandResult> _results =
-            new ConcurrentDictionary<string, CommandResult>();
+        private static List<MetadataReference> _roslynRefs;
+        private static int _scriptCounter;
 
-        // ── Roslyn 执行引擎（M1 新增）──
-        private static ScriptOptions _scriptOptions;
-        private static object _scriptGlobals;
-        private static readonly object _globalsLock = new object();
-
-        // ── 执行日志（M1.3 Dashboard 用）──
         public static readonly RingBuffer<LogEntry> ExecutionLog = new RingBuffer<LogEntry>(MAX_LOG_ENTRIES);
 
-        // ── HTTP 服务器 ──
-        private static HttpListener _listener;
+        private static TcpListener _listener;
         private static Thread _listenerThread;
-
-        // ════════════════════════════════════════
-        // 初始化
-        // ════════════════════════════════════════
+        private static volatile bool _running;
 
         static CommandServer()
         {
+            _cachedProductName = Application.productName;
+            _cachedUnityVersion = Application.unityVersion;
             InitRoslynGlobals();
             Start();
             EditorApplication.update += OnEditorUpdate;
             AssemblyReloadEvents.beforeAssemblyReload += Stop;
+            EditorApplication.quitting += Stop;
         }
 
         private static void InitRoslynGlobals()
         {
-            _scriptGlobals = new ScriptGlobals();
-            _scriptOptions = ScriptOptions.Default
-                .WithReferences(typeof(UnityEngine.Object).Assembly,
-                               typeof(EditorUtility).Assembly,
-                               typeof(UnityEditor.SceneManagement.EditorSceneManager).Assembly,
-                               typeof(JsonConvert).Assembly)
-                .WithImports("UnityEngine", "UnityEditor",
-                            "UnityEngine.SceneManagement", "UnityEditor.SceneManagement",
-                            "System", "System.Collections", "System.Collections.Generic",
-                            "System.Linq", "System.Text");
+            _roslynRefs = new List<MetadataReference>();
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (asm.IsDynamic || string.IsNullOrEmpty(asm.Location)) continue;
+                try { _roslynRefs.Add(MetadataReference.CreateFromFile(asm.Location)); }
+                catch { }
+            }
         }
 
         // ════════════════════════════════════════
-        // 启动/停止
+        // 服务器生命周期
         // ════════════════════════════════════════
 
         public static void Start()
         {
-            if (_listener != null && _listener.IsListening) return;
+            if (_listener != null) return;
+
+            _httpPort = HTTP_PORT_DEFAULT;
+            KillPortOccupant(_httpPort);
 
             for (int attempt = 0; attempt < 10; attempt++)
             {
-                _httpPort = HTTP_PORT_DEFAULT + attempt;
-                _listener = new HttpListener();
-                _listener.Prefixes.Add($"http://127.0.0.1:{_httpPort}/");
+                if (attempt > 0)
+                    System.Threading.Thread.Sleep(1000);
+
                 try
                 {
+                    _listener = new TcpListener(IPAddress.Loopback, _httpPort);
+                    // 允许重用 TIME_WAIT 状态的端口，解决 Unity 重启后僵尸端口问题
+                    _listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
                     _listener.Start();
                     break;
                 }
-                catch (HttpListenerException)
+                catch (SocketException)
                 {
                     _listener = null;
-                    if (attempt == 9)
-                    {
-                        Debug.LogError($"[ArtClaw] CommandServer 无法找到可用端口（尝试了 {HTTP_PORT_DEFAULT}~{_httpPort}）");
-                        return;
-                    }
                 }
+            }
+
+            if (_listener == null)
+            {
+                Debug.LogError($"[ArtClaw] CommandServer 无法绑定端口 {_httpPort}（已重试 10 次）");
+                return;
             }
 
             _listenerThread = new Thread(ListenLoop) { IsBackground = true, Name = "ArtClaw.CommandServer" };
             _listenerThread.Start();
-            Debug.Log($"[ArtClaw] CommandServer 已启动 http://127.0.0.1:{_httpPort}/ (Roslyn v4.11.0)");
+            Debug.Log($"[ArtClaw] CommandServer 已启动 http://127.0.0.1:{_httpPort}/ (Roslyn, Unity {Application.unityVersion})");
         }
 
         public static void Stop()
         {
             EditorApplication.update -= OnEditorUpdate;
-            try { _listener?.Stop(); } catch { }
-            _listener = null;
+            _running = false;
+            if (_listener != null)
+            {
+                try { _listener.Stop(); } catch { }
+                _listener = null;
+            }
+            if (_listenerThread != null)
+            {
+                try { _listenerThread.Join(2000); } catch { }
+                _listenerThread = null;
+            }
+        }
+
+        private static void KillPortOccupant(int port)
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "netstat",
+                    Arguments = "-ano",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true,
+                };
+                var proc = System.Diagnostics.Process.Start(psi);
+                if (proc == null) return;
+                string output = proc.StandardOutput.ReadToEnd();
+                proc.WaitForExit(3000);
+
+                int myPid = System.Diagnostics.Process.GetCurrentProcess().Id;
+
+                foreach (var line in output.Split('\n'))
+                {
+                    if (!line.Contains("LISTENING")) continue;
+                    var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length < 5) continue;
+                    string addr = parts[1];
+                    int colon = addr.LastIndexOf(':');
+                    if (colon < 0) continue;
+                    if (!int.TryParse(addr.Substring(colon + 1), out int listenPort)) continue;
+                    if (listenPort != port) continue;
+                    if (!int.TryParse(parts[parts.Length - 1], out int pid)) continue;
+                    if (pid == myPid) continue;
+
+                    try
+                    {
+                        var occupant = System.Diagnostics.Process.GetProcessById(pid);
+                        if (occupant.HasExited) continue;
+                        Debug.Log($"[ArtClaw] 端口 {port} 被进程 {pid}({occupant.ProcessName}) 占用，正在终止...");
+                        occupant.Kill();
+                        occupant.WaitForExit(3000);
+                        Debug.Log($"[ArtClaw] 进程 {pid} 已终止");
+                    }
+                    catch (ArgumentException) { }
+                    catch (Exception) { }
+                }
+            }
+            catch { }
         }
 
         // ════════════════════════════════════════
-        // HTTP 监听
+        // TCP 监听循环
         // ════════════════════════════════════════
 
         private static void ListenLoop()
         {
-            while (_listener != null && _listener.IsListening)
+            _running = true;
+            while (_running)
             {
                 try
                 {
-                    var context = _listener.GetContext();
-                    ThreadPool.QueueUserWorkItem(_ => HandleRequest(context));
+                    var client = _listener.AcceptTcpClient();
+                    ThreadPool.QueueUserWorkItem(_ => HandleTcpClient(client));
                 }
-                catch (HttpListenerException) { break; }
-                catch (Exception e)
-                {
-                    Debug.LogWarning($"[ArtClaw] HTTP 监听异常: {e.Message}");
-                }
+                catch (SocketException) { break; }
+                catch (ObjectDisposedException) { break; }
+                catch { }
             }
         }
 
-        private static void HandleRequest(HttpListenerContext ctx)
-        {
-            var req = ctx.Request;
-            var resp = ctx.Response;
+        // ════════════════════════════════════════
+        // HTTP 请求处理（ThreadPool 线程 - 手动解析 HTTP）
+        // ════════════════════════════════════════
 
+        private static void HandleTcpClient(TcpClient client)
+        {
             try
             {
-                string path = req.Url.AbsolutePath.TrimEnd('/');
-                string method = req.HttpMethod.ToUpper();
+                using (client)
+                using (var stream = client.GetStream())
+                {
+                    stream.ReadTimeout = 10000;
+                    stream.WriteTimeout = 10000;
 
+                    // 读取 HTTP 请求
+                    var buf = new byte[8192];
+                    var ms = new MemoryStream();
+                    int contentLength = 0;
+                    bool headersDone = false;
+                    string method = "";
+                    string path = "";
+
+                    while (true)
+                    {
+                        int n = stream.Read(buf, 0, buf.Length);
+                        if (n == 0) return;
+                        ms.Write(buf, 0, n);
+
+                        if (!headersDone)
+                        {
+                            string partial = Encoding.UTF8.GetString(ms.ToArray(), 0, (int)ms.Length);
+                            int headerEnd = partial.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                            if (headerEnd >= 0)
+                            {
+                                headersDone = true;
+                                string headerSection = partial.Substring(0, headerEnd);
+                                var lines = headerSection.Split(new[] { "\r\n" }, StringSplitOptions.None);
+                                if (lines.Length > 0)
+                                {
+                                    var rp = lines[0].Split(' ');
+                                    if (rp.Length >= 2) { method = rp[0]; path = rp[1]; }
+                                }
+                                foreach (var hl in lines)
+                                {
+                                    if (hl.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+                                        int.TryParse(hl.Substring(15).Trim(), out contentLength);
+                                }
+                            }
+                        }
+
+                        if (headersDone)
+                        {
+                            string all = Encoding.UTF8.GetString(ms.ToArray(), 0, (int)ms.Length);
+                            int hdrEnd = all.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                            int bodyLen = (int)ms.Length - hdrEnd - 4;
+                            if (bodyLen >= contentLength) break;
+                        }
+                    }
+
+                    string raw = Encoding.UTF8.GetString(ms.ToArray(), 0, (int)ms.Length);
+                    int bodyStart = raw.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                    string body = bodyStart >= 0 ? raw.Substring(bodyStart + 4) : "";
+
+                    path = path.Split('?')[0].TrimEnd('/');
+                    string responseJson = Route(method, path, body);
+
+                    // 写 HTTP 响应
+                    byte[] bodyBytes = Encoding.UTF8.GetBytes(responseJson);
+                    var resp = new StringBuilder();
+                    resp.Append("HTTP/1.1 200 OK\r\n");
+                    resp.Append("Content-Type: application/json; charset=utf-8\r\n");
+                    resp.Append("Content-Length: ").Append(bodyBytes.Length).Append("\r\n");
+                    resp.Append("Connection: close\r\n");
+                    resp.Append("\r\n");
+                    byte[] headerBytes = Encoding.UTF8.GetBytes(resp.ToString());
+                    stream.Write(headerBytes, 0, headerBytes.Length);
+                    stream.Write(bodyBytes, 0, bodyBytes.Length);
+                }
+            }
+            catch { }
+        }
+
+        private static string Route(string method, string path, string body)
+        {
+            try
+            {
                 if (method == "POST" && path == "/execute")
-                {
-                    HandleExecute(req, resp);
-                }
-                else if (method == "POST" && path == "/batch_execute")
-                {
-                    HandleBatchExecute(req, resp);
-                }
-                else if (method == "GET" && path.StartsWith("/result/"))
-                {
-                    string id = path.Substring("/result/".Length);
-                    HandleResult(id, resp);
-                }
-                else if (method == "GET" && path == "/health")
-                {
-                    HandleHealth(resp);
-                }
-                else if (method == "GET" && path == "/logs")
-                {
-                    HandleLogs(resp);
-                }
-                else if (method == "POST" && path == "/validate")
-                {
-                    HandleValidate(req, resp);
-                }
-                else
-                {
-                    WriteJson(resp, 404, new { error = "Not Found" });
-                }
+                    return HandleExecute(body);
+                if (method == "POST" && path == "/batch_execute")
+                    return HandleBatchExecute(body);
+                if (method == "GET" && path.StartsWith("/result/"))
+                    return HandleResult(path.Substring("/result/".Length));
+                if (method == "GET" && path == "/health")
+                    return HandleHealth();
+                if (method == "GET" && path == "/logs")
+                    return HandleLogs();
+                if (method == "POST" && path == "/validate")
+                    return HandleValidate(body);
+                return JsonObj("error", "Not Found");
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[ArtClaw] 请求处理异常: {e.Message}");
-                try { WriteJson(resp, 500, new { error = e.Message }); } catch { }
-            }
-            finally
-            {
-                try { resp.Close(); } catch { }
+                return JsonObj("error", e.Message);
             }
         }
 
-        private static void HandleExecute(HttpListenerRequest req, HttpListenerResponse resp)
+        private static string HandleExecute(string body)
         {
-            string body = ReadBody(req);
-            var payload = JsonConvert.DeserializeObject<ExecutePayload>(body);
-
-            if (string.IsNullOrEmpty(payload?.id) || string.IsNullOrEmpty(payload?.code))
-            {
-                WriteJson(resp, 400, new { error = "缺少 id 或 code 字段" });
-                return;
-            }
-
-            var cmd = new PendingCommand { Id = payload.id, Code = payload.code };
-            _commandQueue.Enqueue(cmd);
-            WriteJson(resp, 200, new { queued = true, id = payload.id });
+            string id = ExtractJsonString(body, "id");
+            string code = ExtractJsonString(body, "code");
+            if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(code))
+                return JsonObj("error", "缺少 id 或 code 字段");
+            _commandQueue.Enqueue(new PendingCommand { Id = id, Code = code });
+            return "{\"queued\":true,\"id\":" + JsonStr(id) + "}";
         }
 
-        private static void HandleBatchExecute(HttpListenerRequest req, HttpListenerResponse resp)
+        private static string HandleBatchExecute(string body)
         {
-            string body = ReadBody(req);
-            var payloads = JsonConvert.DeserializeObject<List<ExecutePayload>>(body);
-
+            var payloads = ParseBatchPayload(body);
             if (payloads == null || payloads.Count == 0)
-            {
-                WriteJson(resp, 400, new { error = "批量请求为空" });
-                return;
-            }
+                return JsonObj("error", "批量请求为空");
 
+            var ids = new HashSet<string>();
             foreach (var p in payloads)
             {
-                if (!string.IsNullOrEmpty(p?.id) && !string.IsNullOrEmpty(p?.code))
-                    _commandQueue.Enqueue(new PendingCommand { Id = p.id, Code = p.code });
+                if (!string.IsNullOrEmpty(p.Id) && !string.IsNullOrEmpty(p.Code))
+                {
+                    _commandQueue.Enqueue(new PendingCommand { Id = p.Id, Code = p.Code });
+                    ids.Add(p.Id);
+                }
             }
 
-            var ids = new HashSet<string>(payloads.ConvertAll(p => p.id));
             var deadline = DateTime.UtcNow.AddSeconds(60);
             while (DateTime.UtcNow < deadline)
             {
@@ -247,103 +334,107 @@ namespace ArtClaw.Unity
                 Thread.Sleep(20);
             }
 
-            var results = new List<object>();
+            var sb = new StringBuilder("[");
+            int idx = 0;
             foreach (var id in ids)
             {
+                if (idx > 0) sb.Append(',');
                 if (_results.TryRemove(id, out var r))
-                    results.Add(new { id, done = true, success = string.IsNullOrEmpty(r.Error), result = r.Result, error = r.Error, output = r.Output });
+                {
+                    sb.Append("{\"id\":").Append(JsonStr(id)).Append(",\"done\":true,");
+                    sb.Append("\"success\":").Append(string.IsNullOrEmpty(r.Error) ? "true" : "false").Append(',');
+                    sb.Append("\"result\":").Append(r.Result ?? "null").Append(',');
+                    sb.Append("\"error\":").Append(JsonStr(r.Error ?? "")).Append(',');
+                    sb.Append("\"output\":").Append(JsonStr(r.Output ?? "")).Append('}');
+                }
                 else
-                    results.Add(new { id, done = false, error = "执行超时" });
+                {
+                    sb.Append("{\"id\":").Append(JsonStr(id)).Append(",\"done\":false,");
+                    sb.Append("\"error\":").Append(JsonStr("执行超时")).Append('}');
+                }
+                idx++;
             }
-
-            WriteJson(resp, 200, new { results });
+            sb.Append(']');
+            return sb.ToString();
         }
 
-        private static void HandleResult(string id, HttpListenerResponse resp)
+        private static string HandleResult(string id)
         {
             if (_results.TryGetValue(id, out var result))
             {
                 _results.TryRemove(id, out _);
-                WriteJson(resp, 200, new
-                {
-                    done = true,
-                    success = string.IsNullOrEmpty(result.Error),
-                    result = result.Result,
-                    error = result.Error,
-                    output = result.Output,
-                });
+                var sb = new StringBuilder("{\"done\":true,");
+                sb.Append("\"success\":").Append(string.IsNullOrEmpty(result.Error) ? "true" : "false").Append(',');
+                sb.Append("\"result\":").Append(result.Result ?? "null").Append(',');
+                sb.Append("\"error\":").Append(JsonStr(result.Error ?? "")).Append(',');
+                sb.Append("\"output\":").Append(JsonStr(result.Output ?? "")).Append('}');
+                return sb.ToString();
             }
-            else
-            {
-                WriteJson(resp, 200, new { done = false });
-            }
+            return "{\"done\":false}";
         }
 
-        private static void HandleHealth(HttpListenerResponse resp)
+        private static string HandleHealth()
         {
-            WriteJson(resp, 200, new
-            {
-                status = "ok",
-                version = "1.0.0",
-                port = _httpPort,
-                unity_version = Application.unityVersion,
-                project_name = Application.productName,
-                is_playing = EditorApplication.isPlaying,
-                is_compiling = EditorApplication.isCompiling,
-                execution_count = ExecutionLog.Count,
-            });
+            var sb = new StringBuilder("{\"status\":\"ok\",\"version\":\"1.0.0\",");
+            sb.Append("\"port\":").Append(_httpPort).Append(',');
+            sb.Append("\"unity_version\":").Append(JsonStr(_cachedUnityVersion ?? "")).Append(',');
+            sb.Append("\"project_name\":").Append(JsonStr(_cachedProductName ?? "")).Append(',');
+            sb.Append("\"is_playing\":").Append(_cachedIsPlaying ? "true" : "false").Append(',');
+            sb.Append("\"is_compiling\":").Append(_cachedIsCompiling ? "true" : "false").Append(',');
+            sb.Append("\"execution_count\":").Append(ExecutionLog.Count).Append('}');
+            return sb.ToString();
         }
 
-        private static void HandleLogs(HttpListenerResponse resp)
+        private static string HandleLogs()
         {
             var logs = ExecutionLog.ToArray();
-            var entries = new List<object>();
-            foreach (var e in logs)
+            var sb = new StringBuilder("{\"logs\":[");
+            for (int i = 0; i < logs.Length; i++)
             {
-                entries.Add(new
-                {
-                    timestamp = e.Timestamp.ToString("HH:mm:ss.fff"),
-                    success = e.Success,
-                    code_preview = e.Code.Length > 100 ? e.Code.Substring(0, 100) + "..." : e.Code,
-                    result = e.Result?.ToString(),
-                    error = e.Error,
-                });
+                if (i > 0) sb.Append(',');
+                var e = logs[i];
+                sb.Append("{\"timestamp\":").Append(JsonStr(e.Timestamp.ToString("HH:mm:ss.fff"))).Append(',');
+                sb.Append("\"success\":").Append(e.Success ? "true" : "false").Append(',');
+                string preview = e.Code.Length > 100 ? e.Code.Substring(0, 100) + "..." : e.Code;
+                sb.Append("\"code_preview\":").Append(JsonStr(preview)).Append(',');
+                sb.Append("\"result\":").Append(e.Result != null ? JsonStr(e.Result) : "null").Append(',');
+                sb.Append("\"error\":").Append(JsonStr(e.Error ?? "")).Append('}');
             }
-            WriteJson(resp, 200, new { logs = entries });
+            sb.Append("]}");
+            return sb.ToString();
         }
 
-        /// <summary>
-        /// 语法预验证（M1.1 新增）
-        /// POST /validate { "code": "..." } → { "valid": bool, "errors": [...] }
-        /// </summary>
-        private static void HandleValidate(HttpListenerRequest req, HttpListenerResponse resp)
+        private static string HandleValidate(string body)
         {
-            string body = ReadBody(req);
-            var payload = JsonConvert.DeserializeObject<ValidatePayload>(body);
-            var code = payload?.code ?? "";
-
+            string code = ExtractJsonString(body, "code");
             try
             {
-                var diagnostics = CSharpScript.Create(code, _scriptOptions).GetCompilation().GetDiagnostics();
-                var errors = new List<object>();
-                foreach (var d in diagnostics)
+                var syntaxTree = CSharpSyntaxTree.ParseText(code);
+                var compilation = CSharpCompilation.Create("ValidateScript",
+                    new[] { syntaxTree }, _roslynRefs,
+                    new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+                var diagnostics = compilation.GetDiagnostics();
+                var errors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+                var sb = new StringBuilder("{\"valid\":").Append(errors.Count == 0 ? "true" : "false");
+                if (errors.Count > 0)
                 {
-                    if (d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+                    sb.Append(",\"errors\":[");
+                    for (int i = 0; i < errors.Count; i++)
                     {
-                        errors.Add(new
-                        {
-                            line = d.Location.GetLineSpan().StartLinePosition.Line + 1,
-                            column = d.Location.GetLineSpan().StartLinePosition.Character + 1,
-                            message = d.GetMessage(),
-                            id = d.Id,
-                        });
+                        if (i > 0) sb.Append(',');
+                        var d = errors[i];
+                        var pos = d.Location.GetLineSpan().StartLinePosition;
+                        sb.Append("{\"line\":").Append(pos.Line + 1).Append(",\"column\":").Append(pos.Character + 1);
+                        sb.Append(",\"message\":").Append(JsonStr(d.GetMessage())).Append(",\"id\":").Append(JsonStr(d.Id)).Append('}');
                     }
+                    sb.Append(']');
                 }
-                WriteJson(resp, 200, new { valid = errors.Count == 0, errors });
+                sb.Append('}');
+                return sb.ToString();
             }
             catch (Exception e)
             {
-                WriteJson(resp, 200, new { valid = false, errors = new[] { new { message = e.Message } } });
+                return "{\"valid\":false,\"errors\":[{\"message\":" + JsonStr(e.Message) + "}]}";
             }
         }
 
@@ -353,6 +444,9 @@ namespace ArtClaw.Unity
 
         private static void OnEditorUpdate()
         {
+            _cachedIsPlaying = EditorApplication.isPlaying;
+            _cachedIsCompiling = EditorApplication.isCompiling;
+
             int processed = 0;
             while (processed < MAX_EXEC_PER_FRAME && _commandQueue.TryDequeue(out var cmd))
             {
@@ -363,290 +457,224 @@ namespace ArtClaw.Unity
 
         private static void ExecuteCommand(PendingCommand cmd)
         {
-            var sb = new StringBuilder();
-            var oldOut = Console.Out;
-
-            // 上下文注入（每次执行前刷新）
-            RefreshGlobals();
-
             try
             {
-                // 记录 Undo（如果操作了 Unity 对象）
-                RecordUndoIfNeeded(cmd.Code);
+                var scriptName = $"Script_{Interlocked.Increment(ref _scriptCounter)}";
+                var wrappedCode = $@"
+using System;
+using UnityEngine;
+using UnityEditor;
+using UnityEngine.SceneManagement;
+using UnityEditor.SceneManagement;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 
-                // Roslyn 执行
-                var task = CSharpScript.RunAsync(
-                    cmd.Code,
-                    _scriptOptions,
-                    _scriptGlobals,
-                    typeof(ScriptGlobals));
+public static class {scriptName}
+{{
+    public static object Execute()
+    {{
+        {cmd.Code}
+        return null;
+    }}
+}}";
+                var syntaxTree = CSharpSyntaxTree.ParseText(wrappedCode);
+                var compilation = CSharpCompilation.Create(scriptName,
+                    new[] { syntaxTree }, _roslynRefs,
+                    new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-                task.Wait(TimeSpan.FromSeconds(30)); // 超时保护
+                using var peStream = new MemoryStream();
+                var emitResult = compilation.Emit(peStream);
 
-                if (task.IsFaulted)
+                if (!emitResult.Success)
                 {
-                    var error = FormatException(task.Exception);
-                    _results[cmd.Id] = new CommandResult { Error = error, Output = sb.ToString() };
+                    var errors = emitResult.Diagnostics
+                        .Where(d => d.Severity == DiagnosticSeverity.Error)
+                        .Select(d => d.ToString()).ToArray();
+                    var error = string.Join("\n", errors);
+                    _results[cmd.Id] = new CommandResult { Error = error };
                     ExecutionLog.Add(new LogEntry { Success = false, Code = cmd.Code, Error = error });
-                    Debug.LogWarning($"[ArtClaw] 执行失败 (id={cmd.Id}): {error}");
+                    return;
                 }
-                else if (task.IsCanceled)
-                {
-                    _results[cmd.Id] = new CommandResult { Error = "执行超时（30秒）", Output = sb.ToString() };
-                    ExecutionLog.Add(new LogEntry { Success = false, Code = cmd.Code, Error = "执行超时" });
-                }
-                else
-                {
-                    var state = task.Result;
-                    var resultJson = state.ReturnValue != null ? SerializeResult(state.ReturnValue) : null;
-                    _results[cmd.Id] = new CommandResult
-                    {
-                        Result = resultJson,
-                        Output = sb.ToString(),
-                    };
 
-                    // 更新全局变量
-                    lock (_globalsLock)
-                    {
-                        if (state.Variables != null)
-                        {
-                            foreach (var v in state.Variables)
-                            {
-                                UpdateGlobal(v.Name, v.Value);
-                            }
-                        }
-                    }
-
-                    ExecutionLog.Add(new LogEntry
-                    {
-                        Success = true,
-                        Code = cmd.Code,
-                        Result = resultJson,
-                    });
+                peStream.Seek(0, SeekOrigin.Begin);
+                var assembly = Assembly.Load(peStream.ToArray());
+                var type = assembly.GetType(scriptName);
+                var method = type?.GetMethod("Execute");
+                if (method == null)
+                {
+                    _results[cmd.Id] = new CommandResult { Error = "找不到 Execute 入口方法" };
+                    ExecutionLog.Add(new LogEntry { Success = false, Code = cmd.Code, Error = "找不到入口方法" });
+                    return;
                 }
+
+                var result = method.Invoke(null, null);
+                var resultJson = result != null ? SerializeResult(result) : null;
+                _results[cmd.Id] = new CommandResult { Result = resultJson };
+                ExecutionLog.Add(new LogEntry { Success = true, Code = cmd.Code, Result = resultJson });
             }
             catch (Exception e)
             {
                 var error = FormatException(e);
-                _results[cmd.Id] = new CommandResult { Error = error, Output = sb.ToString() };
+                _results[cmd.Id] = new CommandResult { Error = error };
                 ExecutionLog.Add(new LogEntry { Success = false, Code = cmd.Code, Error = error });
                 Debug.LogWarning($"[ArtClaw] 执行异常 (id={cmd.Id}): {error}");
             }
         }
 
         // ════════════════════════════════════════
-        // 上下文注入
+        // 结果序列化（主线程）
         // ════════════════════════════════════════
 
-        /// <summary>
-        /// 刷新全局变量（每次执行前调用）
-        /// </summary>
-        private static void RefreshGlobals()
+        private static string SerializeResult(object value)
         {
-            lock (_globalsLock)
-            {
-                if (_scriptGlobals is ScriptGlobals g)
-                {
-                    g.Selection = Selection.activeGameObject;
-                    g.SelectedObjects = Selection.objects;
-                    g.ActiveScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
-                    g.ActiveTransform = Selection.activeTransform;
-                    g.ActiveGameObject = Selection.activeGameObject;
-                    g.ActiveObject = Selection.activeObject;
-                    g.AssetDatabase = null; // marker
-                    g.ProjectWindow = EditorGUIUtility.GetObjectPickerControl() == ObjectPickerActiveControlID.ProjectBrowser
-                        ? "Project Browser" : null;
-                }
-            }
-        }
-
-        private static void UpdateGlobal(string name, object value)
-        {
-            // 持久化用户定义的变量到全局对象
-            lock (_globalsLock)
-            {
-                var type = typeof(ScriptGlobals);
-                var field = type.GetField(name);
-                if (field != null)
-                {
-                    field.SetValue(_scriptGlobals, value);
-                }
-            }
-        }
-
-        private static void RecordUndoIfNeeded(string code)
-        {
-            // 简单的启发式：包含 GameObject/Component/SerializedObject 等关键字时记录 Undo
-            var undoKeywords = new[] { "Create", "Delete", "AddComponent", "Destroy", "Rename", "Move", "transform", "gameObject" };
-            foreach (var kw in undoKeywords)
-            {
-                if (code.Contains(kw, StringComparison.OrdinalIgnoreCase))
-                {
-                    Undo.RecordObject(Selection.activeObject ?? new UnityEngine.Object(), "ArtClaw Script Execution");
-                    break;
-                }
-            }
-        }
-
-        // ════════════════════════════════════════
-        // 结果序列化
-        // ════════════════════════════════════════
-
-        private static object SerializeResult(object value)
-        {
-            if (value == null) return null;
-
+            if (value == null) return "null";
             if (value is UnityEngine.Object uo)
             {
-                return new
-                {
-                    type = uo.GetType().Name,
-                    name = uo.name,
-                    path = uo is GameObject go ? AssetDatabase.GetAssetPath(go) : null,
-                    instanceId = uo.GetInstanceID(),
-                    hideFlags = uo.hideFlags.ToString(),
-                };
+                var sb = new StringBuilder("{\"type\":").Append(JsonStr(uo.GetType().Name));
+                sb.Append(",\"name\":").Append(JsonStr(uo.name));
+                string path = uo is GameObject go ? AssetDatabase.GetAssetPath(go) : null;
+                sb.Append(",\"path\":").Append(path != null ? JsonStr(path) : "null");
+                sb.Append(",\"instanceId\":").Append(uo.GetInstanceID()).Append('}');
+                return sb.ToString();
             }
-
-            if (value is UnityEngine.Vector2 v2) return new { x = v2.x, y = v2.y };
-            if (value is UnityEngine.Vector3 v3) return new { x = v3.x, y = v3.y, z = v3.z };
-            if (value is UnityEngine.Vector4 v4) return new { x = v4.x, y = v4.y, z = v4.z, w = v4.w };
-            if (value is UnityEngine.Color c) return new { r = c.r, g = c.g, b = c.b, a = c.a };
-
-            if (value is System.Collections.IEnumerable enumerable && !(value is string))
+            if (value is Vector2 v2) return $"{{\"x\":{v2.x},\"y\":{v2.y}}}";
+            if (value is Vector3 v3) return $"{{\"x\":{v3.x},\"y\":{v3.y},\"z\":{v3.z}}}";
+            if (value is Vector4 v4) return $"{{\"x\":{v4.x},\"y\":{v4.y},\"z\":{v4.z},\"w\":{v4.w}}}";
+            if (value is Color c) return $"{{\"r\":{c.r},\"g\":{c.g},\"b\":{c.b},\"a\":{c.a}}}";
+            if (value is int i) return i.ToString();
+            if (value is float f) return f.ToString("R");
+            if (value is double d) return d.ToString("R");
+            if (value is bool b) return b ? "true" : "false";
+            if (value is string s) return JsonStr(s);
+            if (value is System.Collections.IEnumerable en && !(value is string))
             {
-                var list = new List<object>();
-                foreach (var item in enumerable)
-                    list.Add(SerializeResult(item));
-                return list;
+                var items = new List<string>();
+                foreach (var item in en) items.Add(SerializeResult(item));
+                return "[" + string.Join(",", items) + "]";
             }
-
-            try { return JsonConvert.DeserializeObject(JsonConvert.SerializeObject(value)); }
-            catch { return value.ToString(); }
+            return JsonStr(value.ToString());
         }
 
         private static string FormatException(Exception e)
         {
             if (e is AggregateException ae && ae.InnerExceptions.Count > 0)
                 e = ae.InnerExceptions[0];
-
             var sb = new StringBuilder();
             sb.AppendLine($"[{e.GetType().Name}] {e.Message}");
-
-            if (e is Microsoft.CodeAnalysis.CSharp.Scripting.CSharpScriptException csEx)
-            {
-                if (csEx.LineNumber > 0)
-                    sb.AppendLine($"  位置: 行 {csEx.LineNumber}, 列 {csEx.Column}");
-                if (!string.IsNullOrEmpty(csEx.ErrorCode))
-                    sb.AppendLine($"  代码: {csEx.ErrorCode}");
-            }
-
             if (e.StackTrace != null)
             {
-                var lines = e.StackTrace.Split('\n');
-                foreach (var line in lines)
-                {
+                foreach (var line in e.StackTrace.Split('\n'))
                     if (line.Contains("roslyn") || line.Contains("CommandServer") || line.Contains("at Submission#"))
                         sb.AppendLine($"  {line.Trim()}");
-                }
             }
-
             return sb.ToString().TrimEnd();
         }
 
         // ════════════════════════════════════════
-        // 工具方法
+        // JSON 工具（纯字符串，线程安全）
         // ════════════════════════════════════════
 
-        private static void WriteJson(HttpListenerResponse resp, int statusCode, object obj)
+        private static string JsonStr(string s)
         {
-            string json = JsonConvert.SerializeObject(obj);
-            byte[] bytes = Encoding.UTF8.GetBytes(json);
-            resp.StatusCode = statusCode;
-            resp.ContentType = "application/json; charset=utf-8";
-            resp.ContentLength64 = bytes.Length;
-            resp.OutputStream.Write(bytes, 0, bytes.Length);
+            if (s == null) return "null";
+            var sb = new StringBuilder(s.Length + 8);
+            sb.Append('"');
+            foreach (char c in s)
+            {
+                switch (c)
+                {
+                    case '"': sb.Append("\\\""); break;
+                    case '\\': sb.Append("\\\\"); break;
+                    case '\b': sb.Append("\\b"); break;
+                    case '\f': sb.Append("\\f"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < 32) sb.AppendFormat("\\u{0:X4}", (int)c);
+                        else sb.Append(c);
+                        break;
+                }
+            }
+            sb.Append('"');
+            return sb.ToString();
         }
 
-        private static string ReadBody(HttpListenerRequest req)
+        private static string JsonObj(string key, string value)
         {
-            using var reader = new System.IO.StreamReader(req.InputStream, req.ContentEncoding);
-            return reader.ReadToEnd();
+            return "{" + JsonStr(key) + ":" + JsonStr(value) + "}";
+        }
+
+        private static string ExtractJsonString(string json, string key)
+        {
+            string pattern = "\"" + key + "\"";
+            int keyIdx = json.IndexOf(pattern, StringComparison.Ordinal);
+            if (keyIdx < 0) return null;
+            int colonIdx = json.IndexOf(':', keyIdx + pattern.Length);
+            if (colonIdx < 0) return null;
+            int valStart = colonIdx + 1;
+            while (valStart < json.Length && json[valStart] == ' ') valStart++;
+            if (valStart >= json.Length) return null;
+            if (json[valStart] == '"')
+            {
+                var sb = new StringBuilder();
+                int i = valStart + 1;
+                while (i < json.Length)
+                {
+                    if (json[i] == '\\')
+                    {
+                        if (i + 1 < json.Length) { sb.Append(json[i + 1]); i += 2; }
+                        else break;
+                    }
+                    else if (json[i] == '"') break;
+                    else { sb.Append(json[i]); i++; }
+                }
+                return sb.ToString();
+            }
+            int valEnd = valStart;
+            while (valEnd < json.Length && json[valEnd] != ',' && json[valEnd] != '}' && json[valEnd] != ']')
+                valEnd++;
+            return json.Substring(valStart, valEnd - valStart).Trim();
+        }
+
+        private static List<PendingCommand> ParseBatchPayload(string json)
+        {
+            var result = new List<PendingCommand>();
+            if (string.IsNullOrWhiteSpace(json)) return result;
+            int i = 0;
+            while (i < json.Length)
+            {
+                int start = json.IndexOf("{\"id\"", i, StringComparison.Ordinal);
+                if (start < 0) break;
+                int end = json.IndexOf("}", start);
+                if (end < 0) break;
+                string item = json.Substring(start, end - start + 1);
+                string id = ExtractJsonString(item, "id");
+                string code = ExtractJsonString(item, "code");
+                if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(code))
+                    result.Add(new PendingCommand { Id = id, Code = code });
+                i = end + 1;
+            }
+            return result;
         }
 
         // ════════════════════════════════════════
         // 内部数据结构
         // ════════════════════════════════════════
 
-        private class ExecutePayload
-        {
-            public string id;
-            public string code;
-        }
-
-        private class ValidatePayload
-        {
-            public string code;
-        }
-
-        private class PendingCommand
-        {
-            public string Id;
-            public string Code;
-        }
-
-        private class CommandResult
-        {
-            public object Result;
-            public string Error;
-            public string Output;
-        }
-
-        // ════════════════════════════════════════
-        // 全局上下文对象（Roslyn globals）
-        // ════════════════════════════════════════
-
-        public class ScriptGlobals
-        {
-            // 选中对象
-            public UnityEngine.GameObject Selection;
-            public UnityEngine.Object[] SelectedObjects;
-            public UnityEngine.Transform ActiveTransform;
-            public UnityEngine.GameObject ActiveGameObject;
-            public UnityEngine.Object ActiveObject;
-
-            // 场景
-            public UnityEngine.SceneManagement.Scene ActiveScene;
-
-            // 快捷方法
-            public UnityEngine.SceneManagement.SceneManager_ Scene => new UnityEngine.SceneManagement.SceneManager_();
-
-            // AssetDatabase marker
-            public object AssetDatabase;
-
-            // ProjectBrowser marker
-            public string ProjectWindow;
-        }
-
-        // ════════════════════════════════════════
-        // 环形缓冲区（执行日志）
-        // ════════════════════════════════════════
+        private class PendingCommand { public string Id; public string Code; }
+        private class CommandResult { public string Result; public string Error; public string Output; }
 
         public class RingBuffer<T>
         {
             private readonly T[] _buffer;
-            private int _head;
-            private int _count;
+            private int _head, _count;
             private readonly int _capacity;
             private readonly object _lock = new object();
 
-            public RingBuffer(int capacity)
-            {
-                _capacity = capacity;
-                _buffer = new T[capacity];
-                _head = 0;
-                _count = 0;
-            }
+            public RingBuffer(int capacity) { _capacity = capacity; _buffer = new T[capacity]; }
 
             public void Add(T item)
             {
@@ -658,7 +686,7 @@ namespace ArtClaw.Unity
                 }
             }
 
-            public int Count => _count;
+            public int Count { get { lock (_lock) { return _count; } } }
 
             public T[] ToArray()
             {
@@ -666,10 +694,7 @@ namespace ArtClaw.Unity
                 {
                     var result = new T[_count];
                     for (int i = 0; i < _count; i++)
-                    {
-                        int idx = (_head - _count + i + _capacity) % _capacity;
-                        result[i] = _buffer[idx];
-                    }
+                        result[i] = _buffer[(_head - _count + i + _capacity) % _capacity];
                     return result;
                 }
             }
@@ -680,7 +705,7 @@ namespace ArtClaw.Unity
             public DateTime Timestamp = DateTime.Now;
             public bool Success;
             public string Code;
-            public object Result;
+            public string Result;
             public string Error;
         }
     }
