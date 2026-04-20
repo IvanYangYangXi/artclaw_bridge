@@ -9,6 +9,10 @@ public class UEClawBridgeAPI : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
+        // 各 API cpp 文件在匿名命名空间中定义了同名辅助函数 (ClawJsonToString 等)
+        // Unity Build 合并编译会导致重定义冲突，必须禁用
+        bUseUnity = false;
+
         PublicDependencyModuleNames.AddRange(new string[] {
             "Core",
             "CoreUObject",
