@@ -214,52 +214,28 @@ class ChatPanelActionsMixin:
 
     def _on_open_tool_manager(self):
         """启动 ArtClaw Tool Manager 后台服务并打开浏览器"""
-        import socket
-        import subprocess
-        import webbrowser
-        import os
+        # 确保 core/ 在 sys.path（tool_manager_launcher 位于 core/）
+        import sys, os
+        _core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        _core_core = os.path.join(_core_dir, "core")
+        if os.path.isdir(_core_core) and _core_core not in sys.path:
+            sys.path.insert(0, _core_core)
 
-        url = "http://localhost:9876"
-
-        # 检查端口是否已监听
-        already_running = False
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(0.5)
-            already_running = s.connect_ex(("127.0.0.1", 9876)) == 0
-            s.close()
-        except Exception:
-            pass
-
-        if not already_running:
-            # 获取项目根目录
-            try:
-                from bridge_config import get_project_root
-                bridge_root = get_project_root()
-            except Exception:
-                bridge_root = os.path.dirname(
-                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                )
-
-            bat_path = os.path.join(bridge_root, "start-tool-manager.bat")
-            if not os.path.exists(bat_path):
+            from tool_manager_launcher import launch
+            result = launch(open_browser=True)
+            if not result["ok"]:
                 self._msg_list.add_message(
-                    "system", f"[Tool Manager] 找不到启动脚本: {bat_path}"
+                    "system", f"[Tool Manager] 启动失败: {result['error']}"
                 )
-                return
-
-            try:
-                subprocess.Popen(
-                    ["cmd", "/c", bat_path],
-                    creationflags=0x08000008,  # CREATE_NO_WINDOW | DETACHED_PROCESS
-                    cwd=os.path.dirname(bat_path),
+            elif not result["already_running"]:
+                self._msg_list.add_message(
+                    "system", "[Tool Manager] 正在启动服务，请稍候..."
                 )
-                self._msg_list.add_message("system", "[Tool Manager] 正在启动服务，请稍候...")
-            except Exception as exc:
-                self._msg_list.add_message("system", f"[Tool Manager] 启动失败: {exc}")
-                return
-
-        webbrowser.open(url)
+        except ImportError:
+            # Fallback: tool_manager_launcher not in sys.path
+            import webbrowser
+            webbrowser.open("http://localhost:9876")
 
     def _on_settings(self):
         from artclaw_ui.settings_dialog import SettingsDialog

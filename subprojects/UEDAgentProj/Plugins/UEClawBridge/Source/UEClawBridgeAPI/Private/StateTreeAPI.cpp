@@ -18,7 +18,11 @@
 	#include "StateTreeConditionBase.h"
 	#include "StateTreeTypes.h"
 	#include "StateTreePropertyBindings.h"
-	#include "StructUtils/InstancedStructContainer.h"
+	#if ENGINE_MINOR_VERSION >= 5
+		#include "StructUtils/InstancedStructContainer.h"
+	#else
+		#include "InstancedStructContainer.h"
+	#endif
 	#include "Engine/Engine.h"
 	#include "UObject/UObjectIterator.h"
 #endif
@@ -123,7 +127,9 @@ FString UStateTreeAPI::QueryStateTree(const FString& AssetPath)
 		default: StateTypeStr = TEXT("Unknown");
 		}
 		StateObj->SetStringField(TEXT("type"), StateTypeStr);
+	#if ENGINE_MINOR_VERSION >= 5
 		StateObj->SetNumberField(TEXT("depth"), State.Depth);
+	#endif
 		StateObj->SetBoolField(TEXT("enabled"), State.bEnabled);
 
 		// Parent info
