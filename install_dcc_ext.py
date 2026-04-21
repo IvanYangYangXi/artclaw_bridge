@@ -16,12 +16,16 @@ import subprocess
 
 from install_utils import (
     DCC_BRIDGE_SRC,
+    _is_junction_or_symlink,
+    _remove_link_or_dir,
     confirm_overwrite,
     copy_dir,
     copy_platform_bridge,
     copy_shared_modules,
     cprint,
     install_dcc_skills,
+    link_or_copy_dir,
+    link_or_copy_file,
     ROOT_DIR,
 )
 
@@ -53,49 +57,55 @@ def install_blender(blender_version: str, force: bool, platform_type: str = "ope
 
     os.makedirs(addons_dir, exist_ok=True)
 
-    # 复制 DCCClawBridge 到 addons 目录
-    cprint("复制", "DCCClawBridge → artclaw_bridge...")
-    copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
-    cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst}", "green")
+    # 部署 DCCClawBridge 到 addons 目录
+    cprint("部署", "DCCClawBridge → artclaw_bridge...")
+    method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
+    cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
     # 创建 __init__.py（Blender addon 包入口，必须存在）
     # bl_info 必须作为字面量定义（Blender AST 扫描，不执行 import）
+    # link 模式下源码树应已包含此文件，仅在缺失时写入
     init_path = os.path.join(dcc_dst, "__init__.py")
-    with open(init_path, "w", encoding="utf-8") as f:
-        f.write(
-            "# ArtClaw Bridge - Blender Addon\n\n"
-            "bl_info = {\n"
-            '    "name": "ArtClaw Bridge",\n'
-            '    "author": "ArtClaw Team",\n'
-            '    "version": (1, 0, 0),\n'
-            '    "blender": (3, 0, 0),\n'
-            '    "location": "View3D > Sidebar > ArtClaw",\n'
-            '    "description": "AI Agent bridge for Blender via ArtClaw",\n'
-            '    "category": "Interface",\n'
-            "}\n\n\n"
-            "def _ensure_path():\n"
-            "    import os, sys\n"
-            "    addon_dir = os.path.dirname(os.path.abspath(__file__))\n"
-            "    if addon_dir not in sys.path:\n"
-            "        sys.path.insert(0, addon_dir)\n\n\n"
-            "def register():\n"
-            "    _ensure_path()\n"
-            "    from .blender_addon import register as _register\n"
-            "    _register()\n\n\n"
-            "def unregister():\n"
-            "    from .blender_addon import unregister as _unregister\n"
-            "    _unregister()\n"
-        )
-    cprint("OK", "已创建 __init__.py (Blender addon 入口)", "green")
+    if not os.path.isfile(init_path):
+        with open(init_path, "w", encoding="utf-8") as f:
+            f.write(
+                "# ArtClaw Bridge - Blender Addon\n\n"
+                "bl_info = {\n"
+                '    "name": "ArtClaw Bridge",\n'
+                '    "author": "ArtClaw Team",\n'
+                '    "version": (1, 0, 0),\n'
+                '    "blender": (3, 0, 0),\n'
+                '    "location": "View3D > Sidebar > ArtClaw",\n'
+                '    "description": "AI Agent bridge for Blender via ArtClaw",\n'
+                '    "category": "Interface",\n'
+                "}\n\n\n"
+                "def _ensure_path():\n"
+                "    import os, sys\n"
+                "    addon_dir = os.path.dirname(os.path.abspath(__file__))\n"
+                "    if addon_dir not in sys.path:\n"
+                "        sys.path.insert(0, addon_dir)\n\n\n"
+                "def register():\n"
+                "    _ensure_path()\n"
+                "    from .blender_addon import register as _register\n"
+                "    _register()\n\n\n"
+                "def unregister():\n"
+                "    from .blender_addon import unregister as _unregister\n"
+                "    _unregister()\n"
+            )
+        cprint("OK", "已创建 __init__.py (Blender addon 入口)", "green")
+    else:
+        cprint("OK", "__init__.py 已存在，跳过创建", "green")
 
-    # 复制共享模块到 core/
-    cprint("复制", "bridge_core 共享模块到 core/...")
-    copy_shared_modules(os.path.join(dcc_dst, "core"))
-    cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: 仅复制模式需要打包
+    if method == "copy":
+        cprint("复制", "bridge_core 共享模块到 core/...")
+        copy_shared_modules(os.path.join(dcc_dst, "core"))
+        cprint("OK", "共享模块已打包 (自包含部署)", "green")
 
-    # 复制平台 bridge 到 core/
-    cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
+        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
+        copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
+    else:
+        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
 
     # 尝试安装 PySide6 到 Blender Python
     _install_blender_python_deps(blender_version)
@@ -121,8 +131,8 @@ def uninstall_blender(blender_version: str):
         "scripts", "addons", "artclaw_bridge"
     )
 
-    if os.path.isdir(dcc_dst):
-        shutil.rmtree(dcc_dst)
+    if os.path.isdir(dcc_dst) or _is_junction_or_symlink(dcc_dst):
+        _remove_link_or_dir(dcc_dst)
         cprint("删除", f"已删除: {dcc_dst}", "green")
     else:
         cprint("跳过", f"artclaw_bridge 不存在: {dcc_dst}", "yellow")
@@ -196,26 +206,28 @@ def install_houdini(houdini_version: str, force: bool, platform_type: str = "ope
 
     os.makedirs(scripts_python_dir, exist_ok=True)
 
-    # 复制 DCCClawBridge
-    cprint("复制", "DCCClawBridge...")
-    copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
-    cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst}", "green")
+    # 部署 DCCClawBridge
+    cprint("部署", "DCCClawBridge...")
+    method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
+    cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
-    # 复制共享模块到 core/
-    cprint("复制", "bridge_core 共享模块到 core/...")
-    copy_shared_modules(os.path.join(dcc_dst, "core"))
-    cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: 仅复制模式需要打包
+    if method == "copy":
+        cprint("复制", "bridge_core 共享模块到 core/...")
+        copy_shared_modules(os.path.join(dcc_dst, "core"))
+        cprint("OK", "共享模块已打包 (自包含部署)", "green")
 
-    # 复制平台 bridge 到 core/
-    cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
+        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
+        copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
+    else:
+        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
 
-    # 复制 shelf tool 启动脚本
+    # 复制 shelf tool 启动脚本（单文件用 link）
     shelf_src = DCC_BRIDGE_SRC / "houdini_shelf.py"
     if shelf_src.exists():
         shelf_dst = os.path.join(scripts_python_dir, "houdini_shelf.py")
-        shutil.copy2(str(shelf_src), shelf_dst)
-        cprint("OK", f"Shelf 脚本已复制: {shelf_dst}", "green")
+        shelf_method = link_or_copy_file(str(shelf_src), shelf_dst)
+        cprint("OK", f"Shelf 脚本已部署: {shelf_dst} ({shelf_method})", "green")
     else:
         cprint("警告", f"Shelf 脚本源不存在: {shelf_src}", "yellow")
 
@@ -244,16 +256,16 @@ def uninstall_houdini(houdini_version: str):
     scripts_python_dir = os.path.join(docs_dir, "scripts", "python")
     dcc_dst = os.path.join(scripts_python_dir, "DCCClawBridge")
 
-    if os.path.isdir(dcc_dst):
-        shutil.rmtree(dcc_dst)
+    if os.path.isdir(dcc_dst) or _is_junction_or_symlink(dcc_dst):
+        _remove_link_or_dir(dcc_dst)
         cprint("删除", f"已删除: {dcc_dst}", "green")
     else:
         cprint("跳过", f"DCCClawBridge 不存在: {dcc_dst}", "yellow")
 
     # 移除 shelf 脚本
     shelf_file = os.path.join(scripts_python_dir, "houdini_shelf.py")
-    if os.path.isfile(shelf_file):
-        os.remove(shelf_file)
+    if os.path.isfile(shelf_file) or _is_junction_or_symlink(shelf_file):
+        _remove_link_or_dir(shelf_file)
         cprint("删除", f"已删除: {shelf_file}", "green")
 
     cprint("完成", "Houdini 插件卸载完成", "green")
@@ -330,44 +342,48 @@ def install_substance_painter(force: bool, platform_type: str = "openclaw"):
 
     os.makedirs(plugins_dir, exist_ok=True)
 
-    # 复制 DCCClawBridge
-    cprint("复制", "DCCClawBridge → artclaw_bridge...")
-    copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
-    cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst}", "green")
+    # 部署 DCCClawBridge
+    cprint("部署", "DCCClawBridge → artclaw_bridge...")
+    method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
+    cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
-    # 复制共享模块到 core/
-    cprint("复制", "bridge_core 共享模块到 core/...")
-    copy_shared_modules(os.path.join(dcc_dst, "core"))
-    cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: 仅复制模式需要打包
+    if method == "copy":
+        cprint("复制", "bridge_core 共享模块到 core/...")
+        copy_shared_modules(os.path.join(dcc_dst, "core"))
+        cprint("OK", "共享模块已打包 (自包含部署)", "green")
 
-    # 复制平台 bridge 到 core/
-    cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
+        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
+        copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
+    else:
+        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
 
     # 创建 __init__.py（SP 包 plugin 入口 — SP 通过此文件发现插件）
-    # 注意：SP 启动时自动扫描 plugins/ 并执行 __init__.py，
-    # 因此不能在模块顶层 import 任何依赖，只在函数调用时延迟 import。
+    # link 模式下源码树应已包含此文件，仅在缺失时写入
     init_path = os.path.join(dcc_dst, "__init__.py")
-    with open(init_path, "w", encoding="utf-8") as f:
-        f.write(
-            '"""ArtClaw Bridge - Substance Painter Plugin"""\n\n\n'
-            "def _ensure_path():\n"
-            "    import os, sys\n"
-            "    pkg_dir = os.path.dirname(os.path.abspath(__file__))\n"
-            "    if pkg_dir not in sys.path:\n"
-            "        sys.path.insert(0, pkg_dir)\n\n\n"
-            "def start_plugin():\n"
-            "    _ensure_path()\n"
-            "    from sp_plugin import start_plugin as _start\n"
-            "    _start()\n\n\n"
-            "def close_plugin():\n"
-            "    try:\n"
-            "        from sp_plugin import close_plugin as _close\n"
-            "        _close()\n"
-            "    except Exception:\n"
-            "        pass\n"
-        )
-    cprint("OK", "已创建 __init__.py (SP plugin 包入口, 延迟加载)", "green")
+    if not os.path.isfile(init_path):
+        with open(init_path, "w", encoding="utf-8") as f:
+            f.write(
+                '"""ArtClaw Bridge - Substance Painter Plugin"""\n\n\n'
+                "def _ensure_path():\n"
+                "    import os, sys\n"
+                "    pkg_dir = os.path.dirname(os.path.abspath(__file__))\n"
+                "    if pkg_dir not in sys.path:\n"
+                "        sys.path.insert(0, pkg_dir)\n\n\n"
+                "def start_plugin():\n"
+                "    _ensure_path()\n"
+                "    from sp_plugin import start_plugin as _start\n"
+                "    _start()\n\n\n"
+                "def close_plugin():\n"
+                "    try:\n"
+                "        from sp_plugin import close_plugin as _close\n"
+                "        _close()\n"
+                "    except Exception:\n"
+                "        pass\n"
+            )
+        cprint("OK", "已创建 __init__.py (SP plugin 包入口, 延迟加载)", "green")
+    else:
+        cprint("OK", "__init__.py 已存在，跳过创建", "green")
 
     # 尝试安装 Python 依赖到 SP Python
     _install_substance_python_deps("Painter")
@@ -393,8 +409,8 @@ def uninstall_substance_painter():
     )
     dcc_dst = os.path.join(plugins_dir, "artclaw_bridge")
 
-    if os.path.isdir(dcc_dst):
-        shutil.rmtree(dcc_dst)
+    if os.path.isdir(dcc_dst) or _is_junction_or_symlink(dcc_dst):
+        _remove_link_or_dir(dcc_dst)
         cprint("删除", f"已删除: {dcc_dst}", "green")
     else:
         cprint("跳过", f"artclaw_bridge 不存在: {dcc_dst}", "yellow")
@@ -430,43 +446,48 @@ def install_substance_designer(force: bool, platform_type: str = "openclaw"):
 
     os.makedirs(plugins_dir, exist_ok=True)
 
-    # 复制 DCCClawBridge
-    cprint("复制", "DCCClawBridge → artclaw_bridge...")
-    copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
-    cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst}", "green")
+    # 部署 DCCClawBridge
+    cprint("部署", "DCCClawBridge → artclaw_bridge...")
+    method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
+    cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
-    # 复制共享模块到 core/
-    cprint("复制", "bridge_core 共享模块到 core/...")
-    copy_shared_modules(os.path.join(dcc_dst, "core"))
-    cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: 仅复制模式需要打包
+    if method == "copy":
+        cprint("复制", "bridge_core 共享模块到 core/...")
+        copy_shared_modules(os.path.join(dcc_dst, "core"))
+        cprint("OK", "共享模块已打包 (自包含部署)", "green")
 
-    # 复制平台 bridge 到 core/
-    cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
+        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
+        copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
+    else:
+        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
 
     # 创建 __init__.py（SD 包 plugin 入口 — SD 通过此文件发现插件）
-    # 同 SP：不在模块顶层 import，延迟到函数调用时加载。
+    # link 模式下源码树应已包含此文件，仅在缺失时写入
     init_path = os.path.join(dcc_dst, "__init__.py")
-    with open(init_path, "w", encoding="utf-8") as f:
-        f.write(
-            '"""ArtClaw Bridge - Substance Designer Plugin"""\n\n\n'
-            "def _ensure_path():\n"
-            "    import os, sys\n"
-            "    pkg_dir = os.path.dirname(os.path.abspath(__file__))\n"
-            "    if pkg_dir not in sys.path:\n"
-            "        sys.path.insert(0, pkg_dir)\n\n\n"
-            "def initializeSDPlugin():\n"
-            "    _ensure_path()\n"
-            "    from sd_plugin import initializeSDPlugin as _init\n"
-            "    _init()\n\n\n"
-            "def uninitializeSDPlugin():\n"
-            "    try:\n"
-            "        from sd_plugin import uninitializeSDPlugin as _uninit\n"
-            "        _uninit()\n"
-            "    except Exception:\n"
-            "        pass\n"
-        )
-    cprint("OK", "已创建 __init__.py (SD plugin 包入口, 延迟加载)", "green")
+    if not os.path.isfile(init_path):
+        with open(init_path, "w", encoding="utf-8") as f:
+            f.write(
+                '"""ArtClaw Bridge - Substance Designer Plugin"""\n\n\n'
+                "def _ensure_path():\n"
+                "    import os, sys\n"
+                "    pkg_dir = os.path.dirname(os.path.abspath(__file__))\n"
+                "    if pkg_dir not in sys.path:\n"
+                "        sys.path.insert(0, pkg_dir)\n\n\n"
+                "def initializeSDPlugin():\n"
+                "    _ensure_path()\n"
+                "    from sd_plugin import initializeSDPlugin as _init\n"
+                "    _init()\n\n\n"
+                "def uninitializeSDPlugin():\n"
+                "    try:\n"
+                "        from sd_plugin import uninitializeSDPlugin as _uninit\n"
+                "        _uninit()\n"
+                "    except Exception:\n"
+                "        pass\n"
+            )
+        cprint("OK", "已创建 __init__.py (SD plugin 包入口, 延迟加载)", "green")
+    else:
+        cprint("OK", "__init__.py 已存在，跳过创建", "green")
 
     # 尝试安装 Python 依赖到 SD Python
     _install_substance_python_deps("Designer")
@@ -492,8 +513,8 @@ def uninstall_substance_designer():
     )
     dcc_dst = os.path.join(plugins_dir, "artclaw_bridge")
 
-    if os.path.isdir(dcc_dst):
-        shutil.rmtree(dcc_dst)
+    if os.path.isdir(dcc_dst) or _is_junction_or_symlink(dcc_dst):
+        _remove_link_or_dir(dcc_dst)
         cprint("删除", f"已删除: {dcc_dst}", "green")
     else:
         cprint("跳过", f"artclaw_bridge 不存在: {dcc_dst}", "yellow")
@@ -586,38 +607,40 @@ def install_comfyui(comfyui_path: str, force: bool, platform_type: str = "opencl
 
     os.makedirs(custom_nodes_dir, exist_ok=True)
 
-    # 复制 ComfyUIClawBridge 为 artclaw_bridge
-    cprint("复制", "ComfyUIClawBridge → artclaw_bridge...")
+    # 部署 ComfyUIClawBridge 为 artclaw_bridge
+    cprint("部署", "ComfyUIClawBridge → artclaw_bridge...")
     if not COMFYUI_BRIDGE_SRC.is_dir():
         cprint("错误", f"ComfyUIClawBridge 源码不存在: {COMFYUI_BRIDGE_SRC}", "red")
         return False
-    copy_dir(str(COMFYUI_BRIDGE_SRC), dcc_dst)
-    cprint("OK", f"ComfyUIClawBridge 已安装到: {dcc_dst}", "green")
+    method = link_or_copy_dir(str(COMFYUI_BRIDGE_SRC), dcc_dst)
+    cprint("OK", f"ComfyUIClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
-    # 复制 DCCClawBridge 到 artclaw_bridge 旁边的 DCCClawBridge/ 目录
+    # 部署 DCCClawBridge 到 artclaw_bridge 旁边的 DCCClawBridge/ 目录
     # startup.py 通过 ../DCCClawBridge 找到依赖
     dcc_bridge_dst = os.path.join(custom_nodes_dir, "artclaw_bridge_dcc")
-    cprint("复制", "DCCClawBridge → artclaw_bridge_dcc/ (依赖库)...")
-    copy_dir(str(DCC_BRIDGE_SRC), dcc_bridge_dst)
-    cprint("OK", f"DCCClawBridge 已安装到: {dcc_bridge_dst}", "green")
+    cprint("部署", "DCCClawBridge → artclaw_bridge_dcc/ (依赖库)...")
+    dcc_method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_bridge_dst)
+    cprint("OK", f"DCCClawBridge 已安装到: {dcc_bridge_dst} ({dcc_method})", "green")
 
-    # 复制共享模块到 dcc 的 core/
-    cprint("复制", "bridge_core 共享模块到 core/...")
-    copy_shared_modules(os.path.join(dcc_bridge_dst, "core"))
-    cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: 仅复制模式需要打包
+    if dcc_method == "copy":
+        cprint("复制", "bridge_core 共享模块到 core/...")
+        copy_shared_modules(os.path.join(dcc_bridge_dst, "core"))
+        cprint("OK", "共享模块已打包 (自包含部署)", "green")
+
+        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
+        copy_platform_bridge(platform_type, os.path.join(dcc_bridge_dst, "core"))
+    else:
+        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
 
     # 创建 artclaw_bridge_dcc 的 __init__.py（ComfyUI 需要这个文件来识别包）
     init_path = os.path.join(dcc_bridge_dst, "__init__.py")
-    with open(init_path, "w", encoding="utf-8") as f:
-        f.write('"""ArtClaw Bridge - DCC 依赖库"""\n')
-    cprint("OK", "已创建 artclaw_bridge_dcc/__init__.py", "green")
+    if not os.path.isfile(init_path):
+        with open(init_path, "w", encoding="utf-8") as f:
+            f.write('"""ArtClaw Bridge - DCC 依赖库"""\n')
+        cprint("OK", "已创建 artclaw_bridge_dcc/__init__.py", "green")
 
-    # 复制平台 bridge 到 core/
-    cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-    copy_platform_bridge(platform_type, os.path.join(dcc_bridge_dst, "core"))
-
-    # 更新 startup.py 中的路径（指向实际 DCCClawBridge 位置）
-    # 写入环境变量配置文件
+    # 写入环境变量配置文件（.env 需要写入实际路径，link 模式下写到源码树）
     env_file = os.path.join(dcc_dst, ".env")
     with open(env_file, "w", encoding="utf-8") as f:
         f.write(f"# ArtClaw Bridge 自动生成\n")
@@ -659,8 +682,8 @@ def uninstall_comfyui(comfyui_path: str):
 
     for dirname in ["artclaw_bridge", "artclaw_bridge_dcc"]:
         dst = os.path.join(custom_nodes_dir, dirname)
-        if os.path.isdir(dst):
-            shutil.rmtree(dst)
+        if os.path.isdir(dst) or _is_junction_or_symlink(dst):
+            _remove_link_or_dir(dst)
             cprint("删除", f"已删除: {dst}", "green")
         else:
             cprint("跳过", f"{dirname} 不存在: {dst}", "yellow")
