@@ -145,3 +145,6 @@ TOOLS.md
 USER.md
 # OpenClaw local workspace state
 .openclaw/
+
+# UE 5.4 test project (tracked on feature/ue5.4-compat only)
+subprojects/UEDAgentProj_54/
