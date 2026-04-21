@@ -2,13 +2,61 @@
 
 **Bridge DCC tools (UE, Maya, 3ds Max, Blender, Houdini, Substance Painter/Designer, ComfyUI) to AI Agents via MCP Protocol**
 
-ArtClaw Bridge provides a unified AI bridging layer for Digital Content Creation (DCC) software including Unreal Engine, Maya, 3ds Max, Blender, Houdini, Substance Painter, Substance Designer, and ComfyUI. Through the [MCP (Model Context Protocol)](https://modelcontextprotocol.io/), AI Agents can directly understand and operate the editor environment.
+> 🎯 **The Missing Bridge Between AI Agents and Creative Software**
+
+ArtClaw Bridge provides a unified AI bridging layer for Digital Content Creation (DCC) software. Through the [MCP (Model Context Protocol)](https://modelcontextprotocol.io/), AI Agents can directly understand and operate the editor environment — enabling AI to truly integrate into game development, film & animation, and digital art workflows.
+
+**Keywords:** `maya-mcp` `blender-mcp` `unreal-engine-mcp` `3dsmax-mcp` `houdini-mcp` `substance-mcp` `comfyui-mcp` `maya-skill` `blender-skill` `ue-skill` `ai-dcc` `ai-3d` `mcp-bridge` `ai-game-dev` `ai-vfx`
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Status](https://img.shields.io/badge/status-beta-orange.svg)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 
 [中文文档](README_zh.md)
+
+---
+
+## 🎯 Why ArtClaw Bridge?
+
+### The Problem We're Solving
+
+**1. AI Agents Can't Directly Operate Creative Software**
+
+Most AI agents (OpenClaw, Claude Code, Cursor, etc.) are general-purpose platforms. They excel at coding and text tasks, but they don't know how to:
+- Select objects in Maya
+- Create materials in Unreal Engine
+- Generate textures in Substance Designer
+- Run workflows in ComfyUI
+
+**2. From Custom Tools to Tool-Creation Platform**
+
+Traditionally, every DCC required custom scripts and tools built one-by-one. ArtClaw Bridge shifts this paradigm:
+
+- **Before**: Each tool is hand-crafted code, requiring deep expertise in the DCC's API
+- **After**: Artists describe what they need in natural language, AI generates the tool automatically
+
+The bridge layer handles the DCC-specific complexity once. After that, tool creation becomes a conversation, not a coding task.
+
+**3. Tool Management for the AI Era**
+
+Traditional tool frameworks were designed for manual discovery and learning. ArtClaw's Tool Manager reimagines this:
+
+- **AI-Native Discovery**: No more hunting through menus — just ask AI to find and run the right tool
+- **Zero Learning Curve**: AI explains and executes tools on-demand, eliminating training time
+- **Team Sharing**: Skills and tools are versioned, shared, and synced across the team
+- **Personal + Team Workflows**: Individuals create tools for their needs; teams curate shared libraries
+
+The result: tools are created, shared, discovered, and executed through AI — a framework built for how people actually work with AI.
+
+### Our Solution
+
+ArtClaw Bridge is a **unified bridging layer** that:
+- ✅ Connects any MCP-compatible AI Agent to any supported DCC software
+- ✅ Provides a standardized protocol (MCP) for AI-to-software communication
+- ✅ Includes an AI-powered Tool Manager for natural language tool creation
+- ✅ Works with existing Agent platforms — no need to build yet another Agent system
+
+> 💡 **Think of it as the "USB-C for AI Agents and Creative Software"** — one bridge, infinite combinations.
 
 ---
 
@@ -39,14 +87,6 @@ ArtClaw Bridge provides a unified AI bridging layer for Digital Content Creation
 ![Tool Management - Filtering Conditions + Trigger Rules Paradigm](docs/示例/tool-manager-tool管理-筛选条件+触发规则-范式.png)
 
 ⭐ *More demo videos coming soon!*
-
----
-
-## Project Vision
-
-Create a unified framework bridging software and AI Agents, integrating AI capabilities into the entire game development art pipeline, and empowering Agents to operate software and solve upstream/downstream handoff problems.
-
-The benefit of bridging is **the ability to connect various software and Agent platforms in the future**, forming a universal software-Agent interaction layer.
 
 ---
 
@@ -290,6 +330,20 @@ This architecture enables powerful automation scenarios:
 
 ## 🚀 Installation
 
+> 💡 **The Easiest Way: Let AI Install It For You**
+
+Instead of manual installation, simply tell your AI Agent:
+
+> *"Install ArtClaw Bridge for me. I need it for [UE/Maya/Blender/ComfyUI/etc.] at [path if needed]."*
+
+Your Agent will handle everything — cloning, dependencies, configuration, and MCP setup.
+
+**Example prompts:**
+- *"Install ArtClaw Bridge for Unreal Engine 5.7, my project is at D:\MyProject\UE_Game"*
+- *"Set up ArtClaw Bridge for Maya 2023 and Blender 5.1"*
+- *"Install ArtClaw Bridge for ComfyUI at C:\ComfyUI"*
+- *"Install ArtClaw Bridge with all DCC support"*
+
 ### Prerequisites
 
 - **Python** 3.9+
@@ -307,30 +361,17 @@ This architecture enables powerful automation scenarios:
   - Substance Designer 12.1.0 (verified)
   - ComfyUI (verified, install via ComfyUI-Manager or copy to custom_nodes)
 
-### Method 1: One-Click Install (Recommended)
+### Manual Installation (If You Prefer)
 
 ```bash
 # 1. Clone repo
 git clone https://github.com/IvanYangYangXi/artclaw_bridge.git
 cd artclaw_bridge
 
-# 2a. Windows interactive menu — double-click or run in terminal:
-install.bat
-
-# 2b. Or use Python CLI:
-python install.py --help                                      # View all options
-python install.py --maya                                      # Install Maya plugin (default 2023)
-python install.py --maya --maya-version 2024                  # Specify Maya version
-python install.py --max --max-version 2024                   # Install Max plugin
-python install.py --ue --ue-project "C:\path\to\project"   # Install UE plugin
-python install.py --blender --blender-version 5.1             # Install Blender plugin (auto-installs PySide6)
-python install.py --houdini --houdini-version 20.5            # Install Houdini plugin
-python install.py --sp                                        # Install Substance Painter plugin
-python install.py --sd                                        # Install Substance Designer plugin
-python install.py --comfyui --comfyui-path "C:\ComfyUI"      # Install ComfyUI plugin
-python install.py --openclaw                                  # Configure OpenClaw
-python install.py --openclaw --platform lobster               # Configure LobsterAI
-python install.py --all --ue-project "C:\path\to\project"    # Install all DCCs
+# 2. Run interactive installer
+install.bat  # Windows
+# or
+python install.py --help  # View all options
 ```
 
 The installer will automatically:
@@ -342,29 +383,7 @@ The installer will automatically:
 6. Write `~/.artclaw/config.json` project config
 7. Idempotent (safe to run multiple times)
 
-### Method 2: Agent Installation (Recommended for AI Users)
-
-If you're using an AI Agent (like OpenClaw, Claude, or other MCP-compatible agents), you can install ArtClaw Bridge through natural language conversation:
-
-**Simply tell your Agent:**
-
-> "Install ArtClaw Bridge for me. I need it for [UE/Maya/Blender/ComfyUI/etc.] at [path if needed]."
-
-Your Agent will:
-1. Clone the repository to your workspace
-2. Run the appropriate installation commands
-3. Configure the MCP bridge for your Agent platform
-4. Verify the installation
-
-**For AI Agents:** See [INSTALL_GUIDE.md](INSTALL_GUIDE.md) for step-by-step installation instructions with exact commands and configuration details.
-
-**Example prompts:**
-- *"Install ArtClaw Bridge for Unreal Engine 5.7, my project is at D:\\MyProject\\UE_Game"*
-- *"Set up ArtClaw Bridge for Maya 2023 and Blender 5.1"*
-- *"Install ArtClaw Bridge for ComfyUI at C:\\ComfyUI"*
-- *"Install ArtClaw Bridge with all DCC support"*
-
-The Agent handles all the technical details — cloning, dependency installation, path configuration, and MCP setup.
+For detailed manual installation instructions, see [INSTALL_GUIDE.md](INSTALL_GUIDE.md).
 
 ### Post-Install Verification
 
@@ -443,27 +462,31 @@ See [Contributing Guide](docs/skills/CONTRIBUTING.md) for details.
 
 ---
 
-## 🧾 Some Thoughts (Not Necessarily Correct, Feedback Welcome)
+## 🧾 Design Philosophy
 
-### Why not directly build an Agent connected to LLM?
+### Why Not Build Yet Another Agent Platform?
 
-Agent platforms are a big undertaking. Many companies are building their own Agent management platforms, and LobsterAI is one of them.
+Agent platforms are a big undertaking. Many companies are already building excellent ones (OpenClaw, LobsterAI, Claude Code, Cursor, etc.).
 
-This project only addresses **the engineering problems currently needed**, focusing on the niche of software bridging.
+This project focuses on **the specific engineering problem of bridging** — enabling these existing platforms to control creative software. We don't reinvent the wheel; we make the wheel fit more vehicles.
 
-### With MCP and Skills you can connect to LLM, why build this bridge project?
+### Why MCP + Skills Instead of Direct LLM Integration?
 
-The goal is to optimize user experience. Just like VSCode has many Agent plugins that let users work in their original software windows — greatly improving willingness to use and efficiency, and enabling custom development based on needs.
+Direct LLM integration is a black box — unpredictable and uncontrollable. Like early AI image generation: impressive, but not production-ready.
 
-### Thoughts on Production Deployment
+ArtClaw Bridge adds **engineering discipline** to AI execution:
+- Structured Skills provide predictable behavior
+- MCP protocol standardizes communication
+- Tool Manager enables controllable automation
 
-For simple tasks like batch generating objects according to clear rules, they can be done directly through MCP. Performance optimization analysis, script development, and other tasks achievable through code execution are also fully capable. But these use cases are mostly for TA and programmers — they don't help artists at all.
+This approach mirrors Claude Code's philosophy: use engineering to make LLM execution correct and controllable, not magical.
 
-The benefit now is that artists can directly have AI help with simple scriptable functions without learning programming.
+### Who Benefits?
 
-The process of LLM direct execution is a black box — you have no idea how it works internally, and AI execution results are completely unpredictable. It's like early AI image generation — AI could draw, but couldn't be deployed in projects. Later, many engineering tools emerged to make AI's execution process more controllable, which truly improved production efficiency.
-
-So what we need to do next is break down the process and make AI's output controllable. This still relies on traditional engineering thinking. Claude Code's code also validates this direction is correct — they don't have many black magic tricks, but make LLMs execute in correct, controllable ways through engineering.
+- **Artists** — Can leverage AI for automation without learning to code
+- **Technical Artists** — Can build and share reusable Skills across teams
+- **Developers** — Can integrate AI into existing pipelines without building custom Agent infrastructure
+- **Studios** — Can standardize AI tooling across multiple DCCs and projects
 
 ---
 
