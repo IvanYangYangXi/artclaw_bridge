@@ -258,16 +258,12 @@ def install_maya(maya_version: str, force: bool, platform_type: str = "openclaw"
     method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
-    # 共享模块 & 平台 bridge: 仅复制模式需要打包
-    if method == "copy":
-        cprint("复制", "bridge_core 共享模块到 core/...")
-        copy_shared_modules(os.path.join(dcc_dst, "core"))
-        cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件，copy 模式完整打包
+    cprint("同步", "bridge_core 共享模块到 core/...")
+    copy_shared_modules(os.path.join(dcc_dst, "core"))
 
-        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-        copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
-    else:
-        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
+    cprint("同步", f"平台 bridge ({platform_type}) 到 core/...")
+    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
 
     # 注入 userSetup.py（幂等追加）
     user_setup_src = str(DCC_BRIDGE_SRC / "maya_setup" / "userSetup.py")
@@ -420,16 +416,12 @@ def install_max(max_version: str, force: bool, platform_type: str = "openclaw"):
     method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
-    # 共享模块 & 平台 bridge: 仅复制模式需要打包
-    if method == "copy":
-        cprint("复制", "bridge_core 共享模块到 core/...")
-        copy_shared_modules(os.path.join(dcc_dst, "core"))
-        cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件
+    cprint("同步", "bridge_core 共享模块到 core/...")
+    copy_shared_modules(os.path.join(dcc_dst, "core"))
 
-        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-        copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
-    else:
-        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
+    cprint("同步", f"平台 bridge ({platform_type}) 到 core/...")
+    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
 
     # 注入 startup.py（Python 启动脚本）
     startup_src = str(DCC_BRIDGE_SRC / "max_setup" / "startup.py")

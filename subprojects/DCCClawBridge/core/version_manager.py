@@ -1,0 +1,1 @@
+D:/MyProject_D/artclaw_bridge/core/version_manager.py
