@@ -1,0 +1,17 @@
+# install.py 动态创建的 symlink 文件（指向 core/ 和 platforms/ 源码）
+# 不应 git 跟踪，否则在 core.symlinks=false 环境下会变成路径文本文件
+bridge_core.py
+bridge_config.py
+bridge_diagnostics.py
+memory_core.py
+integrity_check.py
+health_check.py
+skill_sync.py
+retry_tracker.py
+skill_decorator.py
+version_manager.py
+openclaw_ws.py
+openclaw_chat.py
+openclaw_diagnose.py
+interfaces/
+schemas/

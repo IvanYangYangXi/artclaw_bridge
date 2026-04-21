@@ -1,1 +1,0 @@
-D:/MyProject_D/artclaw_bridge/core/integrity_check.py
