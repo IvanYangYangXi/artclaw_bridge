@@ -148,3 +148,5 @@ USER.md
 
 # UE 5.4 test project (tracked on feature/ue5.4-compat only)
 subprojects/UEDAgentProj_54/
+# 安装脚本生成的本机路径配置
+.env
