@@ -21,6 +21,7 @@ from install_utils import (
     cprint,
     get_gateway_src,
     get_platform_src,
+    link_or_copy_dir,
 )
 
 # ---------------------------------------------------------------------------
@@ -215,12 +216,9 @@ def install_openclaw(platform_type: str = "openclaw"):
                 if not (skill_dir / "SKILL.md").exists() and not (skill_dir / "manifest.json").exists():
                     continue
                 dst = os.path.join(skills_installed_path, skill_dir.name)
-                if os.path.exists(dst):
-                    shutil.rmtree(dst)
-                shutil.copytree(
-                    str(skill_dir), dst,
-                    ignore=shutil.ignore_patterns("__pycache__"),
-                )
+                method = link_or_copy_dir(str(skill_dir), dst)
+                if method != "copy":
+                    cprint("链接", f"Skill: {skill_dir.name} ({method})", "cyan")
                 skill_count += 1
     if skill_count:
         cprint("OK", f"{skill_count} 个 Skills 已安装到: {skills_installed_path}", "green")

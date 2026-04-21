@@ -31,7 +31,7 @@ import argparse
 import subprocess
 import sys
 
-from install_utils import ROOT_DIR, cprint, get_platform_src
+from install_utils import ROOT_DIR, cprint, get_platform_src, set_copy_mode
 from install_platform import PLATFORM_CONFIGS, install_openclaw
 from install_dcc import (
     install_ue, uninstall_ue,
@@ -162,6 +162,7 @@ def main():
   python install.py --force --maya --max                 跳过覆盖确认
   python install.py --platform workbuddy --maya          安装 Maya 并配置 WorkBuddy 平台
   python install.py --platform lobster --maya            安装 Maya 并配置 LobsterAI 平台
+  python install.py --copy --maya                        强制复制模式 (不使用链接)
         """,
     )
 
@@ -194,6 +195,8 @@ def main():
 
     # 选项
     parser.add_argument("--force", action="store_true", help="跳过覆盖确认")
+    parser.add_argument("--copy", action="store_true",
+                        help="强制使用复制模式 (默认使用 junction/symlink 引用)")
     parser.add_argument("--uninstall", action="store_true", help="卸载模式")
 
     args = parser.parse_args()
@@ -213,6 +216,9 @@ def main():
         args.maya = args.max = args.ue = True
         args.blender = args.houdini = args.sp = args.sd = args.comfyui = True
         args.openclaw = True
+
+    # 设置安装模式
+    set_copy_mode(args.copy)
 
     pt = args.platform
 
@@ -236,6 +242,7 @@ def main():
     cprint("信息", f"项目目录: {ROOT_DIR}")
     if not args.uninstall:
         cprint("信息", f"目标平台: {pt}")
+        cprint("信息", f"安装模式: {'复制' if args.copy else '链接 (junction/symlink)'}")
 
     installed = []
     uninstalled = []

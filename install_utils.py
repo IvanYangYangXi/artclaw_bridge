@@ -5,13 +5,18 @@ ArtClaw Bridge — 安装工具函数
 ==============================
 
 供 install_dcc.py / install_platform.py / install.py 共用的常量与工具函数。
+
+安装策略: 优先使用 symlink/junction 创建引用（git pull 即更新），
+失败时自动 fallback 到复制。通过 --copy 强制复制模式。
 """
 
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -91,13 +96,164 @@ def confirm_overwrite(path: str, force: bool) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# 安装模式: link (默认) vs copy
+# ---------------------------------------------------------------------------
+
+# 全局标志，由 install.py 的 --copy 参数设置
+USE_COPY_MODE = False
+
+
+def set_copy_mode(enabled: bool):
+    """设置全局安装模式: True=复制, False=link(默认)"""
+    global USE_COPY_MODE
+    USE_COPY_MODE = enabled
+
+
+# ---------------------------------------------------------------------------
 # 文件 / 目录操作
 # ---------------------------------------------------------------------------
 
+def _is_junction_or_symlink(path: str) -> bool:
+    """检查路径是否为 junction 或 symlink"""
+    p = Path(path)
+    if p.is_symlink():
+        return True
+    # Windows junction: not a symlink but is a reparse point
+    if platform.system() == "Windows" and p.exists():
+        try:
+            import ctypes
+            FILE_ATTRIBUTE_REPARSE_POINT = 0x0400
+            attrs = ctypes.windll.kernel32.GetFileAttributesW(str(p))
+            if attrs != -1 and (attrs & FILE_ATTRIBUTE_REPARSE_POINT):
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _remove_link_or_dir(path: str):
+    """安全移除 junction/symlink 或普通目录"""
+    if _is_junction_or_symlink(path):
+        # junction/symlink: 只移除链接本身，不删除目标内容
+        if platform.system() == "Windows":
+            # os.rmdir 可以安全移除 junction (不删内容)
+            # os.remove 可以安全移除 file symlink
+            p = Path(path)
+            if p.is_dir():
+                os.rmdir(path)
+            else:
+                os.remove(path)
+        else:
+            os.remove(path)
+    elif os.path.isdir(path):
+        shutil.rmtree(path)
+    elif os.path.isfile(path):
+        os.remove(path)
+
+
+def _try_junction(src: str, dst: str) -> bool:
+    """尝试创建 Windows junction (目录)。不需要管理员权限。"""
+    if platform.system() != "Windows":
+        return False
+    try:
+        # mklink /J 不需要管理员权限
+        result = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", dst, src],
+            capture_output=True, text=True, timeout=10,
+        )
+        return result.returncode == 0 and os.path.isdir(dst)
+    except Exception:
+        return False
+
+
+def _try_symlink_dir(src: str, dst: str) -> bool:
+    """尝试创建目录 symlink (需要开发者模式或管理员权限)"""
+    try:
+        os.symlink(src, dst, target_is_directory=True)
+        return True
+    except (OSError, NotImplementedError):
+        return False
+
+
+def _try_symlink_file(src: str, dst: str) -> bool:
+    """尝试创建文件 symlink"""
+    try:
+        os.symlink(src, dst)
+        return True
+    except (OSError, NotImplementedError):
+        return False
+
+
+def link_or_copy_dir(src: str, dst: str) -> str:
+    """创建目录引用（优先 junction/symlink，fallback 复制）。
+
+    返回: "junction" | "symlink" | "copy" 表示实际采用的方式
+    """
+    src = os.path.abspath(src)
+    dst = os.path.abspath(dst)
+
+    # 先清理已有目标
+    if os.path.exists(dst) or _is_junction_or_symlink(dst):
+        _remove_link_or_dir(dst)
+
+    # 确保父目录存在
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+
+    if USE_COPY_MODE:
+        shutil.copytree(src, dst)
+        return "copy"
+
+    # 优先 junction (Windows, 无权限要求)
+    if _try_junction(src, dst):
+        return "junction"
+
+    # 其次 symlink
+    if _try_symlink_dir(src, dst):
+        return "symlink"
+
+    # fallback: 复制
+    cprint("回退", f"无法创建链接，使用复制: {dst}", "yellow")
+    shutil.copytree(src, dst)
+    return "copy"
+
+
+def link_or_copy_file(src: str, dst: str) -> str:
+    """创建文件引用（优先 symlink，fallback 复制）。
+
+    返回: "symlink" | "hardlink" | "copy" 表示实际采用的方式
+    """
+    src = os.path.abspath(src)
+    dst = os.path.abspath(dst)
+
+    if os.path.exists(dst) or _is_junction_or_symlink(dst):
+        _remove_link_or_dir(dst)
+
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+
+    if USE_COPY_MODE:
+        shutil.copy2(src, dst)
+        return "copy"
+
+    # 优先 symlink
+    if _try_symlink_file(src, dst):
+        return "symlink"
+
+    # 其次 hardlink (同一文件系统)
+    try:
+        os.link(src, dst)
+        return "hardlink"
+    except (OSError, NotImplementedError):
+        pass
+
+    # fallback: 复制
+    shutil.copy2(src, dst)
+    return "copy"
+
+
 def copy_dir(src: str, dst: str):
-    """复制目录（镜像模式：先删后复制）"""
-    if os.path.exists(dst):
-        shutil.rmtree(dst)
+    """复制目录（镜像模式：先删后复制）— 保留向后兼容"""
+    if os.path.exists(dst) or _is_junction_or_symlink(dst):
+        _remove_link_or_dir(dst)
     shutil.copytree(src, dst)
 
 
@@ -117,12 +273,14 @@ def write_file(path: str, content: str):
 
 
 def copy_shared_modules(dst_dir: str):
-    """将 bridge_core 等共享模块复制到目标目录（含 interfaces/ schemas/ 子目录）"""
+    """将 bridge_core 等共享模块链接/复制到目标目录（含 interfaces/ schemas/ 子目录）"""
     os.makedirs(dst_dir, exist_ok=True)
     for mod in SHARED_MODULES:
         src = BRIDGE_MODULES_SRC / mod
         if src.exists():
-            shutil.copy2(str(src), os.path.join(dst_dir, mod))
+            method = link_or_copy_file(str(src), os.path.join(dst_dir, mod))
+            if method != "copy":
+                cprint("链接", f"{mod} ({method})", "cyan")
         else:
             cprint("警告", f"共享模块不存在: {src}", "yellow")
 
@@ -131,12 +289,14 @@ def copy_shared_modules(dst_dir: str):
         src_sub = BRIDGE_MODULES_SRC / subdir
         dst_sub = os.path.join(dst_dir, subdir)
         if src_sub.is_dir():
-            copy_dir(str(src_sub), dst_sub)
+            method = link_or_copy_dir(str(src_sub), dst_sub)
+            if method != "copy":
+                cprint("链接", f"{subdir}/ ({method})", "cyan")
         # 子目录不存在是可接受的（某些构建环境可能没有）
 
 
 def copy_platform_bridge(platform_type: str, dst_dir: str):
-    """将平台特定 bridge 文件复制到目标目录（openclaw 额外复制 chat/diagnose 模块）"""
+    """将平台特定 bridge 文件链接/复制到目标目录（openclaw 额外复制 chat/diagnose 模块）"""
     # 延迟导入避免循环依赖
     from install_platform import PLATFORM_CONFIGS
 
@@ -148,16 +308,16 @@ def copy_platform_bridge(platform_type: str, dst_dir: str):
     platform_src = get_platform_src(platform_type)
 
     # 主 bridge 文件
-    files_to_copy = [pcfg["bridge_file"]]
+    files_to_link = [pcfg["bridge_file"]]
     # openclaw 平台额外携带独立模块
     if platform_type == "openclaw":
-        files_to_copy += ["openclaw_chat.py", "openclaw_diagnose.py"]
+        files_to_link += ["openclaw_ws.py", "openclaw_chat.py", "openclaw_diagnose.py"]
 
-    for fname in files_to_copy:
+    for fname in files_to_link:
         src = platform_src / fname
         if src.exists():
-            shutil.copy2(str(src), os.path.join(dst_dir, fname))
-            cprint("OK", f"平台 bridge 已复制: {fname}", "green")
+            method = link_or_copy_file(str(src), os.path.join(dst_dir, fname))
+            cprint("OK", f"平台 bridge: {fname} ({method})", "green")
         else:
             cprint("警告", f"平台 bridge 文件不存在: {src}", "yellow")
 
@@ -322,14 +482,12 @@ def install_dcc_skills(dcc_categories: list, platform_type: str = "openclaw") ->
             if not (skill_dir / "SKILL.md").exists():
                 continue
             dst = os.path.join(skills_installed_path, skill_dir.name)
-            if os.path.exists(dst):
-                shutil.rmtree(dst)
-            shutil.copytree(
-                str(skill_dir), dst,
-                ignore=shutil.ignore_patterns("__pycache__"),
-            )
+            method = link_or_copy_dir(str(skill_dir), dst)
+            if method != "copy":
+                cprint("链接", f"Skill: {skill_dir.name} ({method})", "cyan")
             skill_count += 1
 
     if skill_count:
-        cprint("OK", f"{skill_count} 个 DCC Skills 已安装到: {skills_installed_path}", "green")
+        method_label = "链接" if not USE_COPY_MODE else "复制"
+        cprint("OK", f"{skill_count} 个 DCC Skills 已{method_label}到: {skills_installed_path}", "green")
     return skill_count
