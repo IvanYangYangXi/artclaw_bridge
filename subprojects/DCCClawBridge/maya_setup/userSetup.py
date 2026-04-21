@@ -23,33 +23,65 @@ logger = logging.getLogger("artclaw")
 
 def _setup_paths():
     """将 DCCClawBridge 目录加入 sys.path"""
-    # userSetup.py 所在目录 → scripts/
     # DCCClawBridge 可能在:
     #   1. scripts/DCCClawBridge/ (直接部署)
     #   2. 项目目录/subprojects/DCCClawBridge/ (开发模式)
+    #
+    # 查找策略（按优先级）:
+    #   a. __file__ 同目录（大多数情况可靠）
+    #   b. MAYA_SCRIPT_PATH 中的各 scripts 目录
+    #   c. maya.cmds.internalVar(userScriptDir=True)
+    #   d. ARTCLAW_BRIDGE_PATH 环境变量（开发模式）
 
-    scripts_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate_dirs = []
 
-    # 情况 1: 直接部署
-    dcc_bridge_dir = os.path.join(scripts_dir, "DCCClawBridge")
+    # a. __file__ 同目录
+    try:
+        candidate_dirs.append(os.path.dirname(os.path.abspath(__file__)))
+    except NameError:
+        pass  # __file__ 未定义（极端情况）
 
-    # 情况 2: 开发模式 — 从环境变量获取
-    if not os.path.isdir(dcc_bridge_dir):
-        env_path = os.environ.get("ARTCLAW_BRIDGE_PATH", "")
-        if env_path and os.path.isdir(env_path):
-            dcc_bridge_dir = os.path.join(env_path, "subprojects", "DCCClawBridge")
+    # b. MAYA_SCRIPT_PATH 中的 scripts 目录
+    maya_script_path = os.environ.get("MAYA_SCRIPT_PATH", "")
+    if maya_script_path:
+        for p in maya_script_path.split(os.pathsep):
+            p = p.strip()
+            if p and os.path.isdir(p):
+                candidate_dirs.append(p)
 
-    if os.path.isdir(dcc_bridge_dir):
-        if dcc_bridge_dir not in sys.path:
-            sys.path.insert(0, dcc_bridge_dir)
-        logger.info(f"ArtClaw: DCCClawBridge path = {dcc_bridge_dir}")
-        return True
-    else:
-        logger.warning(
-            "ArtClaw: DCCClawBridge not found. "
-            "Place it in scripts/DCCClawBridge/ or set ARTCLAW_BRIDGE_PATH."
-        )
-        return False
+    # c. maya.cmds.internalVar（Maya 启动后可用）
+    try:
+        import maya.cmds as _cmds
+        user_script_dir = _cmds.internalVar(userScriptDir=True)
+        if user_script_dir:
+            candidate_dirs.append(user_script_dir.rstrip("/\\"))
+    except Exception:
+        pass
+
+    # 在候选目录中查找 DCCClawBridge/
+    for scripts_dir in candidate_dirs:
+        dcc_bridge_dir = os.path.join(scripts_dir, "DCCClawBridge")
+        if os.path.isdir(dcc_bridge_dir):
+            if dcc_bridge_dir not in sys.path:
+                sys.path.insert(0, dcc_bridge_dir)
+            logger.info(f"ArtClaw: DCCClawBridge path = {dcc_bridge_dir}")
+            return True
+
+    # d. 开发模式 — 从环境变量获取
+    env_path = os.environ.get("ARTCLAW_BRIDGE_PATH", "")
+    if env_path and os.path.isdir(env_path):
+        dcc_bridge_dir = os.path.join(env_path, "subprojects", "DCCClawBridge")
+        if os.path.isdir(dcc_bridge_dir):
+            if dcc_bridge_dir not in sys.path:
+                sys.path.insert(0, dcc_bridge_dir)
+            logger.info(f"ArtClaw: DCCClawBridge path = {dcc_bridge_dir} (dev mode)")
+            return True
+
+    logger.warning(
+        "ArtClaw: DCCClawBridge not found. "
+        "Place it in scripts/DCCClawBridge/ or set ARTCLAW_BRIDGE_PATH."
+    )
+    return False
 
 
 def _deferred_startup():

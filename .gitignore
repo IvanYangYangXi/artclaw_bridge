@@ -145,3 +145,6 @@ TOOLS.md
 USER.md
 # OpenClaw local workspace state
 .openclaw/
+
+# 安装脚本生成的本机路径配置
+.env
