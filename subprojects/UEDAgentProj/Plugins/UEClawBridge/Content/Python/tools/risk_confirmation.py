@@ -21,7 +21,7 @@ from typing import Optional
 
 import unreal
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 from tools.static_guard import RiskLevel
 
 

@@ -14,7 +14,7 @@ import time
 import urllib.parse
 import uuid
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 
 _DEFAULT_TOKEN = "ec8900cf3e3c4bbfab43c8d7d5a4638c69b854e075902325"
 _PROTOCOL_VERSION = 3

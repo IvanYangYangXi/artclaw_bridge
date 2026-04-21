@@ -10,7 +10,7 @@ void SUEAgentDashboard::ConnectOpenClawBridge()
 	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("Connecting")));
 
 	// 通过平台桥接连接
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString StatusFile = TempDir / TEXT("_connect_status.txt");
 	IFileManager::Get().Delete(*StatusFile, false, false, true);
@@ -85,7 +85,7 @@ void SUEAgentDashboard::RunDiagnoseConnection()
 	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("RunningHealthCheck")));
 
 	// 诊断结果写入临时文件，然后轮询读取
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString DiagFile = TempDir / TEXT("_diagnose_result.txt");
 
@@ -147,7 +147,7 @@ void SUEAgentDashboard::SendEnvironmentContext()
 {
 	// 收集静态环境信息并通过 Python 发送给 AI
 	// 这些信息在会话期间不会变化，帮助 AI 了解当前工作环境
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString ContextFile = TempDir / TEXT("_env_context.txt");
 	IFileManager::Get().Delete(*ContextFile, false, false, true);
@@ -330,7 +330,7 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 
 	// 临时文件路径 — Python 写入响应，C++ 读取
 	// 消息内容由 SendMessageAsync 通过临时文件传递（不在此处转义）
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString ResponseFile = TempDir / TEXT("_openclaw_response.txt");
 	FString StreamFile   = TempDir / TEXT("_openclaw_response_stream.jsonl");
@@ -463,7 +463,7 @@ void SUEAgentDashboard::ResumeReceiving()
 	bHasStreamingMessage = false;
 	StreamLinesRead = 0;
 
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
 	FString StreamFile   = TempDir / TEXT("_openclaw_response_stream.jsonl");
 	FString ResponseFile = TempDir / TEXT("_openclaw_response.txt");
 

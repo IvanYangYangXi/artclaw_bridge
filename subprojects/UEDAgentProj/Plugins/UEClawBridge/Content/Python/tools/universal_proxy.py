@@ -28,7 +28,7 @@ from typing import Any, Optional
 
 import unreal
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 from tools.static_guard import StaticGuard, RiskLevel, ScanResult, detect_file_operations
 
 
@@ -64,7 +64,7 @@ def _check_session_silent_flag() -> bool:
     """检查临时会话静默标记文件 (C++ 弹窗复选框写入)"""
     try:
         flag_file = os.path.join(
-            unreal.Paths.project_saved_dir(), "UEAgent", "_silent_session.flag")
+            unreal.Paths.project_saved_dir(), "ClawBridge", "_silent_session.flag")
         return os.path.exists(flag_file)
     except Exception:
         return False
@@ -114,7 +114,7 @@ def _request_file_confirmation(operations: list, risk_level: str, code_preview: 
 
     # --- 正常弹窗确认流程 ---
     try:
-        confirm_dir = os.path.join(unreal.Paths.project_saved_dir(), "UEAgent")
+        confirm_dir = os.path.join(unreal.Paths.project_saved_dir(), "ClawBridge")
         os.makedirs(confirm_dir, exist_ok=True)
         request_file = os.path.join(confirm_dir, "_confirm_request.json")
         response_file = os.path.join(confirm_dir, "_confirm_response.json")

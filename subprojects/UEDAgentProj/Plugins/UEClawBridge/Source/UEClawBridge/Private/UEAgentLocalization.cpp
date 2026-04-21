@@ -465,7 +465,7 @@ EUEAgentLanguage FUEAgentL10n::DetectSystemLanguage()
 FString FUEAgentL10n::GetConfigFilePath()
 {
 	// 保存在 ProjectSaved/UEAgent/language_pref.txt
-	return FPaths::ProjectSavedDir() / TEXT("UEAgent") / TEXT("language_pref.txt");
+	return FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge") / TEXT("language_pref.txt");
 }
 
 bool FUEAgentL10n::LoadLanguagePreference(EUEAgentLanguage& OutLang)

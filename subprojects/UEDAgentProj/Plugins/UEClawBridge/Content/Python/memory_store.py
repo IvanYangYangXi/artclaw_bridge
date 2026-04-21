@@ -30,11 +30,11 @@ from typing import Any, Optional
 
 try:
     import unreal
-    _project_dir = Path(str(unreal.Paths.project_saved_dir())) / "UEAgent"
+    _project_dir = Path(str(unreal.Paths.project_saved_dir())) / "ClawBridge"
 except Exception:
     _project_dir = Path.home() / ".ue_agent"
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 
 # ---------------------------------------------------------------------------
 # 导入 memory_core

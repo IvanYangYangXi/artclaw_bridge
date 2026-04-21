@@ -99,7 +99,7 @@ void SUEAgentDashboard::SaveQuickInputs()
 
 FString SUEAgentDashboard::GetQuickInputConfigPath() const
 {
-	return FPaths::ProjectSavedDir() / TEXT("UEAgent") / TEXT("quick_inputs.json");
+	return FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge") / TEXT("quick_inputs.json");
 }
 
 void SUEAgentDashboard::RebuildQuickInputPanel()

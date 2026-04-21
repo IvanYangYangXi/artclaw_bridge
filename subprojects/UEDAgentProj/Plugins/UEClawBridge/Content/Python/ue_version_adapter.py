@@ -26,7 +26,7 @@ try:
 except ImportError:
     unreal = None  # type: ignore
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 
 
 # ============================================================================

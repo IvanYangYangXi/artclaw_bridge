@@ -8,7 +8,7 @@
 
 FString SUEAgentDashboard::GetLastSessionFilePath() const
 {
-	return FPaths::ProjectSavedDir() / TEXT("UEAgent") / TEXT("_last_session.json");
+	return FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge") / TEXT("_last_session.json");
 }
 
 void SUEAgentDashboard::SaveLastSession()
@@ -275,7 +275,7 @@ void SUEAgentDashboard::OnDeleteSession(int32 Index)
 void SUEAgentDashboard::LoadSessionHistory(const FString& SessionKey)
 {
 	// 从 Gateway 异步拉取会话历史
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 
 	// 用 session key 的 hash 作为临时文件名，避免冲突

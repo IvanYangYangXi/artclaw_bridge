@@ -154,7 +154,7 @@ void FOpenClawPlatformBridge::SetSessionKey(const FString& SessionKey)
 
 FString FOpenClawPlatformBridge::GetSessionKey() const
 {
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString KeyFile = TempDir / TEXT("_session_key.txt");
 	IFileManager::Get().Delete(*KeyFile, false, false, true);
@@ -180,7 +180,7 @@ FString FOpenClawPlatformBridge::GetSessionKey() const
 
 FString FOpenClawPlatformBridge::GetAgentId() const
 {
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString AgentFile = TempDir / TEXT("_agent_id.txt");
 	IFileManager::Get().Delete(*AgentFile, false, false, true);

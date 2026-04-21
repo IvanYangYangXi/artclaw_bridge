@@ -32,8 +32,8 @@ except ImportError:
 
 import unreal
 
-# 从 init_unreal 导入日志系统
-from init_unreal import UELogger, log_mcp_call
+# 从 claw_bridge_logger 导入日志系统
+from claw_bridge_logger import UELogger, log_mcp_call
 
 
 # ============================================================================
@@ -117,9 +117,9 @@ def _get_active_stream_file() -> str:
         saved_dir = unreal.Paths.project_saved_dir()
     except Exception:
         return ""
-    stream_file = os.path.join(saved_dir, "UEAgent", "_openclaw_response_stream.jsonl")
+    stream_file = os.path.join(saved_dir, "ClawBridge", "_openclaw_response_stream.jsonl")
     # 只有在 chat 正在进行中时才写（response.txt 不存在 = 还在等 AI）
-    response_file = os.path.join(saved_dir, "UEAgent", "_openclaw_response.txt")
+    response_file = os.path.join(saved_dir, "ClawBridge", "_openclaw_response.txt")
     if os.path.exists(response_file):
         return ""  # chat 已完成，不写
     return stream_file
@@ -707,7 +707,7 @@ class MCPServer:
         try:
             import openclaw_ws, os
             _status_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                       "..", "..", "Saved", "UEAgent")
+                                       "..", "..", "Saved", "ClawBridge")
             openclaw_ws.write_bridge_status(_status_dir, connected=True, mcp_ready=True)
         except Exception:
             pass
@@ -739,7 +739,7 @@ class MCPServer:
         try:
             import openclaw_ws, os
             _status_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                       "..", "..", "Saved", "UEAgent")
+                                       "..", "..", "Saved", "ClawBridge")
             openclaw_ws.write_bridge_status(_status_dir, connected=True, mcp_ready=False)
         except Exception:
             pass

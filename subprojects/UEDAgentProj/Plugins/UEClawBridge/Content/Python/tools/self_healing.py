@@ -13,7 +13,7 @@ import json
 from typing import Optional, Dict, List
 from dataclasses import dataclass, field
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 
 
 # ============================================================================

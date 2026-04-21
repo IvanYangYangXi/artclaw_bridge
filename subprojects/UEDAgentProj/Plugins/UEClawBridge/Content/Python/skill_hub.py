@@ -34,7 +34,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import unreal
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 
 # Phase B 模块
 from skill_manifest import (

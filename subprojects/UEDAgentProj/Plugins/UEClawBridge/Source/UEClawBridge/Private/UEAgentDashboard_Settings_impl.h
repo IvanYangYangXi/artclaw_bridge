@@ -470,7 +470,7 @@ void SUEAgentDashboard::LoadCachedAgents()
 FReply SUEAgentDashboard::OnRefreshAgentsClicked()
 {
 	// 异步从 Gateway 拉取 Agent 列表
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString ResultFile = TempDir / TEXT("_agents_list.json");
 	IFileManager::Get().Delete(*ResultFile, false, false, true);
@@ -770,7 +770,7 @@ void SUEAgentDashboard::OnPlatformSelected(const FString& PlatformType)
 	PlatformBridge->Disconnect();
 
 	// 3. 重新连接（Python 端会重新读 config，拿到新 gateway url/token）
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	FString StatusFile = TempDir / TEXT("_connect_status.txt");
 	IFileManager::Get().Delete(*StatusFile, false, false, true);

@@ -30,11 +30,11 @@ from typing import Dict, List, Optional, Tuple
 
 try:
     import unreal
-    _kb_dir = Path(str(unreal.Paths.project_saved_dir())) / "UEAgent" / "knowledge"
+    _kb_dir = Path(str(unreal.Paths.project_saved_dir())) / "ClawBridge" / "knowledge"
 except Exception:
     _kb_dir = Path.home() / ".ue_agent" / "knowledge"
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 
 
 # ============================================================================

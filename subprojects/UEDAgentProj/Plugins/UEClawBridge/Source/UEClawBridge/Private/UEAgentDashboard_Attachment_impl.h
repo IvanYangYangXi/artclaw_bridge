@@ -8,7 +8,7 @@
 
 FString SUEAgentDashboard::GetAttachmentTempDir() const
 {
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent") / TEXT("attachments");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge") / TEXT("attachments");
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 	return TempDir;
 }

@@ -25,7 +25,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 from skill_manifest import VALID_CATEGORIES, VALID_SOFTWARE, VALID_RISK_LEVELS
 
 
