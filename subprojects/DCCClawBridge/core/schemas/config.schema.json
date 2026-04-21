@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://artclaw.dev/schemas/config.schema.json",
+  "title": "ArtClaw Config",
+  "description": "ArtClaw Bridge 主配置文件 (~/.artclaw/config.json) 的 JSON Schema。参考规范：docs/specs/sdk-core-api-spec.md C2 和 docs/specs/sdk-platform-adapter-spec.md P8",
+  "type": "object",
+  "properties": {
+    "platform": {
+      "type": "object",
+      "description": "AI 平台连接配置",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["openclaw", "claude", "lobster", "workbuddy"],
+          "description": "平台类型标识符"
+        },
+        "gateway_url": {
+          "type": "string",
+          "description": "WebSocket 网关 URL（stdio 平台填空字符串）",
+          "examples": ["ws://127.0.0.1:18789", "ws://127.0.0.1:18790"]
+        },
+        "token": {
+          "type": "string",
+          "description": "平台认证令牌"
+        }
+      },
+      "required": ["type"]
+    },
+    "mcp": {
+      "type": "object",
+      "description": "MCP 配置文件路径",
+      "properties": {
+        "config_path": {
+          "type": "string",
+          "description": "MCP 服务器配置文件的绝对路径"
+        },
+        "config_key": {
+          "type": "string",
+          "description": "配置文件内 MCP servers 的 JSON 键路径（点分隔）",
+          "examples": ["mcp.servers", "mcpServers", "plugins.entries.mcp-bridge.config.servers"]
+        }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "description": "Skill 管理配置",
+      "properties": {
+        "installed_path": {
+          "type": "string",
+          "description": "Skill 安装目录的路径",
+          "examples": ["~/.openclaw/skills", "~/.workbuddy/skills"]
+        }
+      }
+    },
+    "disabled_skills": {
+      "type": "array",
+      "description": "被禁用的 Skill 名称列表",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "pinned_skills": {
+      "type": "array",
+      "description": "被置顶的 Skill 名称列表（优先加载）",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "last_agent_id": {
+      "type": "string",
+      "description": "上次使用的 Agent ID（用于自动恢复）"
+    }
+  },
+  "additionalProperties": true
+}

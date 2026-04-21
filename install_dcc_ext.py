@@ -96,16 +96,12 @@ def install_blender(blender_version: str, force: bool, platform_type: str = "ope
     else:
         cprint("OK", "__init__.py 已存在，跳过创建", "green")
 
-    # 共享模块 & 平台 bridge: 仅复制模式需要打包
-    if method == "copy":
-        cprint("复制", "bridge_core 共享模块到 core/...")
-        copy_shared_modules(os.path.join(dcc_dst, "core"))
-        cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件
+    cprint("同步", "bridge_core 共享模块到 core/...")
+    copy_shared_modules(os.path.join(dcc_dst, "core"))
 
-        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-        copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
-    else:
-        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
+    cprint("同步", f"平台 bridge ({platform_type}) 到 core/...")
+    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
 
     # 尝试安装 PySide6 到 Blender Python
     _install_blender_python_deps(blender_version)
@@ -211,16 +207,12 @@ def install_houdini(houdini_version: str, force: bool, platform_type: str = "ope
     method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
-    # 共享模块 & 平台 bridge: 仅复制模式需要打包
-    if method == "copy":
-        cprint("复制", "bridge_core 共享模块到 core/...")
-        copy_shared_modules(os.path.join(dcc_dst, "core"))
-        cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件
+    cprint("同步", "bridge_core 共享模块到 core/...")
+    copy_shared_modules(os.path.join(dcc_dst, "core"))
 
-        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-        copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
-    else:
-        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
+    cprint("同步", f"平台 bridge ({platform_type}) 到 core/...")
+    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
 
     # 复制 shelf tool 启动脚本（单文件用 link）
     shelf_src = DCC_BRIDGE_SRC / "houdini_shelf.py"
@@ -347,16 +339,12 @@ def install_substance_painter(force: bool, platform_type: str = "openclaw"):
     method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
-    # 共享模块 & 平台 bridge: 仅复制模式需要打包
-    if method == "copy":
-        cprint("复制", "bridge_core 共享模块到 core/...")
-        copy_shared_modules(os.path.join(dcc_dst, "core"))
-        cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件
+    cprint("同步", "bridge_core 共享模块到 core/...")
+    copy_shared_modules(os.path.join(dcc_dst, "core"))
 
-        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-        copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
-    else:
-        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
+    cprint("同步", f"平台 bridge ({platform_type}) 到 core/...")
+    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
 
     # 创建 __init__.py（SP 包 plugin 入口 — SP 通过此文件发现插件）
     # link 模式下源码树应已包含此文件，仅在缺失时写入
@@ -451,16 +439,12 @@ def install_substance_designer(force: bool, platform_type: str = "openclaw"):
     method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
-    # 共享模块 & 平台 bridge: 仅复制模式需要打包
-    if method == "copy":
-        cprint("复制", "bridge_core 共享模块到 core/...")
-        copy_shared_modules(os.path.join(dcc_dst, "core"))
-        cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件
+    cprint("同步", "bridge_core 共享模块到 core/...")
+    copy_shared_modules(os.path.join(dcc_dst, "core"))
 
-        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-        copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
-    else:
-        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
+    cprint("同步", f"平台 bridge ({platform_type}) 到 core/...")
+    copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
 
     # 创建 __init__.py（SD 包 plugin 入口 — SD 通过此文件发现插件）
     # link 模式下源码树应已包含此文件，仅在缺失时写入
@@ -622,16 +606,12 @@ def install_comfyui(comfyui_path: str, force: bool, platform_type: str = "opencl
     dcc_method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_bridge_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_bridge_dst} ({dcc_method})", "green")
 
-    # 共享模块 & 平台 bridge: 仅复制模式需要打包
-    if dcc_method == "copy":
-        cprint("复制", "bridge_core 共享模块到 core/...")
-        copy_shared_modules(os.path.join(dcc_bridge_dst, "core"))
-        cprint("OK", "共享模块已打包 (自包含部署)", "green")
+    # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件
+    cprint("同步", "bridge_core 共享模块到 core/...")
+    copy_shared_modules(os.path.join(dcc_bridge_dst, "core"))
 
-        cprint("复制", f"平台 bridge ({platform_type}) 到 core/...")
-        copy_platform_bridge(platform_type, os.path.join(dcc_bridge_dst, "core"))
-    else:
-        cprint("跳过", "共享模块打包 (link 模式，源码树已自包含)", "cyan")
+    cprint("同步", f"平台 bridge ({platform_type}) 到 core/...")
+    copy_platform_bridge(platform_type, os.path.join(dcc_bridge_dst, "core"))
 
     # 创建 artclaw_bridge_dcc 的 __init__.py（ComfyUI 需要这个文件来识别包）
     init_path = os.path.join(dcc_bridge_dst, "__init__.py")
