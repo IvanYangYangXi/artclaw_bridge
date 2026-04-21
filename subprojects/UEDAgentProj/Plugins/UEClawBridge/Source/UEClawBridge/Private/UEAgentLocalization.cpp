@@ -158,6 +158,13 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("SessionHistoryLoaded"), TEXT("已加载 {0} 条历史消息"),   TEXT("Loaded {0} history messages"));
 
 	// ==================================================================
+	// Tool 调用卡片
+	// ==================================================================
+	Reg(TEXT("ToolParams"),         TEXT("参数:"),                     TEXT("Params:"));
+	Reg(TEXT("ToolResult"),         TEXT("结果:"),                     TEXT("Result:"));
+	Reg(TEXT("ToolError"),          TEXT("错误:"),                     TEXT("Error:"));
+
+	// ==================================================================
 	// 语言切换
 	// ==================================================================
 	Reg(TEXT("LangToggleTip"),      TEXT("切换到 English"),            TEXT("Switch to 中文"));

@@ -257,20 +257,21 @@ void SUEAgentDashboard::ProcessStreamEventLine(const FString& Line)
 		const TSharedPtr<FJsonObject>* UsageObj = nullptr;
 		if (JsonObj->TryGetObjectField(TEXT("usage"), UsageObj) && UsageObj)
 		{
-			int32 TotalTokens = 0;
-			if ((*UsageObj)->TryGetNumberField(TEXT("totalTokens"), TotalTokens) && TotalTokens > 0)
+			// 优先用 inputTokens（真实上下文大小），fallback 到 totalTokens
+			int32 Tokens = 0;
+			if (!(*UsageObj)->TryGetNumberField(TEXT("inputTokens"), Tokens) || Tokens <= 0)
 			{
-				LastTotalTokens = TotalTokens;
+				(*UsageObj)->TryGetNumberField(TEXT("totalTokens"), Tokens);
+			}
+			if (Tokens > 0)
+			{
+				LastTotalTokens = Tokens;
 			}
 		}
 	}
 	else if (EventType == TEXT("tool_use_text"))
 	{
-		FString EventText = JsonObj->GetStringField(TEXT("text"));
-		if (!EventText.IsEmpty())
-		{
-			AddMessage(TEXT("tool_status"), EventText);
-		}
+		// 已有结构化 tool_call/tool_result 卡片，跳过旧文本摘要
 	}
 	else if (EventType == TEXT("session_key"))
 	{
