@@ -46,6 +46,9 @@ FReply SUEAgentDashboard::OnManageClicked()
 	{
 		Self->ManageWindow.Reset();
 		Self->ManagePanelWidget.Reset();
+		// 刷新 Chat Panel 的钉选 Skill 标签（用户可能在管理面板中钉选/取消了）
+		Self->LoadPinnedSkills();
+		Self->RebuildPinnedSkillsUI();
 	}));
 
 	FUEAgentManageUtils::AddChildWindow(ManageWindow.ToSharedRef());
