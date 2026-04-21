@@ -12,8 +12,6 @@ Maya 启动时自动执行。
   4. (可选) 自动连接 OpenClaw Gateway
 """
 
-from __future__ import annotations
-
 import logging
 import os
 import sys
