@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 
 import unreal
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 
 
 # ============================================================================

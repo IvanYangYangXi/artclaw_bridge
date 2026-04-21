@@ -90,7 +90,7 @@ void SUEAgentDashboard::RebuildAfterLanguageChange()
 
 void SUEAgentDashboard::PollConfirmationRequests()
 {
-	FString ConfirmFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_confirm_request.json");
+	FString ConfirmFile = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge/_confirm_request.json");
 	if (!FPaths::FileExists(ConfirmFile))
 	{
 		return;
@@ -134,7 +134,7 @@ void SUEAgentDashboard::PollConfirmationRequests()
 	if (bAutoApprove)
 	{
 		// 静默模式：直接写入批准响应，不弹窗
-		FString ResponseFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_confirm_response.json");
+		FString ResponseFile = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge/_confirm_response.json");
 		FFileHelper::SaveStringToFile(TEXT("yes"), *ResponseFile);
 		AddMessage(TEXT("system"),
 			FString::Printf(TEXT("[%s] %s"),
@@ -301,7 +301,7 @@ void SUEAgentDashboard::ShowConfirmationDialog(const FString& RiskLevel,
 					.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.25f, 0.25f)))
 					.OnClicked_Lambda([WeakConfirmWindow]()
 					{
-						FString ResponseFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_confirm_response.json");
+						FString ResponseFile = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge/_confirm_response.json");
 						FFileHelper::SaveStringToFile(TEXT("no"), *ResponseFile);
 						if (TSharedPtr<SWindow> Win = WeakConfirmWindow.Pin())
 						{
@@ -320,7 +320,7 @@ void SUEAgentDashboard::ShowConfirmationDialog(const FString& RiskLevel,
 					.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.2f, 0.5f, 0.3f)))
 					.OnClicked_Lambda([Self, CapturedRiskLevel, bDontAskAgain, WeakConfirmWindow]()
 					{
-						FString ResponseFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_confirm_response.json");
+						FString ResponseFile = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge/_confirm_response.json");
 						FFileHelper::SaveStringToFile(TEXT("yes"), *ResponseFile);
 
 						if (*bDontAskAgain)

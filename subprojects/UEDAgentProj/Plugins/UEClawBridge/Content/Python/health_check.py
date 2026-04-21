@@ -46,17 +46,7 @@ try:
 except ImportError:
     _IN_UE = False
 
-try:
-    from init_unreal import UELogger
-except ImportError:
-    class _FallbackLogger:
-        @staticmethod
-        def info(msg): print(f"[INFO] {msg}")
-        @staticmethod
-        def warning(msg): print(f"[WARN] {msg}")
-        @staticmethod
-        def mcp_error(msg): print(f"[ERROR] {msg}")
-    UELogger = _FallbackLogger()
+from claw_bridge_logger import UELogger
 
 
 # ---------------------------------------------------------------------------
@@ -327,13 +317,13 @@ def _check_filesystem() -> CheckResult:
     """检查 7: 文件系统权限"""
     r = CheckResult("File System & Paths")
 
-    # 检查 Saved/UEAgent 目录
+    # 检查 Saved/ClawBridge 目录
     if _IN_UE:
         saved_dir = unreal.Paths.project_saved_dir()
     else:
         saved_dir = os.path.join(os.getcwd(), "Saved")
 
-    agent_dir = os.path.join(saved_dir, "UEAgent")
+    agent_dir = os.path.join(saved_dir, "ClawBridge")
     r.info(f"Agent data dir: {agent_dir}")
 
     if os.path.isdir(agent_dir):
@@ -502,7 +492,7 @@ def run_health_check_to_file(output_path: str = "") -> str:
             saved_dir = unreal.Paths.project_saved_dir()
         else:
             saved_dir = os.path.join(os.getcwd(), "Saved")
-        agent_dir = os.path.join(saved_dir, "UEAgent")
+        agent_dir = os.path.join(saved_dir, "ClawBridge")
         os.makedirs(agent_dir, exist_ok=True)
         output_path = os.path.join(agent_dir, "_health_check_report.txt")
 

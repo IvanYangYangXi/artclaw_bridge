@@ -560,7 +560,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				// Python 子线程无法 import unreal，会写到 ~/.artclaw/ 而非 ProjectSavedDir
 				{
 					FString UsagePath;
-					FString Path1 = FPaths::ProjectSavedDir() / TEXT("UEAgent") / TEXT("_session_usage.json");
+					FString Path1 = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge") / TEXT("_session_usage.json");
 					FString Path2 = FPaths::Combine(FPlatformProcess::UserHomeDir(), TEXT(".artclaw"), TEXT("_session_usage.json"));
 					if (FPaths::FileExists(Path1))
 					{

@@ -147,7 +147,7 @@ FReply SUEAgentDashboard::OnNewChatClicked()
 
 	// 4b) 清除会话静默标记 (阶段 5.7)
 	{
-		FString SilentFlagFile = FPaths::ProjectSavedDir() / TEXT("UEAgent/_silent_session.flag");
+		FString SilentFlagFile = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge/_silent_session.flag");
 		IFileManager::Get().Delete(*SilentFlagFile, false, false, true);
 	}
 

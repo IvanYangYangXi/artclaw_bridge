@@ -28,7 +28,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 from skill_manifest import (
     parse_manifest, validate_manifest, SkillManifest,
     VALID_SOFTWARE, VALID_CATEGORIES, VALID_RISK_LEVELS,

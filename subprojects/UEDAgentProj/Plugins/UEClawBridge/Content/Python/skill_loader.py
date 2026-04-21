@@ -30,17 +30,7 @@ try:
 except ImportError:
     unreal = None
 
-try:
-    from init_unreal import UELogger
-except ImportError:
-    # Fallback logger for testing outside UE
-    class UELogger:
-        @staticmethod
-        def info(msg): print(f"[INFO] {msg}")
-        @staticmethod
-        def mcp_error(msg): print(f"[ERROR] {msg}")
-        @staticmethod
-        def warning(msg): print(f"[WARN] {msg}")
+from claw_bridge_logger import UELogger
 
 
 # ============================================================================

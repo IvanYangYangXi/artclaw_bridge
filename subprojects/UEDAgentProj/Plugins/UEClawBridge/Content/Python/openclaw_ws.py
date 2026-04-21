@@ -4,7 +4,7 @@ openclaw_ws.py — OpenClaw Gateway WebSocket 通信层
 职责: 握手 / 发送 chat.send RPC / 接收流式回复 / 写文件输出。
 每次请求在独立 asyncio.run() 中完成，不维护全局 loop。
 
-文件输出协议 (Saved/UEAgent/):
+文件输出协议 (Saved/ClawBridge/):
   _openclaw_response_stream.jsonl  — 实时流式事件（每行一个 JSON）
   _openclaw_response.txt           — 最终回复（出现即代表完成）
 
@@ -26,7 +26,7 @@ import time
 import uuid
 from typing import Optional
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 
 # ---------------------------------------------------------------------------
 # 配置常量
@@ -81,6 +81,7 @@ def write_bridge_status(status_dir: str, connected: bool, mcp_ready: bool = Fals
     """写入 _bridge_status.json，供 C++ BridgeStatusPoll 读取连接状态。"""
     try:
         import tempfile
+        os.makedirs(status_dir, exist_ok=True)
         path = os.path.join(status_dir, "_bridge_status.json")
         data = {
             "timestamp": time.time(),

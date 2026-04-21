@@ -21,7 +21,7 @@ from enum import IntEnum
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
-from init_unreal import UELogger
+from claw_bridge_logger import UELogger
 
 
 # ============================================================================

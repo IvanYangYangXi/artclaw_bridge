@@ -13,11 +13,11 @@
 
 FString FUEAgentManageUtils::RunPythonAndCapture(const FString& PythonCode)
 {
-	FString TempDir = FPaths::ProjectSavedDir() / TEXT("UEAgent");
+	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir() / TEXT("ClawBridge"));
 	IFileManager::Get().MakeDirectory(*TempDir, true);
 
-	FString CaptureFile = TempDir / TEXT("_manage_result.json");
-	FString TempPyFile = TempDir / TEXT("_manage_cmd.py");
+	FString CaptureFile = TempDir / TEXT("_clawbridge_result.json");
+	FString TempPyFile = TempDir / TEXT("_clawbridge_cmd.py");
 	IFileManager::Get().Delete(*CaptureFile, false, false, true);
 
 	FString CleanScript;
