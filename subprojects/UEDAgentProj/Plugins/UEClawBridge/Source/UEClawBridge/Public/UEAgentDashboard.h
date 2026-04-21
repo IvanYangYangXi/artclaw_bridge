@@ -591,6 +591,22 @@ private:
 	/** 管理面板 Widget 引用 */
 	TSharedPtr<SUEAgentManagePanel> ManagePanelWidget;
 
+	// --- Pinned Skills 标签栏 (Chat Panel 输入框上方) ---
+	// 注意: 数据和 UI 指针存储在 _Main_impl.h 的 static map 中，
+	// 避免修改 .h 成员布局（Live Coding 兼容）。
+
+	/** 从 config.json 加载 pinned skills 列表 */
+	void LoadPinnedSkills();
+
+	/** 重建 pinned skill 标签 UI */
+	void RebuildPinnedSkillsUI();
+
+	/** 点击 pinned skill 标签 — 将 @skill_name 插入输入框 */
+	FReply OnPinnedSkillClicked(FString SkillName);
+
+	/** 取消钉选（右键或 x 按钮） */
+	FReply OnUnpinSkillFromChat(FString SkillName);
+
 	static constexpr int32 MaxMessages = 500;
 
 	/** 析构保护标记 — ticker lambda 检查此标记避免在析构过程中执行 */

@@ -234,6 +234,11 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("ManageSkillCount"),    TEXT("显示 {0} / {1} 个 Skill"),   TEXT("Showing {0} / {1} Skills"));
 	Reg(TEXT("ManagePinTip"),        TEXT("钉选此 Skill (强制注入 AI 上下文)"), TEXT("Pin this Skill (force-inject into AI context)"));
 	Reg(TEXT("ManageUnpinTip"),      TEXT("取消钉选"),                  TEXT("Unpin"));
+
+	// --- Pinned Skills 标签栏 (Chat Panel) ---
+	Reg(TEXT("PinnedSkillClickTip"), TEXT("点击将 @{0} 插入输入框"),    TEXT("Click to insert @{0} into input"));
+	Reg(TEXT("PinnedSkillUnpinTip"), TEXT("取消钉选 {0}"),              TEXT("Unpin {0}"));
+
 	Reg(TEXT("ManageDetailTip"),     TEXT("查看详情"),                  TEXT("View details"));
 	Reg(TEXT("ManageDetailLayer"),   TEXT("层级"),                      TEXT("Layer"));
 	Reg(TEXT("ManageDetailSoftware"),TEXT("软件"),                      TEXT("Software"));

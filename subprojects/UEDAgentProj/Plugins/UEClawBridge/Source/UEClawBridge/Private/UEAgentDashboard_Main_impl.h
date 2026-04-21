@@ -3,6 +3,18 @@
 // 所有 include 由 UEAgentDashboard.cpp 统一管理
 
 // ==================================================================
+// Pinned Skills — static 存储 (避免修改 .h 成员布局，Live Coding 兼容)
+// ==================================================================
+
+struct FPinnedSkillsState
+{
+	TArray<FString> Names;
+	TSharedPtr<SWrapBox> WrapBox;
+	TSharedPtr<SBorder> Border;
+};
+static TMap<const SUEAgentDashboard*, FPinnedSkillsState> GPinnedSkillsMap;
+
+// ==================================================================
 // Construct
 // ==================================================================
 
@@ -406,6 +418,42 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 		]
 	];
 
+	// --- 钉选 Skill 标签栏 (输入框上方，有钉选时显示) ---
+	LoadPinnedSkills();
+	auto& PinState = GPinnedSkillsMap.FindOrAdd(this);
+	MainVBox->AddSlot()
+	.AutoHeight()
+	.Padding(4.0f, 2.0f, 4.0f, 0.0f)
+	[
+		SAssignNew(PinState.Border, SBorder)
+		.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
+		.Padding(FMargin(0.0f))
+		.Visibility_Lambda([this]() {
+			auto* S = GPinnedSkillsMap.Find(this);
+			return (S && S->Names.Num() > 0) ? EVisibility::Visible : EVisibility::Collapsed;
+		})
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(TEXT("\u2605")))  // ★
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.95f, 0.75f, 0.1f)))
+			]
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SAssignNew(PinState.WrapBox, SWrapBox)
+				.UseAllottedSize(true)
+			]
+		]
+	];
+	RebuildPinnedSkillsUI();
+
 	// --- 输入区域 ---
 	// 先创建 InputTextBox
 	InputTextBox = SNew(SMultiLineEditableTextBox)
@@ -679,6 +727,7 @@ SUEAgentDashboard::~SUEAgentDashboard()
 	QuickInputEditContentBox.Reset();
 	AttachmentPreviewBox.Reset();
 	AttachmentPreviewBorder.Reset();
+	GPinnedSkillsMap.Remove(this);
 	SessionMenuAnchor.Reset();
 	PlatformListBox.Reset();
 	AgentListBox.Reset();
@@ -778,4 +827,183 @@ void SUEAgentDashboard::HandlePythonResponse(const FString& Response)
 
 	// 4) 普通 AI 回复
 	AddMessage(TEXT("assistant"), Response);
+}
+
+// ==================================================================
+// Pinned Skills — 加载/刷新/交互
+// ==================================================================
+
+void SUEAgentDashboard::LoadPinnedSkills()
+{
+	auto& PinState = GPinnedSkillsMap.FindOrAdd(this);
+	PinState.Names.Empty();
+
+	// 方式1: 直接读文件（不依赖 Python，Construct 时更可靠）
+	FString ConfigPath = FPaths::Combine(
+		FPlatformProcess::UserDir(), TEXT(".artclaw"), TEXT("config.json"));
+	// UserDir() 返回 C:/Users/xxx/，但 .artclaw 在 HOME 目录
+	// 改用环境变量
+	FString HomePath = FPlatformMisc::GetEnvironmentVariable(TEXT("USERPROFILE"));
+	if (HomePath.IsEmpty())
+	{
+		HomePath = FPlatformMisc::GetEnvironmentVariable(TEXT("HOME"));
+	}
+	ConfigPath = FPaths::Combine(HomePath, TEXT(".artclaw"), TEXT("config.json"));
+
+	UE_LOG(LogTemp, Log, TEXT("[PinnedSkills] Loading config from: %s"), *ConfigPath);
+
+	FString FileContent;
+	if (!FFileHelper::LoadFileToString(FileContent, *ConfigPath))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PinnedSkills] Failed to read config file"));
+		return;
+	}
+
+	TSharedPtr<FJsonObject> JsonObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FileContent);
+	if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PinnedSkills] Failed to parse config JSON"));
+		return;
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* Arr;
+	if (JsonObj->TryGetArrayField(TEXT("pinned_skills"), Arr))
+	{
+		for (const auto& Val : *Arr)
+		{
+			FString Name = Val->AsString();
+			if (!Name.IsEmpty())
+			{
+				PinState.Names.Add(Name);
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[PinnedSkills] Loaded %d pinned skills"), PinState.Names.Num());
+}
+
+void SUEAgentDashboard::RebuildPinnedSkillsUI()
+{
+	auto* PinState = GPinnedSkillsMap.Find(this);
+	if (!PinState || !PinState->WrapBox.IsValid()) return;
+
+	PinState->WrapBox->ClearChildren();
+
+	for (const FString& SkillName : PinState->Names)
+	{
+		// 显示名: 去掉常见前缀 ue57- / artclaw- 让标签更紧凑
+		FString DisplayName = SkillName;
+		if (DisplayName.StartsWith(TEXT("ue57-"))) DisplayName = DisplayName.Mid(5);
+		else if (DisplayName.StartsWith(TEXT("artclaw-"))) DisplayName = DisplayName.Mid(8);
+
+		PinState->WrapBox->AddSlot()
+		.Padding(FMargin(2.0f, 1.0f))
+		[
+			SNew(SBorder)
+			.BorderBackgroundColor(FSlateColor(FLinearColor(0.2f, 0.35f, 0.55f, 0.6f)))
+			.Padding(FMargin(0.0f))
+			[
+				SNew(SHorizontalBox)
+				// Skill 名称按钮 — 点击插入 @mention
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(FText::FromString(DisplayName))
+					.OnClicked(FOnClicked::CreateSP(this, &SUEAgentDashboard::OnPinnedSkillClicked, SkillName))
+					.ButtonStyle(FCoreStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(4.0f, 1.0f, 2.0f, 1.0f))
+					.ForegroundColor(FSlateColor(FLinearColor(0.75f, 0.85f, 1.0f)))
+					.ToolTipText(FText::Format(
+						FUEAgentL10n::Get(TEXT("PinnedSkillClickTip")),
+						FText::FromString(SkillName)))
+				]
+				// × 按钮 — 取消钉选
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(FText::FromString(TEXT("\u00D7")))  // ×
+					.OnClicked(FOnClicked::CreateSP(this, &SUEAgentDashboard::OnUnpinSkillFromChat, SkillName))
+					.ButtonStyle(FCoreStyle::Get(), "NoBorder")
+					.ContentPadding(FMargin(2.0f, 1.0f, 3.0f, 1.0f))
+					.ForegroundColor(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
+					.ToolTipText(FText::Format(
+						FUEAgentL10n::Get(TEXT("PinnedSkillUnpinTip")),
+						FText::FromString(SkillName)))
+				]
+			]
+		];
+	}
+}
+
+FReply SUEAgentDashboard::OnPinnedSkillClicked(FString SkillName)
+{
+	if (!InputTextBox.IsValid()) return FReply::Handled();
+
+	// 将 @skill_name 前缀追加到输入框当前文本
+	FString Current = InputTextBox->GetText().ToString();
+	FString Mention = FString::Printf(TEXT("@%s "), *SkillName);
+
+	// 如果已经包含这个 mention 就不重复插入
+	if (!Current.Contains(Mention.TrimEnd()))
+	{
+		FString NewText = Mention + Current;
+		InputTextBox->SetText(FText::FromString(NewText));
+	}
+
+	// 聚焦输入框
+	FSlateApplication::Get().SetKeyboardFocus(InputTextBox);
+
+	return FReply::Handled();
+}
+
+FReply SUEAgentDashboard::OnUnpinSkillFromChat(FString SkillName)
+{
+	// 直接用 C++ 读写 config.json（不依赖 Python）
+	FString HomePath = FPlatformMisc::GetEnvironmentVariable(TEXT("USERPROFILE"));
+	if (HomePath.IsEmpty()) HomePath = FPlatformMisc::GetEnvironmentVariable(TEXT("HOME"));
+	FString ConfigPath = FPaths::Combine(HomePath, TEXT(".artclaw"), TEXT("config.json"));
+
+	FString FileContent;
+	TSharedPtr<FJsonObject> JsonObj;
+
+	if (FFileHelper::LoadFileToString(FileContent, *ConfigPath))
+	{
+		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FileContent);
+		FJsonSerializer::Deserialize(Reader, JsonObj);
+	}
+	if (!JsonObj.IsValid())
+	{
+		JsonObj = MakeShared<FJsonObject>();
+	}
+
+	// 移除指定 skill
+	TArray<TSharedPtr<FJsonValue>> NewPinned;
+	const TArray<TSharedPtr<FJsonValue>>* OldArr;
+	if (JsonObj->TryGetArrayField(TEXT("pinned_skills"), OldArr))
+	{
+		for (const auto& Val : *OldArr)
+		{
+			if (Val->AsString() != SkillName)
+			{
+				NewPinned.Add(Val);
+			}
+		}
+	}
+	JsonObj->SetArrayField(TEXT("pinned_skills"), NewPinned);
+
+	// 写回
+	FString OutputStr;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputStr);
+	FJsonSerializer::Serialize(JsonObj.ToSharedRef(), Writer);
+	FFileHelper::SaveStringToFile(OutputStr, *ConfigPath,
+		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+
+	// 刷新本地数据和 UI
+	LoadPinnedSkills();
+	RebuildPinnedSkillsUI();
+
+	return FReply::Handled();
 }
