@@ -346,25 +346,33 @@ def _query_session_usage() -> None:
         ))
         # 写入独立文件（C++ 轮询读取）
         import tempfile
+        # 同时写入两个位置（ProjectSaved + ~/.artclaw），确保 C++ 能找到
+        write_dirs = []
         try:
             import unreal
-            status_dir = os.path.join(unreal.Paths.project_saved_dir(), "ClawBridge")
+            write_dirs.append(unreal.Paths.convert_relative_path_to_full(
+                os.path.join(unreal.Paths.project_saved_dir(), "ClawBridge")))
         except Exception:
-            status_dir = os.path.join(os.path.expanduser("~"), ".artclaw")
-        os.makedirs(status_dir, exist_ok=True)
+            pass
+        write_dirs.append(os.path.join(os.path.expanduser("~"), ".artclaw"))
 
-        usage_path = os.path.join(status_dir, "_session_usage.json")
-        fd, tmp = tempfile.mkstemp(dir=status_dir, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(result_str)
-            os.replace(tmp, usage_path)
-        except Exception:
+        for status_dir in write_dirs:
             try:
-                os.unlink(tmp)
+                os.makedirs(status_dir, exist_ok=True)
+                usage_path = os.path.join(status_dir, "_session_usage.json")
+                fd, tmp = tempfile.mkstemp(dir=status_dir, suffix=".tmp")
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        f.write(result_str)
+                    os.replace(tmp, usage_path)
+                except Exception:
+                    try:
+                        os.unlink(tmp)
+                    except Exception:
+                        pass
+                    raise
             except Exception:
                 pass
-            raise
         UELogger.info(f"[openclaw_chat] usage written: {result_str[:100]}")
     except Exception as exc:
         UELogger.warning(f"[openclaw_chat] usage query failed: {exc}")

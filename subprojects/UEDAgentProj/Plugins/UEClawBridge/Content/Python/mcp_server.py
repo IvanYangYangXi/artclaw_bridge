@@ -102,95 +102,40 @@ INTERNAL_ERROR = -32603
 
 
 # ============================================================================
-# 3. Tool 事件写入 stream.jsonl (方案 2: MCP 侧记录 tool 调用)
+# 3. Tool 事件写入 stream.jsonl — 委托给通用 tool_event_writer
 # ============================================================================
 
-import threading as _threading
-
-_stream_lock = _threading.Lock()
+try:
+    from tool_event_writer import write_tool_event as _write_tool_event, set_stream_file_provider
+except ImportError:
+    # fallback: 通用模块未部署时静默降级
+    def _write_tool_event(*a, **kw): pass
+    def set_stream_file_provider(fn): pass
 
 
 def _get_active_stream_file() -> str:
     """获取当前活跃的 stream.jsonl 路径。仅在 chat 请求进行中时存在。"""
     try:
         import unreal
-        saved_dir = unreal.Paths.project_saved_dir()
+        # 必须用 UE 的绝对路径转换！与 C++ FPaths::ConvertRelativePathToFull 一致。
+        # os.path.abspath 基于 CWD，和 UE 项目根不同。
+        saved_dir = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir())
     except Exception:
         return ""
     stream_file = os.path.join(saved_dir, "ClawBridge", "_openclaw_response_stream.jsonl")
-    # 只有在 chat 正在进行中时才写（response.txt 不存在 = 还在等 AI）
     response_file = os.path.join(saved_dir, "ClawBridge", "_openclaw_response.txt")
     if os.path.exists(response_file):
         return ""  # chat 已完成，不写
     return stream_file
 
+# 注册 UE 专用的 stream file provider
+set_stream_file_provider(_get_active_stream_file)
+
 
 def _write_tool_event_to_stream(event_type: str, tool_name: str, *,
                                  arguments=None, result=None, is_error=False):
-    """将 tool 事件写入 stream.jsonl，以 tool_use_text 融入消息流。
-
-    只写轻量单行文本，不写独立卡片，减少空间占用。
-    """
-    stream_file = _get_active_stream_file()
-    if not stream_file:
-        return
-    try:
-        # 简化工具名: mcp_ue-editor-agent_run_ue_python → run_ue_python
-        # rsplit("_", 2) 取最后两段以保留有意义的名称，避免只剩 "python"
-        if "_" in tool_name:
-            parts = tool_name.split("_")
-            # 取最后两个有意义的部分（如 run_ue_python → run_ue_python）
-            # 规则：跳过 "mcp" 前缀和 server name，保留实际工具名
-            prefix_end = 0
-            for i, p in enumerate(parts):
-                if p in ("mcp",):
-                    prefix_end = i + 1
-                    continue
-                # server name 部分（如 ue-editor-agent）通常包含 "-"
-                if "-" in p:
-                    prefix_end = i + 1
-                    continue
-                break
-            short_name = "_".join(parts[prefix_end:]) if prefix_end < len(parts) else tool_name
-        else:
-            short_name = tool_name
-
-        if event_type == "start":
-            # 参数摘要: 取第一个关键字段
-            arg_preview = ""
-            if arguments and isinstance(arguments, dict):
-                for k in ("code", "query", "command", "path", "file_path", "action", "message"):
-                    v = arguments.get(k)
-                    if v and isinstance(v, str):
-                        v = v.strip().replace("\n", " ")
-                        if len(v) > 50:
-                            v = v[:47] + "..."
-                        arg_preview = f" ({k}: {v})"
-                        break
-            text = f"🔧 {short_name}{arg_preview}"
-        elif event_type == "done":
-            # 结果摘要: 取返回值第一行，截断 80 字符
-            result_preview = ""
-            if result is not None:
-                result_str = str(result).strip().replace("\n", " ")
-                if len(result_str) > 80:
-                    result_str = result_str[:77] + "..."
-                if result_str:
-                    result_preview = f" → {result_str}"
-            text = f"✅ {short_name}{result_preview}"
-        elif event_type == "error":
-            err_msg = str(result)[:80] if result else "unknown"
-            text = f"❌ {short_name}: {err_msg}"
-        else:
-            return
-
-        obj = {"type": "tool_use_text", "text": text}
-        line = json.dumps(obj, ensure_ascii=False)
-        with _stream_lock:
-            with open(stream_file, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
-    except Exception as e:
-        UELogger.mcp_error(f"_write_tool_event_to_stream: {e}")
+    """兼容层：调用通用 tool_event_writer。"""
+    _write_tool_event(event_type, tool_name, arguments=arguments, result=result)
 
 
 # ============================================================================

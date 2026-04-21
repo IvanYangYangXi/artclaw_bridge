@@ -891,7 +891,8 @@ def _initialize():
                              "core")
             )
             if os.path.isdir(_bridge_dir) and _bridge_dir not in sys.path:
-                sys.path.insert(0, _bridge_dir)
+                # append 而非 insert(0): 确保 Content/Python 优先于 core/
+                sys.path.append(_bridge_dir)
             from integrity_check import check_and_repair
 
         integrity = check_and_repair(_PLUGIN_PYTHON_DIR, auto_repair=True)

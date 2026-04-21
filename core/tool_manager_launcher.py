@@ -44,7 +44,11 @@ def is_running() -> bool:
 
 
 def _find_python(tm_dir: Path) -> str:
-    """查找可用的 Python 解释器，优先使用 venv"""
+    """查找可用的 Python 解释器，优先使用 venv。
+    
+    注意：在 UE 嵌入环境中 sys.executable 指向 UnrealEditor.exe，
+    绝对不能用作 subprocess 的 Python 解释器！
+    """
     # 1. venv python
     venv_python = tm_dir / "venv" / "Scripts" / "python.exe"
     if venv_python.exists():
@@ -53,8 +57,22 @@ def _find_python(tm_dir: Path) -> str:
     venv_python_unix = tm_dir / "venv" / "bin" / "python"
     if venv_python_unix.exists():
         return str(venv_python_unix)
-    # 2. 系统 python
-    return sys.executable
+    
+    # 2. 系统 python（不用 sys.executable，在 DCC 内可能指向 DCC 本身）
+    import shutil
+    for name in ("python", "python3"):
+        found = shutil.which(name)
+        if found and "UnrealEditor" not in found and "maya" not in found.lower():
+            return found
+    
+    # 3. 最后 fallback — 只在确认不是 DCC 可执行文件时才用 sys.executable
+    if sys.executable and not any(
+        dcc in os.path.basename(sys.executable).lower()
+        for dcc in ("unreal", "maya", "3dsmax", "blender", "houdini", "substance", "comfyui")
+    ):
+        return sys.executable
+    
+    return ""  # 找不到，让调用方报错
 
 
 def start_server(open_browser: bool = True) -> dict:
@@ -86,6 +104,12 @@ def start_server(open_browser: bool = True) -> dict:
         }
 
     python_exe = _find_python(tm_dir)
+    if not python_exe:
+        return {
+            "ok": False,
+            "already_running": False,
+            "error": "No suitable Python interpreter found. Please create venv in ArtClawToolManager or install Python on PATH.",
+        }
 
     try:
         # 直接用 python 启动，不经过 bat/cmd

@@ -580,16 +580,15 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 							TSharedRef<TJsonReader<>> UsageReader = TJsonReaderFactory<>::Create(UsageContent);
 							if (FJsonSerializer::Deserialize(UsageReader, UsageObj) && UsageObj.IsValid())
 							{
-								int32 ContextTokens = 0;
-								int32 TotalTokens = 0;
-								UsageObj->TryGetNumberField(TEXT("contextTokens"), ContextTokens);
-								UsageObj->TryGetNumberField(TEXT("totalTokens"), TotalTokens);
-								// contextTokens = 上下文窗口上限 (Gateway 返回)
-								// totalTokens = 本次对话实际使用的 token 数
-								// 用 totalTokens 作为已使用量
-								if (TotalTokens > 0)
+								// 优先用 inputTokens（真实上下文大小），fallback 到 totalTokens
+								int32 Tokens = 0;
+								if (!UsageObj->TryGetNumberField(TEXT("inputTokens"), Tokens) || Tokens <= 0)
 								{
-									Self->LastTotalTokens = TotalTokens;
+									UsageObj->TryGetNumberField(TEXT("totalTokens"), Tokens);
+								}
+								if (Tokens > 0)
+								{
+									Self->LastTotalTokens = Tokens;
 								}
 							}
 						}

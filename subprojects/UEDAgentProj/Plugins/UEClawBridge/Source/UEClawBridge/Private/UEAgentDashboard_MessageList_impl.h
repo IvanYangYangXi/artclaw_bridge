@@ -127,75 +127,206 @@ void SUEAgentDashboard::RebuildMessageList()
 			continue;
 		}
 
-		// --- Tool call / tool result 消息 ---
+		// --- Tool call / tool result 消息 (对齐 DCC ToolCallWidget 风格) ---
 		if (Msg.Sender == TEXT("tool_call") || Msg.Sender == TEXT("tool_result") || Msg.Sender == TEXT("tool_error"))
 		{
-			// 折叠标题: 显示工具名 + 状态
-			FString ToolStatus;
-			if (Msg.Sender == TEXT("tool_error"))
+			// 状态判定
+			bool bHasResult = !Msg.ToolResult.IsEmpty();
+			bool bIsError = (Msg.Sender == TEXT("tool_error") || Msg.bToolError);
+			FString StatusText;
+			FLinearColor StatusColor;
+			FLinearColor BorderColor;
+			FLinearColor BgColor;
+
+			if (bIsError)
 			{
-				ToolStatus = TEXT("[error]");
+				StatusText = TEXT("[error]");
+				StatusColor = FLinearColor(0.9f, 0.35f, 0.35f);
+				BorderColor = FLinearColor(0.23f, 0.13f, 0.13f);
+				BgColor     = FLinearColor(0.12f, 0.09f, 0.09f);
 			}
-			else if (!Msg.ToolResult.IsEmpty())
+			else if (bHasResult)
 			{
-				ToolStatus = TEXT("[done]");
+				StatusText = TEXT("[done]");
+				StatusColor = FLinearColor(0.4f, 0.75f, 0.5f);
+				BorderColor = FLinearColor(0.13f, 0.23f, 0.14f);
+				BgColor     = FLinearColor(0.09f, 0.12f, 0.09f);
 			}
-			else if (Msg.Sender == TEXT("tool_call"))
+			else
 			{
-				ToolStatus = TEXT("[running]");
+				StatusText = TEXT("[running]");
+				StatusColor = FLinearColor(0.85f, 0.65f, 0.3f);
+				BorderColor = FLinearColor(0.23f, 0.20f, 0.10f);
+				BgColor     = FLinearColor(0.12f, 0.11f, 0.09f);
 			}
 
-			FString ToolLabel = FString::Printf(TEXT("Tool: %s %s"), *Msg.ToolName, *ToolStatus);
+			FString ArrowStr = Msg.bToolCollapsed ? TEXT("\u25B6") : TEXT("\u25BC");
+
+			// Pretty print arguments JSON
+			FString PrettyArgs = Msg.ToolArguments;
+			if (!PrettyArgs.IsEmpty())
+			{
+				TSharedPtr<FJsonObject> ArgsJsonObj;
+				TSharedRef<TJsonReader<>> ArgsReader = TJsonReaderFactory<>::Create(PrettyArgs);
+				if (FJsonSerializer::Deserialize(ArgsReader, ArgsJsonObj) && ArgsJsonObj.IsValid())
+				{
+					FString Formatted;
+					TSharedRef<TJsonWriter<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>> PrettyWriter =
+						TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&Formatted);
+					FJsonSerializer::Serialize(ArgsJsonObj.ToSharedRef(), PrettyWriter);
+					PrettyArgs = Formatted;
+				}
+				if (PrettyArgs.Len() > 1500)
+				{
+					PrettyArgs = PrettyArgs.Left(1500) + TEXT("\n... (truncated)");
+				}
+			}
+
+			FString DisplayResult = Msg.ToolResult;
+			if (DisplayResult.Len() > 2000)
+			{
+				DisplayResult = DisplayResult.Left(2000) + TEXT("\n... (truncated)");
+			}
 
 			MessageScrollBox->AddSlot()
-			.Padding(4.0f, 2.0f)
+			.Padding(4.0f, 1.0f)
 			[
 				SNew(SBorder)
-				.BorderImage(FCoreStyle::Get().GetBrush("ToolPanel.DarkGroupBorder"))
-				.Padding(6.0f)
+				.BorderBackgroundColor(FSlateColor(BorderColor))
+				.ColorAndOpacity(FLinearColor::White)
+				.Padding(0.0f)
 				[
-					SNew(SVerticalBox)
-					// Header (clickable to collapse/expand)
-					+ SVerticalBox::Slot()
-					.AutoHeight()
+					SNew(SBorder)
+					.BorderImage(FCoreStyle::Get().GetBrush("ToolPanel.DarkGroupBorder"))
+					.Padding(0.0f)
+					.ColorAndOpacity(FLinearColor::White)
 					[
-						SNew(SButton)
-						.Text(FText::FromString(Msg.bToolCollapsed ? ToolLabel : (ToolLabel + TEXT(" <<"))))
-						.OnClicked_Lambda([this, i]() -> FReply { return OnToggleToolCollapse(i); })
-						.ButtonStyle(FCoreStyle::Get(), "NoBorder")
-						.ForegroundColor(GetSenderColor(Msg.Sender))
-						.HAlign(HAlign_Left)
-					]
-					// Tool call arguments or result (collapsible)
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					[
-						SNew(SBox)
-						.Visibility(Msg.bToolCollapsed ? EVisibility::Collapsed : EVisibility::Visible)
+						SNew(SVerticalBox)
+
+						// --- Header: ▶ ⚙ 工具名 [状态] ---
+						+ SVerticalBox::Slot()
+						.AutoHeight()
 						[
-							SNew(SVerticalBox)
-							+ SVerticalBox::Slot()
-							.AutoHeight()
+							SNew(SButton)
+							.OnClicked_Lambda([this, i]() -> FReply { return OnToggleToolCollapse(i); })
+							.ButtonStyle(FCoreStyle::Get(), "NoBorder")
+							.HAlign(HAlign_Fill)
 							[
-								SNew(SMultiLineEditableText)
-								.Text(FText::FromString(Msg.ToolArguments))
-								.Font(FCoreStyle::GetDefaultFontStyle("Mono", 9))
-								.AutoWrapText(true)
-								.IsReadOnly(true)
-								.AllowContextMenu(true)
-								.Visibility(Msg.ToolArguments.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								.Padding(6.0f, 2.0f, 2.0f, 2.0f)
+								[
+									SNew(STextBlock)
+									.Text(FText::FromString(ArrowStr))
+									.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+									.ColorAndOpacity(FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f)))
+								]
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								.Padding(0.0f, 2.0f, 3.0f, 2.0f)
+								[
+									SNew(STextBlock)
+									.Text(FText::FromString(TEXT("\u2699")))
+									.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+									.ColorAndOpacity(FSlateColor(FLinearColor(0.85f, 0.65f, 0.3f)))
+								]
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								.Padding(0.0f, 2.0f, 4.0f, 2.0f)
+								[
+									SNew(STextBlock)
+									.Text(FText::FromString(Msg.ToolName))
+									.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+									.ColorAndOpacity(FSlateColor(FLinearColor(0.85f, 0.65f, 0.3f)))
+								]
+								+ SHorizontalBox::Slot()
+								.AutoWidth()
+								.VAlign(VAlign_Center)
+								.Padding(0.0f, 2.0f, 4.0f, 2.0f)
+								[
+									SNew(STextBlock)
+									.Text(FText::FromString(StatusText))
+									.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+									.ColorAndOpacity(FSlateColor(StatusColor))
+								]
 							]
-							+ SVerticalBox::Slot()
-							.AutoHeight()
-							.Padding(0.0f, 2.0f, 0.0f, 0.0f)
+						]
+
+						// --- Body: 参数 + 结果 (折叠区) ---
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						[
+							SNew(SBox)
+							.Visibility(Msg.bToolCollapsed ? EVisibility::Collapsed : EVisibility::Visible)
+							.Padding(FMargin(10.0f, 0.0f, 8.0f, 6.0f))
 							[
-								SNew(SMultiLineEditableText)
-								.Text(FText::FromString(Msg.ToolResult))
-								.Font(FCoreStyle::GetDefaultFontStyle("Mono", 9))
-								.AutoWrapText(true)
-								.IsReadOnly(true)
-								.AllowContextMenu(true)
-								.Visibility(Msg.ToolResult.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+								SNew(SVerticalBox)
+
+								// "参数:" 标签
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								.Padding(0.0f, 0.0f, 0.0f, 2.0f)
+								[
+									SNew(STextBlock)
+									.Text(FText::FromString(FUEAgentL10n::GetStr(TEXT("ToolParams"))))
+									.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+									.ColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.55f)))
+									.Visibility(PrettyArgs.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+								]
+								// 参数内容
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+								[
+									SNew(SBorder)
+									.BorderImage(FCoreStyle::Get().GetBrush("ToolPanel.DarkGroupBorder"))
+									.Padding(4.0f)
+									.Visibility(PrettyArgs.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+									[
+										SNew(SMultiLineEditableText)
+										.Text(FText::FromString(PrettyArgs))
+										.Font(FCoreStyle::GetDefaultFontStyle("Mono", 9))
+										.AutoWrapText(true)
+										.IsReadOnly(true)
+										.AllowContextMenu(true)
+									]
+								]
+								// "结果:" / "错误:" 标签
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								.Padding(0.0f, 2.0f, 0.0f, 2.0f)
+								[
+									SNew(STextBlock)
+									.Text(FText::FromString(bIsError
+										? FUEAgentL10n::GetStr(TEXT("ToolError"))
+										: FUEAgentL10n::GetStr(TEXT("ToolResult"))))
+									.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+									.ColorAndOpacity(FSlateColor(bIsError
+										? FLinearColor(0.9f, 0.35f, 0.35f)
+										: FLinearColor(0.4f, 0.75f, 0.5f)))
+									.Visibility(DisplayResult.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+								]
+								// 结果内容
+								+ SVerticalBox::Slot()
+								.AutoHeight()
+								[
+									SNew(SBorder)
+									.BorderImage(FCoreStyle::Get().GetBrush("ToolPanel.DarkGroupBorder"))
+									.Padding(4.0f)
+									.Visibility(DisplayResult.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+									[
+										SNew(SMultiLineEditableText)
+										.Text(FText::FromString(DisplayResult))
+										.Font(FCoreStyle::GetDefaultFontStyle("Mono", 9))
+										.AutoWrapText(true)
+										.IsReadOnly(true)
+										.AllowContextMenu(true)
+									]
+								]
 							]
 						]
 					]
@@ -205,17 +336,9 @@ void SUEAgentDashboard::RebuildMessageList()
 			continue;
 		}
 
-		// --- Tool 状态消息（紧凑单行，无标签头） ---
+		// --- Tool 状态消息 — 已有结构化 tool_call 卡片，跳过旧文本摘要 ---
 		if (Msg.Sender == TEXT("tool_status"))
 		{
-			MessageScrollBox->AddSlot()
-			.Padding(12.0f, 0.0f, 4.0f, 0.0f)
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Msg.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
-				.ColorAndOpacity(FSlateColor(FLinearColor(0.65f, 0.55f, 0.35f))) // 暗橙
-			];
 			continue;
 		}
 
