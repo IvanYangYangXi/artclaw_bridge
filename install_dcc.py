@@ -27,7 +27,9 @@ from install_utils import (
     cprint,
     inject_startup,
     install_dcc_skills,
+    link_dcc_bridge_selective,
     link_or_copy_dir,
+    link_ue_plugin_selective,
     remove_startup_injection,
 )
 
@@ -64,14 +66,14 @@ def install_ue(ue_project: str, force: bool, platform_type: str = "openclaw"):
         cprint("跳过", "UE 插件安装", "yellow")
         return True
 
-    # 链接/复制插件
-    cprint("部署", "UEClawBridge 插件...")
-    method = link_or_copy_dir(str(UE_PLUGIN_SRC), plugin_dst)
+    # 精细化引用: 按子目录 junction (排除 Binaries/Intermediate/Saved)
+    cprint("部署", "UEClawBridge 插件 (精细引用)...")
+    method = link_ue_plugin_selective(plugin_dst)
     cprint("OK", f"插件已安装到: {plugin_dst} ({method})", "green")
 
     # 共享模块 & 平台 bridge: 仅复制模式需要打包（link 模式下源码树已自包含）
     python_dst = os.path.join(plugin_dst, "Content", "Python")
-    if method == "copy":
+    if "copy" in method:
         cprint("复制", "bridge_core 共享模块...")
         copy_shared_modules(python_dst)
         cprint("OK", f"共享模块已打包到: {python_dst}", "green")
@@ -92,7 +94,7 @@ def install_ue(ue_project: str, force: bool, platform_type: str = "openclaw"):
 
 
 def uninstall_ue(ue_project: str):
-    """卸载 UE 插件"""
+    """卸载 UE 插件 (支持旧版整目录 junction 和新版精细引用两种结构)"""
     print()
     print("  ── Unreal Engine 插件卸载 ──────────────────────────")
     print()
@@ -102,10 +104,19 @@ def uninstall_ue(ue_project: str):
         return False
 
     plugin_dst = os.path.join(os.path.abspath(ue_project), "Plugins", "UEClawBridge")
-    if os.path.isdir(plugin_dst) or _is_junction_or_symlink(plugin_dst):
-        link_type = "链接" if _is_junction_or_symlink(plugin_dst) else "目录"
+
+    if _is_junction_or_symlink(plugin_dst):
+        # 旧版: 整目录 junction
         _remove_link_or_dir(plugin_dst)
-        cprint("删除", f"已删除 ({link_type}): {plugin_dst}", "green")
+        cprint("删除", f"已删除 (链接): {plugin_dst}", "green")
+    elif os.path.isdir(plugin_dst):
+        # 新版精细引用: 内部可能有 junction 子目录，需逐个处理
+        for name in os.listdir(plugin_dst):
+            child = os.path.join(plugin_dst, name)
+            _remove_link_or_dir(child)
+        # 移除空壳目录
+        shutil.rmtree(plugin_dst, ignore_errors=True)
+        cprint("删除", f"已删除 (精细引用): {plugin_dst}", "green")
     else:
         cprint("跳过", f"UE 插件不存在: {plugin_dst}", "yellow")
 
@@ -253,9 +264,9 @@ def install_maya(maya_version: str, force: bool, platform_type: str = "openclaw"
 
     os.makedirs(scripts_dir, exist_ok=True)
 
-    # 部署 DCCClawBridge
-    cprint("部署", "DCCClawBridge...")
-    method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
+    # 精细化引用: 按子目录/文件 junction (排除 __pycache__/Lib/tests/.md 等)
+    cprint("部署", "DCCClawBridge (精细引用)...")
+    method = link_dcc_bridge_selective("maya", dcc_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
     # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件，copy 模式完整打包
@@ -318,7 +329,7 @@ def _sync_maya_locales(maya_base: str, scripts_dir: str, primary_method: str = "
 
 
 def uninstall_maya(maya_version: str):
-    """卸载 Maya 插件"""
+    """卸载 Maya 插件 (支持旧版整目录 junction 和新版精细引用两种结构)"""
     print()
     print("  ── Maya 插件卸载 ───────────────────────────────────")
     print()
@@ -328,9 +339,16 @@ def uninstall_maya(maya_version: str):
     )
     dcc_dst = os.path.join(scripts_dir, "DCCClawBridge")
 
-    if os.path.isdir(dcc_dst) or _is_junction_or_symlink(dcc_dst):
+    if _is_junction_or_symlink(dcc_dst):
         _remove_link_or_dir(dcc_dst)
-        cprint("删除", f"已删除: {dcc_dst}", "green")
+        cprint("删除", f"已删除 (链接): {dcc_dst}", "green")
+    elif os.path.isdir(dcc_dst):
+        # 新版精细引用: 内部可能有 junction 子目录
+        for name in os.listdir(dcc_dst):
+            child = os.path.join(dcc_dst, name)
+            _remove_link_or_dir(child)
+        shutil.rmtree(dcc_dst, ignore_errors=True)
+        cprint("删除", f"已删除 (精细引用): {dcc_dst}", "green")
     else:
         cprint("跳过", f"DCCClawBridge 不存在: {dcc_dst}", "yellow")
 
@@ -411,9 +429,9 @@ def install_max(max_version: str, force: bool, platform_type: str = "openclaw"):
     os.makedirs(scripts_dir, exist_ok=True)
     os.makedirs(startup_dir, exist_ok=True)
 
-    # 部署 DCCClawBridge
-    cprint("部署", "DCCClawBridge...")
-    method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
+    # 精细化引用: 按子目录/文件 junction (排除 __pycache__/Lib/tests/.md 等)
+    cprint("部署", "DCCClawBridge (精细引用)...")
+    method = link_dcc_bridge_selective("max", dcc_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
     # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件
@@ -501,9 +519,15 @@ def uninstall_max(max_version: str):
         startup_file = os.path.join(scripts_dir, "startup", "artclaw_startup.py")
         ms_file = os.path.join(scripts_dir, "startup", "artclaw_startup.ms")
 
-        if os.path.isdir(dcc_dst) or _is_junction_or_symlink(dcc_dst):
+        if _is_junction_or_symlink(dcc_dst):
             _remove_link_or_dir(dcc_dst)
-            cprint("删除", f"已删除: {dcc_dst}", "green")
+            cprint("删除", f"已删除 (链接): {dcc_dst}", "green")
+        elif os.path.isdir(dcc_dst):
+            for name in os.listdir(dcc_dst):
+                child = os.path.join(dcc_dst, name)
+                _remove_link_or_dir(child)
+            shutil.rmtree(dcc_dst, ignore_errors=True)
+            cprint("删除", f"已删除 (精细引用): {dcc_dst}", "green")
 
         if os.path.isfile(startup_file):
             remove_startup_injection(startup_file, "artclaw_startup.py")
