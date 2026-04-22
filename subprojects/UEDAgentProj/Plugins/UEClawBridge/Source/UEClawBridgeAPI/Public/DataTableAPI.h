@@ -45,6 +45,37 @@ public:
 		const FString& AssetPath,
 		const FString& RowFilter = TEXT(""));
 
+	/**
+	 * Set an object reference property in a DataTable row by asset path.
+	 * Loads the asset and assigns it to the specified ObjectReference/SoftObjectReference column.
+	 * This is a generic API — works with any DataTable, any row, any object property column.
+	 *
+	 * @param TablePath DataTable asset path (e.g., /Game/__Check__/L_Miami_WC/DT_TextureAudit)
+	 * @param RowName Name of the row to modify
+	 * @param ColumnName FriendlyName of the column (e.g., TexturePath)
+	 * @param ObjectPath Asset path of the object to assign (e.g., /Game/Textures/T_MyTex)
+	 * @return JSON result with success/error
+	 */
+	UFUNCTION(BlueprintCallable, Category="ArtClaw|DataTable")
+	static FString SetDataTableObjectProperty(
+		const FString& TablePath,
+		const FString& RowName,
+		const FString& ColumnName,
+		const FString& ObjectPath);
+
+	/**
+	 * Batch set object reference properties in a DataTable.
+	 * Each entry in EntriesJson is: {"row":"Row_0","column":"TexturePath","asset":"/Game/Tex/T_X"}
+	 *
+	 * @param TablePath DataTable asset path
+	 * @param EntriesJson JSON array of {row, column, asset} objects
+	 * @return JSON result with success count and errors
+	 */
+	UFUNCTION(BlueprintCallable, Category="ArtClaw|DataTable")
+	static FString BatchSetDataTableObjectProperties(
+		const FString& TablePath,
+		const FString& EntriesJson);
+
 private:
 	// Helper to validate DataTable and get struct info
 	static class UDataTable* LoadAndValidateDataTable(const FString& AssetPath, FString& OutError);
