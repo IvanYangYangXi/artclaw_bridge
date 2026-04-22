@@ -16,7 +16,9 @@ from pathlib import Path
 
 DEFAULT_GATEWAY_URL = "ws://127.0.0.1:18789"
 DEFAULT_AGENT_ID = "qi"
-DEFAULT_TOKEN = "ec8900cf3e3c4bbfab43c8d7d5a4638c69b854e075902325"
+# Token 不硬编码 — 每台机器的 OpenClaw 安装时随机生成
+# 运行时通过 get_gateway_token() 按优先级从配置文件动态读取
+DEFAULT_TOKEN = ""
 PROTOCOL_VERSION = 3
 
 # Gateway 对 client.id 有严格白名单校验

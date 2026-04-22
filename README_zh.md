@@ -373,7 +373,7 @@ python install.py --help  # 查看所有选项
 ```
 
 安装脚本会自动：
-1. 复制插件文件到目标 DCC 的标准目录
+1. 通过 junction/symlink 将插件文件链接到目标 DCC 的标准目录（链接失败时自动回退到复制；使用 `--copy` 强制复制模式）
 2. 部署 `core/` 共享模块（自包含，无需源码目录）
 3. 安装官方 Skills 到平台目录（`~/.openclaw/skills/` 或 LobsterAI 对应目录）
 4. **安全处理 startup 文件**（追加模式，不覆盖用户已有内容）

@@ -375,7 +375,7 @@ python install.py --help  # View all options
 ```
 
 The installer will automatically:
-1. Copy plugin files to target DCC standard directories
+1. Link plugin files to target DCC standard directories via junction/symlink (fallback to copy if linking fails; use `--copy` to force copy mode)
 2. Deploy `core/` shared modules (self-contained, no source directory needed)
 3. Install official Skills to platform directory (`~/.openclaw/skills/` or LobsterAI equivalent)
 4. **Safely handle startup files** (append mode, doesn't overwrite existing user content)
