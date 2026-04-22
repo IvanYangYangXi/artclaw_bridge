@@ -94,23 +94,29 @@ class SettingsDialog(QDialog):
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setSpacing(8)
-        root.setContentsMargins(16, 16, 16, 16)
+        root.setContentsMargins(0, 0, 0, 8)
 
         # Scrollable content area
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet(
+            "QScrollArea { border: none; }"
+            "QScrollBar:vertical { width: 6px; background: transparent; margin: 0; }"
+            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.2); border-radius: 3px; min-height: 20px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        )
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setSpacing(10)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(16, 16, 10, 0)
         scroll.setWidget(content)
         root.addWidget(scroll)
 
         # Platform switch
         layout.addWidget(_section_label("AI 平台 / Platform"))
         self._platform_list = QListWidget()
-        self._platform_list.setFixedHeight(180)
+        self._platform_list.setFixedHeight(108)  # 3 items visible, scroll for more
         self._platform_list.setStyleSheet(
             "QListWidget {"
             "  background: #1e1e2e;"
@@ -216,6 +222,7 @@ class SettingsDialog(QDialog):
 
         # Bottom close button
         bottom_row = QHBoxLayout()
+        bottom_row.setContentsMargins(16, 0, 16, 0)
         bottom_row.addStretch()
         btn_close = QPushButton("关闭")
         btn_close.setFixedSize(80, 30)

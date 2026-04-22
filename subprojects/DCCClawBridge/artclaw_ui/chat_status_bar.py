@@ -95,10 +95,16 @@ class StatusBarWidget(QWidget):
         self._ctx_label = QLabel(f"{self._T('context_usage')}: --")
         self._ctx_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        self._settings_btn = QPushButton(self._T("settings_btn"))
+        self._settings_btn = QPushButton("⚙")
         self._settings_btn.setFlat(True)
-        self._settings_btn.setFixedHeight(22)
+        self._settings_btn.setFixedSize(28, 22)
         self._settings_btn.setCursor(Qt.PointingHandCursor)
+        self._settings_btn.setToolTip(self._T("settings_btn"))
+        self._settings_btn.setStyleSheet(
+            "QPushButton { color: #C0C0C0; background: transparent; border: none;"
+            " font-size: 13px; padding: 0px; min-width: 0; min-height: 0; }"
+            "QPushButton:hover { color: #FFFFFF; background: rgba(255,255,255,0.08); border-radius: 3px; }"
+        )
         self._settings_btn.clicked.connect(self.settings_clicked)
 
         row1.addWidget(self._status_btn)
@@ -282,8 +288,8 @@ class StatusBarWidget(QWidget):
         self._disconn_btn.setText(self._T("disconnect"))
         self._diag_btn.setText(self._T("diagnose"))
         self._logs_btn.setText(self._T("view_logs"))
-        # Row1 buttons
-        self._settings_btn.setText(self._T("settings_btn"))
+        # Row1 buttons (settings is icon-only, just update tooltip)
+        self._settings_btn.setToolTip(self._T("settings_btn"))
         # Status + summary
         if self._connected:
             self._status_btn.setText(f"● {self._T('connected')}")

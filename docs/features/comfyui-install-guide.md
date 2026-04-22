@@ -10,21 +10,23 @@ python install.py --comfyui --comfyui-path "C:\path\to\ComfyUI"
 
 ### 方法 2: 手动安装
 
-1. 将 `subprojects/ComfyUIClawBridge/` 复制到 `ComfyUI/custom_nodes/artclaw_bridge/`
-2. 将 `subprojects/DCCClawBridge/` 复制到 `ComfyUI/custom_nodes/artclaw_bridge_dcc/`
+1. 将 `subprojects/ComfyUIClawBridge/` 中的 `__init__.py`、`startup.py`、`install.py` 复制/链接到 `ComfyUI/custom_nodes/artclaw_bridge/`
+2. 将 `subprojects/DCCClawBridge/` 中的 `adapters/`、`artclaw_ui/`、`core/`、`skills/` 子目录复制/链接到 `ComfyUI/custom_nodes/artclaw_bridge_dcc/`
 3. 设置环境变量（可选）：
    ```
    set ARTCLAW_BRIDGE_PATH=D:\MyProject_D\artclaw_bridge
    ```
 
+> **注意**：安装器 v2.1+ 使用精细化引用，不再对整个源码目录做 junction，而是按子目录/文件选择性引用，排除 `__pycache__/` 等动态文件。
+
 ### 方法 3: 开发模式（symlink）
 
 ```powershell
-# Windows (以管理员运行)
-mklink /D "C:\path\to\ComfyUI\custom_nodes\artclaw_bridge" "D:\MyProject_D\artclaw_bridge\subprojects\ComfyUIClawBridge"
+# Windows (以管理员运行) — 推荐使用 install.py --comfyui 自动精细引用
+python install.py --comfyui --comfyui-path "C:\path\to\ComfyUI"
 ```
 
-开发模式下 `startup.py` 会通过相对路径 `../DCCClawBridge` 找到依赖。
+安装器会自动对 ComfyUIClawBridge 的 3 个文件做 symlink，对 DCCClawBridge 的 4 个子目录做 junction。
 
 ## 配置 OpenClaw
 

@@ -6,7 +6,8 @@ ArtClaw Bridge — 安装工具函数
 
 供 install_dcc.py / install_platform.py / install.py 共用的常量与工具函数。
 
-安装策略: 优先使用 symlink/junction 创建引用（git pull 即更新），
+安装策略 v2.1: 精细化引用 — 不对整个源码目录做 junction，而是按子目录/文件
+选择性 junction/symlink，排除 __pycache__/ Lib/ tests/ .md 等动态或非必要文件。
 失败时自动 fallback 到复制。通过 --copy 强制复制模式。
 """
 
@@ -271,6 +272,196 @@ def write_file(path: str, content: str):
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)
 
+
+# ---------------------------------------------------------------------------
+# 精细化安装: 按子目录/文件选择性引用
+# ---------------------------------------------------------------------------
+
+# DCCClawBridge 共享子目录 (所有 DCC 都需要)
+_DCC_SHARED_DIRS = [
+    "adapters",
+    "artclaw_ui",
+    "core",
+    "skills",
+]
+
+# 各 DCC 特有的顶层文件/目录
+_DCC_SPECIFIC_FILES: dict[str, list[str]] = {
+    "maya":    ["maya_setup"],
+    "max":     ["max_setup"],
+    "blender": ["blender_addon.py", "blender_qt_bridge.py"],
+    "houdini": ["houdini_shelf.py"],
+    "sp":      ["sp_plugin.py"],
+    "sd":      ["sd_plugin.py"],
+    "comfyui": [],  # ComfyUI 用 ComfyUIClawBridge，DCCClawBridge 只做依赖库
+}
+
+
+def link_dcc_bridge_selective(
+    dcc_type: str,
+    dst: str,
+    *,
+    extra_files: list[str] | None = None,
+) -> str:
+    """按子目录/文件选择性引用 DCCClawBridge 到目标位置。
+
+    不做整目录 junction，而是:
+    1. 创建目标空目录
+    2. 对共享子目录 (adapters/artclaw_ui/core/skills) 逐个 junction
+    3. 对该 DCC 特有的顶层文件/目录逐个 symlink/junction
+    4. 排除 __pycache__/ Lib/ tests/ .md requirements.txt 等
+
+    Args:
+        dcc_type: DCC 类型标识 ("maya"|"max"|"blender"|"houdini"|"sp"|"sd"|"comfyui")
+        dst: 目标安装路径 (会被创建或清空后重建)
+        extra_files: 额外需要引用的文件/目录名 (可选)
+
+    Returns:
+        "selective-link" | "selective-copy" 表示实际采用的方式
+    """
+    src_base = str(DCC_BRIDGE_SRC)
+    dst = os.path.abspath(dst)
+
+    # 先清理已有目标 (可能是旧的整目录 junction)
+    if os.path.exists(dst) or _is_junction_or_symlink(dst):
+        _remove_link_or_dir(dst)
+
+    # 创建空的目标目录
+    os.makedirs(dst, exist_ok=True)
+
+    used_methods = set()
+
+    # 1) 共享子目录
+    for subdir in _DCC_SHARED_DIRS:
+        src_path = os.path.join(src_base, subdir)
+        dst_path = os.path.join(dst, subdir)
+        if os.path.isdir(src_path):
+            method = link_or_copy_dir(src_path, dst_path)
+            used_methods.add(method)
+            if method != "copy":
+                cprint("链接", f"{subdir}/ ({method})", "cyan")
+        else:
+            cprint("警告", f"共享子目录不存在: {src_path}", "yellow")
+
+    # 2) DCC 特有的文件/目录
+    specific = list(_DCC_SPECIFIC_FILES.get(dcc_type, []))
+    if extra_files:
+        specific.extend(extra_files)
+
+    for name in specific:
+        src_path = os.path.join(src_base, name)
+        dst_path = os.path.join(dst, name)
+        if os.path.isdir(src_path):
+            method = link_or_copy_dir(src_path, dst_path)
+            used_methods.add(method)
+            if method != "copy":
+                cprint("链接", f"{name}/ ({method})", "cyan")
+        elif os.path.isfile(src_path):
+            method = link_or_copy_file(src_path, dst_path)
+            used_methods.add(method)
+            if method != "copy":
+                cprint("链接", f"{name} ({method})", "cyan")
+        else:
+            cprint("警告", f"DCC 特有文件不存在: {src_path}", "yellow")
+
+    # 返回主要采用的方式
+    if USE_COPY_MODE or used_methods == {"copy"}:
+        return "selective-copy"
+    return "selective-link"
+
+
+def link_ue_plugin_selective(dst: str) -> str:
+    """按子目录选择性引用 UEClawBridge 到目标位置。
+
+    排除 Binaries/ Intermediate/ Saved/ (编译/运行时产物)，
+    对 Content/ Resources/ Source/ 逐个 junction，.uplugin 文件 symlink。
+
+    Args:
+        dst: 目标安装路径
+
+    Returns:
+        "selective-link" | "selective-copy"
+    """
+    src_base = str(UE_PLUGIN_SRC)
+    dst = os.path.abspath(dst)
+
+    if os.path.exists(dst) or _is_junction_or_symlink(dst):
+        _remove_link_or_dir(dst)
+
+    os.makedirs(dst, exist_ok=True)
+
+    used_methods = set()
+
+    # 需要引用的子目录
+    for subdir in ["Content", "Resources", "Source"]:
+        src_path = os.path.join(src_base, subdir)
+        dst_path = os.path.join(dst, subdir)
+        if os.path.isdir(src_path):
+            method = link_or_copy_dir(src_path, dst_path)
+            used_methods.add(method)
+            if method != "copy":
+                cprint("链接", f"{subdir}/ ({method})", "cyan")
+        else:
+            cprint("警告", f"UE 子目录不存在: {src_path}", "yellow")
+
+    # .uplugin 文件
+    for name in os.listdir(src_base):
+        if name.endswith(".uplugin"):
+            src_path = os.path.join(src_base, name)
+            dst_path = os.path.join(dst, name)
+            method = link_or_copy_file(src_path, dst_path)
+            used_methods.add(method)
+            if method != "copy":
+                cprint("链接", f"{name} ({method})", "cyan")
+
+    if USE_COPY_MODE or used_methods == {"copy"}:
+        return "selective-copy"
+    return "selective-link"
+
+
+def link_comfyui_bridge_selective(dst: str) -> str:
+    """按文件选择性引用 ComfyUIClawBridge 到目标位置。
+
+    只引用 git tracked 文件 (__init__.py, startup.py, install.py)，
+    排除 __pycache__/ 和动态生成的 .env。
+
+    Args:
+        dst: 目标安装路径
+
+    Returns:
+        "selective-link" | "selective-copy"
+    """
+    comfyui_src = ROOT_DIR / "subprojects" / "ComfyUIClawBridge"
+    src_base = str(comfyui_src)
+    dst = os.path.abspath(dst)
+
+    if os.path.exists(dst) or _is_junction_or_symlink(dst):
+        _remove_link_or_dir(dst)
+
+    os.makedirs(dst, exist_ok=True)
+
+    used_methods = set()
+    tracked_files = ["__init__.py", "startup.py", "install.py"]
+
+    for name in tracked_files:
+        src_path = os.path.join(src_base, name)
+        dst_path = os.path.join(dst, name)
+        if os.path.isfile(src_path):
+            method = link_or_copy_file(src_path, dst_path)
+            used_methods.add(method)
+            if method != "copy":
+                cprint("链接", f"{name} ({method})", "cyan")
+        else:
+            cprint("警告", f"ComfyUI 文件不存在: {src_path}", "yellow")
+
+    if USE_COPY_MODE or used_methods == {"copy"}:
+        return "selective-copy"
+    return "selective-link"
+
+
+# ---------------------------------------------------------------------------
+# 共享模块安装
+# ---------------------------------------------------------------------------
 
 def copy_shared_modules(dst_dir: str):
     """将 bridge_core 等共享模块链接/复制到目标目录（含 interfaces/ schemas/ 子目录）"""

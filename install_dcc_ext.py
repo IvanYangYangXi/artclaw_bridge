@@ -24,6 +24,8 @@ from install_utils import (
     copy_shared_modules,
     cprint,
     install_dcc_skills,
+    link_comfyui_bridge_selective,
+    link_dcc_bridge_selective,
     link_or_copy_dir,
     link_or_copy_file,
     ROOT_DIR,
@@ -57,9 +59,9 @@ def install_blender(blender_version: str, force: bool, platform_type: str = "ope
 
     os.makedirs(addons_dir, exist_ok=True)
 
-    # 部署 DCCClawBridge 到 addons 目录
-    cprint("部署", "DCCClawBridge → artclaw_bridge...")
-    method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
+    # 精细化引用: 按子目录/文件 junction (排除 __pycache__/Lib/tests/.md 等)
+    cprint("部署", "DCCClawBridge → artclaw_bridge (精细引用)...")
+    method = link_dcc_bridge_selective("blender", dcc_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
     # 创建 __init__.py（Blender addon 包入口，必须存在）
@@ -116,7 +118,7 @@ def install_blender(blender_version: str, force: bool, platform_type: str = "ope
 
 
 def uninstall_blender(blender_version: str):
-    """卸载 Blender 插件"""
+    """卸载 Blender 插件 (支持旧版整目录 junction 和新版精细引用)"""
     print()
     print("  ── Blender 插件卸载 ────────────────────────────────")
     print()
@@ -127,9 +129,15 @@ def uninstall_blender(blender_version: str):
         "scripts", "addons", "artclaw_bridge"
     )
 
-    if os.path.isdir(dcc_dst) or _is_junction_or_symlink(dcc_dst):
+    if _is_junction_or_symlink(dcc_dst):
         _remove_link_or_dir(dcc_dst)
-        cprint("删除", f"已删除: {dcc_dst}", "green")
+        cprint("删除", f"已删除 (链接): {dcc_dst}", "green")
+    elif os.path.isdir(dcc_dst):
+        for name in os.listdir(dcc_dst):
+            child = os.path.join(dcc_dst, name)
+            _remove_link_or_dir(child)
+        shutil.rmtree(dcc_dst, ignore_errors=True)
+        cprint("删除", f"已删除 (精细引用): {dcc_dst}", "green")
     else:
         cprint("跳过", f"artclaw_bridge 不存在: {dcc_dst}", "yellow")
 
@@ -202,9 +210,9 @@ def install_houdini(houdini_version: str, force: bool, platform_type: str = "ope
 
     os.makedirs(scripts_python_dir, exist_ok=True)
 
-    # 部署 DCCClawBridge
-    cprint("部署", "DCCClawBridge...")
-    method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
+    # 精细化引用: 按子目录/文件 junction (排除 __pycache__/Lib/tests/.md 等)
+    cprint("部署", "DCCClawBridge (精细引用)...")
+    method = link_dcc_bridge_selective("houdini", dcc_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
     # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件
@@ -237,7 +245,7 @@ def install_houdini(houdini_version: str, force: bool, platform_type: str = "ope
 
 
 def uninstall_houdini(houdini_version: str):
-    """卸载 Houdini 插件"""
+    """卸载 Houdini 插件 (支持旧版整目录 junction 和新版精细引用)"""
     print()
     print("  ── Houdini 插件卸载 ────────────────────────────────")
     print()
@@ -248,9 +256,15 @@ def uninstall_houdini(houdini_version: str):
     scripts_python_dir = os.path.join(docs_dir, "scripts", "python")
     dcc_dst = os.path.join(scripts_python_dir, "DCCClawBridge")
 
-    if os.path.isdir(dcc_dst) or _is_junction_or_symlink(dcc_dst):
+    if _is_junction_or_symlink(dcc_dst):
         _remove_link_or_dir(dcc_dst)
-        cprint("删除", f"已删除: {dcc_dst}", "green")
+        cprint("删除", f"已删除 (链接): {dcc_dst}", "green")
+    elif os.path.isdir(dcc_dst):
+        for name in os.listdir(dcc_dst):
+            child = os.path.join(dcc_dst, name)
+            _remove_link_or_dir(child)
+        shutil.rmtree(dcc_dst, ignore_errors=True)
+        cprint("删除", f"已删除 (精细引用): {dcc_dst}", "green")
     else:
         cprint("跳过", f"DCCClawBridge 不存在: {dcc_dst}", "yellow")
 
@@ -334,9 +348,9 @@ def install_substance_painter(force: bool, platform_type: str = "openclaw"):
 
     os.makedirs(plugins_dir, exist_ok=True)
 
-    # 部署 DCCClawBridge
-    cprint("部署", "DCCClawBridge → artclaw_bridge...")
-    method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
+    # 精细化引用: 按子目录/文件 junction (排除 __pycache__/Lib/tests/.md 等)
+    cprint("部署", "DCCClawBridge → artclaw_bridge (精细引用)...")
+    method = link_dcc_bridge_selective("sp", dcc_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
     # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件
@@ -347,7 +361,7 @@ def install_substance_painter(force: bool, platform_type: str = "openclaw"):
     copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
 
     # 创建 __init__.py（SP 包 plugin 入口 — SP 通过此文件发现插件）
-    # link 模式下源码树应已包含此文件，仅在缺失时写入
+    # 精细引用模式下源码树不包含此文件，需要写入
     init_path = os.path.join(dcc_dst, "__init__.py")
     if not os.path.isfile(init_path):
         with open(init_path, "w", encoding="utf-8") as f:
@@ -386,7 +400,7 @@ def install_substance_painter(force: bool, platform_type: str = "openclaw"):
 
 
 def uninstall_substance_painter():
-    """卸载 Substance Painter 插件"""
+    """卸载 Substance Painter 插件 (支持旧版整目录 junction 和新版精细引用)"""
     print()
     print("  ── Substance Painter 插件卸载 ──────────────────────")
     print()
@@ -397,9 +411,15 @@ def uninstall_substance_painter():
     )
     dcc_dst = os.path.join(plugins_dir, "artclaw_bridge")
 
-    if os.path.isdir(dcc_dst) or _is_junction_or_symlink(dcc_dst):
+    if _is_junction_or_symlink(dcc_dst):
         _remove_link_or_dir(dcc_dst)
-        cprint("删除", f"已删除: {dcc_dst}", "green")
+        cprint("删除", f"已删除 (链接): {dcc_dst}", "green")
+    elif os.path.isdir(dcc_dst):
+        for name in os.listdir(dcc_dst):
+            child = os.path.join(dcc_dst, name)
+            _remove_link_or_dir(child)
+        shutil.rmtree(dcc_dst, ignore_errors=True)
+        cprint("删除", f"已删除 (精细引用): {dcc_dst}", "green")
     else:
         cprint("跳过", f"artclaw_bridge 不存在: {dcc_dst}", "yellow")
 
@@ -434,9 +454,9 @@ def install_substance_designer(force: bool, platform_type: str = "openclaw"):
 
     os.makedirs(plugins_dir, exist_ok=True)
 
-    # 部署 DCCClawBridge
-    cprint("部署", "DCCClawBridge → artclaw_bridge...")
-    method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_dst)
+    # 精细化引用: 按子目录/文件 junction (排除 __pycache__/Lib/tests/.md 等)
+    cprint("部署", "DCCClawBridge → artclaw_bridge (精细引用)...")
+    method = link_dcc_bridge_selective("sd", dcc_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
     # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件
@@ -447,7 +467,7 @@ def install_substance_designer(force: bool, platform_type: str = "openclaw"):
     copy_platform_bridge(platform_type, os.path.join(dcc_dst, "core"))
 
     # 创建 __init__.py（SD 包 plugin 入口 — SD 通过此文件发现插件）
-    # link 模式下源码树应已包含此文件，仅在缺失时写入
+    # 精细引用模式下源码树不包含此文件，需要写入
     init_path = os.path.join(dcc_dst, "__init__.py")
     if not os.path.isfile(init_path):
         with open(init_path, "w", encoding="utf-8") as f:
@@ -486,7 +506,7 @@ def install_substance_designer(force: bool, platform_type: str = "openclaw"):
 
 
 def uninstall_substance_designer():
-    """卸载 Substance Designer 插件"""
+    """卸载 Substance Designer 插件 (支持旧版整目录 junction 和新版精细引用)"""
     print()
     print("  ── Substance Designer 插件卸载 ─────────────────────")
     print()
@@ -497,9 +517,15 @@ def uninstall_substance_designer():
     )
     dcc_dst = os.path.join(plugins_dir, "artclaw_bridge")
 
-    if os.path.isdir(dcc_dst) or _is_junction_or_symlink(dcc_dst):
+    if _is_junction_or_symlink(dcc_dst):
         _remove_link_or_dir(dcc_dst)
-        cprint("删除", f"已删除: {dcc_dst}", "green")
+        cprint("删除", f"已删除 (链接): {dcc_dst}", "green")
+    elif os.path.isdir(dcc_dst):
+        for name in os.listdir(dcc_dst):
+            child = os.path.join(dcc_dst, name)
+            _remove_link_or_dir(child)
+        shutil.rmtree(dcc_dst, ignore_errors=True)
+        cprint("删除", f"已删除 (精细引用): {dcc_dst}", "green")
     else:
         cprint("跳过", f"artclaw_bridge 不存在: {dcc_dst}", "yellow")
 
@@ -591,19 +617,18 @@ def install_comfyui(comfyui_path: str, force: bool, platform_type: str = "opencl
 
     os.makedirs(custom_nodes_dir, exist_ok=True)
 
-    # 部署 ComfyUIClawBridge 为 artclaw_bridge
-    cprint("部署", "ComfyUIClawBridge → artclaw_bridge...")
+    # 精细化引用: ComfyUIClawBridge 只引用 tracked 文件 (排除 __pycache__/.env)
+    cprint("部署", "ComfyUIClawBridge → artclaw_bridge (精细引用)...")
     if not COMFYUI_BRIDGE_SRC.is_dir():
         cprint("错误", f"ComfyUIClawBridge 源码不存在: {COMFYUI_BRIDGE_SRC}", "red")
         return False
-    method = link_or_copy_dir(str(COMFYUI_BRIDGE_SRC), dcc_dst)
+    method = link_comfyui_bridge_selective(dcc_dst)
     cprint("OK", f"ComfyUIClawBridge 已安装到: {dcc_dst} ({method})", "green")
 
-    # 部署 DCCClawBridge 到 artclaw_bridge 旁边的 DCCClawBridge/ 目录
-    # startup.py 通过 ../DCCClawBridge 找到依赖
+    # 精细化引用: DCCClawBridge 依赖库 (排除 __pycache__/Lib/tests/.md 等)
     dcc_bridge_dst = os.path.join(custom_nodes_dir, "artclaw_bridge_dcc")
-    cprint("部署", "DCCClawBridge → artclaw_bridge_dcc/ (依赖库)...")
-    dcc_method = link_or_copy_dir(str(DCC_BRIDGE_SRC), dcc_bridge_dst)
+    cprint("部署", "DCCClawBridge → artclaw_bridge_dcc/ (精细引用)...")
+    dcc_method = link_dcc_bridge_selective("comfyui", dcc_bridge_dst)
     cprint("OK", f"DCCClawBridge 已安装到: {dcc_bridge_dst} ({dcc_method})", "green")
 
     # 共享模块 & 平台 bridge: link 模式用 symlink 补缺失文件
@@ -662,9 +687,17 @@ def uninstall_comfyui(comfyui_path: str):
 
     for dirname in ["artclaw_bridge", "artclaw_bridge_dcc"]:
         dst = os.path.join(custom_nodes_dir, dirname)
-        if os.path.isdir(dst) or _is_junction_or_symlink(dst):
+        if _is_junction_or_symlink(dst):
+            # 旧版: 整目录 junction
             _remove_link_or_dir(dst)
-            cprint("删除", f"已删除: {dst}", "green")
+            cprint("删除", f"已删除 (链接): {dst}", "green")
+        elif os.path.isdir(dst):
+            # 新版精细引用: 内部可能有 junction/symlink 子项
+            for name in os.listdir(dst):
+                child = os.path.join(dst, name)
+                _remove_link_or_dir(child)
+            shutil.rmtree(dst, ignore_errors=True)
+            cprint("删除", f"已删除 (精细引用): {dst}", "green")
         else:
             cprint("跳过", f"{dirname} 不存在: {dst}", "yellow")
 
