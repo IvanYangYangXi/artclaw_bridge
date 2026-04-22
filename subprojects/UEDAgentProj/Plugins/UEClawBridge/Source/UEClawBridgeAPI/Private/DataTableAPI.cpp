@@ -189,6 +189,252 @@ FString UDataTableAPI::QueryDataTable(const FString& AssetPath, const FString& R
 	return ClawJsonToString(Result);
 }
 
+FString UDataTableAPI::SetDataTableObjectProperty(
+	const FString& TablePath,
+	const FString& RowName,
+	const FString& ColumnName,
+	const FString& ObjectPath)
+{
+	UE_LOG(LogUEClawBridgeAPI, Log, TEXT("SetDataTableObjectProperty: table='%s' row='%s' col='%s' obj='%s'"),
+		*TablePath, *RowName, *ColumnName, *ObjectPath);
+
+	if (TablePath.IsEmpty() || RowName.IsEmpty() || ColumnName.IsEmpty())
+	{
+		return ClawMakeError(TEXT("TablePath, RowName, and ColumnName are required"));
+	}
+
+	FString Error;
+	UDataTable* DataTable = LoadAndValidateDataTable(TablePath, Error);
+	if (!DataTable) return ClawMakeError(Error);
+
+	const UScriptStruct* RowStruct = DataTable->GetRowStruct();
+	if (!RowStruct) return ClawMakeError(TEXT("DataTable has no row struct"));
+
+	// Find the row
+	FName RowFName(*RowName);
+	uint8* RowData = DataTable->FindRowUnchecked(RowFName);
+	if (!RowData)
+	{
+		return ClawMakeError(FString::Printf(TEXT("Row '%s' not found"), *RowName));
+	}
+
+	// Find the property by FriendlyName or VarName
+	FProperty* TargetProp = nullptr;
+	for (TFieldIterator<FProperty> It(RowStruct); It; ++It)
+	{
+		FProperty* Prop = *It;
+		// Match by property name or by display name (FriendlyName for UDS)
+		FString DisplayName = Prop->GetDisplayNameText().ToString();
+		if (Prop->GetName() == ColumnName || DisplayName == ColumnName)
+		{
+			TargetProp = Prop;
+			break;
+		}
+	}
+	if (!TargetProp)
+	{
+		return ClawMakeError(FString::Printf(TEXT("Column '%s' not found in struct"), *ColumnName));
+	}
+
+	// Mark modified
+	DataTable->Modify();
+
+	void* PropertyContainer = TargetProp->ContainerPtrToValuePtr<void>(RowData);
+
+	if (ObjectPath.IsEmpty() || ObjectPath == TEXT("None"))
+	{
+		// Clear the property
+		TargetProp->ClearValue(PropertyContainer);
+	}
+	else
+	{
+		// Load the target object
+		UObject* LoadedObject = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjectPath);
+		if (!LoadedObject)
+		{
+			// Try with .ObjectName appended
+			FString TryPath = ObjectPath;
+			if (!TryPath.Contains(TEXT(".")))
+			{
+				FString ObjName = FPaths::GetCleanFilename(TryPath);
+				TryPath = TryPath + TEXT(".") + ObjName;
+				LoadedObject = StaticLoadObject(UObject::StaticClass(), nullptr, *TryPath);
+			}
+		}
+		if (!LoadedObject)
+		{
+			return ClawMakeError(FString::Printf(TEXT("Failed to load object: %s"), *ObjectPath));
+		}
+
+		// Handle different property types
+		if (FObjectProperty* ObjProp = CastField<FObjectProperty>(TargetProp))
+		{
+			ObjProp->SetObjectPropertyValue(PropertyContainer, LoadedObject);
+		}
+		else if (FSoftObjectProperty* SoftProp = CastField<FSoftObjectProperty>(TargetProp))
+		{
+			FSoftObjectPtr SoftPtr(LoadedObject);
+			SoftProp->SetPropertyValue(PropertyContainer, SoftPtr);
+		}
+		else if (FStructProperty* StructProp = CastField<FStructProperty>(TargetProp))
+		{
+			// Check if it's FSoftObjectPath struct
+			if (StructProp->Struct == TBaseStructure<FSoftObjectPath>::Get())
+			{
+				FSoftObjectPath* PathPtr = static_cast<FSoftObjectPath*>(PropertyContainer);
+				*PathPtr = FSoftObjectPath(LoadedObject);
+			}
+			else
+			{
+				return ClawMakeError(FString::Printf(TEXT("Column '%s' is struct type '%s', not an object property"),
+					*ColumnName, *StructProp->Struct->GetName()));
+			}
+		}
+		else
+		{
+			// Fallback: try ImportText
+			FString TextValue = LoadedObject->GetPathName();
+			const TCHAR* Buffer = *TextValue;
+			if (!TargetProp->ImportText_Direct(Buffer, PropertyContainer, nullptr, PPF_None))
+			{
+				return ClawMakeError(FString::Printf(TEXT("Column '%s' (type %s) does not support object assignment"),
+					*ColumnName, *TargetProp->GetCPPType()));
+			}
+		}
+	}
+
+	DataTable->MarkPackageDirty();
+	DataTable->HandleDataTableChanged(RowFName);
+
+	auto Result = ClawMakeSuccess();
+	Result->SetStringField(TEXT("row"), RowName);
+	Result->SetStringField(TEXT("column"), ColumnName);
+	Result->SetStringField(TEXT("object"), ObjectPath);
+	return ClawJsonToString(Result);
+}
+
+FString UDataTableAPI::BatchSetDataTableObjectProperties(
+	const FString& TablePath,
+	const FString& EntriesJson)
+{
+	UE_LOG(LogUEClawBridgeAPI, Log, TEXT("BatchSetDataTableObjectProperties: table='%s' entries_len=%d"),
+		*TablePath, EntriesJson.Len());
+
+	if (TablePath.IsEmpty() || EntriesJson.IsEmpty())
+	{
+		return ClawMakeError(TEXT("TablePath and EntriesJson are required"));
+	}
+
+	// Parse JSON array
+	TArray<TSharedPtr<FJsonValue>> EntriesArray;
+	auto Reader = TJsonReaderFactory<>::Create(EntriesJson);
+	if (!FJsonSerializer::Deserialize(Reader, EntriesArray))
+	{
+		return ClawMakeError(TEXT("Failed to parse EntriesJson as JSON array"));
+	}
+
+	FString Error;
+	UDataTable* DataTable = LoadAndValidateDataTable(TablePath, Error);
+	if (!DataTable) return ClawMakeError(Error);
+
+	const UScriptStruct* RowStruct = DataTable->GetRowStruct();
+	if (!RowStruct) return ClawMakeError(TEXT("DataTable has no row struct"));
+
+	DataTable->Modify();
+
+	int32 SuccessCount = 0;
+	int32 FailCount = 0;
+	TArray<TSharedPtr<FJsonValue>> Errors;
+
+	// Build column lookup cache: FriendlyName/VarName -> FProperty*
+	TMap<FString, FProperty*> PropCache;
+	for (TFieldIterator<FProperty> It(RowStruct); It; ++It)
+	{
+		FProperty* Prop = *It;
+		PropCache.Add(Prop->GetName(), Prop);
+		FString DisplayName = Prop->GetDisplayNameText().ToString();
+		if (!DisplayName.IsEmpty())
+		{
+			PropCache.Add(DisplayName, Prop);
+		}
+	}
+
+	for (const auto& EntryVal : EntriesArray)
+	{
+		const TSharedPtr<FJsonObject>* EntryObj;
+		if (!EntryVal->TryGetObject(EntryObj)) { FailCount++; continue; }
+
+		FString RowName = (*EntryObj)->GetStringField(TEXT("row"));
+		FString ColName = (*EntryObj)->GetStringField(TEXT("column"));
+		FString ObjPath = (*EntryObj)->GetStringField(TEXT("asset"));
+
+		if (RowName.IsEmpty() || ColName.IsEmpty()) { FailCount++; continue; }
+
+		FName RowFName(*RowName);
+		uint8* RowData = DataTable->FindRowUnchecked(RowFName);
+		if (!RowData) { FailCount++; continue; }
+
+		FProperty** FoundProp = PropCache.Find(ColName);
+		if (!FoundProp || !*FoundProp) { FailCount++; continue; }
+
+		FProperty* TargetProp = *FoundProp;
+		void* Container = TargetProp->ContainerPtrToValuePtr<void>(RowData);
+
+		if (ObjPath.IsEmpty() || ObjPath == TEXT("None"))
+		{
+			TargetProp->ClearValue(Container);
+			SuccessCount++;
+			continue;
+		}
+
+		UObject* Obj = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjPath);
+		if (!Obj)
+		{
+			FString TryPath = ObjPath;
+			if (!TryPath.Contains(TEXT(".")))
+			{
+				TryPath = TryPath + TEXT(".") + FPaths::GetCleanFilename(TryPath);
+				Obj = StaticLoadObject(UObject::StaticClass(), nullptr, *TryPath);
+			}
+		}
+		if (!Obj) { FailCount++; continue; }
+
+		if (FObjectProperty* ObjProp = CastField<FObjectProperty>(TargetProp))
+		{
+			ObjProp->SetObjectPropertyValue(Container, Obj);
+			SuccessCount++;
+		}
+		else if (FSoftObjectProperty* SoftProp = CastField<FSoftObjectProperty>(TargetProp))
+		{
+			SoftProp->SetPropertyValue(Container, FSoftObjectPtr(Obj));
+			SuccessCount++;
+		}
+		else if (FStructProperty* StructProp = CastField<FStructProperty>(TargetProp))
+		{
+			if (StructProp->Struct == TBaseStructure<FSoftObjectPath>::Get())
+			{
+				*static_cast<FSoftObjectPath*>(Container) = FSoftObjectPath(Obj);
+				SuccessCount++;
+			}
+			else { FailCount++; }
+		}
+		else { FailCount++; }
+	}
+
+	DataTable->MarkPackageDirty();
+
+	auto Result = ClawMakeSuccess();
+	Result->SetStringField(TEXT("table"), TablePath);
+	Result->SetNumberField(TEXT("total"), EntriesArray.Num());
+	Result->SetNumberField(TEXT("success"), SuccessCount);
+	Result->SetNumberField(TEXT("failed"), FailCount);
+
+	UE_LOG(LogUEClawBridgeAPI, Log, TEXT("BatchSetDataTableObjectProperties: %d/%d succeeded"),
+		SuccessCount, EntriesArray.Num());
+
+	return ClawJsonToString(Result);
+}
+
 UDataTable* UDataTableAPI::LoadAndValidateDataTable(const FString& AssetPath, FString& OutError)
 {
 	// Load asset
