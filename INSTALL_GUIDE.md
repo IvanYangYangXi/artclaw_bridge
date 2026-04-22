@@ -2,6 +2,12 @@
 
 This guide covers installation for both **human users** and **AI Agents** performing the installation on behalf of users.
 
+> 🤖 **AI Agents**: This is the primary installation reference. Follow the "AI Agent Installation Guide" section below step by step. Key points:
+> - Always use `python install.py` (not `install.bat`) — it handles junction/symlink, dependency installation, and platform configuration automatically.
+> - After DCC plugin installation, always run `python install.py --openclaw` (or `--platform lobster`) to configure the Agent platform.
+> - Gateway token is read dynamically from the platform config file — do not hardcode any token values.
+> - See also: [QUICK_INSTALL_REFERENCE.md](QUICK_INSTALL_REFERENCE.md) for common command combinations.
+
 ---
 
 ## Quick Start (Human)
