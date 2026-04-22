@@ -109,6 +109,49 @@ PLATFORM_CONFIGS = {
 
 
 # ---------------------------------------------------------------------------
+# Gateway Token 动态读取
+# ---------------------------------------------------------------------------
+
+def _read_gateway_token(platform_type: str, pcfg: dict) -> str:
+    """从平台配置文件动态读取 Gateway 认证 Token。
+
+    每台机器的 OpenClaw/LobsterAI 在首次安装时随机生成 token，
+    不能用硬编码值。此函数按优先级读取:
+    1. 平台配置文件 → gateway.auth.token (OpenClaw 格式)
+    2. gateway-token 文件 (同目录下的纯文本 token)
+    3. 返回空串 (由运行时 bridge_config 继续 fallback)
+    """
+    # 1. 从平台配置文件读取 (如 ~/.openclaw/openclaw.json)
+    mcp_config_path = os.path.expanduser(pcfg.get("mcp_config_path", ""))
+    if mcp_config_path and os.path.exists(mcp_config_path):
+        try:
+            with open(mcp_config_path, "r", encoding="utf-8") as f:
+                platform_config = json.load(f)
+            token = platform_config.get("gateway", {}).get("auth", {}).get("token", "")
+            if token:
+                cprint("OK", "已从平台配置读取 Gateway token", "green")
+                return token
+        except Exception as e:
+            cprint("警告", f"读取平台配置 token 失败: {e}", "yellow")
+
+    # 2. gateway-token 文件 (LobsterAI 等)
+    if mcp_config_path:
+        token_file = os.path.join(os.path.dirname(mcp_config_path), "gateway-token")
+        if os.path.exists(token_file):
+            try:
+                with open(token_file, "r", encoding="utf-8") as f:
+                    token = f.read().strip()
+                if token:
+                    cprint("OK", "已从 gateway-token 文件读取 token", "green")
+                    return token
+            except Exception:
+                pass
+
+    cprint("警告", "未能读取 Gateway token，DCC 插件首次连接时将尝试从平台配置文件读取", "yellow")
+    return ""
+
+
+# ---------------------------------------------------------------------------
 # 配置写入
 # ---------------------------------------------------------------------------
 
@@ -135,11 +178,18 @@ def write_artclaw_config(platform_type: str):
             pass
 
     existing["project_root"] = str(ROOT_DIR)
-    existing["platform"] = {
+
+    # 动态读取 Gateway token（从平台配置文件获取，每台机器不同）
+    gateway_token = _read_gateway_token(platform_type, pcfg)
+
+    platform_block = {
         "type": platform_type,
         "gateway_url": pcfg["gateway_url"],
         "mcp_port": pcfg["mcp_port"],
     }
+    if gateway_token:
+        platform_block["token"] = gateway_token
+    existing["platform"] = platform_block
     existing["skills"] = {
         "installed_path": pcfg["skills_installed_path"],
         "disabled": existing.get("skills", {}).get("disabled", []),

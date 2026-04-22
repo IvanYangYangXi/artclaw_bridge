@@ -34,7 +34,7 @@ import openclaw_ws
 # ---------------------------------------------------------------------------
 
 _DEFAULT_AGENT_ID = "qi"
-_DEFAULT_TOKEN    = "ec8900cf3e3c4bbfab43c8d7d5a4638c69b854e075902325"
+_DEFAULT_TOKEN    = ""
 _GATEWAY_PORT     = 18789
 
 

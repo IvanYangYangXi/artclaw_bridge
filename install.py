@@ -5,7 +5,7 @@ ArtClaw Bridge — 跨平台安装器
 ================================
 
 统一安装 UE / Maya / 3ds Max / Blender / Houdini / Substance Painter / Substance Designer
-插件 + 平台配置。每个目标部署为自包含模式（bridge_core 等共享模块打包进目标目录）。
+插件 + 平台配置。默认使用 junction/symlink 精细引用安装（失败时自动回退复制，--copy 强制复制）。
 支持多平台: openclaw (默认) / workbuddy / claude / lobster
 
 用法:

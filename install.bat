@@ -124,17 +124,28 @@ exit /b 1
 :: 安装全部
 :: ============================================================
 :install_all
-call :do_install_ue
-if %ERRORLEVEL% NEQ 0 echo [警告] UE 安装未完成，继续...
-call :do_install_maya
-if %ERRORLEVEL% NEQ 0 echo [警告] Maya 安装未完成，继续...
-call :do_install_max
-if %ERRORLEVEL% NEQ 0 echo [警告] Max 安装未完成，继续...
-call :do_install_blender
-call :do_install_houdini
-call :do_install_sp
-call :do_install_sd
-call :do_install_openclaw
+echo.
+echo  ── 全部安装 ────────────────────────────────────────
+echo.
+
+set "UE_PROJECT_DIR="
+echo  请输入 UE 项目路径 (包含 .uproject 文件的目录，不需要 UE 可留空):
+set /p UE_PROJECT_DIR="  > "
+
+set "COMFYUI_PATH="
+echo  请输入 ComfyUI 安装目录 (不需要 ComfyUI 可留空):
+set /p COMFYUI_PATH="  > "
+
+set "INSTALL_ARGS=--maya --max --blender --houdini --sp --sd --openclaw --platform !PLATFORM! --force"
+if not "!UE_PROJECT_DIR!"=="" set "INSTALL_ARGS=!INSTALL_ARGS! --ue --ue-project "!UE_PROJECT_DIR!""
+if not "!COMFYUI_PATH!"=="" set "INSTALL_ARGS=!INSTALL_ARGS! --comfyui --comfyui-path "!COMFYUI_PATH!""
+
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" !INSTALL_ARGS!
+) else (
+    echo [错误] 未找到 Python，请手动运行: python install.py --all
+)
 goto :summary
 
 :: ============================================================
@@ -172,56 +183,19 @@ if "%FOUND_UPROJECT%"=="" (
 )
 echo [OK] UE 项目: %FOUND_UPROJECT%
 
-set "PLUGIN_DST=%UE_PROJECT_DIR%\Plugins\UEClawBridge"
-
-:: 检查目标已存在
-if exist "%PLUGIN_DST%" (
-    echo [提示] 目标目录已存在: %PLUGIN_DST%
-    set /p OVERWRITE="       是否覆盖？(Y/N, 默认 Y): "
-    if /I "!OVERWRITE!"=="N" (
-        echo [跳过] UE 插件安装
-        exit /b 0
-    )
-)
-
-:: 复制插件 (robocopy /MIR 保证幂等)
-echo [复制] UEClawBridge 插件...
-robocopy "%UE_PLUGIN_SRC%" "%PLUGIN_DST%" /MIR /NFL /NDL /NJH /NJS /NC /NS /NP >nul 2>&1
-if %ERRORLEVEL% GTR 7 (
-    echo [错误] 复制插件失败 (robocopy 错误: %ERRORLEVEL%)
-    exit /b 1
-)
-echo [OK] 插件已安装到: %PLUGIN_DST%
-
-:: 复制 bridge_core 共享模块到插件 Content/Python/
-echo [复制] bridge_core 共享模块...
-set "PYTHON_DST=%PLUGIN_DST%\Content\Python"
-if not exist "%PYTHON_DST%" mkdir "%PYTHON_DST%"
-copy /Y "%BRIDGE_MODULES_SRC%\bridge_core.py" "%PYTHON_DST%\" >nul
-copy /Y "%BRIDGE_MODULES_SRC%\bridge_config.py" "%PYTHON_DST%\" >nul
-copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "%PYTHON_DST%\" >nul
-copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "%PYTHON_DST%\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "%PYTHON_DST%\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\health_check.py" "%PYTHON_DST%\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\skill_sync.py" "%PYTHON_DST%\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\retry_tracker.py" "%PYTHON_DST%\" >nul 2>&1
-echo [OK] 共享模块已打包到: %PYTHON_DST%
-
-:: 安装 Python 依赖
-echo [安装] Python 依赖...
-call :find_ue_python
-if defined UE_PYTHON (
-    "!UE_PYTHON!" -m pip install websockets pydantic >nul 2>&1
+:: 委托给 install.py (精细化引用安装: junction/symlink)
+echo [安装] 正在安装 UE 插件 (精细引用模式)...
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --ue --ue-project "!UE_PROJECT_DIR!" --platform !PLATFORM! --force
     if !ERRORLEVEL! EQU 0 (
-        echo [OK] Python 依赖已安装
+        echo [完成] UE 插件安装成功!
     ) else (
-        echo [警告] Python 依赖安装失败，请稍后手动安装
+        echo [错误] UE 插件安装失败
     )
 ) else (
-    echo [警告] 未找到 UE Python，请手动安装 websockets 和 pydantic
+    echo [错误] 未找到 Python，请手动运行: python install.py --ue --ue-project "path"
 )
-
-echo [完成] UE 插件安装成功!
 exit /b 0
 
 :: ============================================================
@@ -268,88 +242,19 @@ echo  请输入 Maya 版本 (默认 2023):
 set /p MAYA_VER_INPUT="  > "
 if not "%MAYA_VER_INPUT%"=="" set "MAYA_VER=%MAYA_VER_INPUT%"
 
-:: 检测 Maya 目录
-set "MAYA_BASE=%USERPROFILE%\Documents\maya\%MAYA_VER%"
-set "MAYA_SCRIPTS=%MAYA_BASE%\scripts"
-set "MAYA_LOCALE_SCRIPTS="
-
-:: 检测 locale 子目录 (zh_CN, ja_JP, ko_KR 等)
-for /D %%D in ("%MAYA_BASE%\*") do (
-    if exist "%%D\scripts" (
-        for %%N in ("%%~nxD") do (
-            echo %%~N | findstr /R "^[a-z][a-z]_[A-Z][A-Z]$" >nul 2>&1
-            if !ERRORLEVEL! EQU 0 (
-                set "MAYA_LOCALE_SCRIPTS=%%D\scripts"
-                echo [检测] 发现 Maya locale 目录: %%~nxD
-            )
-        )
+:: 委托给 install.py (精细化引用安装: junction/symlink)
+echo [安装] 正在安装 Maya !MAYA_VER! 插件 (精细引用模式)...
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --maya --maya-version !MAYA_VER! --platform !PLATFORM! --force
+    if !ERRORLEVEL! EQU 0 (
+        echo [完成] Maya 插件安装成功!
+    ) else (
+        echo [错误] Maya 插件安装失败
     )
+) else (
+    echo [错误] 未找到 Python，请手动运行: python install.py --maya
 )
-
-:: 安装到默认 scripts/ (始终安装)
-set "DCC_DST=%MAYA_SCRIPTS%\DCCClawBridge"
-echo  目标目录: %DCC_DST%
-if defined MAYA_LOCALE_SCRIPTS echo  Locale 目录: !MAYA_LOCALE_SCRIPTS!\DCCClawBridge
-echo.
-
-:: 检查目标已存在
-if exist "%DCC_DST%" (
-    echo [提示] 目标目录已存在: %DCC_DST%
-    set /p OVERWRITE="       是否覆盖？(Y/N, 默认 Y): "
-    if /I "!OVERWRITE!"=="N" (
-        echo [跳过] Maya 插件安装
-        exit /b 0
-    )
-)
-
-:: 创建 scripts 目录
-if not exist "%MAYA_SCRIPTS%" (
-    mkdir "%MAYA_SCRIPTS%"
-    echo [创建] %MAYA_SCRIPTS%
-)
-
-:: 复制 DCCClawBridge (robocopy /MIR 保证幂等)
-echo [复制] DCCClawBridge...
-robocopy "%DCC_BRIDGE_SRC%" "%DCC_DST%" /MIR /NFL /NDL /NJH /NJS /NC /NS /NP >nul 2>&1
-if %ERRORLEVEL% GTR 7 (
-    echo [错误] 复制 DCCClawBridge 失败
-    exit /b 1
-)
-echo [OK] DCCClawBridge 已安装到: %DCC_DST%
-
-:: 复制 bridge_core 共享模块到 DCCClawBridge/core/
-echo [复制] bridge_core 共享模块到 core/...
-copy /Y "%BRIDGE_MODULES_SRC%\bridge_core.py" "%DCC_DST%\core\" >nul
-copy /Y "%BRIDGE_MODULES_SRC%\bridge_config.py" "%DCC_DST%\core\" >nul
-copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "%DCC_DST%\core\" >nul
-copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "%DCC_DST%\core\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "%DCC_DST%\core\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\health_check.py" "%DCC_DST%\core\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\skill_sync.py" "%DCC_DST%\core\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\retry_tracker.py" "%DCC_DST%\core\" >nul 2>&1
-echo [OK] 共享模块已打包 (自包含部署)
-
-:: 如果有 locale 目录，也复制一份
-if defined MAYA_LOCALE_SCRIPTS (
-    set "LOCALE_DST=!MAYA_LOCALE_SCRIPTS!\DCCClawBridge"
-    echo [复制] DCCClawBridge 到 locale 目录...
-    robocopy "%DCC_BRIDGE_SRC%" "!LOCALE_DST!" /MIR /NFL /NDL /NJH /NJS /NC /NS /NP >nul 2>&1
-    copy /Y "%BRIDGE_MODULES_SRC%\bridge_core.py" "!LOCALE_DST!\core\" >nul
-    copy /Y "%BRIDGE_MODULES_SRC%\bridge_config.py" "!LOCALE_DST!\core\" >nul
-    copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "!LOCALE_DST!\core\" >nul
-    copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "!LOCALE_DST!\core\" >nul 2>&1
-    copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "!LOCALE_DST!\core\" >nul 2>&1
-    copy /Y "%BRIDGE_MODULES_SRC%\health_check.py" "!LOCALE_DST!\core\" >nul 2>&1
-    copy /Y "%BRIDGE_MODULES_SRC%\skill_sync.py" "!LOCALE_DST!\core\" >nul 2>&1
-    copy /Y "%BRIDGE_MODULES_SRC%\retry_tracker.py" "!LOCALE_DST!\core\" >nul 2>&1
-    echo [OK] 已同步到: !LOCALE_DST!
-    call :inject_maya_startup "!MAYA_LOCALE_SCRIPTS!"
-)
-
-:: 处理 userSetup.py (幂等注入) — 默认 scripts/
-call :inject_maya_startup "%MAYA_SCRIPTS%"
-
-echo [完成] Maya 插件安装成功!
 exit /b 0
 
 :: ============================================================
@@ -462,80 +367,19 @@ echo  请输入 3ds Max 版本 (默认 2024):
 set /p MAX_VER_INPUT="  > "
 if not "%MAX_VER_INPUT%"=="" set "MAX_VER=%MAX_VER_INPUT%"
 
-:: 检测 Max locale 目录 (ENU=英文, CHS=中文, JPN=日文 等)
-set "MAX_BASE=%LOCALAPPDATA%\Autodesk\3dsMax\%MAX_VER%"
-set "MAX_LOCALE="
-set "MAX_SCRIPTS="
-
-:: 按优先级检测已有的 locale 目录
-for %%L in (CHS ENU JPN KOR FRA DEU) do (
-    if exist "%MAX_BASE%\%%L\scripts" (
-        if "!MAX_LOCALE!"=="" (
-            set "MAX_LOCALE=%%L"
-            set "MAX_SCRIPTS=%MAX_BASE%\%%L\scripts"
-        )
+:: 委托给 install.py (精细化引用安装: junction/symlink)
+echo [安装] 正在安装 3ds Max !MAX_VER! 插件 (精细引用模式)...
+where python >nul 2>&1
+if !ERRORLEVEL! EQU 0 (
+    python "%ROOT_DIR%\install.py" --max --max-version !MAX_VER! --platform !PLATFORM! --force
+    if !ERRORLEVEL! EQU 0 (
+        echo [完成] 3ds Max 插件安装成功!
+    ) else (
+        echo [错误] 3ds Max 插件安装失败
     )
-)
-:: 如果都没找到，回退 ENU
-if "!MAX_SCRIPTS!"=="" (
-    set "MAX_LOCALE=ENU"
-    set "MAX_SCRIPTS=%MAX_BASE%\ENU\scripts"
-    echo [提示] 未检测到已有 Max locale 目录，使用默认 ENU
 ) else (
-    echo [检测] 发现 Max locale 目录: !MAX_LOCALE!
+    echo [错误] 未找到 Python，请手动运行: python install.py --max
 )
-
-set "MAX_STARTUP=%MAX_SCRIPTS%\startup"
-set "DCC_DST=%MAX_SCRIPTS%\DCCClawBridge"
-
-echo  目标目录: %DCC_DST%
-echo.
-
-:: 检查目标已存在
-if exist "%DCC_DST%" (
-    echo [提示] 目标目录已存在: %DCC_DST%
-    set /p OVERWRITE="       是否覆盖？(Y/N, 默认 Y): "
-    if /I "!OVERWRITE!"=="N" (
-        echo [跳过] Max 插件安装
-        exit /b 0
-    )
-)
-
-:: 创建目录
-if not exist "%MAX_SCRIPTS%" (
-    mkdir "%MAX_SCRIPTS%"
-    echo [创建] %MAX_SCRIPTS%
-)
-if not exist "%MAX_STARTUP%" (
-    mkdir "%MAX_STARTUP%"
-    echo [创建] %MAX_STARTUP%
-)
-
-:: 复制 DCCClawBridge (robocopy /MIR 保证幂等)
-echo [复制] DCCClawBridge...
-robocopy "%DCC_BRIDGE_SRC%" "%DCC_DST%" /MIR /NFL /NDL /NJH /NJS /NC /NS /NP >nul 2>&1
-if %ERRORLEVEL% GTR 7 (
-    echo [错误] 复制 DCCClawBridge 失败
-    exit /b 1
-)
-echo [OK] DCCClawBridge 已安装到: %DCC_DST%
-
-:: 复制 bridge_core 共享模块到 DCCClawBridge/core/
-echo [复制] bridge_core 共享模块到 core/...
-copy /Y "%BRIDGE_MODULES_SRC%\bridge_core.py" "%DCC_DST%\core\" >nul
-copy /Y "%BRIDGE_MODULES_SRC%\bridge_config.py" "%DCC_DST%\core\" >nul
-copy /Y "%BRIDGE_MODULES_SRC%\bridge_diagnostics.py" "%DCC_DST%\core\" >nul
-copy /Y "%BRIDGE_MODULES_SRC%\memory_core.py" "%DCC_DST%\core\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\integrity_check.py" "%DCC_DST%\core\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\health_check.py" "%DCC_DST%\core\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\skill_sync.py" "%DCC_DST%\core\" >nul 2>&1
-copy /Y "%BRIDGE_MODULES_SRC%\retry_tracker.py" "%DCC_DST%\core\" >nul 2>&1
-echo [OK] 共享模块已打包 (自包含部署)
-
-:: 处理 startup.py (幂等注入)
-call :inject_max_startup
-
-echo [完成] 3ds Max 插件安装成功!
 exit /b 0
 
 :: ============================================================

@@ -313,7 +313,7 @@ artclaw_bridge/
 
 The installation process is now **fully automated** for MCP configuration:
 
-1. **DCC Plugin Installation** → `install.py` copies plugin files to DCC directories
+1. **DCC Plugin Installation** → `install.py` links (junction/symlink) plugin files to DCC directories (fallback to copy; use `--copy` to force copy mode)
 2. **Platform Configuration** → `install.py --openclaw` installs Skills and runs MCP config script
 3. **MCP Server Registration** → Platform-specific scripts (`setup_*_config.py`) automatically add stdio server entries
 4. **No Manual Editing Required** → All configuration is handled by scripts
