@@ -14,7 +14,7 @@ Flow per chat message:
 Configuration:
     ARTCLAW_GATEWAY_API_URL  – base URL, e.g. http://127.0.0.1:18789
     ARTCLAW_GATEWAY_TOKEN    – bearer token
-    ARTCLAW_GATEWAY_AGENT_ID – target agent id (default: qi)
+    ARTCLAW_GATEWAY_AGENT_ID – target agent id (auto-detected from platform config if empty)
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ class GatewayClient:
         self,
         gateway_url: str = "",
         token: str = "",
-        agent_id: str = "qi",
+        agent_id: str = "",
     ) -> None:
         self._base_url = gateway_url.rstrip("/")
         self._token = token

@@ -15,9 +15,9 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 DEFAULT_GATEWAY_URL = "ws://127.0.0.1:18789"
-DEFAULT_AGENT_ID = "qi"
-# Token 不硬编码 — 每台机器的 OpenClaw 安装时随机生成
-# 运行时通过 get_gateway_token() 按优先级从配置文件动态读取
+# Agent ID / Token 不硬编码 — 每台机器的 OpenClaw 配置不同
+# 运行时通过 get_default_agent_id() / get_gateway_token() 动态读取
+DEFAULT_AGENT_ID = ""
 DEFAULT_TOKEN = ""
 PROTOCOL_VERSION = 3
 
@@ -466,6 +466,32 @@ def get_gateway_token() -> str:
             pass
 
     return DEFAULT_TOKEN
+
+
+def get_default_agent_id() -> str:
+    """获取默认 Agent ID。
+
+    优先级:
+    1. ~/.artclaw/config.json → last_agent_id（上次使用的 Agent）
+    2. 平台配置文件 → agents.list[0].id（第一个注册的 Agent）
+    3. 空串（由 Gateway 使用默认 Agent 路由）
+    """
+    ac = load_artclaw_config()
+
+    # 1. artclaw config 直读（DCC 切换 Agent 时会保存到这里）
+    last = ac.get("last_agent_id", "")
+    if last:
+        return last
+
+    # 2. 平台配置文件 → agents.list 第一个
+    config = load_config()
+    agents_list = config.get("agents", {}).get("list", [])
+    if agents_list:
+        first_id = agents_list[0].get("id", "")
+        if first_id:
+            return first_id
+
+    return DEFAULT_AGENT_ID
 
 
 # ---------------------------------------------------------------------------

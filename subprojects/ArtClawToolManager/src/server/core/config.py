@@ -82,6 +82,39 @@ def _default_data_dir() -> str:
     return str(Path.home() / ".artclaw")
 
 
+def _resolve_gateway_agent_id() -> str:
+    """Resolve default Agent ID from platform config.
+
+    Priority:
+      1. ~/.artclaw/config.json → last_agent_id
+      2. Platform config → agents.list[0].id
+      3. Empty string (Gateway routes to default agent)
+    """
+    cfg = _read_artclaw_config()
+    last = cfg.get("last_agent_id", "")
+    if last:
+        return last
+
+    # Read platform config (e.g. openclaw.json)
+    platform_type = cfg.get("platform", {}).get("type", "openclaw")
+    config_paths = {
+        "openclaw": Path.home() / ".openclaw" / "openclaw.json",
+    }
+    config_path = config_paths.get(platform_type)
+    if config_path and config_path.exists():
+        try:
+            pcfg = json.loads(config_path.read_text(encoding="utf-8"))
+            agents_list = pcfg.get("agents", {}).get("list", [])
+            if agents_list:
+                first_id = agents_list[0].get("id", "")
+                if first_id:
+                    return first_id
+        except Exception:
+            pass
+
+    return ""
+
+
 class Settings(BaseSettings):
     """Global application settings."""
 
@@ -112,7 +145,7 @@ class Settings(BaseSettings):
     GATEWAY_URL: str = ""
     GATEWAY_API_URL: str = "http://127.0.0.1:18789"
     GATEWAY_TOKEN: str = ""
-    GATEWAY_AGENT_ID: str = "qi"
+    GATEWAY_AGENT_ID: str = ""
 
     model_config = {
         "env_prefix": "ARTCLAW_",
@@ -140,6 +173,30 @@ class Settings(BaseSettings):
     @property
     def config_json_path(self) -> Path:
         return self.data_path / "config.json"
+
+    @property
+    def resolved_agent_id(self) -> str:
+        """GATEWAY_AGENT_ID with dynamic fallback from platform config."""
+        if self.GATEWAY_AGENT_ID:
+            return self.GATEWAY_AGENT_ID
+        return _resolve_gateway_agent_id()
+
+    @property
+    def resolved_token(self) -> str:
+        """GATEWAY_TOKEN with dynamic fallback from platform config."""
+        if self.GATEWAY_TOKEN:
+            return self.GATEWAY_TOKEN
+        # Try reading from openclaw.json → gateway.auth.token
+        try:
+            oc_path = Path.home() / ".openclaw" / "openclaw.json"
+            if oc_path.exists():
+                cfg = json.loads(oc_path.read_text(encoding="utf-8"))
+                token = cfg.get("gateway", {}).get("auth", {}).get("token", "")
+                if token:
+                    return token
+        except Exception:
+            pass
+        return ""
 
 
 # Singleton – import this everywhere.

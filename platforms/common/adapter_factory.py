@@ -15,7 +15,7 @@ adapter_factory.py — 平台适配器工厂
         "openclaw",
         gateway_url="ws://127.0.0.1:18789",
         token="your-token",
-        agent_id="qi",
+        agent_id="your-agent",
     )
 
     # Claude Code（stdio MCP 桥接）
