@@ -292,13 +292,22 @@ FString UDataTableAPI::SetDataTableObjectProperty(
 		}
 		else
 		{
-			// Fallback: try ImportText
-			FString TextValue = LoadedObject->GetPathName();
+			// Fallback for UDS properties: try ImportText with UE object reference format
+			// UDS ObjectReference fields are not FObjectProperty in reflection,
+			// but ImportText_Direct with "ClassName'Path.Name'" format works.
+			FString ClassName = LoadedObject->GetClass()->GetName();
+			FString ObjPathName = LoadedObject->GetPathName();
+			FString TextValue = FString::Printf(TEXT("%s'%s'"), *ClassName, *ObjPathName);
 			const TCHAR* Buffer = *TextValue;
 			if (!TargetProp->ImportText_Direct(Buffer, PropertyContainer, nullptr, PPF_None))
 			{
-				return ClawMakeError(FString::Printf(TEXT("Column '%s' (type %s) does not support object assignment"),
-					*ColumnName, *TargetProp->GetCPPType()));
+				// Also try just the path without class prefix
+				Buffer = *ObjPathName;
+				if (!TargetProp->ImportText_Direct(Buffer, PropertyContainer, nullptr, PPF_None))
+				{
+					return ClawMakeError(FString::Printf(TEXT("Column '%s' (type %s) does not support object assignment"),
+						*ColumnName, *TargetProp->GetCPPType()));
+				}
 			}
 		}
 	}
@@ -418,7 +427,27 @@ FString UDataTableAPI::BatchSetDataTableObjectProperties(
 			}
 			else { FailCount++; }
 		}
-		else { FailCount++; }
+		else
+		{
+			// UDS fallback: ImportText with "ClassName'Path'" format
+			FString ClassName = Obj->GetClass()->GetName();
+			FString ObjPathName = Obj->GetPathName();
+			FString TextValue = FString::Printf(TEXT("%s'%s'"), *ClassName, *ObjPathName);
+			const TCHAR* Buffer = *TextValue;
+			if (TargetProp->ImportText_Direct(Buffer, Container, nullptr, PPF_None))
+			{
+				SuccessCount++;
+			}
+			else
+			{
+				Buffer = *ObjPathName;
+				if (TargetProp->ImportText_Direct(Buffer, Container, nullptr, PPF_None))
+				{
+					SuccessCount++;
+				}
+				else { FailCount++; }
+			}
+		}
 	}
 
 	DataTable->MarkPackageDirty();
