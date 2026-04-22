@@ -26,7 +26,10 @@ try:
 except ImportError:
     unreal = None
 
-from init_unreal import UELogger
+try:
+    from claw_bridge_logger import UELogger
+except ImportError:
+    from init_unreal import UELogger
 import openclaw_ws
 
 # ---------------------------------------------------------------------------

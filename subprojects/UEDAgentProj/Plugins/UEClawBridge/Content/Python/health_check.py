@@ -46,7 +46,20 @@ try:
 except ImportError:
     _IN_UE = False
 
-from claw_bridge_logger import UELogger
+try:
+    from claw_bridge_logger import UELogger
+except ImportError:
+    try:
+        from init_unreal import UELogger
+    except ImportError:
+        class _FallbackLogger:
+            @staticmethod
+            def info(msg): print(f"[INFO] {msg}")
+            @staticmethod
+            def warning(msg): print(f"[WARN] {msg}")
+            @staticmethod
+            def mcp_error(msg): print(f"[ERROR] {msg}")
+        UELogger = _FallbackLogger()
 
 
 # ---------------------------------------------------------------------------
