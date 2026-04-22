@@ -4,7 +4,7 @@ openclaw_chat.py — OpenClaw 聊天公开 API 层
 职责: C++ 调用入口、UE 上下文注入、session 管理、文件协议。
 底层 WebSocket 通信见 openclaw_ws.py。
 
-文件协议 (Saved/ClawBridge/):
+文件协议 (Saved/UEAgent/):
   _openclaw_msg_input.txt          — C++ 写入消息内容，Python 读取
   _openclaw_response_stream.jsonl  — Python 实时写入流式事件
   _openclaw_response.txt           — Python 写入最终回复（出现即代表完成）
@@ -26,8 +26,7 @@ try:
 except ImportError:
     unreal = None
 
-from claw_bridge_logger import UELogger
-
+from init_unreal import UELogger
 import openclaw_ws
 
 # ---------------------------------------------------------------------------
@@ -35,7 +34,7 @@ import openclaw_ws
 # ---------------------------------------------------------------------------
 
 _DEFAULT_AGENT_ID = "qi"
-_DEFAULT_TOKEN    = "ec8900cf3e3c4bbfab43c8d7d5a4638c69b854e075902325"
+_DEFAULT_TOKEN    = ""
 _GATEWAY_PORT     = 18789
 
 
@@ -346,33 +345,25 @@ def _query_session_usage() -> None:
         ))
         # 写入独立文件（C++ 轮询读取）
         import tempfile
-        # 同时写入两个位置（ProjectSaved + ~/.artclaw），确保 C++ 能找到
-        write_dirs = []
         try:
             import unreal
-            write_dirs.append(unreal.Paths.convert_relative_path_to_full(
-                os.path.join(unreal.Paths.project_saved_dir(), "ClawBridge")))
+            status_dir = os.path.join(unreal.Paths.project_saved_dir(), "UEAgent")
         except Exception:
-            pass
-        write_dirs.append(os.path.join(os.path.expanduser("~"), ".artclaw"))
+            status_dir = os.path.join(os.path.expanduser("~"), ".artclaw")
+        os.makedirs(status_dir, exist_ok=True)
 
-        for status_dir in write_dirs:
+        usage_path = os.path.join(status_dir, "_session_usage.json")
+        fd, tmp = tempfile.mkstemp(dir=status_dir, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(result_str)
+            os.replace(tmp, usage_path)
+        except Exception:
             try:
-                os.makedirs(status_dir, exist_ok=True)
-                usage_path = os.path.join(status_dir, "_session_usage.json")
-                fd, tmp = tempfile.mkstemp(dir=status_dir, suffix=".tmp")
-                try:
-                    with os.fdopen(fd, "w", encoding="utf-8") as f:
-                        f.write(result_str)
-                    os.replace(tmp, usage_path)
-                except Exception:
-                    try:
-                        os.unlink(tmp)
-                    except Exception:
-                        pass
-                    raise
+                os.unlink(tmp)
             except Exception:
                 pass
+            raise
         UELogger.info(f"[openclaw_chat] usage written: {result_str[:100]}")
     except Exception as exc:
         UELogger.warning(f"[openclaw_chat] usage query failed: {exc}")

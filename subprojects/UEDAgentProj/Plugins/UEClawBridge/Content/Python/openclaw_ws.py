@@ -4,7 +4,7 @@ openclaw_ws.py — OpenClaw Gateway WebSocket 通信层
 职责: 握手 / 发送 chat.send RPC / 接收流式回复 / 写文件输出。
 每次请求在独立 asyncio.run() 中完成，不维护全局 loop。
 
-文件输出协议 (Saved/ClawBridge/):
+文件输出协议 (Saved/UEAgent/):
   _openclaw_response_stream.jsonl  — 实时流式事件（每行一个 JSON）
   _openclaw_response.txt           — 最终回复（出现即代表完成）
 
@@ -26,7 +26,7 @@ import time
 import uuid
 from typing import Optional
 
-from claw_bridge_logger import UELogger
+from init_unreal import UELogger
 
 # ---------------------------------------------------------------------------
 # 配置常量
@@ -81,7 +81,6 @@ def write_bridge_status(status_dir: str, connected: bool, mcp_ready: bool = Fals
     """写入 _bridge_status.json，供 C++ BridgeStatusPoll 读取连接状态。"""
     try:
         import tempfile
-        os.makedirs(status_dir, exist_ok=True)
         path = os.path.join(status_dir, "_bridge_status.json")
         data = {
             "timestamp": time.time(),
@@ -427,14 +426,13 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
 
 
 def _dispatch_usage(payload: dict, message: dict, stream_file: str, stream_lock) -> None:
-    """从 final 事件中提取 token usage 并写入 stream.jsonl + _session_usage.json。
+    """从 final 事件中提取 token usage 并写入 stream.jsonl。
 
     Gateway 的 usage 位置不确定，按优先级逐层查找:
     1. payload.usage
     2. message.usage
     3. payload.result.usage
     4. payload.meta.usage
-    5. payload 顶层直接包含 inputTokens/totalTokens
     """
     usage = None
     # 多层查找 usage 对象
@@ -449,72 +447,32 @@ def _dispatch_usage(payload: dict, message: dict, stream_file: str, stream_lock)
             usage = source["usage"]
             break
 
-    # Fallback: 顶层直接包含 token 字段（某些 Gateway 版本）
     if not usage:
-        for source in candidates:
-            if isinstance(source, dict):
-                if source.get("totalTokens") or source.get("inputTokens") or source.get("total_tokens"):
-                    usage = source
-                    break
-
-    if not usage:
-        UELogger.info(f"[openclaw_ws] final event no usage found, payload keys: {list(payload.keys())}, message keys: {list(message.keys()) if isinstance(message, dict) else 'N/A'}")
+        # 调试: 记录 payload 顶层 key 帮助定位 usage 位置
+        UELogger.info(f"[openclaw_ws] final event no usage found, payload keys: {list(payload.keys())}")
         return
 
     # 统一字段名: Gateway 可能用 camelCase 或 snake_case
-    inp = usage.get("inputTokens") or usage.get("input_tokens") or 0
-    out = usage.get("outputTokens") or usage.get("output_tokens") or 0
-    total = usage.get("totalTokens") or usage.get("total_tokens") or (inp + out)
+    total = (
+        usage.get("totalTokens")
+        or usage.get("total_tokens")
+        or 0
+    )
+    if not total:
+        # 尝试 input + output 合计
+        inp = usage.get("inputTokens") or usage.get("input_tokens") or 0
+        out = usage.get("outputTokens") or usage.get("output_tokens") or 0
+        total = inp + out
 
-    if total <= 0 and inp <= 0:
-        return
-
-    usage_data = {
-        "totalTokens": total,
-        "inputTokens": inp,
-        "outputTokens": out,
-    }
-
-    # 写入 stream.jsonl（C++ 实时读取）
-    write_stream(stream_file, {
-        "type": "usage",
-        "usage": usage_data,
-    }, stream_lock)
-
-    # 同时写入 _session_usage.json（持久化，C++ 定时轮询）
-    _write_session_usage_json(usage_data)
-
-    UELogger.info(f"[openclaw_ws] usage dispatched: input={inp} output={out} total={total}")
-
-
-def _write_session_usage_json(usage_data: dict) -> None:
-    """将 usage 数据持久化到 _session_usage.json（双路径写入）。"""
-    import tempfile
-    write_dirs = []
-    try:
-        import unreal
-        write_dirs.append(unreal.Paths.convert_relative_path_to_full(
-            os.path.join(unreal.Paths.project_saved_dir(), "ClawBridge")))
-    except Exception:
-        pass
-    write_dirs.append(os.path.join(os.path.expanduser("~"), ".artclaw"))
-
-    content = json.dumps(usage_data, ensure_ascii=False)
-    for status_dir in write_dirs:
-        try:
-            os.makedirs(status_dir, exist_ok=True)
-            usage_path = os.path.join(status_dir, "_session_usage.json")
-            fd, tmp = tempfile.mkstemp(dir=status_dir, suffix=".tmp")
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write(content)
-                os.replace(tmp, usage_path)
-            except Exception:
-                try: os.unlink(tmp)
-                except Exception: pass
-                raise
-        except Exception:
-            pass
+    if total > 0:
+        write_stream(stream_file, {
+            "type": "usage",
+            "usage": {
+                "totalTokens": total,
+                "inputTokens": usage.get("inputTokens") or usage.get("input_tokens") or 0,
+                "outputTokens": usage.get("outputTokens") or usage.get("output_tokens") or 0,
+            },
+        }, stream_lock)
 
 
 def _format_tool_call_summary(tool_name: str, tool_args: dict) -> str:
