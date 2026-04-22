@@ -476,6 +476,9 @@ class OpenClawBridge:
             # 根据 client_id 动态生成 displayName
             display_name = self._get_display_name()
 
+            scopes = ["operator.read", "operator.write", "operator.admin"]
+            signed_at_ms = int(time.time() * 1000)
+
             connect_params = {
                 "minProtocol": PROTOCOL_VERSION,
                 "maxProtocol": PROTOCOL_VERSION,
@@ -489,8 +492,21 @@ class OpenClawBridge:
                 "caps": [],
                 "auth": {"token": self.token},
                 "role": "operator",
-                "scopes": ["operator.admin"],
+                "scopes": scopes,
             }
+
+            # Device identity 签名（可选，缺失时 fallback 到 token-only）
+            try:
+                from device_auth import get_device_identity, build_device_auth
+                identity = get_device_identity()
+                if identity:
+                    connect_params["device"] = build_device_auth(
+                        identity, "operator", scopes, signed_at_ms, nonce,
+                        auth_token=self.token,
+                    )
+                    self._log.info("OpenClaw Bridge: device identity attached")
+            except Exception as exc:
+                self._log.warning(f"OpenClaw Bridge: device auth skipped: {exc}")
 
             connect_id = str(uuid.uuid4())
             connect_frame = {
