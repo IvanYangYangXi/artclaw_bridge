@@ -27,7 +27,6 @@ import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
-import requests
 
 
 # ============================================================================
@@ -695,6 +694,12 @@ def _update_alerts(
     skills: List[Dict], core_issues: List[Dict], dcc_issues: List[Dict],
     dep_issues: Optional[List[Dict]] = None,
 ) -> None:
+    try:
+        import requests
+    except ImportError:
+        print("[WARN] requests 未安装，跳过 alert 发送")
+        return
+
     api_url = "http://localhost:9876/api/v1/alerts"
     src_name = "skill-version-checker"
 
