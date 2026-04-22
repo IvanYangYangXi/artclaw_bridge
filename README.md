@@ -338,6 +338,8 @@ Instead of manual installation, simply tell your AI Agent:
 
 Your Agent will handle everything — cloning, dependencies, configuration, and MCP setup.
 
+> 🤖 **AI Agents: Read [INSTALL_GUIDE.md](INSTALL_GUIDE.md) for step-by-step installation instructions.** It covers prerequisites, CLI commands, platform configuration, and post-install verification.
+
 **Example prompts:**
 - *"Install ArtClaw Bridge for Unreal Engine 5.7, my project is at D:\MyProject\UE_Game"*
 - *"Set up ArtClaw Bridge for Maya 2023 and Blender 5.1"*

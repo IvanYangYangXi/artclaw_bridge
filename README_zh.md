@@ -336,6 +336,8 @@ ArtClaw Bridge 是一个**统一的桥接层**：
 
 Agent 会自动完成：克隆、依赖安装、配置、MCP 设置。
 
+> 🤖 **AI Agent 请阅读 [INSTALL_GUIDE.md](INSTALL_GUIDE.md) 获取详细安装步骤。** 包含环境要求、CLI 命令、平台配置和安装后验证。
+
 **示例指令：**
 - *"为 Unreal Engine 5.7 安装 ArtClaw Bridge，我的项目在 D:\MyProject\UE_Game"*
 - *"给 Maya 2023 和 Blender 5.1 配置 ArtClaw Bridge"*
