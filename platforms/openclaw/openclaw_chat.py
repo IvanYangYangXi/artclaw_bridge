@@ -38,7 +38,7 @@ import openclaw_ws
 
 _DEFAULT_AGENT_ID = ""  # 动态解析，不硬编码
 _DEFAULT_TOKEN    = ""
-_GATEWAY_PORT     = 18789
+_GATEWAY_PORT     = 18789  # 默认 OpenClaw 端口，仅作 fallback（优先从配置文件读取）
 
 
 def _load_artclaw_config() -> dict:

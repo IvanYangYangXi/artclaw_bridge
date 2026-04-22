@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 ws_manager = ConnectionManager()
 gateway_client = GatewayClient(
-    gateway_url=settings.GATEWAY_API_URL,
+    gateway_url=settings.resolved_api_url,
     token=settings.resolved_token,
     agent_id=settings.resolved_agent_id,
 )

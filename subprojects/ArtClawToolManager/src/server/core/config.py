@@ -115,6 +115,43 @@ def _resolve_gateway_agent_id() -> str:
     return ""
 
 
+def _resolve_gateway_api_url() -> str:
+    """Resolve Gateway HTTP API URL from platform config.
+
+    Priority:
+      1. ~/.artclaw/config.json → platform.gateway_url (convert ws→http)
+      2. Platform config → gateway.port
+      3. Default: http://127.0.0.1:18789
+    """
+    cfg = _read_artclaw_config()
+
+    # 1. artclaw config
+    platform_url = cfg.get("platform", {}).get("gateway_url", "")
+    if platform_url:
+        # ws://host:port → http://host:port
+        return platform_url.replace("ws://", "http://").replace("wss://", "https://")
+
+    # 2. Platform config → gateway.port
+    platform_type = cfg.get("platform", {}).get("type", "openclaw")
+    _config_paths = {
+        "openclaw": Path.home() / ".openclaw" / "openclaw.json",
+    }
+    config_path = _config_paths.get(platform_type)
+    if config_path and config_path.exists():
+        try:
+            pcfg = json.loads(config_path.read_text(encoding="utf-8"))
+            port = pcfg.get("gateway", {}).get("port")
+            if port:
+                return f"http://127.0.0.1:{port}"
+        except Exception:
+            pass
+
+    # 3. Platform defaults
+    _port_defaults = {"openclaw": 18789, "lobster": 18790}
+    port = _port_defaults.get(platform_type, 18789)
+    return f"http://127.0.0.1:{port}"
+
+
 class Settings(BaseSettings):
     """Global application settings."""
 
@@ -143,7 +180,7 @@ class Settings(BaseSettings):
 
     # --- OpenClaw Gateway ---
     GATEWAY_URL: str = ""
-    GATEWAY_API_URL: str = "http://127.0.0.1:18789"
+    GATEWAY_API_URL: str = ""  # 空=动态解析（resolved_api_url 属性）
     GATEWAY_TOKEN: str = ""
     GATEWAY_AGENT_ID: str = ""
 
@@ -197,6 +234,13 @@ class Settings(BaseSettings):
         except Exception:
             pass
         return ""
+
+    @property
+    def resolved_api_url(self) -> str:
+        """GATEWAY_API_URL with dynamic fallback from platform config."""
+        if self.GATEWAY_API_URL:
+            return self.GATEWAY_API_URL
+        return _resolve_gateway_api_url()
 
 
 # Singleton – import this everywhere.

@@ -37,13 +37,13 @@ ARTCLAW_CONFIG_PATH = Path.home() / '.artclaw' / 'config.json'
 PLATFORMS = {
     'openclaw': {
         'display_name': 'OpenClaw',
-        'gateway_url': 'http://127.0.0.1:18789',
+        'gateway_url': 'http://127.0.0.1:18789',  # 默认端口，运行时动态解析
         'mcp_config_path': Path(os.environ['APPDATA']) / 'OpenClaw' / 'openclaw' / 'state' / 'openclaw.json',
         'bridge_prefix': 'openclaw',
     },
     'lobster': {
         'display_name': 'LobsterAI',
-        'gateway_url': 'http://127.0.0.1:18790',
+        'gateway_url': 'http://127.0.0.1:18790',  # 默认端口，运行时动态解析
         'mcp_config_path': Path(os.environ['APPDATA']) / 'LobsterAI' / 'openclaw' / 'state' / 'openclaw.json',
         'bridge_prefix': 'lobster',
     },
@@ -73,7 +73,7 @@ def load_artclaw_config() -> dict:
         return {
             'platform': {
                 'type': 'openclaw',
-                'gateway_url': 'http://127.0.0.1:18789',
+                'gateway_url': 'http://127.0.0.1:18789',  # OpenClaw 默认端口
             },
             'ue_project_path': '',
             'skills_installed_path': str(Path.home() / '.openclaw' / 'skills'),

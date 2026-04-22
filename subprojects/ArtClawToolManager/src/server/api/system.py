@@ -166,10 +166,13 @@ async def get_agents():
     artclaw_cfg = _read_json("~/.artclaw/config.json")
     registry = artclaw_cfg.get("platforms_registry", [])
 
-    # Fallback: if registry is empty, use hardcoded defaults
+    # Fallback: if registry is empty, build from known platforms
     if not registry:
+        # Read actual port from openclaw.json if available
+        oc_cfg = _read_json("~/.openclaw/openclaw.json")
+        oc_port = oc_cfg.get("gateway", {}).get("port", 18789)
         registry = [
-            {"type": "openclaw", "display_name": "OpenClaw", "gateway_url": "ws://127.0.0.1:18789"},
+            {"type": "openclaw", "display_name": "OpenClaw", "gateway_url": f"ws://127.0.0.1:{oc_port}"},
             {"type": "lobster", "display_name": "LobsterAI", "gateway_url": "ws://127.0.0.1:18790"},
         ]
 
