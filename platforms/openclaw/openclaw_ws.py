@@ -4,7 +4,7 @@ openclaw_ws.py — OpenClaw Gateway WebSocket 通信层
 职责: 握手 / 发送 chat.send RPC / 接收流式回复 / 写文件输出。
 每次请求在独立 asyncio.run() 中完成，不维护全局 loop。
 
-文件输出协议 (Saved/UEAgent/):
+文件输出协议 (Saved/ClawBridge/):
   _openclaw_response_stream.jsonl  — 实时流式事件（每行一个 JSON）
   _openclaw_response.txt           — 最终回复（出现即代表完成）
 
@@ -26,7 +26,10 @@ import time
 import uuid
 from typing import Optional
 
-from init_unreal import UELogger
+try:
+    from claw_bridge_logger import UELogger
+except ImportError:
+    from init_unreal import UELogger
 
 # ---------------------------------------------------------------------------
 # 配置常量
@@ -81,6 +84,7 @@ def write_bridge_status(status_dir: str, connected: bool, mcp_ready: bool = Fals
     """写入 _bridge_status.json，供 C++ BridgeStatusPoll 读取连接状态。"""
     try:
         import tempfile
+        os.makedirs(status_dir, exist_ok=True)
         path = os.path.join(status_dir, "_bridge_status.json")
         data = {
             "timestamp": time.time(),
@@ -209,31 +213,136 @@ async def do_chat(
         UELogger.mcp_error(f"[openclaw_ws] do_chat exception: {exc}")
 
 
+def _load_device_identity():
+    """加载 OpenClaw device identity 用于签名握手。
+    
+    返回 (device_id, public_key_raw_b64url, private_key_pem) 或 None。
+    """
+    import base64
+    identity_path = os.path.join(os.path.expanduser("~"), ".openclaw", "identity", "device.json")
+    if not os.path.isfile(identity_path):
+        return None
+    try:
+        with open(identity_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        device_id = data.get("deviceId", "")
+        pub_pem = data.get("publicKeyPem", "")
+        priv_pem = data.get("privateKeyPem", "")
+        if not (device_id and pub_pem and priv_pem):
+            return None
+        # 从 PEM 提取 raw 32-byte public key 并转 base64url
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
+        pub_key = load_pem_public_key(pub_pem.encode())
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        spki_der = pub_key.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+        # Ed25519 SPKI DER = 12-byte prefix + 32-byte raw key
+        raw_pub = spki_der[12:]
+        pub_b64url = base64.urlsafe_b64encode(raw_pub).rstrip(b"=").decode()
+        return (device_id, pub_b64url, priv_pem)
+    except Exception as exc:
+        UELogger.warning(f"[openclaw_ws] load device identity: {exc}")
+        return None
+
+
+def _sign_device_payload(private_key_pem: str, payload: str) -> str:
+    """用 Ed25519 私钥签名 payload，返回 base64url 编码的签名。"""
+    import base64
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    priv_key = load_pem_private_key(private_key_pem.encode(), password=None)
+    signature = priv_key.sign(payload.encode())
+    return base64.urlsafe_b64encode(signature).rstrip(b"=").decode()
+
+
+def _build_device_auth(identity, role, scopes, signed_at_ms, nonce, auth_token=""):
+    """构建 v3 格式的 device auth 参数。"""
+    device_id, pub_b64url, priv_pem = identity
+    # v3 payload: "v3|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce|platform|deviceFamily"
+    # token = auth.token (gateway token), 用于签名校验
+    scopes_str = ",".join(scopes)  # 不排序，保持和 connect params 一致
+    payload = "|".join([
+        "v3",
+        device_id,
+        _CLIENT_NAME,       # clientId
+        "cli",               # clientMode
+        role,
+        scopes_str,
+        str(signed_at_ms),
+        auth_token,          # gateway auth token
+        nonce,
+        "win32",             # platform
+        "",                  # deviceFamily
+    ])
+    signature = _sign_device_payload(priv_pem, payload)
+    return {
+        "id": device_id,
+        "publicKey": pub_b64url,
+        "signature": signature,
+        "signedAt": signed_at_ms,
+        "nonce": nonce,
+    }
+
+
+# 缓存 device identity，只加载一次
+_cached_device_identity = None
+_device_identity_loaded = False
+
+
+def _get_device_identity():
+    global _cached_device_identity, _device_identity_loaded
+    if not _device_identity_loaded:
+        _cached_device_identity = _load_device_identity()
+        _device_identity_loaded = True
+        if _cached_device_identity:
+            UELogger.info("[openclaw_ws] device identity loaded OK")
+        else:
+            UELogger.warning("[openclaw_ws] no device identity found, scopes will be limited")
+    return _cached_device_identity
+
+
 async def _handshake(ws, token: str, session_key: str = "") -> bool:
-    """握手并认证。displayName 带上 session key 后缀，方便在网页端区分会话。"""
+    """握手并认证。使用 device identity 签名以获得 operator scopes。"""
     try:
         raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
         msg = json.loads(raw)
         if msg.get("event") != "connect.challenge":
             return False
 
-        # displayName: "UE Claw Bridge · ue-editor:17334..."（取 session key 末尾 16 字符）
+        nonce = msg.get("payload", {}).get("nonce", "")
+
+        # displayName: "UE Claw Bridge · ue-editor:17334..."
         suffix = session_key[-16:] if session_key else ""
         display_name = f"UE Claw Bridge · {suffix}" if suffix else "UE Claw Bridge"
+
+        scopes = ["operator.read", "operator.write", "operator.admin"]
+        signed_at_ms = int(time.time() * 1000)
+
+        # 构建 device auth（如果有 identity）
+        identity = _get_device_identity()
+        device_param = None
+        if identity:
+            try:
+                device_param = _build_device_auth(identity, "operator", scopes, signed_at_ms, nonce, auth_token=token)
+            except Exception as exc:
+                UELogger.warning(f"[openclaw_ws] device auth build failed: {exc}")
+
+        params = {
+            "minProtocol": _PROTOCOL_VERSION,
+            "maxProtocol": _PROTOCOL_VERSION,
+            "client": {
+                "id": _CLIENT_NAME, "displayName": display_name,
+                "version": _CLIENT_VERSION, "platform": "win32", "mode": "cli",
+            },
+            "caps": [], "auth": {"token": token},
+            "role": "operator", "scopes": scopes,
+        }
+        if device_param:
+            params["device"] = device_param
 
         req_id = str(uuid.uuid4())
         await ws.send(json.dumps({
             "type": "req", "id": req_id, "method": "connect",
-            "params": {
-                "minProtocol": _PROTOCOL_VERSION,
-                "maxProtocol": _PROTOCOL_VERSION,
-                "client": {
-                    "id": _CLIENT_NAME, "displayName": display_name,
-                    "version": _CLIENT_VERSION, "platform": "win32", "mode": "cli",
-                },
-                "caps": [], "auth": {"token": token},
-                "role": "operator", "scopes": ["operator.admin"],
-            },
+            "params": params,
         }))
 
         deadline = time.time() + 10.0

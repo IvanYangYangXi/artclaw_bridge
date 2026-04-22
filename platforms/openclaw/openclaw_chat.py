@@ -4,7 +4,7 @@ openclaw_chat.py — OpenClaw 聊天公开 API 层
 职责: C++ 调用入口、UE 上下文注入、session 管理、文件协议。
 底层 WebSocket 通信见 openclaw_ws.py。
 
-文件协议 (Saved/UEAgent/):
+文件协议 (Saved/ClawBridge/):
   _openclaw_msg_input.txt          — C++ 写入消息内容，Python 读取
   _openclaw_response_stream.jsonl  — Python 实时写入流式事件
   _openclaw_response.txt           — Python 写入最终回复（出现即代表完成）
@@ -26,7 +26,10 @@ try:
 except ImportError:
     unreal = None
 
-from init_unreal import UELogger
+try:
+    from claw_bridge_logger import UELogger
+except ImportError:
+    from init_unreal import UELogger
 import openclaw_ws
 
 # ---------------------------------------------------------------------------
@@ -347,7 +350,7 @@ def _query_session_usage() -> None:
         import tempfile
         try:
             import unreal
-            status_dir = os.path.join(unreal.Paths.project_saved_dir(), "UEAgent")
+            status_dir = os.path.join(unreal.Paths.project_saved_dir(), "ClawBridge")
         except Exception:
             status_dir = os.path.join(os.path.expanduser("~"), ".artclaw")
         os.makedirs(status_dir, exist_ok=True)
