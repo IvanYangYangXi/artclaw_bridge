@@ -26,7 +26,10 @@ import time
 import uuid
 from typing import Optional
 
-from init_unreal import UELogger
+try:
+    from claw_bridge_logger import UELogger
+except ImportError:
+    from init_unreal import UELogger
 
 # ---------------------------------------------------------------------------
 # 配置常量
