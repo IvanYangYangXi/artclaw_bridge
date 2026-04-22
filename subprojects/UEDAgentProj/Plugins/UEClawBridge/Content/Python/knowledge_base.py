@@ -11,7 +11,7 @@ knowledge_base.py - 本地知识库与语义检索
 
 设计说明:
   - 使用纯 Python 实现的关键词 + TF-IDF 检索（无需 faiss/ChromaDB 重依赖）
-  - 索引存储在 Saved/UEAgent/knowledge/ 目录
+  - 索引存储在 Saved/ClawBridge/knowledge/ 目录
   - 支持 Markdown 文档自动切分和索引
   - 通过 MCP Tool 暴露检索能力
   - 未来可升级为向量检索（添加 faiss-cpu 依赖）

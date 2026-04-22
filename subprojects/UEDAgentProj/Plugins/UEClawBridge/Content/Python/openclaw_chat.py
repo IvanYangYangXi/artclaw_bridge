@@ -350,7 +350,7 @@ def _query_session_usage() -> None:
         import tempfile
         try:
             import unreal
-            status_dir = os.path.join(unreal.Paths.project_saved_dir(), "UEAgent")
+            status_dir = os.path.join(unreal.Paths.project_saved_dir(), "ClawBridge")
         except Exception:
             status_dir = os.path.join(os.path.expanduser("~"), ".artclaw")
         os.makedirs(status_dir, exist_ok=True)

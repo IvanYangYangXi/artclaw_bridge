@@ -229,36 +229,61 @@ class GatewayClient:
             await self._emit(session_id, "error", "WS_ERROR", f"WebSocket 错误: {exc}")
 
     async def _handshake(self, ws: Any, session_key: str, agent_id: Optional[str] = None) -> bool:
-        """Connect + authenticate with Gateway."""
+        """Connect + authenticate with Gateway (with device identity signing)."""
         try:
             raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
             msg = json.loads(raw)
             if msg.get("event") != "connect.challenge":
                 return False
 
+            nonce = msg.get("payload", {}).get("nonce", "")
+
             # Build a display name consistent with frontend session labels
             suffix = session_key.split(":", 2)[-1][:20] if session_key else ""
             display_name = f"ArtClaw TM · {suffix}"
+
+            scopes = ["operator.read", "operator.write", "operator.admin"]
+            signed_at_ms = int(time.time() * 1000)
+
+            params: Dict[str, Any] = {
+                "minProtocol": _PROTOCOL_VERSION,
+                "maxProtocol": _PROTOCOL_VERSION,
+                "client": {
+                    "id": "cli",
+                    "displayName": display_name,
+                    "version": "0.1.0",
+                    "platform": "win32",
+                    "mode": "cli",
+                },
+                "caps": [],
+                "auth": {"token": self._token},
+                "role": "operator",
+                "scopes": scopes,
+            }
+
+            # Device identity 签名（可选，缺失时 fallback 到 token-only）
+            try:
+                import sys, os as _os
+                _core_dir = _os.path.normpath(_os.path.join(
+                    _os.path.dirname(__file__), "..", "..", "..", "..", "..", "core"))
+                if _os.path.isdir(_core_dir) and _core_dir not in sys.path:
+                    sys.path.append(_core_dir)
+                from device_auth import get_device_identity, build_device_auth
+                identity = get_device_identity()
+                if identity:
+                    params["device"] = build_device_auth(
+                        identity, "operator", scopes, signed_at_ms, nonce,
+                        auth_token=self._token,
+                    )
+            except Exception:
+                pass  # 静默降级
+
             req_id = str(uuid.uuid4())
             await ws.send(json.dumps({
                 "type": "req",
                 "id": req_id,
                 "method": "connect",
-                "params": {
-                    "minProtocol": _PROTOCOL_VERSION,
-                    "maxProtocol": _PROTOCOL_VERSION,
-                    "client": {
-                        "id": "cli",
-                        "displayName": display_name,
-                        "version": "0.1.0",
-                        "platform": "win32",
-                        "mode": "cli",
-                    },
-                    "caps": [],
-                    "auth": {"token": self._token},
-                    "role": "operator",
-                    "scopes": ["operator.admin"],
-                },
+                "params": params,
             }))
 
             deadline = time.time() + 10.0

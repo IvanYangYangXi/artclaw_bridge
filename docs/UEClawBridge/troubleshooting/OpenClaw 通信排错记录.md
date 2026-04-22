@@ -19,6 +19,7 @@
 | 8 | [SimpleButton 样式不存在](#issue-8-simplebutton-样式不存在) | 🔴 致命 | ✅ 已修复 | 2026-03-16 |
 | 9 | [Gateway 重启后 Chat Panel 卡死](#issue-9-gateway-重启后-chat-panel-卡死) | 🔴 致命 | ✅ 已修复 | 2026-03-17 |
 | 10 | [Create Skill 按钮乱码](#issue-10-create-skill-按钮乱码) | 🟡 中等 | ✅ 已修复 | 2026-03-17 |
+| 11 | [connect 缺 device identity 签名导致权限不足](#issue-11-connect-缺-device-identity-签名导致权限不足) | 🔴 致命 | ✅ 已修复 | 2026-04-22 |
 
 ---
 
@@ -353,3 +354,94 @@ Dashboard 底部的 "Create Skill" 按钮显示为乱码字符。
 - UE C++ 中 `TEXT()` / `LOCTEXT()` 不能嵌入 UTF-8 字节转义序列
 - 如需 emoji，要用 Unicode 转义 `\u` 或 UTF-16 代理对
 - 最简单的方案：按钮文字用纯文本，emoji 留给运行时的 Python/JS 层
+
+---
+
+## Issue 11: connect 缺 device identity 签名导致权限不足
+
+### 现象
+别人电脑上安装 UE 插件后，通过 Chat Panel 与 AI 对话时连接正常但某些操作权限不足，
+或新版 Gateway 要求 device 签名时直接握手失败。
+
+### 根因
+OpenClaw Gateway 协议要求所有 WS 客户端在 `connect` 握手时提供 **device identity 签名**
+（Ed25519 签名 challenge nonce），否则不授予完整 operator scope。
+
+协议要求（`docs/gateway/protocol.md`）：
+```
+All WS clients must include `device` identity during `connect` (operator + node).
+All connections must sign the server-provided `connect.challenge` nonce.
+```
+
+**修复前的 connect params**（所有客户端）：
+```json
+{
+  "auth": {"token": "..."},
+  "role": "operator",
+  "scopes": ["operator.admin"]
+}
+```
+缺少 `device` 字段 → Gateway 不授予 operator scope → 权限不足。
+
+**修复后的 connect params**：
+```json
+{
+  "auth": {"token": "..."},
+  "role": "operator",
+  "scopes": ["operator.read", "operator.write", "operator.admin"],
+  "device": {
+    "id": "<deviceId>",
+    "publicKey": "<base64url raw 32-byte Ed25519 public key>",
+    "signature": "<base64url Ed25519 signature>",
+    "signedAt": 1745305000000,
+    "nonce": "<server challenge nonce>"
+  }
+}
+```
+
+### v3 签名 payload 格式
+```
+v3|{deviceId}|{clientId}|{clientMode}|{role}|{scopes}|{signedAtMs}|{token}|{nonce}|{platform}|{deviceFamily}
+```
+各字段用 `|` 拼接，用 Ed25519 私钥签名，结果 base64url 编码（去 padding）。
+
+### device.json 位置
+`~/.openclaw/identity/device.json`，OpenClaw 安装时自动生成：
+```json
+{
+  "version": 1,
+  "deviceId": "...",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\n...",
+  "privateKeyPem": "-----BEGIN PRIVATE KEY-----\n...",
+  "createdAtMs": ...
+}
+```
+
+### 影响范围
+| 文件 | 用途 | 修复状态 |
+|---|---|---|
+| `platforms/openclaw/openclaw_ws.py` | UE 专用 WS | ✅ PR#1 修复 |
+| `core/bridge_core.py` | DCC 上行聊天 (Maya/Max/Blender/Houdini/SP/SD/ComfyUI) | ✅ 已修复 |
+| `ArtClawToolManager/src/server/services/gateway_client.py` | Tool Manager | ✅ 已修复 |
+| `core/openclaw_diagnose.py` | 诊断工具 | 低优先级（诊断用途，token 认证够用） |
+
+### 修复方案
+提取 `core/device_auth.py` 共享模块，所有 handshake 点统一调用：
+```python
+from device_auth import get_device_identity, build_device_auth
+
+identity = get_device_identity()
+if identity:
+    params["device"] = build_device_auth(identity, role, scopes, signed_at_ms, nonce, token)
+```
+
+### 容错设计
+- `device.json` 不存在 → 跳过签名，走 token-only 认证（降级）
+- `cryptography` 未安装 → import 失败被 except 捕获 → 返回 None → 跳过签名
+- 签名构建异常 → except 捕获 → 日志警告 → 跳过签名
+- **无签名不影响本地 loopback 连接**（Gateway 对本地连接可能放宽要求）
+
+### 教训
+- Gateway 协议升级后，所有 WS 客户端都需要同步更新握手逻辑
+- 多个文件各自实现 handshake 会导致遗漏，应该抽公共模块
+- 签名相关的代码应该有清晰的 fallback 路径，不能因为缺依赖就崩溃
