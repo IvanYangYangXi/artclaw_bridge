@@ -42,6 +42,7 @@ CORE_MODULES = [
     "bridge_core.py",
     "bridge_config.py",
     "bridge_diagnostics.py",
+    "device_auth.py",
     "health_check.py",
     "integrity_check.py",
     "memory_core.py",

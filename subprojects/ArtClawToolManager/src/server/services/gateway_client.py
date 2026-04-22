@@ -263,12 +263,7 @@ class GatewayClient:
 
             # Device identity 签名（可选，缺失时 fallback 到 token-only）
             try:
-                import sys, os as _os
-                _core_dir = _os.path.normpath(_os.path.join(
-                    _os.path.dirname(__file__), "..", "..", "..", "..", "..", "core"))
-                if _os.path.isdir(_core_dir) and _core_dir not in sys.path:
-                    sys.path.append(_core_dir)
-                from device_auth import get_device_identity, build_device_auth
+                from .device_auth import get_device_identity, build_device_auth
                 identity = get_device_identity()
                 if identity:
                     params["device"] = build_device_auth(
