@@ -30,6 +30,7 @@ from bridge_config import (
     load_config,
     get_gateway_url as _cfg_get_gateway_url,
     get_gateway_token as _cfg_get_gateway_token,
+    get_default_agent_id as _cfg_get_default_agent_id,
 )
 
 
@@ -73,7 +74,7 @@ class OpenClawBridge:
         gw_config = config.get("gateway", {})
 
         self.gateway_url = gateway_url or _cfg_get_gateway_url()
-        self.agent_id = agent_id or DEFAULT_AGENT_ID
+        self.agent_id = agent_id or _cfg_get_default_agent_id()
         self.token = token or _cfg_get_gateway_token()
         self.client_id = client_id or "ue-editor"  # 默认 UE，DCC 覆盖
 

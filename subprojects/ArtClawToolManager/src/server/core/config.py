@@ -82,6 +82,76 @@ def _default_data_dir() -> str:
     return str(Path.home() / ".artclaw")
 
 
+def _resolve_gateway_agent_id() -> str:
+    """Resolve default Agent ID from platform config.
+
+    Priority:
+      1. ~/.artclaw/config.json → last_agent_id
+      2. Platform config → agents.list[0].id
+      3. Empty string (Gateway routes to default agent)
+    """
+    cfg = _read_artclaw_config()
+    last = cfg.get("last_agent_id", "")
+    if last:
+        return last
+
+    # Read platform config (e.g. openclaw.json)
+    platform_type = cfg.get("platform", {}).get("type", "openclaw")
+    config_paths = {
+        "openclaw": Path.home() / ".openclaw" / "openclaw.json",
+    }
+    config_path = config_paths.get(platform_type)
+    if config_path and config_path.exists():
+        try:
+            pcfg = json.loads(config_path.read_text(encoding="utf-8"))
+            agents_list = pcfg.get("agents", {}).get("list", [])
+            if agents_list:
+                first_id = agents_list[0].get("id", "")
+                if first_id:
+                    return first_id
+        except Exception:
+            pass
+
+    return ""
+
+
+def _resolve_gateway_api_url() -> str:
+    """Resolve Gateway HTTP API URL from platform config.
+
+    Priority:
+      1. ~/.artclaw/config.json → platform.gateway_url (convert ws→http)
+      2. Platform config → gateway.port
+      3. Default: http://127.0.0.1:18789
+    """
+    cfg = _read_artclaw_config()
+
+    # 1. artclaw config
+    platform_url = cfg.get("platform", {}).get("gateway_url", "")
+    if platform_url:
+        # ws://host:port → http://host:port
+        return platform_url.replace("ws://", "http://").replace("wss://", "https://")
+
+    # 2. Platform config → gateway.port
+    platform_type = cfg.get("platform", {}).get("type", "openclaw")
+    _config_paths = {
+        "openclaw": Path.home() / ".openclaw" / "openclaw.json",
+    }
+    config_path = _config_paths.get(platform_type)
+    if config_path and config_path.exists():
+        try:
+            pcfg = json.loads(config_path.read_text(encoding="utf-8"))
+            port = pcfg.get("gateway", {}).get("port")
+            if port:
+                return f"http://127.0.0.1:{port}"
+        except Exception:
+            pass
+
+    # 3. Platform defaults
+    _port_defaults = {"openclaw": 18789, "lobster": 18790}
+    port = _port_defaults.get(platform_type, 18789)
+    return f"http://127.0.0.1:{port}"
+
+
 class Settings(BaseSettings):
     """Global application settings."""
 
@@ -110,9 +180,9 @@ class Settings(BaseSettings):
 
     # --- OpenClaw Gateway ---
     GATEWAY_URL: str = ""
-    GATEWAY_API_URL: str = "http://127.0.0.1:18789"
+    GATEWAY_API_URL: str = ""  # 空=动态解析（resolved_api_url 属性）
     GATEWAY_TOKEN: str = ""
-    GATEWAY_AGENT_ID: str = "qi"
+    GATEWAY_AGENT_ID: str = ""
 
     model_config = {
         "env_prefix": "ARTCLAW_",
@@ -140,6 +210,37 @@ class Settings(BaseSettings):
     @property
     def config_json_path(self) -> Path:
         return self.data_path / "config.json"
+
+    @property
+    def resolved_agent_id(self) -> str:
+        """GATEWAY_AGENT_ID with dynamic fallback from platform config."""
+        if self.GATEWAY_AGENT_ID:
+            return self.GATEWAY_AGENT_ID
+        return _resolve_gateway_agent_id()
+
+    @property
+    def resolved_token(self) -> str:
+        """GATEWAY_TOKEN with dynamic fallback from platform config."""
+        if self.GATEWAY_TOKEN:
+            return self.GATEWAY_TOKEN
+        # Try reading from openclaw.json → gateway.auth.token
+        try:
+            oc_path = Path.home() / ".openclaw" / "openclaw.json"
+            if oc_path.exists():
+                cfg = json.loads(oc_path.read_text(encoding="utf-8"))
+                token = cfg.get("gateway", {}).get("auth", {}).get("token", "")
+                if token:
+                    return token
+        except Exception:
+            pass
+        return ""
+
+    @property
+    def resolved_api_url(self) -> str:
+        """GATEWAY_API_URL with dynamic fallback from platform config."""
+        if self.GATEWAY_API_URL:
+            return self.GATEWAY_API_URL
+        return _resolve_gateway_api_url()
 
 
 # Singleton – import this everywhere.

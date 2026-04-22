@@ -442,7 +442,7 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
 
         # --- 过滤其他 session / run 的广播事件 ---
         # 优先用 runId 过滤（最精确）；fallback 到 sessionKey 包含匹配。
-        # Gateway 可能对 sessionKey 做 namespace 包装（如 "agent:qi:qi/ue-editor:xxx"），
+        # Gateway 可能对 sessionKey 做 namespace 包装（如 "agent:<agentId>:<clientId>:xxx"），
         # 所以不用精确匹配，而是检查本地 key 是否包含在事件 key 中（或反之）。
         event_run_id = payload.get("runId", "")
         event_session = payload.get("sessionKey", "")

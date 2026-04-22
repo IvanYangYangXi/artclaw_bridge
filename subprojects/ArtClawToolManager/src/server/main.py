@@ -40,9 +40,9 @@ logger = logging.getLogger(__name__)
 
 ws_manager = ConnectionManager()
 gateway_client = GatewayClient(
-    gateway_url=settings.GATEWAY_API_URL,
-    token=settings.GATEWAY_TOKEN,
-    agent_id=settings.GATEWAY_AGENT_ID,
+    gateway_url=settings.resolved_api_url,
+    token=settings.resolved_token,
+    agent_id=settings.resolved_agent_id,
 )
 dcc_manager = DCCManager()
 message_router = MessageRouter(ws_manager, gateway_client, dcc_manager)

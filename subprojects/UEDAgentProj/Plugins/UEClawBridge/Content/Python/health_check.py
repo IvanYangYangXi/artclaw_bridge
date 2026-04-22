@@ -226,8 +226,8 @@ def _check_mcp_server() -> CheckResult:
 
 
 def _check_openclaw_gateway() -> CheckResult:
-    """检查 5: OpenClaw Gateway (ws://localhost:18789)"""
-    r = CheckResult("OpenClaw Gateway (Port 18789)")
+    """检查 5: OpenClaw Gateway 连通性"""
+    r = CheckResult("OpenClaw Gateway")
 
     # 加载配置 (通过 artclaw config 驱动)
     try:
@@ -235,7 +235,7 @@ def _check_openclaw_gateway() -> CheckResult:
         config_path = Path(_resolve_platform_config_path())
     except ImportError:
         config_path = Path.home() / ".openclaw" / "openclaw.json"
-    host, port = "127.0.0.1", 18789
+    host, port = "127.0.0.1", 18789  # fallback 默认端口
     token = ""
 
     if config_path.exists():

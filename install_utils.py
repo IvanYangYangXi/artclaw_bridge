@@ -36,6 +36,7 @@ SHARED_MODULES = [
     "bridge_core.py",
     "bridge_config.py",
     "bridge_diagnostics.py",
+    "device_auth.py",
     "memory_core.py",
     "integrity_check.py",
     "health_check.py",

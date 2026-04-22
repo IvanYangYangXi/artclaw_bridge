@@ -14,7 +14,7 @@ Flow per chat message:
 Configuration:
     ARTCLAW_GATEWAY_API_URL  – base URL, e.g. http://127.0.0.1:18789
     ARTCLAW_GATEWAY_TOKEN    – bearer token
-    ARTCLAW_GATEWAY_AGENT_ID – target agent id (default: qi)
+    ARTCLAW_GATEWAY_AGENT_ID – target agent id (auto-detected from platform config if empty)
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ class GatewayClient:
         self,
         gateway_url: str = "",
         token: str = "",
-        agent_id: str = "qi",
+        agent_id: str = "",
     ) -> None:
         self._base_url = gateway_url.rstrip("/")
         self._token = token
@@ -263,12 +263,7 @@ class GatewayClient:
 
             # Device identity 签名（可选，缺失时 fallback 到 token-only）
             try:
-                import sys, os as _os
-                _core_dir = _os.path.normpath(_os.path.join(
-                    _os.path.dirname(__file__), "..", "..", "..", "..", "..", "core"))
-                if _os.path.isdir(_core_dir) and _core_dir not in sys.path:
-                    sys.path.append(_core_dir)
-                from device_auth import get_device_identity, build_device_auth
+                from .device_auth import get_device_identity, build_device_auth
                 identity = get_device_identity()
                 if identity:
                     params["device"] = build_device_auth(

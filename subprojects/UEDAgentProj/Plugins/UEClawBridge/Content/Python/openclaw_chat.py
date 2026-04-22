@@ -36,9 +36,9 @@ import openclaw_ws
 # 配置
 # ---------------------------------------------------------------------------
 
-_DEFAULT_AGENT_ID = "qi"
+_DEFAULT_AGENT_ID = ""  # 动态解析，不硬编码
 _DEFAULT_TOKEN    = ""
-_GATEWAY_PORT     = 18789
+_GATEWAY_PORT     = 18789  # 默认 OpenClaw 端口，仅作 fallback（优先从配置文件读取）
 
 
 def _load_artclaw_config() -> dict:
@@ -115,9 +115,16 @@ _context_injected: bool            = False
 _cancel_flag:      threading.Event = threading.Event()
 _stream_lock:      threading.Lock  = threading.Lock()
 
-# 启动时从 config 恢复 last_agent_id
+# 启动时从 config 恢复 last_agent_id，若无则从平台配置取第一个 Agent
 try:
-    _agent_id = _load_artclaw_config().get("last_agent_id", _DEFAULT_AGENT_ID) or _DEFAULT_AGENT_ID
+    _agent_id = _load_artclaw_config().get("last_agent_id", "") or ""
+    if not _agent_id:
+        # 从平台配置文件读取 agents.list[0].id
+        try:
+            import bridge_config as _bc
+            _agent_id = _bc.get_default_agent_id()
+        except Exception:
+            pass
 except Exception:
     pass
 

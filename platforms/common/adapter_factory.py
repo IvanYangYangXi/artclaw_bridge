@@ -10,12 +10,12 @@ adapter_factory.py — 平台适配器工厂
     # OpenClaw（读取默认配置）
     adapter = create_adapter("openclaw")
 
-    # OpenClaw（显式传参）
+    # OpenClaw（显式传参，通常不需要——自动从配置文件解析）
     adapter = create_adapter(
         "openclaw",
         gateway_url="ws://127.0.0.1:18789",
         token="your-token",
-        agent_id="qi",
+        agent_id="your-agent",
     )
 
     # Claude Code（stdio MCP 桥接）
