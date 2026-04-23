@@ -115,4 +115,18 @@ public:
 	 * @param HistoryFile 历史写入路径
 	 */
 	virtual void FetchSessionHistory(const FString& SessionKey, const FString& HistoryFile) = 0;
+
+	/**
+	 * UE 启动时会话恢复: 中止 Gateway 上残留的运行 + 清理过期临时文件。
+	 * UE 崩溃重启后调用，确保旧的 AI 运行被终止，不会干扰新消息。
+	 * 结果写入 StatusOutFile: "ok" / "aborted" / "error:<msg>"
+	 * @param StatusOutFile 恢复结果写入路径
+	 */
+	virtual void RecoverSession(const FString& StatusOutFile) = 0;
+
+	/**
+	 * 异步查询当前 session 的 token 用量并写入 _session_usage.json。
+	 * 会话切换后调用，确保状态栏显示对应会话的上下文用量。
+	 */
+	virtual void QuerySessionUsage() = 0;
 };

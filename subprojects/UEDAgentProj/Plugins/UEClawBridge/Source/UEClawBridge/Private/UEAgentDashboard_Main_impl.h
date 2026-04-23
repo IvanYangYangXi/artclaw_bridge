@@ -627,15 +627,24 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 							TSharedRef<TJsonReader<>> UsageReader = TJsonReaderFactory<>::Create(UsageContent);
 							if (FJsonSerializer::Deserialize(UsageReader, UsageObj) && UsageObj.IsValid())
 							{
-								// 优先用 inputTokens（真实上下文大小），fallback 到 totalTokens
-								int32 Tokens = 0;
-								if (!UsageObj->TryGetNumberField(TEXT("inputTokens"), Tokens) || Tokens <= 0)
+								// 校验 sessionKey 匹配当前会话（避免显示旧会话的 usage）
+								FString FileSessionKey;
+								UsageObj->TryGetStringField(TEXT("sessionKey"), FileSessionKey);
+								FString CurrentKey = Self->PlatformBridge->GetSessionKey();
+								if (!FileSessionKey.IsEmpty() && !CurrentKey.IsEmpty() && FileSessionKey != CurrentKey)
 								{
-									UsageObj->TryGetNumberField(TEXT("totalTokens"), Tokens);
+									// sessionKey 不匹配，跳过（等待 Python 查询完成后写入正确的值）
 								}
-								if (Tokens > 0)
+								else
 								{
-									Self->LastTotalTokens = Tokens;
+									// totalTokens = 最后一次 API 调用的 input token（当前上下文大小）
+									// inputTokens = 累积总量，不可直接用于上下文百分比
+									int32 Tokens = 0;
+									UsageObj->TryGetNumberField(TEXT("totalTokens"), Tokens);
+									if (Tokens > 0)
+									{
+										Self->LastTotalTokens = Tokens;
+									}
 								}
 							}
 						}

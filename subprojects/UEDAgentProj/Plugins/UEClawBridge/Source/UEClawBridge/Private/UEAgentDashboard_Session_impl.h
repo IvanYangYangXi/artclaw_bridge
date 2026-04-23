@@ -55,6 +55,15 @@ void SUEAgentDashboard::SaveLastSession()
 
 void SUEAgentDashboard::RestoreOrInitSession()
 {
+	// --- 0) 清理上次 UE 崩溃遗留的临时文件 ---
+	// 在恢复会话之前清理，避免 SendToOpenClaw 的 poll 定时器误读旧文件
+	{
+		FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
+		IFileManager::Get().Delete(*(TempDir / TEXT("_openclaw_response.txt")), false, false, true);
+		IFileManager::Get().Delete(*(TempDir / TEXT("_openclaw_response_stream.jsonl")), false, false, true);
+		IFileManager::Get().Delete(*(TempDir / TEXT("_openclaw_msg_input.txt")), false, false, true);
+	}
+
 	FString FilePath = GetLastSessionFilePath();
 	FString JsonContent;
 
@@ -108,6 +117,54 @@ void SUEAgentDashboard::RestoreOrInitSession()
 
 	SessionEntries.Add(MoveTemp(RestoredEntry));
 	ActiveSessionIndex = 0;
+
+	// 恢复后立即查询 token usage（异步，结果通过 _session_usage.json → 轮询更新）
+	PlatformBridge->QuerySessionUsage();
+
+	// --- 会话恢复: 中止 Gateway 上残留的 AI 运行 ---
+	// UE 崩溃后 agent 可能仍在 Gateway 上运行，需要中止以避免:
+	// 1. 新消息发送后收到旧运行的事件干扰
+	// 2. 无法停止旧的 AI 运行
+	// 3. 旧运行占用 session 导致新请求失败
+	{
+		FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
+		IFileManager::Get().MakeDirectory(*TempDir, true);
+		FString RecoverFile = TempDir / TEXT("_recover_status.txt");
+		IFileManager::Get().Delete(*RecoverFile, false, false, true);
+
+		PlatformBridge->RecoverSession(RecoverFile);
+
+		// 轮询恢复结果（非阻塞，在后台完成）
+		auto Self = SharedThis(this);
+		FString CapturedFile = RecoverFile;
+		FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateLambda([Self, CapturedFile](float) -> bool
+			{
+				if (!FPaths::FileExists(CapturedFile))
+				{
+					return true; // 继续等待
+				}
+
+				FString Status;
+				FFileHelper::LoadFileToString(Status, *CapturedFile);
+				IFileManager::Get().Delete(*CapturedFile, false, false, true);
+				Status.TrimStartAndEndInline();
+
+				if (Status == TEXT("aborted"))
+				{
+					Self->AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("SessionRecoveredAborted")));
+				}
+				else if (Status.StartsWith(TEXT("error:")))
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[UEAgent] Session recovery error: %s"), *Status);
+				}
+				// "ok" = 无需恢复，静默通过
+
+				return false;
+			}),
+			0.5f
+		);
+	}
 }
 
 // ==================================================================
@@ -186,7 +243,7 @@ void SUEAgentDashboard::OnSessionSelected(int32 Index)
 		return;
 	}
 
-	// 保存当前会话的消息到 CachedMessages
+	// 保存当前会话的消息 + token usage 到缓存
 	if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
 	{
 		FString CurrentKey = PlatformBridge->GetSessionKey();
@@ -195,6 +252,7 @@ void SUEAgentDashboard::OnSessionSelected(int32 Index)
 			SessionEntries[ActiveSessionIndex].SessionKey = CurrentKey;
 		}
 		SessionEntries[ActiveSessionIndex].CachedMessages = Messages;
+		SessionEntries[ActiveSessionIndex].CachedTotalTokens = LastTotalTokens;
 		SessionEntries[ActiveSessionIndex].bIsActive = false;
 	}
 
@@ -202,6 +260,9 @@ void SUEAgentDashboard::OnSessionSelected(int32 Index)
 	ActiveSessionIndex = Index;
 	SessionEntries[Index].bIsActive = true;
 	CurrentSessionLabel = SessionEntries[Index].Label;
+
+	// 恢复 token usage（从缓存或重置为 0）
+	LastTotalTokens = SessionEntries[Index].CachedTotalTokens;
 
 	FString SessionKey = SessionEntries[Index].SessionKey;
 
@@ -236,6 +297,12 @@ void SUEAgentDashboard::OnSessionSelected(int32 Index)
 	else
 	{
 		PlatformBridge->ResetSession();
+	}
+
+	// 异步刷新 token usage（从 sessions.json 获取最新值）
+	if (!SessionKey.IsEmpty())
+	{
+		PlatformBridge->QuerySessionUsage();
 	}
 
 	// 关闭菜单

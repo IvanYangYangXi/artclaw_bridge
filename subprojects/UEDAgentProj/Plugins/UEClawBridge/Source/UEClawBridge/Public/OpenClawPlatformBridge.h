@@ -35,6 +35,8 @@ public:
 	virtual void SetAgentId(const FString& AgentId) override;
 	virtual void ListAgents(const FString& ResultFile) override;
 	virtual void FetchSessionHistory(const FString& SessionKey, const FString& HistoryFile) override;
+	virtual void RecoverSession(const FString& StatusOutFile) override;
+	virtual void QuerySessionUsage() override;
 
 private:
 	/** 执行 Python 命令的辅助方法 */

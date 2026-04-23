@@ -546,35 +546,6 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
     write_response(response_file, timeout_text)
 
 
-def _write_session_usage_file(usage_val: int, context_tokens: int, model: str = "") -> None:
-    """将 token 用量写入 ~/.artclaw/_session_usage.json（C++ BridgeStatusPoll 每2秒轮询读取）。"""
-    import tempfile
-    data = json.dumps({
-        "contextTokens": context_tokens or 200000,
-        "totalTokens": usage_val,
-        "inputTokens": usage_val,
-        "model": model,
-    }, ensure_ascii=False)
-
-    status_dir = os.path.join(os.path.expanduser("~"), ".artclaw")
-    try:
-        os.makedirs(status_dir, exist_ok=True)
-        usage_path = os.path.join(status_dir, "_session_usage.json")
-        fd, tmp = tempfile.mkstemp(dir=status_dir, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(data)
-            os.replace(tmp, usage_path)
-        except Exception:
-            try:
-                os.unlink(tmp)
-            except Exception:
-                pass
-            raise
-    except Exception as e:
-        UELogger.info(f"[openclaw_ws] _write_session_usage_file failed: {e}")
-
-
 def _dispatch_usage(payload: dict, message: dict, stream_file: str, stream_lock) -> None:
     """从 final 事件中提取 token usage 并写入 stream.jsonl。
 
@@ -706,9 +677,6 @@ async def _fetch_and_write_tool_events(
     openclaw_dir = os.path.join(os.path.expanduser("~"), ".openclaw")
     sessions_json_path = os.path.join(openclaw_dir, "agents", agent_id, "sessions", "sessions.json")
 
-    # 等待 Gateway 刷新 sessions.json（final event 后 Gateway 异步更新，需要短暂等待）
-    await asyncio.sleep(0.5)
-
     if not os.path.exists(sessions_json_path):
         UELogger.info(f"[openclaw_ws] sessions.json not found: {sessions_json_path}")
         return
@@ -726,14 +694,15 @@ async def _fetch_and_write_tool_events(
         return
 
     # --- 1. 写入准确的 token usage ---
-    # sessions.json 中 inputTokens = 最后一次 API 调用的输入 token（即上下文大小）
-    # totalTokens 可能是 Gateway 内部值，不一定准确
-    input_tokens = session_info.get("inputTokens", 0)
+    # sessions.json 字段含义:
+    #   totalTokens = 最后一次 API 调用的 input token 数（即当前上下文大小）
+    #   inputTokens = 累积的所有调用 input token 之和（不是当前上下文）
+    #   contextTokens = 上下文窗口大小限制
     total_tokens = session_info.get("totalTokens", 0)
+    input_tokens = session_info.get("inputTokens", 0)
     context_tokens = session_info.get("contextTokens", 0)
-    model = session_info.get("model", "")
-    # 优先用 inputTokens（真正的上下文大小）
-    usage_val = input_tokens if input_tokens > 0 else total_tokens
+    # 优先用 totalTokens（当前上下文大小），fallback 到 inputTokens
+    usage_val = total_tokens if total_tokens > 0 else input_tokens
     if usage_val and usage_val > 0:
         write_stream(stream_file, {
             "type": "usage",
@@ -744,9 +713,6 @@ async def _fetch_and_write_tool_events(
             },
         }, stream_lock)
         UELogger.info(f"[openclaw_ws] session usage: input={input_tokens}, total={total_tokens}, context={context_tokens}")
-
-        # 同步写 _session_usage.json（C++ BridgeStatusPoll 每2秒读取）
-        _write_session_usage_file(usage_val, context_tokens, model)
 
     # --- 2. 从 transcript 文件读取工具调用 ---
     transcript_path = session_info.get("sessionFile", "")
