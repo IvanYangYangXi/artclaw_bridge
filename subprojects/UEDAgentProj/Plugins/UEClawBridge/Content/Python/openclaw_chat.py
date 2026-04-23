@@ -217,16 +217,23 @@ def _chat_worker(message: str, stream_file: str, response_file: str) -> None:
 
     UELogger.info(f"[openclaw_chat] connecting to {_get_gateway_url()}, session={_session_key}")
 
-    asyncio.run(openclaw_ws.do_chat(
-        message       = message,
-        stream_file   = stream_file,
-        response_file = response_file,
-        gateway_url   = _get_gateway_url(),
-        token         = _get_token(),
-        session_key   = _session_key,
-        cancel_flag   = _cancel_flag,
-        stream_lock   = _stream_lock,
-    ))
+    try:
+        asyncio.run(openclaw_ws.do_chat(
+            message       = message,
+            stream_file   = stream_file,
+            response_file = response_file,
+            gateway_url   = _get_gateway_url(),
+            token         = _get_token(),
+            session_key   = _session_key,
+            cancel_flag   = _cancel_flag,
+            stream_lock   = _stream_lock,
+        ))
+    except Exception as exc:
+        # 安全网: 确保 response_file 一定被写入，否则 C++ poll 永远等待
+        UELogger.mcp_error(f"[openclaw_chat] chat_worker exception: {exc}")
+        if not os.path.exists(response_file):
+            openclaw_ws.write_response(response_file, f"[Error] Chat worker crashed: {exc}")
+        return
 
     # Chat 完成后，异步查询 session token 用量并写入独立文件
     # C++ BridgeStatusPoll 周期性读取此文件更新上下文百分比
@@ -384,6 +391,75 @@ def reset_session() -> None:
     _session_key      = None
     _context_injected = False
     UELogger.info("[openclaw_chat] session reset for new chat")
+
+
+def recover_session(status_file: str) -> None:
+    """UE 启动时恢复会话: 中止残留的 Gateway 运行 + 清理过期临时文件。
+
+    C++ 在 RestoreOrInitSession 之后调用此函数。
+    结果写入 status_file，格式:
+      ok                — 恢复成功（或无需恢复）
+      aborted           — 检测到并中止了残留运行
+      error:<message>   — 恢复失败
+    """
+    def _worker():
+        result = "ok"
+        try:
+            # 1) 清理过期临时文件（上次 UE 崩溃遗留）
+            try:
+                if unreal:
+                    temp_dir = os.path.join(
+                        unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()),
+                        "ClawBridge")
+                else:
+                    temp_dir = ""
+            except Exception:
+                temp_dir = ""
+
+            if temp_dir and os.path.isdir(temp_dir):
+                stale_files = [
+                    "_openclaw_response.txt",
+                    "_openclaw_response_stream.jsonl",
+                    "_openclaw_msg_input.txt",
+                ]
+                for fname in stale_files:
+                    fpath = os.path.join(temp_dir, fname)
+                    try:
+                        if os.path.exists(fpath):
+                            os.remove(fpath)
+                            UELogger.info(f"[openclaw_chat] recover: cleaned stale {fname}")
+                    except Exception:
+                        pass
+
+            # 2) 如果有恢复的 session key，尝试中止残留运行
+            if _session_key:
+                UELogger.info(f"[openclaw_chat] recover: checking session {_session_key[:60]}")
+                try:
+                    aborted = asyncio.run(openclaw_ws.do_abort(
+                        session_key=_session_key,
+                        gateway_url=_get_gateway_url(),
+                        token=_get_token(),
+                    ))
+                    if aborted:
+                        result = "aborted"
+                        UELogger.info("[openclaw_chat] recover: aborted orphaned run")
+                    else:
+                        UELogger.info("[openclaw_chat] recover: no active run to abort (or abort failed)")
+                except Exception as exc:
+                    UELogger.info(f"[openclaw_chat] recover: abort attempt: {exc}")
+
+        except Exception as exc:
+            result = f"error:{exc}"
+            UELogger.mcp_error(f"[openclaw_chat] recover_session: {exc}")
+
+        # 写结果
+        try:
+            with open(status_file, "w", encoding="utf-8") as f:
+                f.write(result)
+        except Exception as exc:
+            UELogger.mcp_error(f"[openclaw_chat] recover write status: {exc}")
+
+    threading.Thread(target=_worker, daemon=True, name="OCRecover").start()
 
 
 def set_session_key(key: str) -> None:

@@ -235,3 +235,13 @@ void FOpenClawPlatformBridge::FetchSessionHistory(const FString& SessionKey, con
 	);
 	ExecPython(PythonCmd);
 }
+
+void FOpenClawPlatformBridge::RecoverSession(const FString& StatusOutFile)
+{
+	FString PythonCmd = FString::Printf(
+		TEXT("from openclaw_chat import recover_session\n")
+		TEXT("recover_session(r'%s')\n"),
+		*StatusOutFile
+	);
+	ExecPython(PythonCmd);
+}

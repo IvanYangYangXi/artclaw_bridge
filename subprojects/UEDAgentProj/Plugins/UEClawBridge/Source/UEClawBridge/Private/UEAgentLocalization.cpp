@@ -156,6 +156,7 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("SessionSwitched"),    TEXT("已切换到会话: {0}"),         TEXT("Switched to session: {0}"));
 	Reg(TEXT("SessionDeleted"),     TEXT("会话已删除"),                TEXT("Session deleted"));
 	Reg(TEXT("SessionHistoryLoaded"), TEXT("已加载 {0} 条历史消息"),   TEXT("Loaded {0} history messages"));
+	Reg(TEXT("SessionRecoveredAborted"), TEXT("已终止上次崩溃前残留的 AI 运行"), TEXT("Aborted orphaned AI run from previous crash"));
 
 	// ==================================================================
 	// Tool 调用卡片

@@ -347,11 +347,29 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 	auto Self = SharedThis(this);
 	FString CapturedResponseFile = ResponseFile;
 	FString CapturedStreamFile = StreamFile;
+	double PollStartTime = FPlatformTime::Seconds();
 	PollTimerHandle = FTSTicker::GetCoreTicker().AddTicker(
-		FTickerDelegate::CreateLambda([Self, CapturedResponseFile, CapturedStreamFile](float DeltaTime) -> bool
+		FTickerDelegate::CreateLambda([Self, CapturedResponseFile, CapturedStreamFile, PollStartTime](float DeltaTime) -> bool
 		{
 			if (Self->bIsBeingDestroyed || !Self->bIsWaitingForResponse)
 			{
+				return false;
+			}
+
+			// --- 安全超时: 防止 Python 线程崩溃导致无限等待 ---
+			// Python 端有 30 分钟绝对超时 + 5 分钟无活动超时，
+			// 这里设 35 分钟作为最终保底。
+			constexpr double SafetyTimeoutSeconds = 35.0 * 60.0;
+			if (FPlatformTime::Seconds() - PollStartTime > SafetyTimeoutSeconds)
+			{
+				UE_LOG(LogTemp, Error, TEXT("[UEAgent] Poll safety timeout (35min) — Python worker may have crashed"));
+				Self->bIsWaitingForResponse = false;
+				Self->bHasStreamingMessage = false;
+				Self->StreamLinesRead = 0;
+				Self->AddMessage(TEXT("system"), TEXT("[Error] AI response timed out (safety timeout). Try sending again."));
+				// 清理临时文件
+				IFileManager::Get().Delete(*CapturedResponseFile, false, false, true);
+				IFileManager::Get().Delete(*CapturedStreamFile, false, false, true);
 				return false;
 			}
 
