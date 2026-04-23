@@ -8,9 +8,14 @@ verify_sync.py — 共享模块同步校验工具
 
 用法:
     python verify_sync.py              # 检查模式（仅报告）
-    python verify_sync.py --fix        # 自动修复（源码 → 副本）
-    python verify_sync.py --reverse    # 反向修复（副本 → 源码，用于副本比源码新时）
+    python verify_sync.py --fix        # 安全修复（源码 → 副本，dest 更新时需确认）
+    python verify_sync.py --fix --force  # 强制修复（源码 → 副本，忽略时间戳）
+    python verify_sync.py --reverse    # 反向修复（副本 → 源码，仅同步 dest 更新的文件）
     python verify_sync.py --ci         # CI 模式（不一致时退出码 1）
+
+安全机制:
+    --fix 检测到 dest 比 source 新时，会逐个提示确认，避免覆盖在副本上的改动。
+    如果确定源码是正确的，用 --fix --force 跳过所有确认。
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ import shutil
 import sys
 from pathlib import Path
 from typing import List, Tuple
+from datetime import datetime
 
 # ---------------------------------------------------------------------------
 # 路径配置
@@ -250,8 +256,9 @@ def main():
             pass
 
     parser = argparse.ArgumentParser(description="共享模块同步校验")
-    parser.add_argument("--fix", action="store_true", help="自动修复：源码 → 副本")
-    parser.add_argument("--reverse", action="store_true", help="反向修复：副本 → 源码")
+    parser.add_argument("--fix", action="store_true", help="安全修复：源码 → 副本（dest 更新时需确认）")
+    parser.add_argument("--force", action="store_true", help="与 --fix 配合：跳过确认，强制源码覆盖副本")
+    parser.add_argument("--reverse", action="store_true", help="反向修复：副本 → 源码（仅同步 dest 更新的文件）")
     parser.add_argument("--ci", action="store_true", help="CI 模式：不一致时退出码 1")
     args = parser.parse_args()
 
@@ -285,8 +292,10 @@ def main():
             mismatches.append((src, dst, desc))
             src_t = os.path.getmtime(src)
             dst_t = os.path.getmtime(dst)
-            newer = "src newer" if src_t > dst_t else "dst newer"
-            print(f"  [DIFF] {desc}  src={h_src} dst={h_dst}  ({newer})")
+            src_time = datetime.fromtimestamp(src_t).strftime("%m-%d %H:%M")
+            dst_time = datetime.fromtimestamp(dst_t).strftime("%m-%d %H:%M")
+            direction = "⬅ dest NEWER" if dst_t > src_t else "➡ src newer"
+            print(f"  [DIFF] {desc}  src={h_src}({src_time}) dst={h_dst}({dst_time})  {direction}")
 
     # --- Orphan detection: install files not in DCC source ---
     dcc_rels = set(str(r).replace(os.sep, "/") for r in _scan_dcc_source_files())
@@ -379,30 +388,82 @@ def main():
 
     if args.fix:
         print("\n--- Fix mode: source -> dest ---")
+        fixed = 0
+        skipped = 0
         for src, dst, desc in mismatches:
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
-            print(f"  FIXED {desc}")
+            src_t = os.path.getmtime(src)
+            dst_t = os.path.getmtime(dst)
+            if dst_t > src_t and not args.force:
+                # dest 比 source 新 — 可能有人直接改了副本
+                src_time = datetime.fromtimestamp(src_t).strftime("%m-%d %H:%M:%S")
+                dst_time = datetime.fromtimestamp(dst_t).strftime("%m-%d %H:%M:%S")
+                print(f"\n  ⚠️  {desc}")
+                print(f"      src: {src_time}  |  dest: {dst_time}  (dest is NEWER)")
+                print(f"      src: {src}")
+                print(f"      dst: {dst}")
+                try:
+                    ans = input("      Overwrite dest with source? [y/N/r=reverse] ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    ans = ""
+                if ans == "r":
+                    # 反向: dest → source
+                    shutil.copy2(dst, src)
+                    print(f"      REVERSED (dest -> src)")
+                    fixed += 1
+                elif ans == "y":
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst)
+                    print(f"      FIXED (src -> dest)")
+                    fixed += 1
+                else:
+                    print(f"      SKIPPED")
+                    skipped += 1
+            else:
+                # source 更新或 --force — 直接覆盖
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                print(f"  FIXED {desc}")
+                fixed += 1
         for src, dst, desc in missing_dst:
             if src.exists():
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
                 print(f"  COPIED {desc}")
-        print("\n[OK] Fix complete")
+                fixed += 1
+        print(f"\n[OK] Fix complete: {fixed} fixed", end="")
+        if skipped:
+            print(f", {skipped} skipped (use --force to override)")
+        print()
         return 0
 
     if args.reverse:
         print("\n--- Reverse fix: dest -> source ---")
+        reversed_count = 0
+        skipped = 0
         for src, dst, desc in mismatches:
-            shutil.copy2(dst, src)
-            print(f"  REVERSED {desc}")
-        print("\n[OK] Reverse fix complete")
+            src_t = os.path.getmtime(src)
+            dst_t = os.path.getmtime(dst)
+            if dst_t > src_t:
+                # dest 更新 — 自动反向同步
+                shutil.copy2(dst, src)
+                print(f"  REVERSED {desc}  (dest was newer)")
+                reversed_count += 1
+            else:
+                # source 更新 — 不反向，跳过
+                print(f"  SKIPPED  {desc}  (source is newer, use --fix)")
+                skipped += 1
+        print(f"\n[OK] Reverse complete: {reversed_count} reversed", end="")
+        if skipped:
+            print(f", {skipped} skipped (source was newer)")
+        print()
         return 0
 
     if args.ci:
         return 1
 
-    print("\nUse --fix to overwrite dest from source, or --reverse to do the opposite")
+    print("\nUse --fix to sync source -> dest (safe, with confirmation)")
+    print("    --fix --force to skip confirmation")
+    print("    --reverse to sync dest -> source (only newer dest files)")
     return 1
 
 

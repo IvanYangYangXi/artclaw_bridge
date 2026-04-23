@@ -395,6 +395,9 @@ private:
 
 		/** 本地消息缓存 — 切换 session 时保存/恢复，避免每次从 Gateway 拉取 */
 		TArray<FChatMessage> CachedMessages;
+
+		/** 缓存该会话的 token 用量 — 切换 session 时保存/恢复 */
+		int32 CachedTotalTokens = 0;
 	};
 
 	/** 所有会话列表 */

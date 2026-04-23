@@ -351,6 +351,7 @@ def _query_session_usage() -> None:
 
     C++ BridgeStatusPoll 读取此文件更新上下文百分比。
     使用 sessions.list Gateway RPC 获取 contextTokens/totalTokens。
+    写入的 JSON 包含 sessionKey 字段，C++ 端校验是否匹配当前会话。
     """
     if not _session_key:
         return
@@ -360,11 +361,22 @@ def _query_session_usage() -> None:
             gateway_url=_get_gateway_url(),
             token=_get_token(),
         ))
+        # 注入 sessionKey 到结果 JSON（C++ 端校验匹配）
+        try:
+            result_obj = json.loads(result_str)
+            result_obj["sessionKey"] = _session_key
+            result_str = json.dumps(result_obj, ensure_ascii=False)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
         # 写入独立文件（C++ 轮询读取）
         import tempfile
         try:
             import unreal
-            status_dir = os.path.join(unreal.Paths.project_saved_dir(), "ClawBridge")
+            # 必须用 convert_relative_path_to_full: project_saved_dir() 返回相对路径，
+            # 子线程中 os.path.abspath() 基于 CWD 解析会写到错误位置
+            saved_dir = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir())
+            status_dir = os.path.join(saved_dir, "ClawBridge")
         except Exception:
             status_dir = os.path.join(os.path.expanduser("~"), ".artclaw")
         os.makedirs(status_dir, exist_ok=True)
@@ -381,7 +393,7 @@ def _query_session_usage() -> None:
             except Exception:
                 pass
             raise
-        UELogger.info(f"[openclaw_chat] usage written: {result_str[:100]}")
+        UELogger.info(f"[openclaw_chat] usage written: {result_str[:120]}")
     except Exception as exc:
         UELogger.warning(f"[openclaw_chat] usage query failed: {exc}")
 

@@ -694,13 +694,15 @@ async def _fetch_and_write_tool_events(
         return
 
     # --- 1. 写入准确的 token usage ---
-    # sessions.json 中 inputTokens = 最后一次 API 调用的输入 token（即上下文大小）
-    # totalTokens 可能是 Gateway 内部值，不一定准确
-    input_tokens = session_info.get("inputTokens", 0)
+    # sessions.json 字段含义:
+    #   totalTokens = 最后一次 API 调用的 input token 数（即当前上下文大小）
+    #   inputTokens = 累积的所有调用 input token 之和（不是当前上下文）
+    #   contextTokens = 上下文窗口大小限制
     total_tokens = session_info.get("totalTokens", 0)
+    input_tokens = session_info.get("inputTokens", 0)
     context_tokens = session_info.get("contextTokens", 0)
-    # 优先用 inputTokens（真正的上下文大小）
-    usage_val = input_tokens if input_tokens > 0 else total_tokens
+    # 优先用 totalTokens（当前上下文大小），fallback 到 inputTokens
+    usage_val = total_tokens if total_tokens > 0 else input_tokens
     if usage_val and usage_val > 0:
         write_stream(stream_file, {
             "type": "usage",

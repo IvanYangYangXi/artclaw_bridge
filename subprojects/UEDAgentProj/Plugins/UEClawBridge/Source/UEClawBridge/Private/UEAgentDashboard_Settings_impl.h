@@ -557,7 +557,7 @@ void SUEAgentDashboard::OnAgentSelected(const FString& AgentId)
 	// --- 保存当前 Agent 的会话到缓存 ---
 	if (!CurrentAgentId.IsEmpty())
 	{
-		// 先把当前消息存入活跃 session entry
+		// 先把当前消息 + token usage 存入活跃 session entry
 		if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
 		{
 			FString CurrentKey = PlatformBridge->GetSessionKey();
@@ -566,6 +566,7 @@ void SUEAgentDashboard::OnAgentSelected(const FString& AgentId)
 				SessionEntries[ActiveSessionIndex].SessionKey = CurrentKey;
 			}
 			SessionEntries[ActiveSessionIndex].CachedMessages = Messages;
+			SessionEntries[ActiveSessionIndex].CachedTotalTokens = LastTotalTokens;
 		}
 		AgentSessionCache.Add(CurrentAgentId, SessionEntries);
 	}
@@ -606,11 +607,16 @@ void SUEAgentDashboard::OnAgentSelected(const FString& AgentId)
 		}
 		RebuildMessageList();
 
+		// 恢复 token usage
+		LastTotalTokens = SessionEntries[ActiveSessionIndex].CachedTotalTokens;
+
 		// 恢复 Python 端的 session key
 		FString RestoredKey = SessionEntries[ActiveSessionIndex].SessionKey;
 		if (!RestoredKey.IsEmpty())
 		{
 			PlatformBridge->SetSessionKey(RestoredKey);
+			// 异步刷新最新 token usage
+			PlatformBridge->QuerySessionUsage();
 		}
 	}
 	else
@@ -622,8 +628,11 @@ void SUEAgentDashboard::OnAgentSelected(const FString& AgentId)
 		InitFirstSession();
 	}
 
-	// 重置 token usage
-	LastTotalTokens = 0;
+	// 重置 token usage（仅无缓存的 Agent 从 0 开始，有缓存的已在上面恢复）
+	if (!AgentSessionCache.Contains(AgentId))
+	{
+		LastTotalTokens = 0;
+	}
 
 	// 找到 Agent 名称
 	FString AgentDisplay = AgentId;

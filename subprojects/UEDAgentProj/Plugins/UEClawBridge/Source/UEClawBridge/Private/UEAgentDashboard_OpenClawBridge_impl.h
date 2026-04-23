@@ -257,7 +257,8 @@ void SUEAgentDashboard::ProcessStreamEventLine(const FString& Line)
 		const TSharedPtr<FJsonObject>* UsageObj = nullptr;
 		if (JsonObj->TryGetObjectField(TEXT("usage"), UsageObj) && UsageObj)
 		{
-			// 优先用 inputTokens（真实上下文大小），fallback 到 totalTokens
+			// stream.jsonl 的 usage 事件由 Python 写入，已统一为正确值
+			// inputTokens 字段 = 当前上下文大小（Python 端已从 totalTokens 映射）
 			int32 Tokens = 0;
 			if (!(*UsageObj)->TryGetNumberField(TEXT("inputTokens"), Tokens) || Tokens <= 0)
 			{

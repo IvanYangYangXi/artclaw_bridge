@@ -123,7 +123,7 @@ FReply SUEAgentDashboard::OnNewChatClicked()
 		CurrentPlan.Reset();
 	}
 
-	// 1) 保存当前活跃会话的 session key (任务 5.8)
+	// 1) 保存当前活跃会话的 session key + token usage (任务 5.8)
 	if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
 	{
 		FString CurrentKey = PlatformBridge->GetSessionKey();
@@ -131,6 +131,7 @@ FReply SUEAgentDashboard::OnNewChatClicked()
 		{
 			SessionEntries[ActiveSessionIndex].SessionKey = CurrentKey;
 		}
+		SessionEntries[ActiveSessionIndex].CachedTotalTokens = LastTotalTokens;
 		SessionEntries[ActiveSessionIndex].bIsActive = false;
 	}
 

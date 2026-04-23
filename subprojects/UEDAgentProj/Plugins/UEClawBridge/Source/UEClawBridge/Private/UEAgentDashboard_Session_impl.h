@@ -118,6 +118,9 @@ void SUEAgentDashboard::RestoreOrInitSession()
 	SessionEntries.Add(MoveTemp(RestoredEntry));
 	ActiveSessionIndex = 0;
 
+	// 恢复后立即查询 token usage（异步，结果通过 _session_usage.json → 轮询更新）
+	PlatformBridge->QuerySessionUsage();
+
 	// --- 会话恢复: 中止 Gateway 上残留的 AI 运行 ---
 	// UE 崩溃后 agent 可能仍在 Gateway 上运行，需要中止以避免:
 	// 1. 新消息发送后收到旧运行的事件干扰
@@ -240,7 +243,7 @@ void SUEAgentDashboard::OnSessionSelected(int32 Index)
 		return;
 	}
 
-	// 保存当前会话的消息到 CachedMessages
+	// 保存当前会话的消息 + token usage 到缓存
 	if (ActiveSessionIndex >= 0 && SessionEntries.IsValidIndex(ActiveSessionIndex))
 	{
 		FString CurrentKey = PlatformBridge->GetSessionKey();
@@ -249,6 +252,7 @@ void SUEAgentDashboard::OnSessionSelected(int32 Index)
 			SessionEntries[ActiveSessionIndex].SessionKey = CurrentKey;
 		}
 		SessionEntries[ActiveSessionIndex].CachedMessages = Messages;
+		SessionEntries[ActiveSessionIndex].CachedTotalTokens = LastTotalTokens;
 		SessionEntries[ActiveSessionIndex].bIsActive = false;
 	}
 
@@ -256,6 +260,9 @@ void SUEAgentDashboard::OnSessionSelected(int32 Index)
 	ActiveSessionIndex = Index;
 	SessionEntries[Index].bIsActive = true;
 	CurrentSessionLabel = SessionEntries[Index].Label;
+
+	// 恢复 token usage（从缓存或重置为 0）
+	LastTotalTokens = SessionEntries[Index].CachedTotalTokens;
 
 	FString SessionKey = SessionEntries[Index].SessionKey;
 
@@ -290,6 +297,12 @@ void SUEAgentDashboard::OnSessionSelected(int32 Index)
 	else
 	{
 		PlatformBridge->ResetSession();
+	}
+
+	// 异步刷新 token usage（从 sessions.json 获取最新值）
+	if (!SessionKey.IsEmpty())
+	{
+		PlatformBridge->QuerySessionUsage();
 	}
 
 	// 关闭菜单

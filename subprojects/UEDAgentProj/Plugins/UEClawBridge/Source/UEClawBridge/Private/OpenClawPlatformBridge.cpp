@@ -245,3 +245,11 @@ void FOpenClawPlatformBridge::RecoverSession(const FString& StatusOutFile)
 	);
 	ExecPython(PythonCmd);
 }
+
+void FOpenClawPlatformBridge::QuerySessionUsage()
+{
+	ExecPython(
+		TEXT("from openclaw_chat import query_session_usage_sync\n")
+		TEXT("query_session_usage_sync()\n")
+	);
+}

@@ -123,4 +123,10 @@ public:
 	 * @param StatusOutFile 恢复结果写入路径
 	 */
 	virtual void RecoverSession(const FString& StatusOutFile) = 0;
+
+	/**
+	 * 异步查询当前 session 的 token 用量并写入 _session_usage.json。
+	 * 会话切换后调用，确保状态栏显示对应会话的上下文用量。
+	 */
+	virtual void QuerySessionUsage() = 0;
 };
