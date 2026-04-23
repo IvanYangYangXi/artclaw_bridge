@@ -26,6 +26,8 @@ interface ChatInputProps {
 
 export interface ChatInputHandle {
   triggerSend: () => void
+  /** Programmatically set input value (e.g. from quick-input buttons) */
+  setInputValue: (text: string) => void
 }
 
 const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({ onSend, sendMode = 'enter', initialValue }, ref) {
@@ -59,9 +61,20 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     }
   }, [initialValue])
 
-  // Expose triggerSend to parent via ref
+  // Expose triggerSend + setInputValue to parent via ref
   useImperativeHandle(ref, () => ({
     triggerSend: () => handleSend(),
+    setInputValue: (text: string) => {
+      setValue(text)
+      // Move cursor to end after a tick so textarea updates first
+      setTimeout(() => {
+        const ta = textareaRef.current
+        if (ta) {
+          ta.focus()
+          ta.setSelectionRange(text.length, text.length)
+        }
+      }, 0)
+    },
   }))
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {

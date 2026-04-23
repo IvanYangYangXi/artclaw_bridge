@@ -493,6 +493,7 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
 
         elif state == "final":
             final_text = text or latest_text
+
             # DEBUG: 转储完整 final payload 到日志文件，帮助定位 usage 字段位置
             try:
                 _debug_dir = os.path.dirname(stream_file)
@@ -510,8 +511,19 @@ async def _receive_stream(ws, stream_file, response_file, cancel_flag, stream_lo
                 UELogger.info(f"[openclaw_ws] final payload dumped to {_debug_path}")
             except Exception as _de:
                 UELogger.info(f"[openclaw_ws] debug dump failed: {_de}")
-            # 提取 usage 信息（Gateway 在 final 事件中携带 token 统计）
+            # 提取 usage 信息 — 先从 final payload 提取（可能不准确），
+            # 然后 _fetch_and_write_tool_events 会用 sessions.list 的准确值覆盖
             _dispatch_usage(payload, message, stream_file, stream_lock)
+
+            # --- 从 Gateway 获取本轮工具调用 + 准确 usage（补全非 MCP 工具事件）---
+            # 必须在 write_stream(final) 和 write_response 之前执行，
+            # 确保 C++ 最后一次轮询能读到补写的 tool 事件和准确 usage。
+            try:
+                await _fetch_and_write_tool_events(
+                    ws, session_key, stream_file, stream_lock, seen_tool_ids)
+            except Exception as _te:
+                UELogger.info(f"[openclaw_ws] tool event fetch failed: {_te}")
+
             write_stream(stream_file, {"type": "final", "text": final_text}, stream_lock)
             write_response(response_file, final_text)
             return
@@ -642,6 +654,207 @@ def _format_tool_result_preview(result_content: str) -> str:
                 return line[:77] + "..."
             return line
     return ""
+
+
+async def _fetch_and_write_tool_events(
+    ws, session_key: str, stream_file: str, stream_lock, seen_tool_ids: set
+) -> None:
+    """Final 后从本地 transcript 文件读取本轮工具调用，补写到 stream.jsonl。
+
+    Gateway WS chat events 不推送中间 toolCall/toolResult blocks，
+    只有 MCP 工具（run_ue_python）通过 tool_event_writer 写入 stream.jsonl。
+    非 MCP 工具（exec, read, web_search 等）需要从 transcript 文件补全。
+
+    同时从 sessions.json 读取准确的 session-level token 用量。
+    """
+    # --- 解析 session_key 提取 agent_id ---
+    # session_key 格式: "agent:<agentId>:<subKey>"
+    parts = session_key.split(":")
+    if len(parts) < 2 or parts[0] != "agent":
+        UELogger.info(f"[openclaw_ws] cannot parse session_key: {session_key[:60]}")
+        return
+    agent_id = parts[1]
+    openclaw_dir = os.path.join(os.path.expanduser("~"), ".openclaw")
+    sessions_json_path = os.path.join(openclaw_dir, "agents", agent_id, "sessions", "sessions.json")
+
+    if not os.path.exists(sessions_json_path):
+        UELogger.info(f"[openclaw_ws] sessions.json not found: {sessions_json_path}")
+        return
+
+    try:
+        with open(sessions_json_path, "r", encoding="utf-8") as f:
+            sessions_data = json.load(f)
+    except Exception as e:
+        UELogger.info(f"[openclaw_ws] sessions.json read error: {e}")
+        return
+
+    session_info = sessions_data.get(session_key, {})
+    if not session_info:
+        UELogger.info(f"[openclaw_ws] session_key not in sessions.json: {session_key[:60]}")
+        return
+
+    # --- 1. 写入准确的 token usage ---
+    # sessions.json 中 inputTokens = 最后一次 API 调用的输入 token（即上下文大小）
+    # totalTokens 可能是 Gateway 内部值，不一定准确
+    input_tokens = session_info.get("inputTokens", 0)
+    total_tokens = session_info.get("totalTokens", 0)
+    context_tokens = session_info.get("contextTokens", 0)
+    # 优先用 inputTokens（真正的上下文大小）
+    usage_val = input_tokens if input_tokens > 0 else total_tokens
+    if usage_val and usage_val > 0:
+        write_stream(stream_file, {
+            "type": "usage",
+            "usage": {
+                "inputTokens": usage_val,
+                "totalTokens": usage_val,
+                "contextTokens": context_tokens,
+            },
+        }, stream_lock)
+        UELogger.info(f"[openclaw_ws] session usage: input={input_tokens}, total={total_tokens}, context={context_tokens}")
+
+    # --- 2. 从 transcript 文件读取工具调用 ---
+    transcript_path = session_info.get("sessionFile", "")
+    if not transcript_path or not os.path.exists(transcript_path):
+        # 尝试从 sessionId 推导
+        session_id = session_info.get("sessionId", "")
+        if session_id:
+            transcript_path = os.path.join(
+                openclaw_dir, "agents", agent_id, "sessions", f"{session_id}.jsonl")
+    if not transcript_path or not os.path.exists(transcript_path):
+        UELogger.info(f"[openclaw_ws] transcript not found for {session_key[:60]}")
+        return
+
+    try:
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as e:
+        UELogger.info(f"[openclaw_ws] transcript read error: {e}")
+        return
+
+    # 只处理最后 30 行（覆盖一轮多工具调用），从后往前找最后一条 user 消息的位置
+    recent_lines = lines[-30:] if len(lines) > 30 else lines
+    last_user_idx = -1
+    for i, line in enumerate(recent_lines):
+        try:
+            entry = json.loads(line)
+            msg = entry.get("message", {})
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                last_user_idx = i
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    # 从最后一条 user 消息之后开始处理
+    start_idx = last_user_idx + 1 if last_user_idx >= 0 else 0
+    wrote_count = 0
+
+    for line in recent_lines[start_idx:]:
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+        msg = entry.get("message", {})
+        if not isinstance(msg, dict):
+            continue
+
+        role = msg.get("role", "")
+        content = msg.get("content", [])
+        if not isinstance(content, list):
+            content = []
+
+        # --- 处理 role="toolResult" 的消息（Gateway transcript 格式）---
+        # 这类消息的 toolCallId/toolName/isError 在 message 顶层，
+        # content 是 [{type: "text", text: "..."}]
+        if role == "toolResult":
+            tool_id = msg.get("toolCallId", "")
+            tool_name = msg.get("toolName", "")
+            is_error = msg.get("isError", False)
+
+            result_key = f"result:{tool_id}"
+            if result_key in seen_tool_ids:
+                continue
+            seen_tool_ids.add(result_key)
+
+            result_content = ""
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    result_content += item.get("text", "")
+            if len(result_content) > _TOOL_RESULT_LIMIT:
+                result_content = result_content[:_TOOL_RESULT_LIMIT] + "...[truncated]"
+
+            write_stream(stream_file, {
+                "type":      "tool_result",
+                "tool_name": tool_name,
+                "tool_id":   tool_id,
+                "content":   result_content,
+                "is_error":  is_error,
+            }, stream_lock)
+            wrote_count += 1
+            continue
+
+        # --- 处理 content blocks 中的 toolCall / toolResult ---
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type", "")
+
+            if btype == "toolCall":
+                tool_id = block.get("id", "")
+                tool_name = block.get("name", "")
+                tool_args = block.get("arguments", {})
+
+                call_key = f"call:{tool_id}"
+                if call_key in seen_tool_ids:
+                    continue
+                seen_tool_ids.add(call_key)
+
+                if isinstance(tool_args, str):
+                    try:
+                        tool_args = json.loads(tool_args)
+                    except (json.JSONDecodeError, ValueError):
+                        tool_args = {"raw": tool_args}
+
+                write_stream(stream_file, {
+                    "type":      "tool_call",
+                    "tool_name": tool_name,
+                    "tool_id":   tool_id,
+                    "arguments": tool_args,
+                }, stream_lock)
+                wrote_count += 1
+
+            elif btype == "toolResult":
+                tool_id = block.get("toolCallId", "")
+                tool_name = block.get("toolName", "")
+                is_error = block.get("isError", False)
+                result_content = block.get("content", "")
+
+                result_key = f"result:{tool_id}"
+                if result_key in seen_tool_ids:
+                    continue
+                seen_tool_ids.add(result_key)
+
+                if isinstance(result_content, list):
+                    result_content = "\n".join(
+                        item.get("text", "")
+                        for item in result_content
+                        if isinstance(item, dict)
+                    )
+                elif not isinstance(result_content, str):
+                    result_content = str(result_content)
+                if len(result_content) > _TOOL_RESULT_LIMIT:
+                    result_content = result_content[:_TOOL_RESULT_LIMIT] + "...[truncated]"
+
+                write_stream(stream_file, {
+                    "type":      "tool_result",
+                    "tool_name": tool_name,
+                    "tool_id":   tool_id,
+                    "content":   result_content,
+                    "is_error":  is_error,
+                }, stream_lock)
+                wrote_count += 1
+
+    if wrote_count > 0:
+        UELogger.info(f"[openclaw_ws] supplemented {wrote_count} tool events from transcript")
 
 
 def _dispatch_tool_events(message: dict, stream_file: str, stream_lock,
@@ -869,10 +1082,42 @@ async def do_fetch_history(session_key: str, gateway_url: str, token: str) -> st
 
 
 async def do_session_info(session_key: str, gateway_url: str, token: str) -> str:
-    """一次性连接 → sessions.list RPC → 提取当前 session 的 token 用量信息。
+    """获取当前 session 的 token 用量信息。
 
-    返回 JSON: {"contextTokens": N, "totalTokens": N, "model": "..."}
+    优先从本地 sessions.json 读取（有 inputTokens），
+    fallback 到 Gateway sessions.list RPC。
+
+    返回 JSON: {"contextTokens": N, "totalTokens": N, "inputTokens": N, "model": "..."}
     """
+    # --- 优先从本地 sessions.json 读取（最准确）---
+    try:
+        parts = session_key.split(":")
+        if len(parts) >= 2 and parts[0] == "agent":
+            agent_id = parts[1]
+            openclaw_dir = os.path.join(os.path.expanduser("~"), ".openclaw")
+            sj_path = os.path.join(openclaw_dir, "agents", agent_id, "sessions", "sessions.json")
+            if os.path.exists(sj_path):
+                with open(sj_path, "r", encoding="utf-8") as f:
+                    sj_data = json.load(f)
+                info = sj_data.get(session_key, {})
+                if info:
+                    input_tokens = info.get("inputTokens", 0)
+                    total_tokens = info.get("totalTokens", 0)
+                    context_tokens = info.get("contextTokens", 0)
+                    model = info.get("model", "")
+                    # inputTokens 是最准确的上下文大小
+                    result = {
+                        "contextTokens": context_tokens,
+                        "totalTokens": total_tokens,
+                        "inputTokens": input_tokens,
+                        "model": model,
+                    }
+                    UELogger.info(f"[openclaw_ws] session_info (local): {result}")
+                    return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        UELogger.info(f"[openclaw_ws] session_info local read failed: {e}")
+
+    # --- Fallback: Gateway sessions.list RPC ---
     try:
         import websockets
     except ImportError:

@@ -163,6 +163,10 @@ void FUEAgentL10n::Initialize()
 	Reg(TEXT("ToolParams"),         TEXT("参数:"),                     TEXT("Params:"));
 	Reg(TEXT("ToolResult"),         TEXT("结果:"),                     TEXT("Result:"));
 	Reg(TEXT("ToolError"),          TEXT("错误:"),                     TEXT("Error:"));
+	Reg(TEXT("ToolCallsCount"),     TEXT("次工具调用"),                TEXT("tool calls"));
+	Reg(TEXT("ToolDone"),           TEXT("完成"),                      TEXT("done"));
+	Reg(TEXT("ToolErrorShort"),     TEXT("错误"),                      TEXT("error"));
+	Reg(TEXT("ToolRunning"),        TEXT("运行中"),                    TEXT("running"));
 
 	// ==================================================================
 	// 语言切换

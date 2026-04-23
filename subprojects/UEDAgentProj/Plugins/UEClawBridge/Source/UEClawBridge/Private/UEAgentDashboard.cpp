@@ -19,6 +19,7 @@
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SGridPanel.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Text/SMultiLineEditableText.h"
 #include "Widgets/Input/SButton.h"

@@ -298,7 +298,7 @@ export default function ChatPage() {
   }
 
   const handleQuickInput = (text: string) => {
-    sendMessage(text)
+    chatInputRef.current?.setInputValue(text)
   }
 
   const handleToolbarSend = () => {

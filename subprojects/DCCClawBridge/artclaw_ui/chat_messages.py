@@ -397,6 +397,103 @@ if HAS_QT:
 
     # -------------------------------------------------------------------------
 
+    class ToolCallGroupWidget(QFrame):
+        """连续多个工具调用的折叠分组容器。
+        
+        当 3 个以上连续 tool call 出现时，将它们包进一个可折叠组：
+        标题：[🔧 N 次工具调用 (M 完成, K 运行中) ▶]
+        展开后在带 maxHeight + 滚动条的容器内显示各个 ToolCallWidget。
+        """
+
+        def __init__(self, dcc_name: str = "maya",
+                     parent: Optional[QWidget] = None) -> None:
+            super().__init__(parent)
+            self._dcc = dcc_name
+            self._t = get_theme(dcc_name)
+            self._collapsed = True
+            self._tool_widgets: list[ToolCallWidget] = []
+            self._toggle_arrow: Optional[QLabel] = None
+            self._summary_lbl: Optional[QLabel] = None
+            self._body: Optional[QScrollArea] = None
+            self._body_lay: Optional[QVBoxLayout] = None
+            self._build()
+
+        def _build(self) -> None:
+            t = self._t
+            self.setFrameShape(QFrame.NoFrame)
+            self.setStyleSheet(
+                "QFrame{background:#1E1C16;border:1px solid #3A3520;"
+                "border-radius:4px;margin:1px 4px;}")
+            main = QVBoxLayout(self)
+            main.setContentsMargins(0, 0, 0, 0)
+            main.setSpacing(0)
+
+            # --- Header ---
+            hf = QPushButton()
+            hf.setFlat(True)
+            hf.setCursor(Qt.PointingHandCursor)
+            hf.setFixedHeight(28)
+            hf.setStyleSheet(
+                "QPushButton{background:transparent;border:none;"
+                "text-align:left;padding:0px 6px 0px 8px;}"
+                "QPushButton:hover{background:rgba(255,255,255,0.05);}")
+            hf.clicked.connect(self._toggle)
+            hl = QHBoxLayout(hf)
+            hl.setContentsMargins(0, 0, 0, 0)
+            hl.setSpacing(4)
+
+            self._toggle_arrow = QLabel("▶")
+            self._toggle_arrow.setStyleSheet(
+                f"color:{t['text_dim']};font-size:10px;background:transparent;")
+            hl.addWidget(self._toggle_arrow)
+            hl.addWidget(self._lbl("🔧", "background:transparent;font-size:12px;"))
+            self._summary_lbl = self._lbl(
+                "0 次工具调用",
+                f"color:{SENDER_TOOL_CALL};font-weight:bold;font-size:12px;background:transparent;")
+            hl.addWidget(self._summary_lbl)
+            hl.addStretch()
+            main.addWidget(hf)
+
+            # --- Body (直接用 QWidget，不限高度，由外层 MessageListWidget 滚动管理) ---
+            body_cont = QWidget()
+            body_cont.setStyleSheet("background:transparent;border-top:1px solid #3A3520;")
+            self._body_lay = QVBoxLayout(body_cont)
+            self._body_lay.setContentsMargins(2, 2, 2, 2)
+            self._body_lay.setSpacing(1)
+            self._body = body_cont
+            main.addWidget(self._body)
+            self._body.setVisible(False)
+
+        @staticmethod
+        def _lbl(text: str, style: str) -> QLabel:
+            lbl = QLabel(text)
+            lbl.setStyleSheet(style)
+            return lbl
+
+        def _toggle(self, _checked=False) -> None:
+            self._collapsed = not self._collapsed
+            if self._body:
+                self._body.setVisible(not self._collapsed)
+            if self._toggle_arrow:
+                self._toggle_arrow.setText("▶" if self._collapsed else "▼")
+
+        def add_tool_widget(self, w: ToolCallWidget) -> None:
+            """将一个 ToolCallWidget 加入分组"""
+            self._tool_widgets.append(w)
+            if self._body_lay:
+                self._body_lay.addWidget(w)
+            self._update_summary()
+
+        def _update_summary(self) -> None:
+            n = len(self._tool_widgets)
+            try:
+                from .i18n import T as _T
+                text = f"{n} {_T('tool_calls_count')}"
+            except Exception:
+                text = f"{n} 次工具调用"
+            if self._summary_lbl:
+                self._summary_lbl.setText(text)
+
     class MessageListWidget(QScrollArea):
         """
         消息列表容器（QScrollArea）。
@@ -421,6 +518,8 @@ if HAS_QT:
             self._widgets: list[QWidget] = []
             self._tool_map: dict[str, ToolCallWidget] = {}
             self._streaming_widget: Optional[MessageWidget] = None
+            self._current_tool_group: Optional[ToolCallGroupWidget] = None
+            self._consecutive_tool_count: int = 0
             self._init_ui()
 
         def _init_ui(self) -> None:
@@ -443,6 +542,10 @@ if HAS_QT:
             if sender not in ("streaming", "thinking"):
                 self._streaming_widget = None
 
+            # 非 tool 消息打断连续 tool call 计数
+            self._consecutive_tool_count = 0
+            self._current_tool_group = None
+
             msg = ChatMessage(
                 sender=sender, content=content,
                 timestamp=kw.get("timestamp", time.time()),
@@ -460,7 +563,10 @@ if HAS_QT:
             return msg
 
         def add_tool_call(self, tool_name: str, tool_id: str, arguments: str) -> ChatMessage:
-            """添加工具调用消息（可折叠卡片）"""
+            """添加工具调用消息（可折叠卡片）。
+            
+            当连续 3+ 个 tool call 时自动归入折叠分组。
+            """
             # 去重：如果已有相同 tool_id 的卡片，跳过
             if tool_id in self._tool_map:
                 return self._messages[-1] if self._messages else ChatMessage(sender="tool_call", content="")
@@ -473,8 +579,40 @@ if HAS_QT:
             self._messages.append(msg)
             w = ToolCallWidget(msg, dcc_name=self._dcc)
             self._tool_map[tool_id] = w
-            self._insert(w)
-            self._widgets.append(w)
+
+            self._consecutive_tool_count += 1
+
+            if self._consecutive_tool_count >= 3:
+                # 第 3 个起：创建或复用分组容器
+                if self._current_tool_group is None:
+                    # 创建分组，并把前 2 个 tool widget 移入
+                    group = ToolCallGroupWidget(dcc_name=self._dcc)
+                    # 找到前 2 个 tool call widget 并移入分组
+                    moved = 0
+                    for wi in reversed(range(len(self._widgets))):
+                        if isinstance(self._widgets[wi], ToolCallWidget) and moved < 2:
+                            tw = self._widgets[wi]
+                            # 从主布局中移除
+                            self._lay.removeWidget(tw)
+                            group.add_tool_widget(tw)
+                            self._widgets[wi] = None  # mark for cleanup
+                            moved += 1
+                            if moved >= 2:
+                                break
+                    # 清理标记
+                    self._widgets = [x for x in self._widgets if x is not None]
+                    # 插入分组到主布局
+                    self._insert(group)
+                    self._widgets.append(group)
+                    self._current_tool_group = group
+
+                # 将当前 tool call 加入分组
+                self._current_tool_group.add_tool_widget(w)
+            else:
+                # 前 2 个直接展示
+                self._insert(w)
+                self._widgets.append(w)
+
             self._trim()
             self._scroll()
             return msg
@@ -526,19 +664,42 @@ if HAS_QT:
                 self._streaming_widget.update_content(full_text)
 
         def finalize_streaming(self) -> bool:
-            """将所有 streaming 消息标记为 assistant 并刷新 widget 显示。"""
+            """将所有 streaming 消息标记为 assistant 并刷新 widget 显示。
+
+            注意：_messages 和 _widgets 索引不一定一一对应
+            （ToolCallGroupWidget 会合并多个 tool widget），
+            所以不能用 _messages[i] 对应 _widgets[i]，
+            需要用 widget 引用来定位。
+            """
             had = False
-            for i, m in enumerate(self._messages):
+            for m in self._messages:
                 if m.sender in ("streaming", "thinking"):
                     m.sender = "assistant"
                     had = True
-                    # 重建 widget 以反映新 sender 样式
-                    if i < len(self._widgets):
-                        old_w = self._widgets[i]
-                        new_w = MessageWidget(m, dcc_name=self._dcc)
+
+            # 重建 streaming widget（如果有的话）
+            if had and self._streaming_widget:
+                old_w = self._streaming_widget
+                # 找到对应的 message
+                stream_msg = None
+                for m in self._messages:
+                    if m.sender == "assistant" and m.content == old_w._msg.content:
+                        stream_msg = m
+                        break
+                if stream_msg is None:
+                    # fallback: 用 widget 自身的 message
+                    stream_msg = old_w._msg
+                    stream_msg.sender = "assistant"
+
+                new_w = MessageWidget(stream_msg, dcc_name=self._dcc)
+                # 在 _widgets 列表中替换
+                for wi in range(len(self._widgets)):
+                    if self._widgets[wi] is old_w:
                         self._lay.replaceWidget(old_w, new_w)
                         old_w.deleteLater()
-                        self._widgets[i] = new_w
+                        self._widgets[wi] = new_w
+                        break
+
             self._streaming_widget = None
             # 延迟重新计算所有 widget 高度，避免 replaceWidget 后宽度为 0 导致高度偏大
             if had:
@@ -570,6 +731,8 @@ if HAS_QT:
             self._widgets.clear()
             self._tool_map.clear()
             self._streaming_widget = None
+            self._current_tool_group = None
+            self._consecutive_tool_count = 0
             while self._lay.count() > 1:
                 item = self._lay.takeAt(0)
                 if item and item.widget():

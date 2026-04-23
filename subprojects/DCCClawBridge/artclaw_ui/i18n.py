@@ -64,6 +64,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "tool_params":     {"zh": "参数：",       "en": "Parameters:"},
     "tool_result_lbl": {"zh": "结果：",       "en": "Result:"},
     "tool_error_lbl":  {"zh": "错误：",       "en": "Error:"},
+    "tool_calls_count": {"zh": "次工具调用",  "en": "tool calls"},
 
     # ── Toolbar ──
     "send":            {"zh": "发送",         "en": "Send"},
