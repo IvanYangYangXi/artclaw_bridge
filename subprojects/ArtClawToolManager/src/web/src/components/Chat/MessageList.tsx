@@ -1,11 +1,69 @@
 // Ref: docs/ui/ui-design.md#MessageList
-// Message list: user / AI / system / tool messages with markdown-like rendering
-import { useEffect, useRef } from 'react'
-import { User, Bot, Settings as SettingsIcon, Loader2 } from 'lucide-react'
+// Message list: user / AI / system / tool messages with markdown rendering + tool call grouping
+import { useState, useEffect, useRef } from 'react'
+import { User, Bot, Settings as SettingsIcon, Loader2, ChevronDown, ChevronRight, Wrench } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { useChatStore } from '../../stores/chatStore'
 import ToolCallCard from './ToolCallCard'
-import type { ChatMessage } from '../../types'
+import MarkdownRenderer from './MarkdownRenderer'
+import type { ChatMessage, ToolCall } from '../../types'
+
+// ---------- Tool calls group (collapsible) ----------
+
+function ToolCallGroup({ toolCalls }: { toolCalls: ToolCall[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const count = toolCalls.length
+
+  // 1-2 个 tool call 直接展示，不需要分组
+  if (count <= 2) {
+    return (
+      <>
+        {toolCalls.map((tc) => (
+          <ToolCallCard key={tc.id} toolCall={tc} />
+        ))}
+      </>
+    )
+  }
+
+  // 3+ 个 tool call 分组折叠
+  const doneCount = toolCalls.filter((t) => t.status === 'completed').length
+  const errorCount = toolCalls.filter((t) => t.status === 'error').length
+  const runningCount = toolCalls.filter((t) => t.status === 'running' || t.status === 'pending').length
+
+  const summaryParts: string[] = []
+  if (doneCount > 0) summaryParts.push(`${doneCount} 完成`)
+  if (errorCount > 0) summaryParts.push(`${errorCount} 错误`)
+  if (runningCount > 0) summaryParts.push(`${runningCount} 运行中`)
+  const summary = summaryParts.join(', ')
+
+  return (
+    <div className="my-2 rounded border border-border-default bg-msg-tool/50 overflow-hidden">
+      {/* Group header */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-small hover:bg-bg-tertiary/30 transition-colors"
+      >
+        {expanded ? (
+          <ChevronDown className="w-3.5 h-3.5 text-text-dim shrink-0" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 text-text-dim shrink-0" />
+        )}
+        <Wrench className="w-3.5 h-3.5 text-warning shrink-0" />
+        <span className="text-text-primary">{count} 次工具调用</span>
+        <span className="text-text-dim text-[11px]">({summary})</span>
+      </button>
+
+      {/* Expanded list with scrollable container */}
+      {expanded && (
+        <div className="max-h-[400px] overflow-y-auto border-t border-border-default/50 px-1 py-1 space-y-1">
+          {toolCalls.map((tc) => (
+            <ToolCallCard key={tc.id} toolCall={tc} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ---------- Single message bubble ----------
 
@@ -54,18 +112,26 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         <span className="text-[11px] text-text-dim">{time}</span>
       </div>
 
-      {/* Content */}
-      <div className="text-body text-text-primary whitespace-pre-wrap break-words leading-relaxed">
-        {msg.content}
-        {msg.isStreaming && (
-          <span className="inline-block ml-1 animate-pulse-slow">▌</span>
-        )}
-      </div>
+      {/* Content — markdown rendered for assistant, plain for others */}
+      {msg.content && (
+        msg.role === 'assistant' || msg.role === 'system' ? (
+          <MarkdownRenderer content={msg.content} />
+        ) : (
+          <div className="text-body text-text-primary whitespace-pre-wrap break-words leading-relaxed">
+            {msg.content}
+          </div>
+        )
+      )}
 
-      {/* Tool calls */}
-      {msg.toolCalls?.map((tc) => (
-        <ToolCallCard key={tc.id} toolCall={tc} />
-      ))}
+      {/* Streaming cursor */}
+      {msg.isStreaming && (
+        <span className="inline-block ml-1 animate-pulse-slow text-text-primary">▌</span>
+      )}
+
+      {/* Tool calls — grouped when 3+ */}
+      {msg.toolCalls && msg.toolCalls.length > 0 && (
+        <ToolCallGroup toolCalls={msg.toolCalls} />
+      )}
 
       {/* Images */}
       {msg.images?.map((url, i) => (

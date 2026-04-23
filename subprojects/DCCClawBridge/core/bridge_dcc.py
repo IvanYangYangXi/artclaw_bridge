@@ -234,9 +234,22 @@ class DCCBridgeManager:
 
         # 重置流式状态
         self._streaming_text_len = 0
+        # 重置 tool 轮询状态
+        self._emitted_tool_ids = set()
+        self._transcript_poll_line = self._get_transcript_line_count()
+
+        # 启动 transcript 轮询（每 1s 检查新增 tool 事件）
+        self._start_transcript_poll()
 
         def _on_result(result: str):
             """send_message 完成回调（从后台线程调用）"""
+            # 停止轮询定时器
+            self._stop_transcript_poll()
+            # 最终一次性补全（确保不遗漏）
+            try:
+                self._supplement_tool_events()
+            except Exception as _e:
+                self._log.warning(f"_supplement_tool_events error: {_e}")
             if self.signals:
                 self.signals.response_complete.emit(result)
             # 查询 session token 用量
@@ -439,6 +452,289 @@ class DCCBridgeManager:
     # NOTE: _on_tool_call / _on_tool_result 已移除
     # Gateway chat 事件不包含 toolCall/toolResult blocks，
     # tool 事件改由 MCP Server 侧回调推送 (见 mcp_server.py _connect_tool_events_to_bridge)
+    # 非 MCP 工具由 _supplement_tool_events 从 transcript 补全
+
+    def _supplement_tool_events(self):
+        """从本地 transcript 文件补全非 MCP 工具调用事件。
+
+        MCP 工具（run_ue_python / run_python）通过 MCP Server 回调推送 tool_call/tool_result。
+        非 MCP 工具（exec, read, web_search 等）由 Gateway 内部执行，不经过 MCP Server。
+        本方法在响应完成后读取 transcript，提取缺失的 toolCall/toolResult 并发射信号。
+        """
+        if not self.signals or not self._bridge:
+            return
+        session_key = self._bridge.get_session_key()
+        if not session_key:
+            return
+
+        try:
+            parts = session_key.split(":")
+            if len(parts) < 2 or parts[0] != "agent":
+                return
+            agent_id = parts[1]
+            openclaw_dir = os.path.join(os.path.expanduser("~"), ".openclaw")
+            sessions_json = os.path.join(openclaw_dir, "agents", agent_id, "sessions", "sessions.json")
+
+            if not os.path.exists(sessions_json):
+                return
+
+            with open(sessions_json, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            info = data.get(session_key, {})
+            transcript = info.get("sessionFile", "")
+            if not transcript:
+                sid = info.get("sessionId", "")
+                if sid:
+                    transcript = os.path.join(openclaw_dir, "agents", agent_id, "sessions", f"{sid}.jsonl")
+            if not transcript or not os.path.exists(transcript):
+                return
+
+            with open(transcript, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            # 只处理最后 30 行，从最后一条 user 消息之后开始
+            recent = lines[-30:] if len(lines) > 30 else lines
+            last_user = -1
+            for idx, line in enumerate(recent):
+                try:
+                    entry = json.loads(line)
+                    msg = entry.get("message", {})
+                    if isinstance(msg, dict) and msg.get("role") == "user":
+                        last_user = idx
+                except (json.JSONDecodeError, ValueError):
+                    continue
+
+            start = last_user + 1 if last_user >= 0 else 0
+            # 获取已由 MCP 推送的 tool id 集合
+            emitted = getattr(self, "_emitted_tool_ids", set())
+            count = 0
+
+            for line in recent[start:]:
+                try:
+                    entry = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                msg = entry.get("message", {})
+                if not isinstance(msg, dict):
+                    continue
+
+                role = msg.get("role", "")
+                content = msg.get("content", [])
+                if not isinstance(content, list):
+                    content = []
+
+                # --- role="toolResult" 消息（Gateway transcript 格式）---
+                if role == "toolResult":
+                    tid = msg.get("toolCallId", "")
+                    if f"r:{tid}" in emitted:
+                        continue
+                    emitted.add(f"r:{tid}")
+                    tname = msg.get("toolName", "")
+                    is_error = msg.get("isError", False)
+                    rc = ""
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            rc += item.get("text", "")
+                    if len(rc) > 2000:
+                        rc = rc[:2000] + "...[truncated]"
+                    self.signals.tool_result.emit(tname, tid, rc, is_error)
+                    count += 1
+                    continue
+
+                # --- content blocks 中的 toolCall ---
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    btype = block.get("type", "")
+
+                    if btype == "toolCall":
+                        tid = block.get("id", "")
+                        if tid in emitted:
+                            continue
+                        emitted.add(tid)
+                        tname = block.get("name", "")
+                        targs = block.get("arguments", {})
+                        if isinstance(targs, dict):
+                            targs = json.dumps(targs, ensure_ascii=False)
+                        elif not isinstance(targs, str):
+                            targs = str(targs)
+                        self.signals.tool_call.emit(tname, tid, targs)
+                        count += 1
+
+                    elif btype == "toolResult":
+                        tid = block.get("toolCallId", "")
+                        if f"r:{tid}" in emitted:
+                            continue
+                        emitted.add(f"r:{tid}")
+                        tname = block.get("toolName", "")
+                        is_error = block.get("isError", False)
+                        rc = block.get("content", "")
+                        if isinstance(rc, list):
+                            rc = "\n".join(
+                                item.get("text", "")
+                                for item in rc if isinstance(item, dict)
+                            )
+                        elif not isinstance(rc, str):
+                            rc = str(rc)
+                        if len(rc) > 2000:
+                            rc = rc[:2000] + "...[truncated]"
+                        self.signals.tool_result.emit(tname, tid, rc, is_error)
+                        count += 1
+
+            self._emitted_tool_ids = emitted
+            if count > 0:
+                self._log.info(f"Supplemented {count} non-MCP tool events from transcript")
+
+        except Exception as e:
+            self._log.warning(f"_supplement_tool_events failed: {e}")
+
+    def _start_transcript_poll(self):
+        """启动 transcript 文件轮询定时器（每 1s），实时发现新 tool 事件。"""
+        self._stop_transcript_poll()  # 防止重复
+        try:
+            from PySide2.QtCore import QTimer
+        except ImportError:
+            try:
+                from PySide6.QtCore import QTimer
+            except ImportError:
+                return
+        self._transcript_timer = QTimer()
+        self._transcript_timer.setInterval(1000)
+        self._transcript_timer.timeout.connect(self._poll_transcript_tools)
+        self._transcript_timer.start()
+
+    def _get_transcript_line_count(self) -> int:
+        """获取当前 transcript 文件行数，用于初始化增量读取位置。"""
+        try:
+            if not self._bridge:
+                return 0
+            session_key = self._bridge.get_session_key()
+            if not session_key:
+                return 0
+            parts = session_key.split(":")
+            if len(parts) < 2 or parts[0] != "agent":
+                return 0
+            agent_id = parts[1]
+            openclaw_dir = os.path.join(os.path.expanduser("~"), ".openclaw")
+            sessions_json = os.path.join(openclaw_dir, "agents", agent_id, "sessions", "sessions.json")
+            if not os.path.exists(sessions_json):
+                return 0
+            with open(sessions_json, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            info = data.get(session_key, {})
+            transcript = info.get("sessionFile", "")
+            if not transcript:
+                sid = info.get("sessionId", "")
+                if sid:
+                    transcript = os.path.join(openclaw_dir, "agents", agent_id, "sessions", f"{sid}.jsonl")
+            if not transcript or not os.path.exists(transcript):
+                return 0
+            with open(transcript, "r", encoding="utf-8") as f:
+                return sum(1 for _ in f)
+        except Exception:
+            return 0
+
+    def _stop_transcript_poll(self):
+        """停止 transcript 轮询定时器。"""
+        timer = getattr(self, '_transcript_timer', None)
+        if timer is not None:
+            try:
+                timer.stop()
+                timer.deleteLater()
+            except Exception:
+                pass
+            self._transcript_timer = None
+
+    def _poll_transcript_tools(self):
+        """定时器回调：增量读取 transcript 文件中的新 tool 事件。"""
+        if not self.signals or not self._bridge:
+            return
+        session_key = self._bridge.get_session_key()
+        if not session_key:
+            return
+
+        try:
+            parts = session_key.split(":")
+            if len(parts) < 2 or parts[0] != "agent":
+                return
+            agent_id = parts[1]
+            openclaw_dir = os.path.join(os.path.expanduser("~"), ".openclaw")
+            sessions_json = os.path.join(openclaw_dir, "agents", agent_id, "sessions", "sessions.json")
+            if not os.path.exists(sessions_json):
+                return
+
+            with open(sessions_json, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            info = data.get(session_key, {})
+            transcript = info.get("sessionFile", "")
+            if not transcript:
+                sid = info.get("sessionId", "")
+                if sid:
+                    transcript = os.path.join(openclaw_dir, "agents", agent_id, "sessions", f"{sid}.jsonl")
+            if not transcript or not os.path.exists(transcript):
+                return
+
+            with open(transcript, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            # 增量：只处理上次读到位置之后的新行
+            start = getattr(self, '_transcript_poll_line', 0)
+            if start >= len(lines):
+                return
+            new_lines = lines[start:]
+            self._transcript_poll_line = len(lines)
+
+            emitted = getattr(self, '_emitted_tool_ids', set())
+            for line in new_lines:
+                try:
+                    entry = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                msg = entry.get("message", {})
+                if not isinstance(msg, dict):
+                    continue
+
+                role = msg.get("role", "")
+                content = msg.get("content", [])
+                if not isinstance(content, list):
+                    content = []
+
+                if role == "toolResult":
+                    tid = msg.get("toolCallId", "")
+                    if f"r:{tid}" in emitted:
+                        continue
+                    emitted.add(f"r:{tid}")
+                    tname = msg.get("toolName", "")
+                    is_error = msg.get("isError", False)
+                    rc = ""
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            rc += item.get("text", "")
+                    if len(rc) > 2000:
+                        rc = rc[:2000] + "...[truncated]"
+                    self.signals.tool_result.emit(tname, tid, rc, is_error)
+                    continue
+
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "toolCall":
+                        tid = block.get("id", "")
+                        if tid in emitted:
+                            continue
+                        emitted.add(tid)
+                        tname = block.get("name", "")
+                        targs = block.get("arguments", {})
+                        if isinstance(targs, dict):
+                            targs = json.dumps(targs, ensure_ascii=False)
+                        elif not isinstance(targs, str):
+                            targs = str(targs)
+                        self.signals.tool_call.emit(tname, tid, targs)
+
+            self._emitted_tool_ids = emitted
+
+        except Exception as e:
+            self._log.debug(f"_poll_transcript_tools: {e}")
 
     def _on_usage_update(self, usage: dict):
         if self.signals:

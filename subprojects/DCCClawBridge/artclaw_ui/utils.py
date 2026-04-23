@@ -73,7 +73,7 @@ def escape_html(text: str) -> str:
 
 def render_markdown(text: str) -> str:
     """
-    将 Markdown 文本渲染为 HTML 字符串（适用于 QLabel 富文本）。
+    将 Markdown 文本渲染为 HTML 字符串（适用于 QTextEdit 富文本）。
 
     支持：
     - ``` 代码块（多行，含语言标记）
@@ -81,6 +81,7 @@ def render_markdown(text: str) -> str:
     - **粗体** / *斜体*
     - # ## ### 标题
     - --- 水平线
+    - | 表格（含对齐）
     - 换行（\\n → <br>）
 
     不依赖第三方库，纯正则实现，适合 DCC 环境。
@@ -97,7 +98,7 @@ def render_markdown(text: str) -> str:
         # 处理代码块前的普通文本
         before = text[last_end:m.start()]
         if before:
-            parts.append(_render_inline(before))
+            parts.append(_render_block(before))
         # 处理代码块
         lang = m.group(1) or ""
         code = escape_html(m.group(2))
@@ -113,60 +114,121 @@ def render_markdown(text: str) -> str:
     # 剩余文本
     tail = text[last_end:]
     if tail:
-        parts.append(_render_inline(tail))
+        parts.append(_render_block(tail))
 
     return "".join(parts)
 
 
-def _render_inline(text: str) -> str:
-    """渲染行内 Markdown 元素（不含代码块）"""
+def _render_block(text: str) -> str:
+    """渲染块级 Markdown 元素（表格 + 行内元素）。
+    
+    先检测表格块，将其渲染为 HTML <table>，
+    非表格行走 _render_inline() 处理。
+    """
     lines = text.split("\n")
-    result_lines: list[str] = []
+    result_parts: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        # 检测表格: 当前行含 |，下一行是分隔符 |---|
+        if (i + 1 < len(lines) and "|" in line
+                and re.match(r"^\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?$", lines[i + 1].strip())):
+            table_lines = [line, lines[i + 1]]
+            i += 2
+            while i < len(lines) and "|" in lines[i] and lines[i].strip():
+                table_lines.append(lines[i])
+                i += 1
+            result_parts.append(_render_table(table_lines))
+            continue
+        # 非表格行走行内渲染
+        result_parts.append(_render_inline_line(line))
+        i += 1
+    return "<br>".join(result_parts)
 
-    for line in lines:
-        # H3
-        m = re.match(r"^###\s+(.+)$", line)
-        if m:
-            result_lines.append(
-                f'<h4 style="color:#AAAAAA;margin:4px 0;">{escape_html(m.group(1))}</h4>'
-            )
-            continue
-        # H2
-        m = re.match(r"^##\s+(.+)$", line)
-        if m:
-            result_lines.append(
-                f'<h3 style="color:#BBBBBB;margin:4px 0;">{escape_html(m.group(1))}</h3>'
-            )
-            continue
-        # H1
-        m = re.match(r"^#\s+(.+)$", line)
-        if m:
-            result_lines.append(
-                f'<h2 style="color:#CCCCCC;margin:4px 0;">{escape_html(m.group(1))}</h2>'
-            )
-            continue
-        # 水平线
-        if re.match(r"^-{3,}$", line.strip()):
-            result_lines.append('<hr style="border:none;border-top:1px solid #555;margin:6px 0;">')
-            continue
-        # 行内处理
-        line = escape_html(line)
-        # 行内代码
-        line = re.sub(
-            r"`([^`]+)`",
-            r'<code style="background:#1E1E1E;color:#CE9178;padding:1px 4px;'
-            r'border-radius:3px;font-family:Consolas,monospace;font-size:12px;">\1</code>',
-            line,
-        )
-        # 粗体
-        line = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", line)
-        line = re.sub(r"__(.+?)__", r"<strong>\1</strong>", line)
-        # 斜体
-        line = re.sub(r"\*(.+?)\*", r"<em>\1</em>", line)
-        line = re.sub(r"_(.+?)_", r"<em>\1</em>", line)
-        result_lines.append(line)
 
-    return "<br>".join(result_lines)
+def _render_table(lines: list[str]) -> str:
+    """将 markdown 表格行列表渲染为 HTML <table>。"""
+    def parse_row(line: str) -> list[str]:
+        return [c.strip() for c in line.strip().strip("|").split("|")]
+
+    headers = parse_row(lines[0])
+    # 解析对齐
+    sep_cells = parse_row(lines[1])
+    aligns: list[str] = []
+    for s in sep_cells:
+        if s.startswith(":") and s.endswith(":"):
+            aligns.append("center")
+        elif s.endswith(":"):
+            aligns.append("right")
+        else:
+            aligns.append("left")
+
+    rows = [parse_row(l) for l in lines[2:]]
+
+    # 构建 HTML
+    th_style = 'style="padding:3px 8px;border:1px solid #555;background:#2A2A2A;font-weight:bold;text-align:{align};"'
+    td_style = 'style="padding:3px 8px;border:1px solid #444;text-align:{align};"'
+
+    html_parts = ['<table style="border-collapse:collapse;margin:4px 0;font-size:12px;">']
+    # Header
+    html_parts.append("<tr>")
+    for ci, h in enumerate(headers):
+        align = aligns[ci] if ci < len(aligns) else "left"
+        html_parts.append(f'<th {th_style.format(align=align)}>{_inline_format(escape_html(h))}</th>')
+    html_parts.append("</tr>")
+    # Body rows
+    for row in rows:
+        html_parts.append("<tr>")
+        for ci, cell in enumerate(row):
+            align = aligns[ci] if ci < len(aligns) else "left"
+            html_parts.append(f'<td {td_style.format(align=align)}>{_inline_format(escape_html(cell))}</td>')
+        html_parts.append("</tr>")
+    html_parts.append("</table>")
+    return "".join(html_parts)
+
+
+def _inline_format(text: str) -> str:
+    """对已 HTML 转义的文本应用行内格式（粗体、斜体、行内代码）。"""
+    # 行内代码
+    text = re.sub(
+        r"`([^`]+)`",
+        r'<code style="background:#1E1E1E;color:#CE9178;padding:1px 4px;'
+        r'border-radius:3px;font-family:Consolas,monospace;font-size:12px;">\1</code>',
+        text,
+    )
+    # 粗体
+    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"__(.+?)__", r"<strong>\1</strong>", text)
+    # 斜体
+    text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
+    text = re.sub(r"_(.+?)_", r"<em>\1</em>", text)
+    return text
+
+
+def _render_inline(text: str) -> str:
+    """渲染行内 Markdown 元素（不含代码块）— 旧接口，保留兼容。"""
+    return _render_block(text)
+
+
+def _render_inline_line(line: str) -> str:
+    """渲染单行行内 Markdown 元素"""
+    # H3
+    m = re.match(r"^###\s+(.+)$", line)
+    if m:
+        return f'<h4 style="color:#AAAAAA;margin:4px 0;">{_inline_format(escape_html(m.group(1)))}</h4>'
+    # H2
+    m = re.match(r"^##\s+(.+)$", line)
+    if m:
+        return f'<h3 style="color:#BBBBBB;margin:4px 0;">{_inline_format(escape_html(m.group(1)))}</h3>'
+    # H1
+    m = re.match(r"^#\s+(.+)$", line)
+    if m:
+        return f'<h2 style="color:#CCCCCC;margin:4px 0;">{_inline_format(escape_html(m.group(1)))}</h2>'
+    # 水平线
+    if re.match(r"^-{3,}$", line.strip()):
+        return '<hr style="border:none;border-top:1px solid #555;margin:6px 0;">'
+    # 普通行: 转义后应用行内格式
+    return _inline_format(escape_html(line))
 
 
 # ---------------------------------------------------------------------------
