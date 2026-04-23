@@ -271,6 +271,19 @@ private:
 	/** 流式显示: 是否已显示过 thinking 消息 */
 	bool bHasStreamingMessage = false;
 
+	/** 流式增量更新: 当前流式消息的文本 widget (避免全量重建导致闪烁) */
+	TSharedPtr<SMultiLineEditableText> StreamingTextWidget;
+	/** 流式增量更新: 当前流式消息在 Messages 数组中的索引 */
+	int32 StreamingMessageIndex = INDEX_NONE;
+
+	/** ScrollToEnd 节流: 上次滚动时间 */
+	double LastScrollToEndTime = 0.0;
+	/** ScrollToEnd 节流: 是否有待处理的滚动请求 */
+	bool bPendingScrollToEnd = false;
+
+	/** 请求滚到底部 (带节流) */
+	void RequestScrollToEnd();
+
 	/** 快捷输入列表 */
 	TArray<FQuickInput> QuickInputs;
 

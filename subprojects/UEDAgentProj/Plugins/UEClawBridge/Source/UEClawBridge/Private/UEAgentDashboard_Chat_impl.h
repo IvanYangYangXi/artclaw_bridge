@@ -180,10 +180,8 @@ FReply SUEAgentDashboard::OnNewChatClicked()
 
 FReply SUEAgentDashboard::OnStopClicked()
 {
-	if (!bIsWaitingForResponse)
-	{
-		return FReply::Handled();
-	}
+	// 始终可用: UE 崩溃重启后 bIsWaitingForResponse=false，
+	// 但 Gateway 上的 AI 可能仍在运行，需要能发送 abort。
 
 	// 1) 停止 poll timer
 	if (PollTimerHandle.IsValid())
@@ -192,13 +190,15 @@ FReply SUEAgentDashboard::OnStopClicked()
 		PollTimerHandle.Reset();
 	}
 
-	// 2) 调用平台桥接取消请求
+	// 2) 调用平台桥接取消请求 (发送 chat.abort RPC)
 	PlatformBridge->CancelRequest();
 
 	// 3) 重置等待状态
 	bIsWaitingForResponse = false;
 	bHasStreamingMessage = false;
 	StreamLinesRead = 0;
+	StreamingTextWidget.Reset();
+	StreamingMessageIndex = INDEX_NONE;
 
 	// 4) 移除 "Thinking..." 或流式消息
 	for (int32 i = Messages.Num() - 1; i >= 0; --i)
@@ -471,12 +471,13 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 	}
 	else if (Command == TEXT("/cancel"))
 	{
-		// Cancel waiting for AI response
-		if (bIsWaitingForResponse)
+		// Cancel: 始终发送 abort（UE 崩溃重启后也能停止 Gateway 上运行的 AI）
 		{
 			bIsWaitingForResponse = false;
 			bHasStreamingMessage = false;
 			StreamLinesRead = 0;
+			StreamingTextWidget.Reset();
+			StreamingMessageIndex = INDEX_NONE;
 
 			// Stop poll timer (prevent old timer from continuing to poll file)
 			if (PollTimerHandle.IsValid())
@@ -505,10 +506,6 @@ void SUEAgentDashboard::HandleSlashCommand(const FString& Command, const FString
 			}
 			RebuildMessageList();
 			AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("RequestCancelled")));
-		}
-		else
-		{
-			AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("NothingToCancel")));
 		}
 	}
 	else if (Command == TEXT("/connect"))
