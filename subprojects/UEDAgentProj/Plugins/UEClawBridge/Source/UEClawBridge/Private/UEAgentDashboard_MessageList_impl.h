@@ -286,6 +286,10 @@ void SUEAgentDashboard::RebuildMessageList()
 
 	MessageScrollBox->ClearChildren();
 
+	// 全量重建时清除旧的流式 widget 引用（会在遍历到 streaming 消息时重新建立）
+	StreamingTextWidget.Reset();
+	StreamingMessageIndex = INDEX_NONE;
+
 	for (int32 i = 0; i < Messages.Num(); ++i)
 	{
 		const FChatMessage& Msg = Messages[i];
@@ -847,12 +851,42 @@ void SUEAgentDashboard::RebuildMessageList()
 			? FCoreStyle::GetDefaultFontStyle("Mono", 9)
 			: FCoreStyle::GetDefaultFontStyle("Regular", 10);
 
-		// Content — assistant/system use rich renderer (tables etc.), others plain text
-		TSharedRef<SWidget> ContentWidget =
-			(Msg.Sender == TEXT("assistant") || Msg.Sender == TEXT("system"))
-			? StaticCastSharedRef<SWidget>(BuildRichContentWidget(Msg.Content, MsgFont, ContentColor))
-			: StaticCastSharedRef<SWidget>(
-				SNew(SBorder)
+		// --- 流式消息: 用简单的 SMultiLineEditableText 并保存引用，供增量更新 ---
+		bool bIsStreamingMsg = (Msg.Sender == TEXT("streaming") || Msg.Sender == TEXT("thinking"));
+
+		TSharedPtr<SMultiLineEditableText> StreamTextWidgetLocal;
+
+		TSharedRef<SWidget> ContentWidget = SNullWidget::NullWidget;
+		if (bIsStreamingMsg)
+		{
+			// 流式消息使用简单文本 widget（不解析 Markdown 表格，避免重建开销）
+			SAssignNew(StreamTextWidgetLocal, SMultiLineEditableText)
+				.Text(FText::FromString(Msg.Content))
+				.Font(MsgFont)
+				.AutoWrapText(true)
+				.IsReadOnly(true)
+				.AllowContextMenu(true);
+
+			ContentWidget = SNew(SBorder)
+				.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
+				.ForegroundColor(FSlateColor(ContentColor))
+				[
+					StreamTextWidgetLocal.ToSharedRef()
+				];
+
+			// 保存引用供 UpdateStreamingMessage 增量更新
+			StreamingTextWidget = StreamTextWidgetLocal;
+			StreamingMessageIndex = i;
+		}
+		else if (Msg.Sender == TEXT("assistant") || Msg.Sender == TEXT("system"))
+		{
+			// assistant/system use rich renderer (tables etc.)
+			ContentWidget = StaticCastSharedRef<SWidget>(BuildRichContentWidget(Msg.Content, MsgFont, ContentColor));
+		}
+		else
+		{
+			// others plain text
+			ContentWidget = SNew(SBorder)
 				.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
 				.ForegroundColor(FSlateColor(ContentColor))
 				[
@@ -862,8 +896,8 @@ void SUEAgentDashboard::RebuildMessageList()
 					.AutoWrapText(true)
 					.IsReadOnly(true)
 					.AllowContextMenu(true)
-				]
-			);
+				];
+		}
 
 		MessageScrollBox->AddSlot()
 		.Padding(4.0f, 2.0f)
@@ -949,23 +983,8 @@ void SUEAgentDashboard::RebuildMessageList()
 		}
 	}
 
-	// 延迟一帧再滚到底部，确保 Slate layout pass 完成后尺寸已知
-	TWeakPtr<SScrollBox> WeakScroll = MessageScrollBox;
-	RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateLambda(
-		[WeakScroll](double, float) -> EActiveTimerReturnType
-		{
-			// 关引擎时 Slate 可能已 shutdown，必须先检查
-			if (!FSlateApplication::IsInitialized())
-			{
-				return EActiveTimerReturnType::Stop;
-			}
-			if (TSharedPtr<SScrollBox> Scroll = WeakScroll.Pin())
-			{
-				Scroll->ScrollToEnd();
-			}
-			return EActiveTimerReturnType::Stop;
-		}
-	));
+	// 滚动到底部（带节流）
+	RequestScrollToEnd();
 }
 
 // ==================================================================

@@ -327,6 +327,8 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 	bIsWaitingForResponse = true;
 	StreamLinesRead = 0;
 	bHasStreamingMessage = false;
+	StreamingTextWidget.Reset();
+	StreamingMessageIndex = INDEX_NONE;
 	AddMessage(TEXT("system"), FUEAgentL10n::GetStr(TEXT("Thinking")));
 
 	// 临时文件路径 — Python 写入响应，C++ 读取
@@ -366,6 +368,8 @@ void SUEAgentDashboard::SendToOpenClaw(const FString& UserMessage)
 				Self->bIsWaitingForResponse = false;
 				Self->bHasStreamingMessage = false;
 				Self->StreamLinesRead = 0;
+				Self->StreamingTextWidget.Reset();
+				Self->StreamingMessageIndex = INDEX_NONE;
 				Self->AddMessage(TEXT("system"), TEXT("[Error] AI response timed out (safety timeout). Try sending again."));
 				// 清理临时文件
 				IFileManager::Get().Delete(*CapturedResponseFile, false, false, true);
@@ -430,15 +434,29 @@ void SUEAgentDashboard::UpdateStreamingMessage(const FString& Sender, const FStr
 			}
 		}
 
+		// 清除旧的流式 widget 引用（将在下面创建新消息时通过 RebuildMessageList 建立）
+		StreamingTextWidget.Reset();
+		StreamingMessageIndex = INDEX_NONE;
 		bHasStreamingMessage = true;
 	}
 
-	// 查找末尾的流式消息并追加内容
+	// --- 增量更新路径: 如果已有流式 widget 引用且消息索引有效，直接 SetText ---
+	if (StreamingTextWidget.IsValid() && Messages.IsValidIndex(StreamingMessageIndex)
+		&& Messages[StreamingMessageIndex].Sender == StreamSender)
+	{
+		Messages[StreamingMessageIndex].Content += Content;
+		StreamingTextWidget->SetText(FText::FromString(Messages[StreamingMessageIndex].Content));
+		RequestScrollToEnd();
+		return;
+	}
+
+	// --- 查找末尾的流式消息并追加内容 ---
 	for (int32 i = Messages.Num() - 1; i >= 0; --i)
 	{
 		if (Messages[i].Sender == StreamSender)
 		{
 			Messages[i].Content += Content;
+			// 需要全量重建来获取 widget 引用（首次追加或引用丢失时）
 			RebuildMessageList();
 			return;
 		}
@@ -457,6 +475,61 @@ void SUEAgentDashboard::UpdateStreamingMessage(const FString& Sender, const FStr
 	Msg.Timestamp = FDateTime::Now();
 	Messages.Add(MoveTemp(Msg));
 	RebuildMessageList();
+}
+
+// ==================================================================
+// ScrollToEnd 节流 — 避免高频滚动导致闪烁
+// ==================================================================
+
+void SUEAgentDashboard::RequestScrollToEnd()
+{
+	if (!MessageScrollBox.IsValid()) return;
+
+	// 节流: 至少间隔 100ms
+	constexpr double ThrottleIntervalSec = 0.1;
+	double Now = FPlatformTime::Seconds();
+	if (Now - LastScrollToEndTime < ThrottleIntervalSec)
+	{
+		// 如果已经有待处理的滚动请求，跳过
+		if (bPendingScrollToEnd) return;
+
+		// 注册延迟滚动
+		bPendingScrollToEnd = true;
+		TWeakPtr<SScrollBox> WeakScroll = MessageScrollBox;
+		TWeakPtr<SUEAgentDashboard> WeakSelf = SharedThis(this);
+		RegisterActiveTimer(static_cast<float>(ThrottleIntervalSec), FWidgetActiveTimerDelegate::CreateLambda(
+			[WeakScroll, WeakSelf](double, float) -> EActiveTimerReturnType
+			{
+				if (!FSlateApplication::IsInitialized()) return EActiveTimerReturnType::Stop;
+				if (auto Self = WeakSelf.Pin())
+				{
+					Self->bPendingScrollToEnd = false;
+					Self->LastScrollToEndTime = FPlatformTime::Seconds();
+				}
+				if (TSharedPtr<SScrollBox> Scroll = WeakScroll.Pin())
+				{
+					Scroll->ScrollToEnd();
+				}
+				return EActiveTimerReturnType::Stop;
+			}
+		));
+		return;
+	}
+
+	// 直接滚动
+	LastScrollToEndTime = Now;
+	TWeakPtr<SScrollBox> WeakScroll = MessageScrollBox;
+	RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateLambda(
+		[WeakScroll](double, float) -> EActiveTimerReturnType
+		{
+			if (!FSlateApplication::IsInitialized()) return EActiveTimerReturnType::Stop;
+			if (TSharedPtr<SScrollBox> Scroll = WeakScroll.Pin())
+			{
+				Scroll->ScrollToEnd();
+			}
+			return EActiveTimerReturnType::Stop;
+		}
+	));
 }
 
 // ==================================================================
@@ -481,6 +554,8 @@ void SUEAgentDashboard::ResumeReceiving()
 	bIsWaitingForResponse = false;
 	bHasStreamingMessage = false;
 	StreamLinesRead = 0;
+	StreamingTextWidget.Reset();
+	StreamingMessageIndex = INDEX_NONE;
 
 	FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
 	FString StreamFile   = TempDir / TEXT("_openclaw_response_stream.jsonl");

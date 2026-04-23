@@ -361,7 +361,6 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 			.Text_Lambda([]() { return FUEAgentL10n::Get(TEXT("StopBtn")); })
 			.OnClicked(this, &SUEAgentDashboard::OnStopClicked)
 			.ToolTipText(FUEAgentL10n::Get(TEXT("StopTip")))
-			.IsEnabled_Lambda([this]() { return bIsWaitingForResponse; })
 			.ContentPadding(FMargin(6.0f, 2.0f))
 			.ButtonColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.3f, 0.3f)))
 		]
@@ -797,6 +796,8 @@ void SUEAgentDashboard::HandlePythonResponse(const FString& Response)
 	bIsWaitingForResponse = false;
 	bHasStreamingMessage = false;
 	StreamLinesRead = 0;
+	StreamingTextWidget.Reset();
+	StreamingMessageIndex = INDEX_NONE;
 
 	// 3) --- Plan 模式: 区分 Plan 生成回复 vs Plan 步骤执行回复 ---
 	if (bPlanMode)
