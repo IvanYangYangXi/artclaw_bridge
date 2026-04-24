@@ -45,6 +45,15 @@ agent_hint = manifest.get("agentHint", "")
 | `impl_type == "skill_wrapper"` | **在对话中引导**：读取被包装的 Skill，按 Skill 指引操作 |
 | `impl_type == "composite"` | **在对话中引导**：按管线顺序执行各子工具 |
 
+### DCC MCP Tool Name
+
+当 Agent 需要直接在 DCC 中执行代码时（如 skill_wrapper 执行），必须使用正确的 MCP tool name：
+
+| DCC | MCP Tool Name |
+|-----|--------------|
+| `ue57` | `run_ue_python`（⚠️ 不是 `run_python`！） |
+| 其他所有 DCC | `run_python` |
+
 ### 3. 调用 Execute API（推荐方式）
 
 ```python

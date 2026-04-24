@@ -42,6 +42,12 @@ DEFAULT_DCC_PORTS: Dict[str, int] = {
     "comfyui": 8087,
 }
 
+# MCP tool name varies by DCC type
+DCC_TOOL_NAMES: Dict[str, str] = {
+    "ue57": "run_ue_python",
+    # All others use run_python (default)
+}
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -288,13 +294,14 @@ class DCCManager:
                     "params": {},
                 }))
 
-                # 3. Call run_python
+                # 3. Call the DCC's MCP tool
+                tool_name = DCC_TOOL_NAMES.get(dcc_type, "run_python")
                 call_msg = json.dumps({
                     "jsonrpc": "2.0",
                     "id": request_id,
                     "method": "tools/call",
                     "params": {
-                        "name": "run_python",
+                        "name": tool_name,
                         "arguments": {"code": code},
                     },
                 })

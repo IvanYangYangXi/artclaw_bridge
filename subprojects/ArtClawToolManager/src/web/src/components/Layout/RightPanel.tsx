@@ -134,7 +134,19 @@ export default function RightPanel({ className }: RightPanelProps) {
         else if (tool.implementationType === 'composite') {
           needsAI = (tool.manifest?.implementation?.tools ?? []).some((t: string) => t.startsWith('skill:'))
         }
-        setExecutionContext({ type: 'tool', id: tool.id, name: tool.name, parameters: params, values: defaults, needsAI })
+        const impl = tool.manifest?.implementation
+        // API returns snake_case (tool_path), TS type uses camelCase (toolPath)
+        const rawTool = tool as unknown as Record<string, unknown>
+        const resolvedToolPath = (tool.toolPath || rawTool['tool_path'] || '') as string
+        const resolvedImplType = (tool.implementationType || rawTool['implementation_type'] || '') as string
+        setExecutionContext({
+          type: 'tool', id: tool.id, name: tool.name, parameters: params, values: defaults, needsAI,
+          toolPath: resolvedToolPath,
+          entryScript: impl?.entry,
+          aiPrompt: impl?.aiPrompt,
+          skillRef: impl?.skill,
+          implementationType: resolvedImplType,
+        })
         setPrefill(`请帮我运行工具 "${tool.name}"`, `配置工具 "${tool.name}" 的参数`)
         navigate('/')
       } catch {

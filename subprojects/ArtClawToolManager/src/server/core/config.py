@@ -162,7 +162,7 @@ class Settings(BaseSettings):
 
     # --- Server ---
     HOST: str = "0.0.0.0"
-    PORT: int = 9876
+    PORT: int = int(os.environ.get("ARTCLAW_PORT", "9876"))
 
     # --- CORS ---
     CORS_ORIGINS: List[str] = [

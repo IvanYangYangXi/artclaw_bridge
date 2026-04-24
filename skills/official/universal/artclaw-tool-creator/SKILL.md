@@ -75,7 +75,9 @@ Agent: [生成预览] 确认创建工具"快速文生图"？
 
 ### 2. 编写脚本 (script)
 
-使用 artclaw_sdk 创建自定义 Python 脚本工具。
+使用 DCC 原生 Python API 创建自定义脚本工具。
+
+> ⛔ **禁止使用 `artclaw_sdk`** — 该模块尚未实现，导入会直接报错。所有脚本必须使用 DCC 原生 API。
 
 **对话模板**：
 ```
@@ -96,12 +98,43 @@ Agent: [生成脚本预览] 确认创建工具？
 
 **生成的脚本必须遵循以下规则**：
 
-- MUST `import artclaw_sdk as sdk`
-- MUST 有单一入口函数，函数名匹配 `manifest.implementation.function`
-- MUST 使用 `sdk.result.success/fail` 返回结果
-- MUST 使用 `sdk.progress` 处理多项操作
-- MUST 使用 `sdk.get_selected()` 获取选择，不直接调用 DCC API
-- 完整 SDK API 见 `references/sdk-api-reference.md`
+- MUST 使用 DCC 原生 API（UE: `import unreal`，Maya: `import maya.cmds`，Blender: `import bpy`）
+- ⛔ MUST NOT `import artclaw_sdk` — 该模块不存在
+- ⛔ MUST NOT `import subprocess` — 会被 UE 安全扫描器拦截
+- MUST 入口函数使用 `**kwargs` 签名（Tool Manager 通过 keyword arguments 调用）
+- MUST 返回 dict 结果（`{"success": True/False, ...}`）
+- 可以使用 `PIL`/`Pillow`（UE Python 环境已内置）
+- 可以使用 `os`, `json`, `math` 等标准库（除 subprocess）
+
+**脚本模板**：
+```python
+"""
+工具名称
+工具描述（一行）。
+"""
+import unreal  # 或其他 DCC 原生 API
+import os
+import json
+
+
+def _helper_function():
+    """内部辅助函数。"""
+    pass
+
+
+def main_function(**kwargs):
+    """入口函数。kwargs 由 Tool Manager 传入。"""
+    param1 = kwargs.get("param1", "")
+    param2 = int(kwargs.get("param2", 0))
+    dry_run = bool(kwargs.get("dry_run", False))
+
+    if not param1:
+        return {"success": False, "error": "请填写参数1"}
+
+    # ... 业务逻辑 ...
+
+    return {"success": True, "message": "完成", "data": {...}}
+```
 
 ### 3. 组合工具 (composite)
 
@@ -305,6 +338,23 @@ def _get_scan_dirs():
 
 **有效的 DCC 标识符**：`ue57`, `maya`, `max`, `blender`, `comfyui`, `substance-designer`, `substance-painter`, `houdini`
 
+### DCC MCP Tool Name 映射
+
+不同 DCC 的 MCP 执行工具名称不同，生成脚本或 AI 执行时必须使用正确的 tool name：
+
+| DCC | MCP Tool Name | 说明 |
+|-----|--------------|------|
+| `ue57` | `run_ue_python` | UE 专用，注意不是 run_python |
+| `maya` | `run_python` | — |
+| `max` | `run_python` | — |
+| `blender` | `run_python` | — |
+| `comfyui` | `run_python` | — |
+| `substance-designer` | `run_python` | — |
+| `substance-painter` | `run_python` | — |
+| `houdini` | `run_python` | — |
+
+> ⛔ **常见错误**：对 UE 工具使用 `run_python` 会报 `Unknown tool: run_python`。UE 的 MCP tool 名是 `run_ue_python`。
+
 ### inputs 参数类型
 
 | type | 说明 | 额外字段 |
@@ -324,7 +374,11 @@ def _get_scan_dirs():
 
 - [ ] manifest.json 包含所有必需字段（id, name, implementation.type）
 - [ ] targetDCCs 已按推断规则正确设置（通用工具为 `[]`，非通用列出具体 DCC）
-- [ ] 脚本工具：导入 artclaw_sdk，入口函数存在且匹配 manifest
+- [ ] ⛔ 脚本不包含 `import artclaw_sdk`（该模块不存在）
+- [ ] ⛔ 脚本不包含 `import subprocess`（UE 安全扫描器会拦截）
+- [ ] 入口函数使用 `**kwargs` 签名（不是 `raw_params` 或固定参数名）
+- [ ] 入口函数返回 dict（`{"success": True/False, ...}`）
+- [ ] 脚本使用 DCC 原生 API（UE: `unreal`，Maya: `maya.cmds`，Blender: `bpy`）
 - [ ] 参数类型有效（string/number/boolean/select/file）
 - [ ] implementation.type 匹配创建方式
 - [ ] 触发规则合规：
@@ -398,29 +452,28 @@ def _get_scan_dirs():
 4. **代码生成**：基于 artclaw_sdk 模板生成符合规范的脚本
 5. **预览确认**：展示最终结果前让用户确认
 
-## artclaw_sdk 快速参考
+## DCC 原生 API 快速参考
 
-详见 `references/sdk-api-reference.md`
-
-**常用 API**：
+### UE (targetDCCs: ["ue57"])
 ```python
-import artclaw_sdk as sdk
-
-# 获取上下文和选择
-context = sdk.get_context()
-selected = sdk.get_selected()
-
-# 参数解析
-params = sdk.parse_params(manifest_inputs, raw_params)
-
-# 进度跟踪
-sdk.progress.start(total=len(selected))
-sdk.progress.update(1, "处理中...")
-sdk.progress.finish()
-
-# 返回结果
-return sdk.result.success(data={"count": 5}, message="处理完成")
-return sdk.result.fail(error="INVALID_SELECTION", message="请选择对象")
+import unreal
+mesh = unreal.load_asset('/Game/Path/Mesh')
+md = mesh.get_static_mesh_description(0)
+unreal.EditorAssetLibrary.save_asset('/Game/Path/Asset')
 ```
+
+### Maya (targetDCCs: ["maya"])
+```python
+import maya.cmds as cmds
+selected = cmds.ls(selection=True)
+```
+
+### Blender (targetDCCs: ["blender"])
+```python
+import bpy
+selected = bpy.context.selected_objects
+```
+
+> ⛔ 不要使用 `artclaw_sdk` — 该模块未实现。直接使用上述 DCC 原生 API。
 
 此 Skill 为 ArtClaw 工具生态的核心组件，通过 AI 引导大幅简化自定义工具创建流程。

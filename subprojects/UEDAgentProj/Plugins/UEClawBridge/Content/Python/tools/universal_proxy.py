@@ -539,6 +539,35 @@ TOOL_DEFINITION = {
 }
 
 
+def _discover_tool_scripts():
+    """扫描 tools/ 目录下的用户工具脚本，提取模块文档字符串作为简介。"""
+    tools_dir = os.path.dirname(os.path.abspath(__file__))
+    # 排除框架文件
+    framework_files = {
+        '__init__.py', 'universal_proxy.py', 'context_provider.py',
+        'risk_confirmation.py', 'self_healing.py', 'static_guard.py',
+    }
+    tool_infos = []
+    for fname in sorted(os.listdir(tools_dir)):
+        if not fname.endswith('.py') or fname in framework_files:
+            continue
+        fpath = os.path.join(tools_dir, fname)
+        module_name = fname[:-3]
+        # 提取 docstring（首个三引号块）
+        doc = ""
+        try:
+            import ast as _ast
+            with open(fpath, 'r', encoding='utf-8') as f:
+                tree = _ast.parse(f.read(), filename=fpath)
+            doc = _ast.get_docstring(tree) or ""
+        except Exception:
+            pass
+        # 取 docstring 第一行作为简介
+        summary = doc.strip().split('\n')[0] if doc.strip() else ""
+        tool_infos.append((module_name, summary))
+    return tool_infos
+
+
 def register_tools(mcp_server) -> None:
     """
     将所有阶段 1 的工具注册到 MCP 服务器。
@@ -547,10 +576,27 @@ def register_tools(mcp_server) -> None:
       - 核心机制 §1: 自动能力发现，Schema 转换
       - 开发路线图 §1.2: 注册 run_ue_python 到 MCP 工具列表
     """
+    # 动态发现可用工具脚本
+    tool_scripts = _discover_tool_scripts()
+    extra_desc = ""
+    if tool_scripts:
+        tools_dir = os.path.dirname(os.path.abspath(__file__))
+        extra_desc = (
+            f"\n\nAvailable tool scripts (import and use via this tool, "
+            f"located in {tools_dir}):\n"
+        )
+        for name, summary in tool_scripts:
+            line = f"- {name}"
+            if summary:
+                line += f": {summary}"
+            extra_desc += line + "\n"
+
+    desc = TOOL_DEFINITION["description"] + extra_desc
     mcp_server.register_tool(
         name=TOOL_DEFINITION["name"],
-        description=TOOL_DEFINITION["description"],
+        description=desc,
         input_schema=TOOL_DEFINITION["inputSchema"],
         handler=run_ue_python,
     )
-    UELogger.info("Phase 1 tools registered: run_ue_python")
+    UELogger.info(f"Phase 1 tools registered: run_ue_python "
+                  f"({len(tool_scripts)} tool scripts discovered)")

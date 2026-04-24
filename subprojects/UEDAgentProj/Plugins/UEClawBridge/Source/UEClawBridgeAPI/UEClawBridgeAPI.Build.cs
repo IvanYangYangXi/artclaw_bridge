@@ -20,6 +20,9 @@ public class UEClawBridgeAPI : ModuleRules
         });
 
         PrivateDependencyModuleNames.AddRange(new string[] {
+            // === xatlas UV Repack ===
+            "XAtlasLib",
+
             // === 基础 ===
             "UnrealEd",
             "Slate",
