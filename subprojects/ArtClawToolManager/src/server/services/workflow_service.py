@@ -241,7 +241,7 @@ class WorkflowService:
         # Determine DCC directory name
         dcc = wf.target_dcc or "comfyui"
         dcc_dir_map = {
-            "ue57": "unreal", "maya2024": "maya", "max2024": "max",
+            "ue5": "unreal", "maya2024": "maya", "max2024": "max",
             "blender": "blender", "comfyui": "comfyui",
             "sp": "substance_painter", "sd": "substance_designer",
             "houdini": "houdini", "general": "universal",

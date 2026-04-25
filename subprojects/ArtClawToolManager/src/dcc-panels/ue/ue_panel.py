@@ -45,7 +45,7 @@ class UEQuickPanel(ArtClawQuickPanel):
             level_name = "unknown"
 
         return {
-            "dcc": "ue57",
+            "dcc": "ue5",
             "selected_assets": selected_assets,
             "selected_actors": selected_actors,
             "level": level_name,
@@ -59,7 +59,7 @@ class UEQuickPanel(ArtClawQuickPanel):
         """Open the web manager pre-populated with UE context."""
         ctx = context or self.get_dcc_context()
         url_params: Dict[str, str] = {
-            "dcc": ctx.get("dcc", "ue57"),
+            "dcc": ctx.get("dcc", "ue5"),
             "level": ctx.get("level", ""),
         }
         selected = ctx.get("selected_actors", []) or ctx.get(
@@ -91,7 +91,7 @@ class UEQuickPanel(ArtClawQuickPanel):
             Arbitrary payload attached to the event.
         """
         event_data: Dict[str, Any] = {
-            "dcc_type": "ue57",
+            "dcc_type": "ue5",
             "event_type": event_type,
             "timing": timing,
             "data": data or {},

@@ -25,7 +25,7 @@ const TABS: { key: ToolTab; label: string }[] = [
 const DCC_OPTIONS = [
   { id: '', label_zh: '全部 DCC', label_en: 'All DCCs' },
   { id: 'general', label_zh: '通用', label_en: 'General' },
-  { id: 'ue57', label_zh: 'UE5', label_en: 'UE5' },
+  { id: 'ue5', label_zh: 'UE5', label_en: 'UE5' },
   { id: 'maya2024', label_zh: 'Maya', label_en: 'Maya' },
   { id: 'max2024', label_zh: '3ds Max', label_en: '3ds Max' },
   { id: 'blender', label_zh: 'Blender', label_en: 'Blender' },

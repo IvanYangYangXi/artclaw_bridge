@@ -285,7 +285,7 @@ interface TriggerRule {
 // 事件触发
 interface EventTrigger {
   type: 'event';
-  dcc: string;                   // ue57/maya2024/comfyui
+  dcc: string;                   // ue5/maya2024/comfyui
   event: string;                 // asset.save/file.export/...
   timing: 'pre' | 'post';       // 事件前/事件后
 }
@@ -427,7 +427,7 @@ class DCCEventManager:
         event = rule.trigger.event
         timing = rule.trigger.timing
         
-        if self._adapter.get_software_name() == 'ue57':
+        if self._adapter.get_software_name() == 'ue5':
             self._register_ue_event(event, timing, rule)
         elif self._adapter.get_software_name() == 'maya2024':
             self._register_maya_event(event, timing, rule)
@@ -657,7 +657,7 @@ class FilterEvaluator:
   "enabled": true,
   "trigger": {
     "type": "event",
-    "dcc": "ue57",
+    "dcc": "ue5",
     "event": "asset.save",
     "timing": "pre"
   },
@@ -687,7 +687,7 @@ class FilterEvaluator:
   "name": "批量重命名",
   "description": "批量重命名选中对象，支持前缀和编号",
   "version": "1.0.0",
-  "targetDCCs": ["maya2024", "ue57"],
+  "targetDCCs": ["maya2024", "ue5"],
   
   "implementation": {
     "type": "script",
@@ -711,7 +711,7 @@ class FilterEvaluator:
       "id": "rule-001",
       "name": "导入后自动重命名",
       "enabled": true,
-      "trigger": { "type": "event", "dcc": "ue57", "event": "asset.import", "timing": "post" },
+      "trigger": { "type": "event", "dcc": "ue5", "event": "asset.import", "timing": "post" },
       "filters": {
         "path": [{ "pattern": "/Game/Props/**" }],
         "type": [{ "types": ["StaticMesh"] }]
@@ -918,7 +918,7 @@ Tool Creator Skill 的 SKILL.md 中包含 SDK API 速查表，AI 创建脚本时
   name: "保存前检查角色命名"
   trigger:
     type: event
-    dcc: ue57
+    dcc: ue5
     event: asset.save
     timing: pre              # 保存前拦截
   filters:
@@ -987,7 +987,7 @@ Tool Creator Skill 的 SKILL.md 中包含 SDK API 速查表，AI 创建脚本时
   name: "导入后检查面数"
   trigger:
     type: event
-    dcc: ue57
+    dcc: ue5
     event: asset.import
     timing: post
   filters:

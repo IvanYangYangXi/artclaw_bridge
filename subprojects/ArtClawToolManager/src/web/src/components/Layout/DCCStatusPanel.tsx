@@ -8,7 +8,7 @@ import type { DCCStatusInfo } from '../../types'
 
 // DCC display configuration
 const DCC_DISPLAY: Record<string, { name: string; icon: string }> = {
-  ue57: { name: 'Unreal Engine', icon: '🎮' },
+  ue5: { name: 'Unreal Engine', icon: '🎮' },
   maya2024: { name: 'Maya', icon: '🗿' },
   max2024: { name: '3ds Max', icon: '📐' },
   blender: { name: 'Blender', icon: '🧊' },

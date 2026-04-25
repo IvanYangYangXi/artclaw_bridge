@@ -23,6 +23,10 @@ public class UEClawBridgeAPI : ModuleRules
             // === xatlas UV Repack ===
             "XAtlasLib",
 
+            // === Mesh UV 操作 ===
+            "MeshDescription",
+            "StaticMeshDescription",
+
             // === 基础 ===
             "UnrealEd",
             "Slate",

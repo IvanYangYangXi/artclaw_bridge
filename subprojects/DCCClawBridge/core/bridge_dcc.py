@@ -312,11 +312,10 @@ class DCCBridgeManager:
 
         # 记忆摘要
         try:
-            from memory_store import DCCMemoryStore
-            import builtins
-            adapter = getattr(builtins, '_artclaw_adapter', None)
-            if adapter and hasattr(adapter, '_memory_store') and adapter._memory_store:
-                briefing = adapter._memory_store.manager.export_briefing(max_tokens=1500)
+            from core.memory_store import get_memory_store
+            store = get_memory_store()
+            if store:
+                briefing = store.manager.export_briefing(max_tokens=1500)
                 if briefing and "记忆库为空" not in briefing:
                     prefix_parts.append(briefing)
         except Exception:

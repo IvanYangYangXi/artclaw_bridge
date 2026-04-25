@@ -72,6 +72,13 @@ def _parse_manifest(tool_dir: Path, source: str) -> Optional[ScannedTool]:
         manifest = dict(manifest)
         manifest["source"] = source
 
+    # Auto-generate id from folder structure if not present in manifest
+    # id is always authoritative as {source}/{tool_dir.name}
+    auto_id = f"{source}/{tool_dir.name}"
+    if manifest.get("id") != auto_id:
+        manifest = dict(manifest)
+        manifest["id"] = auto_id
+
     # Extract author and timestamps
     author = manifest.get("author", "")
     created_at = manifest.get("createdAt", "")

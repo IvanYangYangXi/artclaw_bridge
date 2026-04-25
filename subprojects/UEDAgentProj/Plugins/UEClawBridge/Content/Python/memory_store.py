@@ -64,10 +64,11 @@ class UEMemoryStore:
     """UE 环境下的记忆管理器封装"""
 
     def __init__(self, base_dir: Optional[Path] = None):
-        self._base_dir = base_dir or _project_dir
+        # 统一存储: ~/.artclaw/memory.json
+        self._base_dir = base_dir or (Path.home() / ".artclaw")
         self._base_dir.mkdir(parents=True, exist_ok=True)
 
-        storage_path = str(self._base_dir / "memory_v2.json")
+        storage_path = str(self._base_dir / "memory.json")
 
         self._manager = MemoryManagerV2(
             storage_path=storage_path,
@@ -77,7 +78,7 @@ class UEMemoryStore:
         # 检查并迁移旧格式
         self._try_migrate_v1()
 
-        UELogger.info(f"MemoryStore v2 初始化完成: {storage_path}")
+        UELogger.info(f"MemoryStore 初始化完成: {storage_path}")
         stats = self._manager.get_stats()
         UELogger.info(f"  记忆条目: {stats.get('total_entries', 0)}")
 
@@ -89,16 +90,16 @@ class UEMemoryStore:
         v1_files = ["memory_facts.json", "memory_preferences.json", "memory_conventions.json"]
         has_v1 = any((self._base_dir / f).exists() for f in v1_files)
 
-        if has_v1 and not (self._base_dir / "memory_v2.json").exists():
+        if has_v1 and not (self._base_dir / "memory.json").exists():
             UELogger.info("检测到 v1 格式记忆文件，开始迁移...")
             try:
                 count = MemoryManagerV2.migrate_from_ue_v1(
-                    str(self._base_dir),
-                    str(self._base_dir / "memory_v2.json")
+                    str(_project_dir),  # v1 文件在旧位置
+                    str(self._base_dir / "memory.json")
                 )
                 # 迁移成功后重新加载
                 self._manager = MemoryManagerV2(
-                    storage_path=str(self._base_dir / "memory_v2.json"),
+                    storage_path=str(self._base_dir / "memory.json"),
                     dcc_name="unreal_engine",
                 )
                 UELogger.info(f"v1 迁移完成: {count} 条记录")

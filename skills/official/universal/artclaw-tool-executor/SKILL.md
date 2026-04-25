@@ -36,7 +36,32 @@ target_dccs = manifest.get("targetDCCs", [])
 agent_hint = manifest.get("agentHint", "")
 ```
 
-### 2. 根据类型选择执行方式
+### 2. 遵循 Manifest 范式
+
+每个工具的 manifest.json 定义了完整的执行契约，Agent 必须遵循：
+
+#### 参数校验（inputs）
+- **required=true** 的参数必须有值才能执行，不能跳过
+- **type** 决定了参数类型：`string/number/boolean/select/image/object/array`
+- **select** 类型的值必须在 `options` 列表范围内
+- **number** 类型需检查 `min`/`max` 范围
+- 参数名/id 必须与 manifest 一致，不能自行编造参数名
+
+#### agentHint（AI 执行指引）
+如果 manifest 中有 `agentHint` 字段，**优先遵循其指引**。它可能包含：
+- 指定的 API 端点
+- 禁止执行的命令
+- 特殊的执行注意事项
+
+#### 筛选条件（defaultFilters）
+如果 manifest 有 `defaultFilters`，工具执行范围受此约束：
+- `path[].pattern` 定义了文件路径 glob 规则（支持 `$project_root` 等变量）
+- Agent 不应超出筛选范围执行操作
+
+#### 触发规则（triggers）
+Manifest 中的 `triggers` 定义自动触发场景，Agent 不需要手动处理（由 Trigger Engine 管理），但应了解工具的触发上下文以便在对话中解释。
+
+### 3. 根据类型选择执行方式
 
 | 条件 | 执行方式 |
 |------|----------|
@@ -51,7 +76,7 @@ agent_hint = manifest.get("agentHint", "")
 
 | DCC | MCP Tool Name |
 |-----|--------------|
-| `ue57` | `run_ue_python`（⚠️ 不是 `run_python`！） |
+| `ue5` | `run_ue_python`（⚠️ 不是 `run_python`！） |
 | 其他所有 DCC | `run_python` |
 
 ### 3. 调用 Execute API（推荐方式）

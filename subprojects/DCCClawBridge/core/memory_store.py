@@ -1,11 +1,11 @@
 """
-memory_store.py - DCCClawBridge 记忆管理 v2 适配层
+memory_store.py - DCCClawBridge 记忆管理适配层
 ===================================================
 
 将 memory_core.MemoryManagerV2（平台无关）接入 DCC MCP Server。
 
 职责:
-  - 确定 DCC 的存储路径 (~/.artclaw/{maya|max}/memory_v2.json)
+  - 统一存储路径 (~/.artclaw/memory.json)
   - 注册 MCP Tool (memory)
   - 旧格式自动迁移
   - 适配 Python logging
@@ -49,9 +49,11 @@ except ImportError:
 # DCC 存储路径
 # ============================================================================
 
-def _get_default_storage_dir(dcc_name: str = "maya") -> str:
-    """获取 DCC 默认存储目录"""
-    return os.path.join(os.path.expanduser("~"), ".artclaw", dcc_name)
+def _get_default_storage_path() -> str:
+    """获取统一记忆存储路径: ~/.artclaw/memory.json"""
+    d = os.path.join(os.path.expanduser("~"), ".artclaw")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, "memory.json")
 
 
 # ============================================================================
@@ -63,20 +65,19 @@ class DCCMemoryStore:
 
     def __init__(self, dcc_name: str = "maya", data_dir: str = ""):
         self._dcc_name = dcc_name
-        self._data_dir = data_dir or _get_default_storage_dir(dcc_name)
-        os.makedirs(self._data_dir, exist_ok=True)
-
-        storage_path = os.path.join(self._data_dir, "memory_v2.json")
+        # 统一单文件: ~/.artclaw/memory.json
+        self._storage_path = data_dir or _get_default_storage_path()
+        self._data_dir = os.path.dirname(self._storage_path)
 
         self._manager = MemoryManagerV2(
-            storage_path=storage_path,
+            storage_path=self._storage_path,
             dcc_name=dcc_name,
         )
 
-        # 检查并迁移旧格式
+        # 检查并迁移 v1 内容格式
         self._try_migrate_v1()
 
-        logger.info(f"MemoryStore v2 初始化完成: {dcc_name}, {storage_path}")
+        logger.info(f"MemoryStore 初始化完成: {dcc_name}, {self._storage_path}")
         stats = self._manager.get_stats()
         logger.info(f"  记忆条目: {stats.get('total_entries', 0)}")
 
@@ -84,22 +85,26 @@ class DCCMemoryStore:
         self._manager.start_maintenance_timer()
 
     def _try_migrate_v1(self):
-        """检测并迁移 v1 格式的记忆文件"""
-        old_file = os.path.join(self._data_dir, "memory.json")
-        v2_file = os.path.join(self._data_dir, "memory_v2.json")
-
-        if os.path.exists(old_file) and not os.path.exists(v2_file):
+        """检测并迁移 v1 格式的记忆文件（内容迁移）"""
+        if not os.path.exists(self._storage_path):
+            return
+        try:
+            with open(self._storage_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if "_meta" in data:
+                return  # 已经是 v2 格式
             logger.info("检测到 v1 格式记忆文件，开始迁移...")
-            try:
-                count = MemoryManagerV2.migrate_from_dcc_v1(old_file, v2_file)
-                # 迁移成功后重新加载
-                self._manager = MemoryManagerV2(
-                    storage_path=v2_file,
-                    dcc_name=self._dcc_name,
-                )
-                logger.info(f"v1 迁移完成: {count} 条记录")
-            except Exception as e:
-                logger.error(f"v1 迁移失败: {e}")
+            backup = self._storage_path + ".v1.bak"
+            import shutil
+            shutil.copy2(self._storage_path, backup)
+            count = MemoryManagerV2.migrate_from_dcc_v1(backup, self._storage_path)
+            self._manager = MemoryManagerV2(
+                storage_path=self._storage_path,
+                dcc_name=self._dcc_name,
+            )
+            logger.info(f"v1 迁移完成: {count} 条记录")
+        except Exception as e:
+            logger.error(f"v1 迁移失败: {e}")
 
     @property
     def manager(self) -> MemoryManagerV2:
@@ -159,12 +164,17 @@ _LAYER_TAG_MAP = {
 }
 
 
+_memory_store_instance: Optional[DCCMemoryStore] = None
+
+
 def init_memory_store(mcp_server, data_dir: str = "", dcc_name: str = "maya") -> DCCMemoryStore:
     """初始化记忆存储并注册 MCP 工具
 
     签名与旧版兼容（多一个 dcc_name 可选参数）。
     """
+    global _memory_store_instance
     store = DCCMemoryStore(dcc_name=dcc_name, data_dir=data_dir)
+    _memory_store_instance = store
 
     def _handle_memory(arguments: dict) -> str:
         action = arguments.get("action", "get")
@@ -274,3 +284,8 @@ def init_memory_store(mcp_server, data_dir: str = "", dcc_name: str = "maya") ->
     else:
         logger.info(f"MemoryStore v2: MCP tool skipped - v2.6 slim mode ({store._manager.get_stats().get('total_entries', 0)} entries)")
     return store
+
+
+def get_memory_store() -> Optional[DCCMemoryStore]:
+    """获取已初始化的 MemoryStore 实例"""
+    return _memory_store_instance

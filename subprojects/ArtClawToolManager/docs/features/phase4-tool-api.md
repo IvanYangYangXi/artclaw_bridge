@@ -95,14 +95,14 @@
 {
   "name": "资源保存时检查",
   "trigger_type": "event",
-  "dcc": "ue57",
+  "dcc": "ue5",
   "event_type": "asset.save",
   "event_timing": "post",
   "execution_mode": "notify",
   "is_enabled": true,
   "conditions": {
     "path": [{ "pattern": "/Game/Characters/**" }],
-    "typeFilter": { "types": ["StaticMesh"], "dcc": "ue57" }
+    "typeFilter": { "types": ["StaticMesh"], "dcc": "ue5" }
   },
   "schedule_config": {},
   "parameter_preset_id": ""

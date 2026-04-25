@@ -182,7 +182,7 @@ class Skill(Base, TimestampMixin):
     description = Column(String)
     version = Column(String, default="1.0.0")
     source = Column(Enum(SkillSource), nullable=False)
-    target_dccs = Column(JSON, default=list)  # ["ue57", "comfyui"]
+    target_dccs = Column(JSON, default=list)  # ["ue5", "comfyui"]
     status = Column(Enum(SkillStatus), default=SkillStatus.NOT_INSTALLED)
     
     # Runtime status
@@ -447,7 +447,7 @@ class ChatSession(Base, TimestampMixin):
     status = Column(Enum(SessionStatus), default=SessionStatus.ACTIVE)
     
     # Context
-    dcc_software = Column(String, default="none")  # ue57, maya2024, comfyui
+    dcc_software = Column(String, default="none")  # ue5, maya2024, comfyui
     agent_platform = Column(String, default="openclaw")
     agent_id = Column(String)
     
@@ -2676,7 +2676,7 @@ CREATE INDEX idx_skills_status ON skills(status);
     "api_url": "http://localhost:9876"
   },
   "dccs": {
-    "ue57": {
+    "ue5": {
       "enabled": true,
       "host": "localhost",
       "port": 8080

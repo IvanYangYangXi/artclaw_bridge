@@ -15,7 +15,7 @@ ArtClaw 工具生态 - 三层概念模型
 │
 ├── 【Skill】AI 操作指南
 │   ├── 定义: 指导 AI Agent 如何完成特定任务的文档
-│   ├── 示例: comfyui-txt2img、ue57-material-node-edit
+│   ├── 示例: comfyui-txt2img、ue5-material-node-edit
 │   ├── 特点: 只读、文本形式、由 ArtClaw 或社区维护
 │   └── 用途: 告诉 AI "如何"操作 DCC 软件
 │
@@ -113,7 +113,7 @@ ArtClaw 工具生态 - 三层来源
 │  │  │ • 工具调用  │  │             │  │                 │   │   │
 │  │  └─────────────┘  └─────────────┘  └─────────────────┘   │   │
 │  │  ┌──────────────────────────────────────────────────┐     │   │
-│  │  │ 📌 钉选 Skill 标签: [comfyui-txt2img] [ue57-op] │     │   │
+│  │  │ 📌 钉选 Skill 标签: [comfyui-txt2img] [ue5-op] │     │   │
 │  │  └──────────────────────────────────────────────────┘     │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                              │                                   │
@@ -290,7 +290,7 @@ interface ToolItem {
   description: string;           // 简短描述
   type: 'skill' | 'workflow' | 'tool';
   source: 'official' | 'marketplace' | 'user';
-  targetDCCs: string[];          // ["ue57", "comfyui", "maya2024"]
+  targetDCCs: string[];          // ["ue5", "comfyui", "maya2024"]
   
   // 状态（Skill/Workflow 有 disabled 状态，Tool 没有）
   status: 'not_installed' | 'installed' | 'update_available' | 'disabled';

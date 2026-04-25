@@ -116,6 +116,7 @@ class MCPServer:
 
         # RetryTracker: 追踪工具调用重试模式
         self._retry_tracker = None
+        self._memory_store = None  # 由 create_dcc_server 注入
         try:
             from core.retry_tracker import RetryTracker
             self._retry_tracker = RetryTracker()
@@ -333,6 +334,29 @@ class MCPServer:
                     self.on_tool_result(tool_name, tool_id, content_text, is_error)
                 except Exception:
                     pass
+
+            # 记忆系统: 记录操作结果到定制记忆
+            if code and self._memory_store:
+                try:
+                    import time as _time
+                    mgr = self._memory_store.manager
+                    _action = code[:60].replace("\n", " ")
+                    if is_error:
+                        mgr.record_crash(
+                            tool=tool_name, action=_action,
+                            params_summary=f"code_len={len(code)}",
+                            error=content_text[:300],
+                            root_cause="", avoidance_rule="",
+                            severity="medium",
+                        )
+                    else:
+                        mgr.record_operation(
+                            tool=tool_name, action=_action,
+                            params_summary=f"code_len={len(code)}",
+                            result=content_text[:200],
+                        )
+                except Exception:
+                    pass  # 记忆记录失败不影响正常执行
 
             return mcp_result
         except Exception as e:
@@ -874,15 +898,10 @@ def _init_skill_runtime(server: MCPServer, adapter=None) -> None:
     # 记忆存储
     try:
         from core.memory_store import init_memory_store
-        data_dir = ""
-        if adapter:
-            from core.config import get_data_dir
-            data_dir = os.path.join(
-                get_data_dir(adapter.get_software_name(), adapter.get_software_version()),
-                "memory"
-            )
+        # 统一存储到 ~/.artclaw/memory.json，由 init_memory_store 内部决定
         dcc_name = adapter.get_software_name() if adapter else "dcc"
-        memory_store = init_memory_store(server, data_dir=data_dir, dcc_name=dcc_name)
+        memory_store = init_memory_store(server, data_dir="", dcc_name=dcc_name)
+        server._memory_store = memory_store  # 供 _handle_tools_call 记录操作/崩溃
         
         # 绑定 RetryTracker 到记忆管理器
         if server._retry_tracker and memory_store:

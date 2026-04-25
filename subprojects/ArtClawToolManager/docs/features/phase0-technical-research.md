@@ -865,7 +865,7 @@ async def test_gateway_integration():
         return False
     
     # 3. 测试各 DCC 连接
-    dcc_types = ["ue57", "maya2024", "comfyui"]
+    dcc_types = ["ue5", "maya2024", "comfyui"]
     results = {}
     
     for dcc in dcc_types:
@@ -996,7 +996,7 @@ async def main():
     await tester.connect()
     
     # 测试各 DCC 的工具执行
-    dcc_types = ["ue57", "maya2024", "comfyui"]
+    dcc_types = ["ue5", "maya2024", "comfyui"]
     results = []
     
     for dcc in dcc_types:

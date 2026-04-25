@@ -117,7 +117,7 @@ class SkillService:
 {
   "version": "1.0",
   "skills": {
-    "pinned": ["official/comfyui-txt2img", "official/ue57-material"],
+    "pinned": ["official/comfyui-txt2img", "official/ue5-material"],
     "disabled": ["marketplace/some-skill"],
     "favorites": ["official/comfyui-txt2img"],
     "installed": {

@@ -1,10 +1,11 @@
 {
+  "id": "marketplace/资产批量改名",
   "name": "资产批量改名",
   "description": "批量为 UE 选中的资产添加前缀或后缀，支持自定义分隔符。",
   "version": "1.0.0",
   "author": "ArtClaw",
   "source": "marketplace",
-  "targetDCCs": ["ue57"],
+  "targetDCCs": ["ue5"],
   "createdAt": "2026-04-24 18:30:00",
   "updatedAt": "2026-04-24 18:30:00",
   "implementation": {

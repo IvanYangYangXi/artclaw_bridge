@@ -2,6 +2,7 @@
 UV Repack Tool - 纯脚本实现
 将 Static Mesh 的 UV 岛重排到 0-1 空间，提高贴图利用率。
 保持重叠 UV 岛不变。默认不旋转（避免法线问题）。
+支持贴图裁切：根据 UV 缩放自动计算最优贴图尺寸，缩小贴图同时保持像素密度。
 
 用法:
   from uv_repack import uv_repack
@@ -10,10 +11,50 @@ UV Repack Tool - 纯脚本实现
       material_ids=[0],          # 只处理材质 0 的面
       texture_paths=['/Game/Path/Tex_D', '/Game/Path/Tex_N'],
       overwrite_texture=False,   # False=生成新贴图，True=覆盖原贴图
+      auto_resize=True,          # 自动计算最优贴图尺寸（贴图裁切）
   )
 """
 import unreal
 import os
+import math
+
+
+# ── 辅助函数 ──────────────────────────────────────────────
+
+def _next_pow2(n):
+    """返回 >= n 的最小 2 的幂。"""
+    if n <= 0:
+        return 1
+    return 1 << math.ceil(math.log2(n))
+
+
+def _prev_pow2(n):
+    """返回 <= n 的最大 2 的幂。"""
+    if n <= 1:
+        return 1
+    return 1 << (n.bit_length() - 1)
+
+
+def _calc_optimal_texture_size(src_size, scale, utilization, min_size=64, max_size=4096):
+    """
+    根据 UV 缩放系数计算最优贴图尺寸。
+
+    原理: 原始有效面积 = src_size² × orig_util
+           新有效面积   = new_size² × new_util
+           要保持像素密度: new_size² × new_util >= src_size² × orig_util
+           即: new_size >= src_size / sqrt(scale)
+
+    返回 (optimal_size, texel_density_ratio) — ratio > 1 表示密度提升。
+    """
+    # src_size / sqrt(scale) 保持等密度的最小尺寸
+    min_needed = src_size / math.sqrt(scale)
+    # 向上取整到最近 2 的幂
+    optimal = _next_pow2(int(math.ceil(min_needed)))
+    optimal = max(min_size, min(max_size, optimal))
+
+    # 计算密度比: (optimal/src_size)² × scale
+    density_ratio = (optimal / src_size) ** 2 * scale
+    return optimal, round(density_ratio, 3)
 
 
 # ── UV 岛提取 ──────────────────────────────────────────────

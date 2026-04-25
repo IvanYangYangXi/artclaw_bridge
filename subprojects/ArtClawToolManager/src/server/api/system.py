@@ -19,7 +19,7 @@ router = APIRouter()
 
 # DCC display metadata (id → name, icon)
 _DCC_META = {
-    "ue57":     ("UE5",     "🎮"),
+    "ue5":      ("UE5",     "🎮"),
     "maya2024": ("Maya",    "🗿"),
     "max2024":  ("3ds Max", "📐"),
     "blender":  ("Blender", "🧊"),
@@ -103,7 +103,7 @@ async def get_dcc_options(request: Request):
     dcc_manager = request.app.state.dcc_manager
     statuses = await dcc_manager.get_all_status()
 
-    ordered = ["comfyui", "ue57", "maya2024", "max2024", "blender", "houdini", "sp", "sd"]
+    ordered = ["comfyui", "ue5", "maya2024", "max2024", "blender", "houdini", "sp", "sd"]
     result = []
     for dcc_id in ordered:
         name, icon = _DCC_META.get(dcc_id, (dcc_id, "🔧"))

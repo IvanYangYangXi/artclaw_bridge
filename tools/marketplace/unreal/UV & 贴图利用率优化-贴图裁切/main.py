@@ -13,60 +13,66 @@ def uv_texture_optimize(**raw_params):
     """入口函数。raw_params 由 Tool Manager 传入（keyword arguments）。"""
     
     # ===== 内联辅助函数 =====
-    def _align4(n):
-        return math.ceil(n / 4) * 4
-
-    def _best_size(exact_px, max_waste=0.20):
-        """选最小 2^n 尺寸，浪费不超过 max_waste 则用 2^n，否则 align4。"""
-        if exact_px <= 0:
+    def _best_size(n):
+        """2^n 优先，浪费超过 20% 则退到 4 的倍数。最小 4。"""
+        if n <= 4:
             return 4
         p = 1
-        while p < exact_px:
+        while p < n:
             p <<= 1
-        waste = (p - exact_px) / p
-        return p if waste <= max_waste else _align4(exact_px)
+        if (p - n) / p <= 0.20:
+            return p
+        return math.ceil(n / 4) * 4
 
     def _analyze(mat_path, tex_param_filter, uv_channel):
         """Step 1: 分析材质实例关联的 SM 和 UV bbox。"""
         ar = unreal.AssetRegistryHelpers.get_asset_registry()
-        mel = unreal.MaterialEditingLibrary
+
+        # 规范化路径: 去掉 ".ObjectName" 后缀 (如 /Game/.../MI_Foo.MI_Foo → /Game/.../MI_Foo)
+        if "." in mat_path.split("/")[-1]:
+            mat_path = mat_path.split(".")[0]
+
         mat_inst = unreal.load_asset(mat_path)
         if not mat_inst:
             return None, f"Cannot load asset: {mat_path}"
 
         parent = mat_inst.parent
-        tex_names_all = mel.get_texture_parameter_names(parent) if parent else []
+        # 只获取材质实例实际覆盖的贴图参数（不处理 parent 默认贴图）
         tex_targets = {}
-
-        for name in tex_names_all:
-            name_str = str(name)
-            if tex_param_filter and name_str not in tex_param_filter:
-                continue
-            val = mel.get_material_instance_texture_parameter_value(mat_inst, name)
-            if not val:
-                continue
-            tex_path = val.get_path_name().split(".")[0]
-            try:
-                tw = val.blueprint_get_size_x()
-                th = val.blueprint_get_size_y()
-            except Exception:
-                tw, th = 0, 0
-            if tw <= 1 and th <= 1:
-                continue
-            tex_targets[name_str] = {
-                "ue_path": tex_path, "size": [tw, th],
-                "srgb": val.srgb,
-                "compression": str(val.compression_settings),
-            }
+        if hasattr(mat_inst, 'texture_parameter_values'):
+            for tpv in mat_inst.texture_parameter_values:
+                try:
+                    name_str = str(tpv.parameter_info.name)
+                except Exception:
+                    continue
+                if tex_param_filter and name_str not in tex_param_filter:
+                    continue
+                val = tpv.parameter_value
+                if not val:
+                    continue
+                tex_path = val.get_path_name().split(".")[0]
+                try:
+                    tw = val.blueprint_get_size_x()
+                    th = val.blueprint_get_size_y()
+                except Exception:
+                    tw, th = 0, 0
+                if tw <= 1 and th <= 1:
+                    continue
+                tex_targets[name_str] = {
+                    "ue_path": tex_path, "size": [tw, th],
+                    "srgb": val.srgb,
+                    "compression": str(val.compression_settings),
+                }
 
         # 找引用此材质的 SM
         dep_opt = unreal.AssetRegistryDependencyOptions()
         referencers = ar.get_referencers(unreal.Name(mat_path), dep_opt)
         mesh_paths = []
-        for ref in referencers:
-            for ad in ar.get_assets_by_package_name(ref):
-                if str(ad.asset_class_path.asset_name) == "StaticMesh":
-                    mesh_paths.append(str(ad.package_name))
+        if referencers:
+            for ref in referencers:
+                for ad in ar.get_assets_by_package_name(ref):
+                    if str(ad.asset_class_path.asset_name) == "StaticMesh":
+                        mesh_paths.append(str(ad.package_name))
 
         # 收集 UV bbox
         g_umin, g_umax = float("inf"), float("-inf")
@@ -132,7 +138,12 @@ def uv_texture_optimize(**raw_params):
             tinfo["orig_tga"] = out_file
 
     def _crop_textures(tex_targets, uv_bbox, padding_px, crop_dir):
-        """Step 3: 裁切贴图（PIL）。"""
+        """Step 3: 裁切贴图（PIL）。
+        
+        裁切后 resize 到 2^n 尺寸（UE 要求）。
+        对法线/混合贴图使用 NEAREST 插值避免破坏方向数据，
+        对 BaseColor 使用 LANCZOS 高质量插值。
+        """
         try:
             from PIL import Image
         except ImportError:
@@ -159,13 +170,18 @@ def uv_texture_optimize(**raw_params):
             upper = max(0, int(v_min * h) - padding_px)
             lower = min(h, math.ceil(v_max * h) + padding_px)
 
-            crop_w = right - left
-            crop_h = lower - upper
+            cropped = img.crop((left, upper, right, lower))
+            crop_w, crop_h = cropped.size
+
+            # resize 到 2^n（UE 贴图尺寸要求）
             new_w = _best_size(crop_w)
             new_h = _best_size(crop_h)
 
-            cropped = img.crop((left, upper, right, lower))
-            out_img = cropped.resize((new_w, new_h), Image.LANCZOS)
+            # sRGB=True 的贴图（BaseColor 等）用 LANCZOS，
+            # 非 sRGB 的贴图（Normal/Mix 等）用 NEAREST 避免破坏数据
+            is_srgb = tinfo.get("srgb", False)
+            resample = Image.LANCZOS if is_srgb else Image.NEAREST
+            out_img = cropped.resize((new_w, new_h), resample)
 
             out_file = os.path.join(crop_dir, f"{tinfo['ue_path'].split('/')[-1]}_cropped.tga")
             out_img.save(out_file, format="TGA")
@@ -180,54 +196,39 @@ def uv_texture_optimize(**raw_params):
         return report
 
     def _remap_uvs(mesh_paths, uv_bbox, uv_channel):
-        """Step 4: 重映射 UV 到 0-1。"""
+        """Step 4: 重映射 UV 到 0-1。
+        
+        使用 C++ MeshUVOpsAPI.remap_mesh_uv 修改 SourceModel MeshDescription，
+        通过 CommitMeshDescription + PostEditChange 正确 rebuild RenderData，
+        不会产生多余 UV 通道（避免 build_from_static_mesh_descriptions 的 8 UV bug）。
+        """
         u_min = uv_bbox["u_min"]
         u_span = uv_bbox["u_max"] - u_min
         v_min = uv_bbox["v_min"]
         v_span = uv_bbox["v_max"] - v_min
         results = []
 
+        offset = unreal.Vector2D(u_min, v_min)
+        scale = unreal.Vector2D(1.0 / u_span if u_span > 0 else 1.0,
+                                1.0 / v_span if v_span > 0 else 1.0)
+
         for mp in mesh_paths:
-            mesh = unreal.load_asset(mp)
-            if not mesh:
-                results.append({"path": mp, "error": "Cannot load"})
-                continue
-            md = mesh.get_static_mesh_description(0)
-            if not md:
-                results.append({"path": mp, "error": "No mesh description"})
-                continue
-
-            # 临时关闭 lightmap UV 生成
-            smes = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
-            orig_build = smes.get_lod_build_settings(mesh, 0)
-            orig_gen_lm = orig_build.generate_lightmap_u_vs
-            if orig_gen_lm:
-                orig_build.generate_lightmap_u_vs = False
-                smes.set_lod_build_settings(mesh, 0, orig_build)
-
-            vi_count = md.get_vertex_instance_count()
-            changed = 0
-            for i in range(vi_count):
-                vi = unreal.VertexInstanceID(i)
-                uv = md.get_vertex_instance_uv(vi, uv_channel)
-                new_u = (uv.x - u_min) / u_span if u_span > 0 else 0.0
-                new_v = (uv.y - v_min) / v_span if v_span > 0 else 0.0
-                md.set_vertex_instance_uv(vi, unreal.Vector2D(new_u, new_v), uv_channel)
-                changed += 1
-            mesh.build_from_static_mesh_descriptions([md])
-
-            # 恢复 build settings
-            if orig_gen_lm:
-                orig_build.generate_lightmap_u_vs = True
-                smes.set_lod_build_settings(mesh, 0, orig_build)
-
-            unreal.EditorAssetLibrary.save_asset(mp)
-            results.append({"path": mp.split("/")[-1], "vi_remapped": changed})
+            count = unreal.MeshUVOpsAPI.remap_mesh_uv(mp, uv_channel, offset, scale, 0)
+            if count >= 0:
+                results.append({"path": mp.split("/")[-1], "vi_remapped": count})
+            else:
+                results.append({"path": mp.split("/")[-1], "error": "remap failed"})
 
         return results
 
     def _reimport_textures(tex_targets, crop_report):
-        """Step 5: 导入裁切后的贴图替换原资产。"""
+        """Step: 导入裁切后的贴图替换原资产。
+        
+        ⚠️ 不调用 save_asset — 项目可能有 AssetAuditor 插件，
+        save 时会自动触发审计（弹对话框、修改压缩格式等），
+        打乱渲染资源状态，导致后续 build mesh crash。
+        贴图导入后标记 dirty，让用户手动保存或工具最后统一保存。
+        """
         results = []
         for pname, tinfo in tex_targets.items():
             cr = crop_report.get(pname, {})
@@ -260,9 +261,9 @@ def uv_texture_optimize(**raw_params):
                 imported.srgb = orig_srgb
                 imported.compression_settings = orig_compression
                 imported.mip_gen_settings = unreal.TextureMipGenSettings.TMGS_FROM_TEXTURE_GROUP
-                saved = unreal.EditorAssetLibrary.save_asset(ue_path)
+                # 不 save — 避免触发 AssetAuditor
                 results.append({
-                    "param": pname, "success": True, "saved": saved,
+                    "param": pname, "success": True,
                     "size": [imported.blueprint_get_size_x(), imported.blueprint_get_size_y()],
                 })
             else:
@@ -322,24 +323,45 @@ def uv_texture_optimize(**raw_params):
             w, h = tinfo["size"]
             u_span = uv_bbox["u_max"] - uv_bbox["u_min"]
             v_span = min(1.0, uv_bbox["v_max"]) - max(0.0, uv_bbox["v_min"])
-            new_w = _best_size(math.ceil(u_span * w) + padding_px * 2)
-            new_h = _best_size(math.ceil(v_span * h) + padding_px * 2)
+            new_w = math.ceil(u_span * w) + padding_px * 2
+            new_h = math.ceil(v_span * h) + padding_px * 2
             saved = round((1 - new_w * new_h / (w * h)) * 100, 1)
             lines.append(f"  [{pname}] {tinfo['ue_path']}")
             lines.append(f"    {w}×{h} → {new_w}×{new_h}  省 {saved}%")
         return {"success": True, "dry_run": True, "report": "\n".join(lines)}
 
-    # Step 2: 导出
+    # Step 2: 导出原始贴图
     _export_textures(tex_targets, orig_dir)
 
-    # Step 3: 裁切
+    # Step 3: 裁切贴图（PIL，纯文件操作，不触发 UE）
     crop_report = _crop_textures(tex_targets, uv_bbox, padding_px, crop_dir)
 
-    # Step 4: 重映射 UV
+    # Step 4: 重映射 UV + build mesh（先于贴图导入！）
+    # ⚠️ 执行顺序至关重要：
+    # build_from_static_mesh_descriptions 和 import_asset_tasks 都会释放/重建渲染资源。
+    # 如果先 import 贴图再 build mesh，两者释放的渲染资源会冲突导致 UE crash:
+    #   "A FRenderResource was deleted without being released first!"
+    # 所以必须先完成所有 mesh build，最后再导入贴图。
     remap_results = _remap_uvs(mesh_paths, uv_bbox, uv_channel)
 
-    # Step 5: 导入裁切贴图
+    # Step 5: 导入裁切贴图（mesh build 全部完成后）
     import_results = _reimport_textures(tex_targets, crop_report)
+
+    # Step 6: 统一保存所有修改（贴图 + mesh）
+    # 放在最后，避免中途 save 触发 AssetAuditor 插件干扰渲染资源
+    saved_assets = []
+    for pname, tinfo in tex_targets.items():
+        try:
+            unreal.EditorAssetLibrary.save_asset(tinfo["ue_path"])
+            saved_assets.append(tinfo["ue_path"])
+        except Exception:
+            pass
+    for mp in mesh_paths:
+        try:
+            unreal.EditorAssetLibrary.save_asset(mp)
+            saved_assets.append(mp)
+        except Exception:
+            pass
 
     # 汇总
     report_lines = [
@@ -368,8 +390,15 @@ def uv_texture_optimize(**raw_params):
     }
 
 
-# --- ArtClaw Tool Manager: auto-call ---
-import json as _json
-_result = uv_texture_optimize(**{'material_instance_path': '/Game/Scenes/Prop/Module/Catwalk/Material/aa_TEST_MI_Props_WallRail', 'texture_param_names': '', 'uv_channel': 0, 'padding_px': 4, 'export_dir': '', 'dry_run': False})
-if _result is not None:
-    print(_json.dumps(_result, ensure_ascii=False, default=str))
+# --- ArtClaw Tool Manager auto-call ---
+# 由 Tool Manager _execute_on_dcc 动态注入参数调用，
+# 此处仅作 guard，不硬编码参数。
+if __name__ == "__main__":
+    import json as _json, sys as _sys
+    # 支持命令行: python main.py '{"material_instance_path": "..."}'
+    if len(_sys.argv) > 1:
+        _params = _json.loads(_sys.argv[1])
+        _result = uv_texture_optimize(**_params)
+        print(_json.dumps(_result, ensure_ascii=False, default=str))
+
+

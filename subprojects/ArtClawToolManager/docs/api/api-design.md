@@ -470,7 +470,7 @@ POST /tools/{id}/execute
     "use_numbers": true
   },
   "context": {
-    "dcc": "ue57",
+    "dcc": "ue5",
     "sessionId": "session-123"
   }
 }
@@ -505,10 +505,10 @@ POST /tools
   "name": "批量重命名",
   "description": "批量重命名选中对象",
   "category": "场景管理",
-  "targetDCCs": ["ue57"],
+  "targetDCCs": ["ue5"],
   "implementation": {
     "type": "skill_wrapper",
-    "skill": "ue57-artclaw-highlight"
+    "skill": "ue5-artclaw-highlight"
   },
   "inputs": [
     {

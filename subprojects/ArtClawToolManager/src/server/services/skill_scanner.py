@@ -197,9 +197,10 @@ def _parse_skill_md(skill_dir: Path) -> Optional[ScannedSkill]:
 
 # software field → standard DCC id mapping
 _SOFTWARE_TO_DCC = {
-    "unreal_engine": "ue57",
-    "ue": "ue57",
-    "ue5": "ue57",
+    "unreal_engine": "ue5",
+    "ue": "ue5",
+    "ue5": "ue5",
+    "ue57": "ue5",  # backward-compat alias
     "maya": "maya2024",
     "3ds_max": "max2024",
     "3dsmax": "max2024",
@@ -213,7 +214,7 @@ _SOFTWARE_TO_DCC = {
 # Skill name prefix → DCC id mapping (fallback when no dcc/software in frontmatter).
 # NOTE: used only for DCC inference, NOT for source classification.
 _NAME_PREFIX_TO_DCC = {
-    "ue57": "ue57",
+    "ue5": "ue5",
     "blender-": "blender",
     "maya-": "maya2024",
     "max-": "max2024",
@@ -221,13 +222,13 @@ _NAME_PREFIX_TO_DCC = {
     "sp-": "sp",
     "sd-": "sd",
     "houdini-": "houdini",
-    "generate-material": "ue57",
-    "get-material": "ue57",
+    "generate-material": "ue5",
+    "get-material": "ue5",
 }
 
 # Explicit overrides for skills whose name prefix is misleading
 _NAME_DCC_OVERRIDES = {
-    "artclaw-material": ["ue57"],
+    "artclaw-material": ["ue5"],
 }
 
 
@@ -361,7 +362,7 @@ def _scan_source_directories() -> Dict[str, "SourceEntry"]:
 # This is the authoritative source for target_dccs — takes priority over
 # frontmatter fields (dcc / software) and name-prefix heuristics.
 _DIR_TO_DCC: Dict[str, List[str]] = {
-    "unreal":             ["ue57"],
+    "unreal":             ["ue5"],
     "maya":               ["maya2024"],
     "max":                ["max2024"],
     "blender":            ["blender"],

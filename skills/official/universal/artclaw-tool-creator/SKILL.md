@@ -98,13 +98,15 @@ Agent: [生成脚本预览] 确认创建工具？
 
 **生成的脚本必须遵循以下规则**：
 
-- MUST 使用 DCC 原生 API（UE: `import unreal`，Maya: `import maya.cmds`，Blender: `import bpy`）
-- ⛔ MUST NOT `import artclaw_sdk` — 该模块不存在
+- MUST 优先使用 `artclaw_sdk` 统一 API（参数解析、对象筛选、结果上报）
+- 对于 `artclaw_sdk` 不覆盖的 DCC 专有操作，使用原生 API（UE: `import unreal`，Maya: `import maya.cmds`，Blender: `import bpy`）
 - ⛔ MUST NOT `import subprocess` — 会被 UE 安全扫描器拦截
 - MUST 入口函数使用 `**kwargs` 签名（Tool Manager 通过 keyword arguments 调用）
 - MUST 返回 dict 结果（`{"success": True/False, ...}`）
 - 可以使用 `PIL`/`Pillow`（UE Python 环境已内置）
 - 可以使用 `os`, `json`, `math` 等标准库（除 subprocess）
+- 如果工具有筛选条件需求，优先使用 `artclaw_sdk.filters` 和 manifest 的 `defaultFilters` 机制
+- 如果工具有参数校验需求，优先使用 `artclaw_sdk.params.parse_params(manifest_inputs, raw_params)`
 
 **脚本模板**：
 ```python
@@ -112,9 +114,15 @@ Agent: [生成脚本预览] 确认创建工具？
 工具名称
 工具描述（一行）。
 """
-import unreal  # 或其他 DCC 原生 API
 import os
 import json
+
+# artclaw_sdk: 参数解析 + 对象筛选 + 结果上报
+from artclaw_sdk import params, filters, result, context
+# DCC 原生 API（按需导入）
+# import unreal  # UE
+# import maya.cmds as cmds  # Maya
+# import bpy  # Blender
 
 
 def _helper_function():
@@ -124,12 +132,18 @@ def _helper_function():
 
 def main_function(**kwargs):
     """入口函数。kwargs 由 Tool Manager 传入。"""
-    param1 = kwargs.get("param1", "")
-    param2 = int(kwargs.get("param2", 0))
-    dry_run = bool(kwargs.get("dry_run", False))
+    # 参数解析（自动类型转换 + required 校验）
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+    parsed = params.parse_params(manifest.get("inputs", []), kwargs)
+    
+    param1 = parsed.get("param1", "")
+    dry_run = parsed.get("dry_run", False)
 
-    if not param1:
-        return {"success": False, "error": "请填写参数1"}
+    # 对象筛选（如果工具有筛选需求）
+    # selected = context.get_selected()
+    # meshes = filters.filter_by_type(selected, "MESH")
 
     # ... 业务逻辑 ...
 
@@ -318,6 +332,35 @@ def _get_scan_dirs():
     return dirs or [default_dir]
 ```
 
+#### 脚本中的对象筛选（artclaw_sdk.filters + manifest 联动）
+
+当工具需要在 DCC 场景中筛选对象时，**优先使用 `artclaw_sdk.filters`**，而不是硬编码筛选逻辑。manifest 中 `defaultFilters.typeFilter.types` 定义的类型列表可直接传给 SDK：
+
+```python
+import json, os
+from artclaw_sdk import filters, context
+
+# 从 manifest 读取类型筛选
+manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+with open(manifest_path, "r", encoding="utf-8") as f:
+    manifest = json.load(f)
+
+type_filter = manifest.get("defaultFilters", {}).get("typeFilter", {}).get("types", [])
+selected = context.get_selected()
+
+if type_filter:
+    matched = filters.filter_by_type(selected, type_filter)
+else:
+    matched = selected  # 无类型筛选，全选
+
+# 可叠加 name/path 筛选
+name_rules = manifest.get("defaultFilters", {}).get("sceneRules", [])
+for rule in name_rules:
+    matched = filters.filter_by_name(matched, rule["pattern"], use_regex=rule.get("isRegex", False))
+```
+
+**关键原则**：筛选逻辑来自 manifest `defaultFilters`，不是脚本硬编码。用户通过 Tool Manager UI 修改筛选条件后，脚本行为自动跟随变化。
+
 ### targetDCCs 推断规则
 
 `targetDCCs` 表示工具适用的 DCC 范围。**AI 必须根据工具功能自动推断，不要让用户手动选择。**
@@ -336,7 +379,7 @@ def _get_scan_dirs():
 - **skill_wrapper 类型**：继承被包装 Skill 的 `target-dccs`；如果 Skill 的 target-dccs 为空或包含所有 DCC，则设为 `[]`
 - **composite 类型**：取所有子工具 `targetDCCs` 的交集；如果有任一子工具为 `[]`（通用），该子工具不限制交集
 
-**有效的 DCC 标识符**：`ue57`, `maya`, `max`, `blender`, `comfyui`, `substance-designer`, `substance-painter`, `houdini`
+**有效的 DCC 标识符**：`ue5`, `maya`, `max`, `blender`, `comfyui`, `substance-designer`, `substance-painter`, `houdini`
 
 ### DCC MCP Tool Name 映射
 
@@ -344,7 +387,7 @@ def _get_scan_dirs():
 
 | DCC | MCP Tool Name | 说明 |
 |-----|--------------|------|
-| `ue57` | `run_ue_python` | UE 专用，注意不是 run_python |
+| `ue5` | `run_ue_python` | UE 专用，注意不是 run_python |
 | `maya` | `run_python` | — |
 | `max` | `run_python` | — |
 | `blender` | `run_python` | — |
@@ -374,7 +417,8 @@ def _get_scan_dirs():
 
 - [ ] manifest.json 包含所有必需字段（id, name, implementation.type）
 - [ ] targetDCCs 已按推断规则正确设置（通用工具为 `[]`，非通用列出具体 DCC）
-- [ ] ⛔ 脚本不包含 `import artclaw_sdk`（该模块不存在）
+- [ ] 脚本优先使用 `artclaw_sdk`（params 解析、filters 筛选、result 上报）
+- [ ] 脚本 DCC 专有操作使用原生 API（UE: `unreal`，Maya: `maya.cmds`，Blender: `bpy`）
 - [ ] ⛔ 脚本不包含 `import subprocess`（UE 安全扫描器会拦截）
 - [ ] 入口函数使用 `**kwargs` 签名（不是 `raw_params` 或固定参数名）
 - [ ] 入口函数返回 dict（`{"success": True/False, ...}`）
@@ -452,9 +496,51 @@ def _get_scan_dirs():
 4. **代码生成**：基于 artclaw_sdk 模板生成符合规范的脚本
 5. **预览确认**：展示最终结果前让用户确认
 
-## DCC 原生 API 快速参考
+## artclaw_sdk 速查
 
-### UE (targetDCCs: ["ue57"])
+SDK 位于 `core/artclaw_sdk/`，自动检测当前 DCC 环境，提供跨平台统一 API。
+
+### 参数解析
+```python
+from artclaw_sdk import params
+# 根据 manifest inputs 定义自动校验+类型转换
+parsed = params.parse_params(manifest_inputs, raw_kwargs)
+# 获取默认值
+defaults = params.get_default_values(manifest_inputs)
+```
+
+### 对象筛选
+```python
+from artclaw_sdk import filters, context
+selected = context.get_selected()
+# 按类型筛选
+meshes = filters.filter_by_type(selected, ["MESH", "StaticMesh"])
+# 按名称 pattern 筛选
+matched = filters.filter_by_name(selected, "SM_Wall_*", use_regex=False)
+# 按路径 pattern 筛选
+found = filters.filter_by_path(selected, "/Game/Props/.*", use_regex=True)
+# 组合筛选
+result = filters.filter_objects(selected, type="MESH", name_pattern="SM_*")
+```
+
+### 结果上报
+```python
+from artclaw_sdk import result
+result.success(data={"count": 10})
+result.error("操作失败: xxx")
+```
+
+### 进度条
+```python
+from artclaw_sdk import progress
+progress.start(total=100, label="处理中...")
+progress.update(50, "已完成一半")
+progress.finish()
+```
+
+## DCC 原生 API 快速参考（artclaw_sdk 不覆盖时使用）
+
+### UE (targetDCCs: ["ue5"])
 ```python
 import unreal
 mesh = unreal.load_asset('/Game/Path/Mesh')
@@ -474,6 +560,6 @@ import bpy
 selected = bpy.context.selected_objects
 ```
 
-> ⛔ 不要使用 `artclaw_sdk` — 该模块未实现。直接使用上述 DCC 原生 API。
+> 对于 artclaw_sdk 可覆盖的操作（选中对象、类型筛选、参数解析），优先用 SDK。对于 DCC 专有操作（如 UE 的 build_from_mesh_descriptions），使用上述原生 API。
 
 此 Skill 为 ArtClaw 工具生态的核心组件，通过 AI 引导大幅简化自定义工具创建流程。

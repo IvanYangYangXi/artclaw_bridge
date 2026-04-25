@@ -2,7 +2,7 @@
 import type { Language } from '../types'
 
 export const DCC_TYPE_PRESETS: Record<string, string[]> = {
-  ue57: ['AActor', 'UObject', 'UStaticMesh', 'USkeletalMesh', 'UMaterial', 'UMaterialInstance', 'UTexture2D', 'UBlueprint', 'UWorld', 'UStaticMeshComponent'],
+  ue5: ['AActor', 'UObject', 'UStaticMesh', 'USkeletalMesh', 'UMaterial', 'UMaterialInstance', 'UTexture2D', 'UBlueprint', 'UWorld', 'UStaticMeshComponent'],
   maya2024: ['mesh', 'nurbsSurface', 'nurbsCurve', 'joint', 'camera', 'light', 'transform', 'locator'],
   max2024: ['Editable_Mesh', 'Editable_Poly', 'Bone', 'Camera', 'Light', 'Spline', 'Helper'],
   blender: ['MESH', 'ARMATURE', 'CURVE', 'SURFACE', 'CAMERA', 'LIGHT', 'EMPTY', 'FONT', 'GPENCIL'],
@@ -19,7 +19,7 @@ export interface DCCEventDef {
 }
 
 export const DCC_EVENTS: Record<string, DCCEventDef[]> = {
-  ue57: [
+  ue5: [
     { event: 'asset.save.pre',   label: '保存拦截',   labelEn: 'Save Intercept',    timing: ['pre'] },
     { event: 'asset.save',       label: '资源保存',   labelEn: 'Asset Save',         timing: ['post'] },
     { event: 'asset.import.pre', label: '导入拦截',   labelEn: 'Import Intercept',   timing: ['pre'] },
@@ -66,7 +66,7 @@ export function getEventLabel(dcc: string, event: string, language: Language): s
 
 /** Get DCC display name */
 export const DCC_DISPLAY_NAMES: Record<string, string> = {
-  ue57: 'UE5',
+  ue5: 'UE5',
   maya2024: 'Maya',
   max2024: '3ds Max',
   blender: 'Blender',

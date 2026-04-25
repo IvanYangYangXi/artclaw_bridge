@@ -32,7 +32,7 @@ PING_TIMEOUT_S: float = 5.0
 
 # Default well-known DCC adapter ports
 DEFAULT_DCC_PORTS: Dict[str, int] = {
-    "ue57": 8080,
+    "ue5": 8080,
     "maya2024": 8081,
     "max2024": 8082,
     "blender": 8083,
@@ -44,7 +44,7 @@ DEFAULT_DCC_PORTS: Dict[str, int] = {
 
 # MCP tool name varies by DCC type
 DCC_TOOL_NAMES: Dict[str, str] = {
-    "ue57": "run_ue_python",
+    "ue5": "run_ue_python",
     # All others use run_python (default)
 }
 
@@ -216,7 +216,8 @@ class DCCManager:
 
     # Map manifest targetDCCs values → dcc_type keys in _statuses
     _TARGET_DCC_MAP: Dict[str, str] = {
-        "ue57": "ue57",
+        "ue5": "ue5",
+        "ue57": "ue5",  # backward-compat alias
         "maya": "maya2024",
         "max": "max2024",
         "blender": "blender",

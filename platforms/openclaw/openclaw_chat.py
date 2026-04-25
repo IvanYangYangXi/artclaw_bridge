@@ -148,10 +148,10 @@ def _build_context_prefix() -> str:
         "- 本地文件读写、以及其他不依赖 UE 环境的任务，直接使用自身能力处理"
     )
     try:
-        from memory_store import get_memory_manager
-        mm = get_memory_manager()
-        if mm:
-            briefing = mm.export_briefing()
+        from core.memory_store import get_memory_store
+        store = get_memory_store()
+        if store:
+            briefing = store.manager.export_briefing()
             if briefing:
                 lines.append(briefing)
     except Exception:
