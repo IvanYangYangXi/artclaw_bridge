@@ -9,6 +9,11 @@
   "targetDCCs": [
     "ue5"
   ],
+  "defaultFilters": {
+    "typeFilter": {
+      "source": "parameter"
+    }
+  },
   "implementation": {
     "type": "script",
     "entry": "main.py",

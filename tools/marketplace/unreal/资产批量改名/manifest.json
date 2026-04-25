@@ -8,6 +8,11 @@
   "targetDCCs": ["ue5"],
   "createdAt": "2026-04-24 18:30:00",
   "updatedAt": "2026-04-24 18:30:00",
+  "defaultFilters": {
+    "typeFilter": {
+      "source": "selection"
+    }
+  },
   "implementation": {
     "type": "script",
     "entry": "main.py",

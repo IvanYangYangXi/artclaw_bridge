@@ -8,6 +8,17 @@ ArtClaw Tool Compliance Checker v3.0
   优先从自身 manifest.json 的 defaultFilters.path 读取（$variable 路径变量）
   手动运行 / watch 触发 / 定时触发 共用同一套路径。
 """
+# ── SDK 头 ──
+import os as _os, json as _json_mod
+import artclaw_sdk as sdk
+
+def _load_manifest():
+    return _json_mod.loads(
+        open(_os.path.join(_os.path.dirname(__file__), "manifest.json"),
+             encoding="utf-8").read()
+    )
+# ── SDK 头结束 ──
+
 import json
 import re
 import os
@@ -119,7 +130,7 @@ def _get_source_tool_names(project_root: str) -> set:
     return names
 
 
-def check_compliance(tools_dir: str = "", fix_simple: bool = False, source_only: bool = True) -> Dict[str, Any]:
+def check_compliance(**kwargs) -> Dict[str, Any]:
     """
     检查工具合规性。
     
@@ -136,6 +147,12 @@ def check_compliance(tools_dir: str = "", fix_simple: bool = False, source_only:
     Returns:
         检查结果字典: {total_checked, issues_found, issues: [...], report}
     """
+    manifest = _load_manifest()
+    parsed = sdk.params.parse_params(manifest.get("inputs", []), kwargs)
+    
+    tools_dir = parsed.get("tools_dir", "")
+    fix_simple = parsed.get("fix_simple", False)
+    source_only = parsed.get("source_only", True)
     # 路径解析：manifest filters 优先
     if tools_dir:
         scan_dirs = [str(Path(tools_dir).expanduser())]
@@ -147,12 +164,13 @@ def check_compliance(tools_dir: str = "", fix_simple: bool = False, source_only:
     # 验证至少有一个有效目录
     valid_dirs = [d for d in scan_dirs if Path(d).exists()]
     if not valid_dirs:
-        return {
+        return sdk.result.fail("NO_VALID_DIRS", f"工具目录不存在: {', '.join(scan_dirs)}", data={
             "total_checked": 0,
             "issues_found": 0,
             "issues": [],
-            "report": f"工具目录不存在: {', '.join(scan_dirs)}"
-        }
+            "report": f"工具目录不存在: {', '.join(scan_dirs)}",
+            "success": False
+        })
     
     # 获取源码工具名集合
     variables = _resolve_path_variables()
@@ -162,12 +180,13 @@ def check_compliance(tools_dir: str = "", fix_simple: bool = False, source_only:
         try:
             source_names = _get_source_tool_names(project_root)
         except RuntimeError as e:
-            return {
+            return sdk.result.fail("GET_SOURCE_ERROR", str(e), data={
                 "total_checked": 0,
                 "issues_found": 1,
                 "issues": [{"tool_id": "system", "severity": "error", "message": str(e)}],
-                "report": f"❌ 无法获取源码工具列表：{e}\n\n请检查 ArtClaw 安装配置。"
-            }
+                "report": f"❌ 无法获取源码工具列表：{e}\n\n请检查 ArtClaw 安装配置。",
+                "success": False
+            })
     else:
         source_names = None  # 检查全部
 
@@ -218,12 +237,18 @@ def check_compliance(tools_dir: str = "", fix_simple: bool = False, source_only:
     # 调用报警 API
     _update_alerts(issues)
     
-    return {
+    result_data = {
         "total_checked": total_checked,
         "issues_found": len(issues),
         "issues": issues,
-        "report": report
+        "report": report,
+        "success": len(issues) == 0
     }
+    
+    if len(issues) == 0:
+        return sdk.result.success(data=result_data, message=report)
+    else:
+        return sdk.result.fail("COMPLIANCE_ISSUES", report, data=result_data)
 
 
 def _check_tool_compliance(tool_dir: Path, tool_id: str, fix_simple: bool) -> List[Dict[str, str]]:
@@ -535,6 +560,79 @@ def _check_tool_compliance(tool_dir: Path, tool_id: str, fix_simple: bool) -> Li
         if val and not ts_pattern.match(str(val)):
             issues.append({"tool_id": tool_id, "severity": "warning",
                             "message": f"{ts_field} 格式不正确: {val!r}，应为 YYYY-MM-DD HH:MM:SS"})
+
+    # ── Rule 30-34: artclaw_sdk 合规检查 ──────────────────────────────────
+    entry_file = impl.get("entry", "main.py") if impl else "main.py"
+    entry_path_file = tool_dir / entry_file
+    if entry_path_file.exists() and impl.get("type") == "script":
+        try:
+            script_source = entry_path_file.read_text(encoding="utf-8")
+            import ast
+            tree = ast.parse(script_source)
+
+            # Rule 30: main.py 必须 import artclaw_sdk
+            has_sdk_import = False
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if "artclaw_sdk" in alias.name:
+                            has_sdk_import = True
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module and "artclaw_sdk" in node.module:
+                        has_sdk_import = True
+            if not has_sdk_import:
+                issues.append({"tool_id": tool_id, "severity": "error",
+                              "message": "main.py 未 import artclaw_sdk（所有工具必须使用 SDK）"})
+
+            # Rule 31: 入口函数应调用 parse_params
+            func_name = impl.get("function", "") if impl else ""
+            if func_name and has_sdk_import:
+                has_parse_params = any(
+                    isinstance(node, ast.Attribute) and node.attr == "parse_params"
+                    for node in ast.walk(tree)
+                )
+                if not has_parse_params:
+                    issues.append({"tool_id": tool_id, "severity": "warning",
+                                  "message": "入口函数未调用 parse_params（建议使用 SDK 参数解析）"})
+
+            # Rule 33: 不应包含与 SDK 功能重复的 DCC 原生调用
+            if has_sdk_import:
+                sdk_overlap_attrs = {"get_selected_assets", "get_selected_level_actors", "selected_objects"}
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Attribute) and node.attr in sdk_overlap_attrs:
+                        issues.append({"tool_id": tool_id, "severity": "warning",
+                                      "message": f"脚本直接调用 .{node.attr}()，建议改用 sdk.context 对应 API"})
+                        break
+
+            # Rule 34: 返回值应包含 success 字段
+            if func_name:
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.FunctionDef) and node.name == func_name:
+                        has_success_return = False
+                        for child in ast.walk(node):
+                            if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
+                                if child.func.attr in ("success", "fail", "error"):
+                                    has_success_return = True
+                                    break
+                            if isinstance(child, ast.Return) and isinstance(child.value, ast.Dict):
+                                for key in child.value.keys:
+                                    if isinstance(key, ast.Constant) and key.value == "success":
+                                        has_success_return = True
+                                        break
+                        if not has_success_return:
+                            issues.append({"tool_id": tool_id, "severity": "warning",
+                                          "message": "入口函数返回值建议使用 sdk.result.success/fail"})
+                        break
+        except SyntaxError:
+            pass
+
+    # Rule 32: DCC 工具应有 defaultFilters.typeFilter
+    real_dccs = [d for d in target_dccs if d and d != "general"]
+    if real_dccs:
+        type_filter = manifest.get("defaultFilters", {}).get("typeFilter", None)
+        if type_filter is None:
+            issues.append({"tool_id": tool_id, "severity": "warning",
+                          "message": "DCC 工具建议设置 defaultFilters.typeFilter（声明对象类型筛选条件）"})
 
     return issues
 

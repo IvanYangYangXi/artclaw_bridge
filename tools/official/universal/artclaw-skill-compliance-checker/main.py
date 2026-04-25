@@ -18,6 +18,17 @@ ArtClaw Skill Version Checker v4
   hash 不同 + 版本相同/均空           → modified  (本地有改动未发布，"发布"按钮)
   两侧都有更新（mtime 双向新）        → conflict  (需手动处理)
 """
+# ── SDK 头 ──
+import os as _os, json as _json_mod
+import artclaw_sdk as sdk
+
+def _load_manifest():
+    return _json_mod.loads(
+        open(_os.path.join(_os.path.dirname(__file__), "manifest.json"),
+             encoding="utf-8").read()
+    )
+# ── SDK 头结束 ──
+
 from __future__ import annotations
 
 import hashlib
@@ -549,7 +560,7 @@ def _check_dcc_installs(dcc_install_dirs: List[Dict]) -> List[Dict[str, Any]]:
 # 主入口
 # ============================================================================
 
-def check_skill_versions() -> Dict[str, Any]:
+def check_skill_versions(**kwargs) -> Dict[str, Any]:
     """
     全自动检查 Skill 版本与多位置一致性。
 
@@ -565,6 +576,8 @@ def check_skill_versions() -> Dict[str, Any]:
           report: str,
         }
     """
+    manifest = _load_manifest()
+    parsed = sdk.params.parse_params(manifest.get("inputs", []), kwargs)
     checker_dirs = _get_checker_dirs()
     platform_type = checker_dirs.get("platform_type", "openclaw")
     installed_path = checker_dirs.get("skills_installed_path", "")
@@ -573,12 +586,13 @@ def check_skill_versions() -> Dict[str, Any]:
     installed_dir = Path(installed_path).expanduser() if installed_path else None
 
     if not installed_dir or not installed_dir.exists():
-        return {
+        return sdk.result.fail("NO_SKILL_DIR", f"Skill 目录不存在: {installed_dir}（平台: {platform_type}）", data={
             "platform_type": platform_type,
             "total_checked": 0, "updates_available": 0, "conflicts": 0,
             "skills": [], "core_issues": [], "dcc_issues": [], "dep_issues": [],
             "report": f"Skill 目录不存在: {installed_dir}（平台: {platform_type}）",
-        }
+            "success": False
+        })
 
     # ── A. Skill installed vs source ──────────────────────────────────────
     source_map = _scan_source_skills(project_root) if project_root else {}
@@ -596,7 +610,7 @@ def check_skill_versions() -> Dict[str, Any]:
     report = _generate_report(platform_type, skills, core_issues, dcc_issues, dep_issues)
     _update_alerts(updates, conflicts, skills, core_issues, dcc_issues, dep_issues)
 
-    return {
+    result_data = {
         "platform_type": platform_type,
         "total_checked": len(skills),
         "updates_available": updates,
@@ -606,7 +620,13 @@ def check_skill_versions() -> Dict[str, Any]:
         "dcc_issues": dcc_issues,
         "dep_issues": dep_issues,
         "report": report,
+        "success": updates == 0 and conflicts == 0 and len(core_issues) == 0 and len(dcc_issues) == 0 and len(dep_issues) == 0
     }
+    
+    if result_data["success"]:
+        return sdk.result.success(data=result_data, message=report)
+    else:
+        return sdk.result.fail("ISSUES_FOUND", report, data=result_data)
 
 
 # ============================================================================

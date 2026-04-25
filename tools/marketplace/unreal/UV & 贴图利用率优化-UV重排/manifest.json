@@ -9,6 +9,12 @@
   "targetDCCs": [
     "ue5"
   ],
+  "defaultFilters": {
+    "typeFilter": {
+      "types": ["StaticMesh"],
+      "source": "selection"
+    }
+  },
   "implementation": {
     "type": "script",
     "entry": "main.py",

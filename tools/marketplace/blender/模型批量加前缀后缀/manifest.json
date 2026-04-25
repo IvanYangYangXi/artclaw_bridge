@@ -10,6 +10,11 @@
   ],
   "createdAt": "2026-04-13 18:00:00",
   "updatedAt": "2026-04-13 21:30:00",
+  "defaultFilters": {
+    "typeFilter": {
+      "source": "selection"
+    }
+  },
   "implementation": {
     "type": "script",
     "entry": "main.py",
