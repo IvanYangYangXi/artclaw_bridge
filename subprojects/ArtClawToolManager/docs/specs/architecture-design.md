@@ -15,7 +15,7 @@ ArtClaw 工具生态 - 三层概念模型
 │
 ├── 【Skill】AI 操作指南
 │   ├── 定义: 指导 AI Agent 如何完成特定任务的文档
-│   ├── 示例: comfyui-txt2img、ue57-material-node-edit
+│   ├── 示例: comfyui-txt2img、ue5-material-node-edit
 │   ├── 特点: 只读、文本形式、由 ArtClaw 或社区维护
 │   └── 用途: 告诉 AI "如何"操作 DCC 软件
 │
@@ -75,12 +75,12 @@ ArtClaw 工具生态 - 三层概念模型
 ArtClaw 工具生态 - 三层来源
 │
 ├── 官方层（ArtClaw 维护）
-│   ├── Official Skills          → ~/.openclaw/skills/
+│   ├── Official Skills          → ~/.openclaw/workspace/skills/
 │   ├── Official Workflows       → {project_root}/workflows/
 │   └── Official Tools           → {project_root}/tools/
 │
 ├── 市集层（社区）
-│   ├── Marketplace Skills       → ~/.openclaw/skills/
+│   ├── Marketplace Skills       → ~/.openclaw/workspace/skills/
 │   ├── Marketplace Workflows    → {project_root}/workflows/
 │   └── Marketplace Tools        → {project_root}/tools/
 │
@@ -113,7 +113,7 @@ ArtClaw 工具生态 - 三层来源
 │  │  │ • 工具调用  │  │             │  │                 │   │   │
 │  │  └─────────────┘  └─────────────┘  └─────────────────┘   │   │
 │  │  ┌──────────────────────────────────────────────────┐     │   │
-│  │  │ 📌 钉选 Skill 标签: [comfyui-txt2img] [ue57-op] │     │   │
+│  │  │ 📌 钉选 Skill 标签: [comfyui-txt2img] [ue5-op] │     │   │
 │  │  └──────────────────────────────────────────────────┘     │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                              │                                   │
@@ -290,7 +290,7 @@ interface ToolItem {
   description: string;           // 简短描述
   type: 'skill' | 'workflow' | 'tool';
   source: 'official' | 'marketplace' | 'user';
-  targetDCCs: string[];          // ["ue57", "comfyui", "maya2024"]
+  targetDCCs: string[];          // ["ue5", "comfyui", "maya2024"]
   
   // 状态（Skill/Workflow 有 disabled 状态，Tool 没有）
   status: 'not_installed' | 'installed' | 'update_available' | 'disabled';
@@ -305,7 +305,7 @@ interface ToolItem {
   
   // 本地路径信息
   paths: {
-    installed: string;           // 安装目录 (如 ~/.openclaw/skills/xxx 或 ~/.artclaw/tools/user/xxx)
+    installed: string;           // 安装目录 (如 ~/.openclaw/workspace/skills/xxx 或 ~/.artclaw/tools/user/xxx)
     source?: string;             // 源码目录 (如 artclaw_bridge/skills/xxx, 仅有源码时存在)
   };
   
@@ -527,7 +527,7 @@ Tool 状态流转（无禁用）:
 | 启用/禁用 | `enable_skill()` / `disable_skill()` | 控制 Skill 是否加载 |
 | 钉选 | config.json `pinned_skills` | 钉选后在对话面板显示标签 |
 | 收藏 | config.json `skills.favorites` | 收藏后可通过收藏筛选快速找到 |
-| 打开安装目录 | — | 在文件管理器中打开 `~/.openclaw/skills/{name}/` |
+| 打开安装目录 | — | 在文件管理器中打开 `~/.openclaw/workspace/skills/{name}/` |
 | 打开源码目录 | — | 在文件管理器中打开源码仓库中的 Skill 目录（如有） |
 | 文档 | — | 打开 SKILL.md 查看 |
 
@@ -623,7 +623,7 @@ Tool 状态流转（无禁用）:
             manifest.json
             main.py
 
-~/.openclaw/skills/              # Skill（与 OpenClaw 共享，Skill 有自己的同步机制）
+~/.openclaw/workspace/skills/              # Skill（与 OpenClaw 共享，Skill 有自己的同步机制）
 ```
 
 **与 Skill 的区别**:
@@ -717,7 +717,7 @@ ArtClawToolManager/
 - Tool 新增 DCC 软件筛选器
 - ToolData 新增 presets 字段（参数预设列表）
 - ToolItem 新增 paths 字段（安装/源码目录路径）
-- 明确存储路径: Skills→~/.openclaw/skills/, Workflows→~/.artclaw/workflows/, Tools→~/.artclaw/tools/
+- 明确存储路径: Skills→~/.openclaw/workspace/skills/, Workflows→~/.artclaw/workflows/, Tools→~/.artclaw/tools/
 - 对话面板新增钉选 Skill 标签展示区
 
 ### v3.0 (2026-04-10)

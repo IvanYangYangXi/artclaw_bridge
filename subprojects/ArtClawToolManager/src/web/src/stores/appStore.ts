@@ -50,7 +50,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   dccOptions: [
     { id: 'comfyui', name: 'ComfyUI', icon: '🎨', connected: false },
-    { id: 'ue57', name: 'UE5', icon: '🎮', connected: false },
+    { id: 'ue5', name: 'UE5', icon: '🎮', connected: false },
     { id: 'maya2024', name: 'Maya', icon: '🗿', connected: false },
     { id: 'max2024', name: '3ds Max', icon: '📐', connected: false },
     { id: 'blender', name: 'Blender', icon: '🧊', connected: false },

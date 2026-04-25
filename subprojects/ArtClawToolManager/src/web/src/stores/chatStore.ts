@@ -355,6 +355,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         JSON.stringify(ctx.values, null, 2),
         '```',
         '',
+        `⚠️ 执行方式: 用户说"运行/执行"时，通过 Tool Manager Execute API 调用（不要自己写脚本执行）:`,
+        `curl -s -X POST "http://localhost:9877/api/v1/tools/${encodeURIComponent(ctx.id)}/execute" -H "Content-Type: application/json" -d '{"parameters": <当前参数值JSON>}'`,
+        `详细规范见: ~/.openclaw/workspace/skills/artclaw-tool-executor/SKILL.md`,
+        '',
         '如需帮用户填写参数，请在回复末尾附带:',
         '<!--artclaw:params {"参数id": 值, ...}-->',
       )
@@ -453,6 +457,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (executionContext.aiPrompt) {
       execLines.push(`AI 执行指引: ${executionContext.aiPrompt}`)
     }
+
+    // Add execution method hint — inline the key rule so Agent doesn't have to read a file first
+    const encodedId = encodeURIComponent(executionContext.id)
+    execLines.push('')
+    execLines.push('⚠️ 执行方式: 通过 Tool Manager Execute API 调用（不要自己写脚本执行）:')
+    execLines.push(`curl -s -X POST "http://localhost:9877/api/v1/tools/${encodedId}/execute" -H "Content-Type: application/json" -d '{"parameters": <下方参数JSON>}'`)
+    execLines.push('详细规范见: ~/.openclaw/workspace/skills/artclaw-tool-executor/SKILL.md')
     execLines.push(
       '',
       '参数:',

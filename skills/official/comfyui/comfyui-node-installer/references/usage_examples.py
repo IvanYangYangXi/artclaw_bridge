@@ -38,7 +38,7 @@ def example_quick_diagnose():
     
     # 使用内置函数诊断
     import sys
-    sys.path.insert(0, 'C:/Users/yangjili/.openclaw/skills/comfyui-node-installer/references')
+    sys.path.insert(0, 'C:/Users/yangjili/.openclaw/workspace/skills/comfyui-node-installer/references')
     
     from node_installer_impl import quick_diagnose, diagnose_workflow
     
@@ -65,7 +65,7 @@ def example_detect_and_install():
     }
     
     import sys
-    sys.path.insert(0, 'C:/Users/yangjili/.openclaw/skills/comfyui-node-installer/references')
+    sys.path.insert(0, 'C:/Users/yangjili/.openclaw/workspace/skills/comfyui-node-installer/references')
     
     from node_installer_impl import diagnose_workflow, install_missing_nodes
     
@@ -104,7 +104,7 @@ def example_search():
     """搜索节点包"""
     
     import sys
-    sys.path.insert(0, 'C:/Users/yangjili/.openclaw/skills/comfyui-node-installer/references')
+    sys.path.insert(0, 'C:/Users/yangjili/.openclaw/workspace/skills/comfyui-node-installer/references')
     
     from node_installer_impl import search_packages
     
@@ -130,7 +130,7 @@ def example_real_usage():
     """实际使用场景：加载 workflow 前自动检查"""
     
     import sys
-    sys.path.insert(0, 'C:/Users/yangjili/.openclaw/skills/comfyui-node-installer/references')
+    sys.path.insert(0, 'C:/Users/yangjili/.openclaw/workspace/skills/comfyui-node-installer/references')
     
     from node_installer_impl import diagnose_workflow, install_missing_nodes
     

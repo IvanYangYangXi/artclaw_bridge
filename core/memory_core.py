@@ -192,6 +192,9 @@ class MemoryManagerV2:
         # 加载团队记忆
         self._load_team_memory()
         
+        # 检查上次是否异常退出（crash recovery）
+        self._check_crash_recovery()
+        
         self.logger.info(f"记忆管理器 v2 已初始化: {dcc_name}, 存储路径: {storage_path}")
 
     def _load(self):
@@ -603,15 +606,32 @@ class MemoryManagerV2:
         value = entry.value
         
         if isinstance(value, dict):
-            # crash 类型: 用 avoidance_rule
+            # crash 类型: 优先 avoidance_rule, 否则从 error 生成
             if entry.tag == "crash":
                 rule = value.get("avoidance_rule", "").strip()
                 if rule:
                     tool = value.get("tool", "")
                     return f"{tool}: {rule}" if tool else rule
+                # fallback: 从 error 信息生成简短规则
+                error = value.get("error", "").strip()
+                tool = value.get("tool", "")
+                action = value.get("action", "")
+                if error:
+                    short_error = error.split("\n")[-1].strip()[:100] if "\n" in error else error[:100]
+                    parts = [p for p in [tool, action, short_error] if p]
+                    return " → ".join(parts) if parts else ""
             # pattern 类型 (RetryTracker 自动提取的)
-            if "fix" in value:
-                return str(value["fix"])[:100]
+            if entry.tag == "pattern":
+                # 有 fix 字段直接用
+                if "fix" in value:
+                    return str(value["fix"])[:100]
+                # RetryTracker 格式: error + success_code
+                error_part = value.get("error", "")
+                success_part = value.get("success_code", "")
+                if error_part and success_part:
+                    return f"错误 '{error_part[:50]}' → 正确做法: {success_part[:80]}"
+                if error_part:
+                    return f"避免: {error_part[:100]}"
             # operation summary
             if value.get("type") == "operation_summary":
                 return ""  # 操作摘要不适合提炼为规则
@@ -760,6 +780,90 @@ class MemoryManagerV2:
 
         # 关闭时强制保存
         self.flush()
+        # 清除执行哨兵（正常关闭标记）
+        self.clear_execution_sentinel()
+
+    # === Crash Recovery Sentinel ===
+
+    def _sentinel_path(self) -> str:
+        """获取执行哨兵文件路径"""
+        return self.storage_path + ".running"
+
+    def write_execution_sentinel(self, code_snippet: str, tool_name: str = ""):
+        """在执行代码前写入哨兵文件
+        
+        如果 DCC 进程崩溃，哨兵文件不会被清除，
+        下次启动时 _check_crash_recovery() 会检测到并记录。
+        """
+        try:
+            sentinel = {
+                "tool": tool_name,
+                "code": code_snippet[:500],
+                "timestamp": time.time(),
+                "dcc": self.dcc_name,
+            }
+            with open(self._sentinel_path(), "w", encoding="utf-8") as f:
+                json.dump(sentinel, f, ensure_ascii=False)
+        except Exception:
+            pass  # 哨兵写入失败不影响正常执行
+
+    def clear_execution_sentinel(self):
+        """执行成功后清除哨兵（包括正常关闭时调用）"""
+        try:
+            p = self._sentinel_path()
+            if os.path.exists(p):
+                os.remove(p)
+        except Exception:
+            pass
+
+    def _check_crash_recovery(self):
+        """启动时检查是否存在上次异常退出的哨兵文件
+        
+        如果存在，说明上次执行的代码导致了进程崩溃，
+        自动记录到 crash 记忆中。
+        """
+        sentinel_file = self._sentinel_path()
+        if not os.path.exists(sentinel_file):
+            return
+        
+        try:
+            with open(sentinel_file, "r", encoding="utf-8") as f:
+                sentinel = json.load(f)
+            
+            tool = sentinel.get("tool", "unknown")
+            code = sentinel.get("code", "")
+            ts = sentinel.get("timestamp", 0)
+            
+            # 计算距离崩溃的时间
+            elapsed = time.time() - ts if ts else 0
+            elapsed_str = f"{elapsed / 3600:.1f}h ago" if elapsed > 3600 else f"{elapsed / 60:.0f}min ago"
+            
+            self.logger.warning(
+                f"检测到上次异常退出 ({elapsed_str}): "
+                f"tool={tool}, code={code[:80]}..."
+            )
+            
+            # 记录到 crash 记忆
+            self.record_crash(
+                tool=tool,
+                action=code[:60].replace("\n", " "),
+                params_summary=f"crash_recovery, {elapsed_str}",
+                error="DCC 进程异常退出（哨兵文件未被清除）",
+                root_cause="",
+                avoidance_rule="",
+                severity="high",
+            )
+            
+            # 清除哨兵
+            os.remove(sentinel_file)
+            
+        except Exception as e:
+            self.logger.error(f"Crash recovery 检测失败: {e}")
+            # 尝试清除损坏的哨兵
+            try:
+                os.remove(sentinel_file)
+            except Exception:
+                pass
 
     def _get_layer_by_name(self, layer: str) -> Dict[str, MemoryEntry]:
         """根据名称获取存储层"""

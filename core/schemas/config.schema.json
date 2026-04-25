@@ -48,7 +48,7 @@
         "installed_path": {
           "type": "string",
           "description": "Skill 安装目录的路径",
-          "examples": ["~/.openclaw/skills", "~/.workbuddy/skills"]
+          "examples": ["~/.openclaw/workspace/skills", "~/.workbuddy/skills"]
         }
       }
     },

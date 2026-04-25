@@ -35,7 +35,7 @@ def _resolve_path_variables() -> Dict[str, str]:
         pass
 
     return {
-        "$skills_installed": str(Path.home() / ".openclaw" / "skills"),
+        "$skills_installed": str(Path.home() / ".openclaw" / "workspace" / "skills"),
         "$project_root": project_root,
         "$tools_dir": str(Path.home() / ".artclaw" / "tools"),
         "$home": str(Path.home()),
@@ -381,7 +381,7 @@ def _check_tool_compliance(tool_dir: Path, tool_id: str, fix_simple: bool) -> Li
                             "message": f"id 前缀 {parts[0]!r} 不是有效 source 值（official/marketplace/user）"})
 
     # ── Rule 14: targetDCCs 必填且元素合法 ──────────────────────────────────
-    valid_dccs = {"ue57", "maya2024", "max2024", "blender", "comfyui", "sp", "sd", "houdini", "general"}
+    valid_dccs = {"ue5", "maya2024", "max2024", "blender", "comfyui", "sp", "sd", "houdini", "general"}
     target_dccs = manifest.get("targetDCCs", None)
     if target_dccs is None:
         issues.append({"tool_id": tool_id, "severity": "warning",

@@ -21,7 +21,7 @@
 
 ```
 ① 项目源码（Git 仓库，分发给其他用户）          ② 已安装目录（本地运行时，AI 实际使用）
-   skills/official/unreal/ue57_material_node_edit/    ~/.openclaw/skills/ue57_material_node_edit/
+   skills/official/unreal/ue57_material_node_edit/    ~/.openclaw/workspace/skills/ue57_material_node_edit/
                                                           ├── manifest.json
           ──── 更新(源码→已安装) ────>                    ├── __init__.py
           <─── 发布(已安装→源码) ────                     └── SKILL.md
@@ -41,7 +41,7 @@
   "disabled_skills": [],
   "pinned_skills": [],
   "platform": { "type": "openclaw" },
-  "skills": { "installed_path": "~/.openclaw/skills" },
+  "skills": { "installed_path": "~/.openclaw/workspace/skills" },
   "mcp": { "config_path": "~/.openclaw/openclaw.json", "config_key": "mcp.servers" }
 }
 ```
@@ -86,7 +86,7 @@
 
 ```
 用户请求创建 → AI 自动命名 (auto_name) → 生成代码+manifest+SKILL.md
-→ 写入 ~/.openclaw/skills/{name}/ → skill_hub 热加载 → 立即可用
+→ 写入 ~/.openclaw/workspace/skills/{name}/ → skill_hub 热加载 → 立即可用
 ```
 
 ### 3.2 编辑
@@ -158,7 +158,7 @@ DCC 子目录不硬编码，`_scan_source_skills` 递归扫描所有子目录，
 ### 5.2 已安装目录
 
 ```
-~/.openclaw/skills/         # 扁平结构
+~/.openclaw/workspace/skills/         # 扁平结构
 ├── artclaw-knowledge/
 ├── ue57_material_node_edit/
 ├── ue57-artclaw-context/

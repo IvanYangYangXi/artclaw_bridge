@@ -95,14 +95,14 @@
 {
   "name": "资源保存时检查",
   "trigger_type": "event",
-  "dcc": "ue57",
+  "dcc": "ue5",
   "event_type": "asset.save",
   "event_timing": "post",
   "execution_mode": "notify",
   "is_enabled": true,
   "conditions": {
     "path": [{ "pattern": "/Game/Characters/**" }],
-    "typeFilter": { "types": ["StaticMesh"], "dcc": "ue57" }
+    "typeFilter": { "types": ["StaticMesh"], "dcc": "ue5" }
   },
   "schedule_config": {},
   "parameter_preset_id": ""
@@ -292,7 +292,7 @@ interface TriggerRuleData {
 
 | 变量 | 解析值 | 说明 |
 |------|--------|------|
-| `$skills_installed` | `~/.openclaw/skills` | 已安装 Skill 目录 |
+| `$skills_installed` | `~/.openclaw/workspace/skills` | 已安装 Skill 目录 |
 | `$project_root` | config.json → project_root | 项目源码根目录 |
 | `$tools_dir` | `~/.artclaw/tools` | 工具存储目录 |
 | `$home` | 用户主目录 | — |

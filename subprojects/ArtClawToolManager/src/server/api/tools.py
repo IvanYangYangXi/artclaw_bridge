@@ -512,7 +512,11 @@ async def _execute_locally(tool, entry: str, function: str, params: dict):
 
 
 async def _execute_on_dcc(tool, entry: str, function: str, params: dict, target_dccs: list):
-    """Run a DCC-bound script tool via MCP WebSocket on the target DCC."""
+    """Run a DCC-bound script tool via MCP WebSocket on the target DCC.
+
+    If the script uses artclaw_sdk, it runs locally (SDK handles DCC communication).
+    Otherwise, the script is injected directly into the DCC via MCP.
+    """
     from pathlib import Path
     from ..services.dcc_manager import DCCManager
 
@@ -552,21 +556,30 @@ async def _execute_on_dcc(tool, entry: str, function: str, params: dict, target_
 
     script_source = entry_path.read_text(encoding="utf-8")
 
-    # Build execution code: define the script, then call the function with params
+    # Scripts using artclaw_sdk run locally — SDK handles DCC communication via MCP
+    uses_sdk = "artclaw_sdk" in script_source or "import sdk" in script_source
+    if uses_sdk:
+        print(f"[_execute_on_dcc] Script uses artclaw_sdk, redirecting to _execute_locally")
+        return await _execute_locally(tool, entry, function, params)
+
+    # Direct DCC injection via importlib (avoids exec scope issues with nested functions)
     params_repr = repr(params)
+    script_path_str = repr(str(entry_path).replace("\\", "/"))
     if function:
-        # Wrap: exec the script source to define functions, then call the target function
         exec_code = (
-            f"{script_source}\n\n"
-            f"# --- ArtClaw Tool Manager: auto-call ---\n"
-            f"import json as _json\n"
-            f"_result = {function}(**{params_repr})\n"
-            f"if _result is not None:\n"
-            f"    print(_json.dumps(_result, ensure_ascii=False, default=str))\n"
+            f"import importlib.util\n"
+            f"_spec = importlib.util.spec_from_file_location('_artclaw_tool', {script_path_str})\n"
+            f"_mod = importlib.util.module_from_spec(_spec)\n"
+            f"_spec.loader.exec_module(_mod)\n"
+            f"result = _mod.{function}(**{params_repr})\n"
         )
     else:
-        # No function specified, just run the script
-        exec_code = script_source
+        exec_code = (
+            f"import importlib.util\n"
+            f"_spec = importlib.util.spec_from_file_location('_artclaw_tool', {script_path_str})\n"
+            f"_mod = importlib.util.module_from_spec(_spec)\n"
+            f"_spec.loader.exec_module(_mod)\n"
+        )
 
     # Execute via MCP
     result = await _dcc_manager.execute_on_dcc(dcc_type, exec_code, timeout=120.0)

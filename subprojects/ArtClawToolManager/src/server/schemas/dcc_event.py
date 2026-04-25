@@ -16,7 +16,7 @@ class DCCEvent(BaseModel):
     """Incoming DCC event payload."""
 
     dcc_type: str = Field(
-        ..., description="DCC identifier: 'ue57', 'maya2024', 'comfyui', etc."
+        ..., description="DCC identifier: 'ue5', 'maya2024', 'comfyui', etc."
     )
     event_type: str = Field(
         ..., description="Dot-separated event name: 'asset.save', 'file.export', etc."

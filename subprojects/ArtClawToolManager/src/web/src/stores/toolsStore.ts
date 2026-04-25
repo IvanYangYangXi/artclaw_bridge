@@ -36,7 +36,7 @@ const MOCK_TOOLS: ToolItemExtended[] = [
     description: '批量重命名选中的场景对象，支持前缀、后缀、编号等规则',
     type: 'tool',
     source: 'official',
-    targetDCCs: ['ue57', 'maya2024', 'blender'],
+    targetDCCs: ['ue5', 'maya2024', 'blender'],
     status: 'installed',
     runtimeStatus: { enabled: true, pinned: false, favorited: true },
     stats: { downloads: 3800, rating: 4.7, useCount: 56 },
@@ -60,7 +60,7 @@ const MOCK_TOOLS: ToolItemExtended[] = [
     description: '自动为模型生成多级 LOD，优化渲染性能',
     type: 'tool',
     source: 'marketplace',
-    targetDCCs: ['ue57'],
+    targetDCCs: ['ue5'],
     status: 'not_installed',
     stats: { downloads: 1200, rating: 4.5, useCount: 0 },
     version: '1.0.0',
@@ -72,7 +72,7 @@ const MOCK_TOOLS: ToolItemExtended[] = [
     description: '批量压缩和优化贴图资源，降低内存占用',
     type: 'tool',
     source: 'marketplace',
-    targetDCCs: ['ue57', 'maya2024'],
+    targetDCCs: ['ue5', 'maya2024'],
     status: 'update_available',
     runtimeStatus: { enabled: true, pinned: false, favorited: false },
     stats: { downloads: 2100, rating: 4.6, useCount: 23 },
@@ -178,7 +178,7 @@ interface ToolsState {
   // Filters
   activeTab: ToolTab
   searchQuery: string
-  dccFilter: string      // '' = all, or 'ue57', 'maya2024', etc.
+  dccFilter: string      // '' = all, or 'ue5', 'maya2024', etc.
   favoritesOnly: boolean // 仅显示已收藏
 
   // Selection

@@ -136,7 +136,7 @@ GET /skills/{id}
     },
     "status": "installed",
     "installedVersion": "0.1.0",
-    "installPath": "~/.openclaw/skills/comfyui-txt2img",
+    "installPath": "~/.openclaw/workspace/skills/comfyui-txt2img",
     "stats": { ... },
     "data": {
       "priority": 100,
@@ -170,7 +170,7 @@ POST /skills/{id}/install
   "success": true,
   "data": {
     "installedVersion": "0.1.0",
-    "installPath": "~/.openclaw/skills/comfyui-txt2img",
+    "installPath": "~/.openclaw/workspace/skills/comfyui-txt2img",
     "message": "安装成功"
   }
 }
@@ -470,7 +470,7 @@ POST /tools/{id}/execute
     "use_numbers": true
   },
   "context": {
-    "dcc": "ue57",
+    "dcc": "ue5",
     "sessionId": "session-123"
   }
 }
@@ -505,10 +505,10 @@ POST /tools
   "name": "批量重命名",
   "description": "批量重命名选中对象",
   "category": "场景管理",
-  "targetDCCs": ["ue57"],
+  "targetDCCs": ["ue5"],
   "implementation": {
     "type": "skill_wrapper",
-    "skill": "ue57-artclaw-highlight"
+    "skill": "ue5-artclaw-highlight"
   },
   "inputs": [
     {

@@ -5,7 +5,7 @@ Scan workflow directories for installed workflow templates.
 Directory strategy:
   - Official/Marketplace: {project_root}/workflows/{official|marketplace}/{dcc}/{name}/workflow.json
   - User:                 ~/.artclaw/workflows/user/{name}/workflow.json
-  - Skills:               ~/.openclaw/skills/{name}/workflow.json (skills that ship a workflow)
+  - Skills:               ~/.openclaw/workspace/skills/{name}/workflow.json (skills that ship a workflow)
 
 ``project_root`` is read from ``~/.artclaw/config.json``.
 """
@@ -124,7 +124,7 @@ def scan_workflows(
     Searches:
       1. {project_root}/workflows/{official|marketplace}/{dcc}/ — official + marketplace
       2. ~/.artclaw/workflows/user/ — user workflows
-      3. ~/.openclaw/skills/ — skills that ship a workflow.json
+      3. ~/.openclaw/workspace/skills/ — skills that ship a workflow.json
 
     Duplicates (same id) are de-duplicated; the first occurrence wins.
     """

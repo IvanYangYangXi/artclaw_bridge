@@ -33,12 +33,12 @@ const MOCK_SKILLS: SkillItem[] = [
     version: '0.1.0',
   },
   {
-    id: 'official/ue57-operation-rules',
-    name: 'ue57-operation-rules',
+    id: 'official/ue5-operation-rules',
+    name: 'ue5-operation-rules',
     description: 'UE Editor 操作通用规则和最佳实践',
     type: 'skill',
     source: 'official',
-    targetDCCs: ['ue57'],
+    targetDCCs: ['ue5'],
     status: 'installed',
     runtimeStatus: { enabled: true, pinned: false, favorited: false },
     stats: { downloads: 2300, rating: 4.9, useCount: 120 },
@@ -96,7 +96,7 @@ const MOCK_SKILLS: SkillItem[] = [
     description: '我的自定义 UE 场景工具',
     type: 'skill',
     source: 'user',
-    targetDCCs: ['ue57'],
+    targetDCCs: ['ue5'],
     status: 'installed',
     runtimeStatus: { enabled: true, pinned: false, favorited: false },
     stats: { downloads: 0, rating: 0, useCount: 5 },
@@ -114,7 +114,7 @@ interface SkillsState {
   // Filters
   activeTab: SkillTab
   searchQuery: string
-  dccFilter: string      // '' = all, or 'ue57', 'maya2024', etc.
+  dccFilter: string      // '' = all, or 'ue5', 'maya2024', etc.
   statusFilter: string   // '' = all, or 'installed', 'not_installed', etc.
   favoritesOnly: boolean // 仅显示已收藏
 

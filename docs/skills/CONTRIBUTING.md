@@ -107,10 +107,10 @@ skill/<category>/<skill-name>
 
 ## 目录放置规则
 
-Skills 现已统一安装到外部目录（`~/.openclaw/skills/` 或按平台配置），采用扁平结构：
+Skills 现已统一安装到外部目录（`~/.openclaw/workspace/skills/` 或按平台配置），采用扁平结构：
 
 ```
-~/.openclaw/skills/                   # 统一安装目录
+~/.openclaw/workspace/skills/                   # 统一安装目录
 ├── ue54_material_node_edit/          # 官方 Skill
 ├── team_custom_tool/                 # 团队 Skill  
 ├── user_personal_skill/              # 用户 Skill

@@ -515,7 +515,7 @@ def get_platform_name() -> str:
 | 功能 | 说明 |
 |------|------|
 | MCP Server | 端口不变（UE:8080, Maya:8081） |
-| Skill Hub | 读取 `~/.openclaw/skills/` 或配置路径 |
+| Skill Hub | 读取 `~/.openclaw/workspace/skills/` 或配置路径 |
 | Memory System | 独立于平台 |
 | Knowledge Base | 独立于平台 |
 | DCC 上下文注入 | `bridge_dcc._enrich_with_briefing()` 不变 |

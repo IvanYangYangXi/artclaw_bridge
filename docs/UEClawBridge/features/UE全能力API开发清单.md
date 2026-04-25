@@ -164,7 +164,7 @@ result = json.loads(result_json)
 
 ### 1.6 ✅ OpenClaw Skill: ue57_blueprint_graph
 - [ ] SKILL.md — Blueprint 图查询/编辑操作指南
-- [ ] 安装到 ~/.openclaw/skills/
+- [ ] 安装到 ~/.openclaw/workspace/skills/
 
 ---
 

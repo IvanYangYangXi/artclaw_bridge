@@ -390,14 +390,26 @@ def run_ue_python(arguments: dict) -> str:
             })
 
     # --- 准备执行环境 ---
-    exec_globals = {"__builtins__": __builtins__}
+    # 写入执行哨兵（如果进程崩溃，下次启动可检测到）
+    try:
+        from memory_store import get_memory_store
+        _mem = get_memory_store()
+        if _mem:
+            _mem.manager.write_execution_sentinel(code[:500], "run_ue_python")
+    except Exception:
+        pass
+
+    # 重要: 使用单一字典同时作为 globals 和 locals，
+    # 解决 exec() 中 import/函数定义 的作用域问题:
+    #   exec(code, globals_dict, locals_dict) 中 import 结果进入 locals_dict，
+    #   但函数体的 __globals__ 指向 globals_dict，导致函数内找不到 import 的模块。
+    # 使用单字典模式 exec(code, ns) 让所有名称在同一作用域，彻底避免此问题。
+    exec_ns = {"__builtins__": __builtins__}
 
     # 阶段 1.6: 上下文注入
     if inject_context:
         context = _build_context()
-        exec_globals.update(context)
-
-    exec_locals = {}
+        exec_ns.update(context)
 
     # --- 捕获标准输出 ---
     output_buffer = StringIO()
@@ -413,23 +425,22 @@ def run_ue_python(arguments: dict) -> str:
         # 重定向 stdout 到缓冲区（捕获 print 输出）
         sys.stdout = output_buffer
 
-        # --- 阶段 1.4: 事务保护 ---
-        # 所有操作包裹在 ScopedEditorTransaction 中，支持 Ctrl+Z 撤销
-        with unreal.ScopedEditorTransaction(f"AI Agent Exec #{exec_id}"):
-            # --- 阶段 1.2: exec() 执行 ---
-            # 对于单行表达式，尝试 eval() 获取返回值
-            code_stripped = code.strip()
-            if "\n" not in code_stripped and not _is_statement(code_stripped):
-                try:
-                    result_value = eval(code_stripped, exec_globals, exec_locals)
-                except SyntaxError:
-                    # 不是表达式，按语句执行
-                    exec(code, exec_globals, exec_locals)
-                    result_value = exec_locals.get("result", exec_locals.get("_result", None))
-            else:
-                exec(code, exec_globals, exec_locals)
-                # 尝试获取 result 变量作为返回值
-                result_value = exec_locals.get("result", exec_locals.get("_result", None))
+        # --- 阶段 1.2: exec() 执行 ---
+        # 注意: 不再使用 ScopedEditorTransaction 包裹。
+        # 原因: build_from_static_mesh_descriptions / import_asset_tasks 等操作
+        # 会删除+重建 RenderResource，事务析构时操作已被删除的资源导致 UE fatal crash:
+        #   "A FRenderResource was deleted without being released first!"
+        # Agent 可以通过自己的逻辑实现 undo（如保存原始 UV 再恢复）。
+        code_stripped = code.strip()
+        if "\n" not in code_stripped and not _is_statement(code_stripped):
+            try:
+                result_value = eval(code_stripped, exec_ns)
+            except SyntaxError:
+                exec(code, exec_ns)
+                result_value = exec_ns.get("result", exec_ns.get("_result", None))
+        else:
+            exec(code, exec_ns)
+            result_value = exec_ns.get("result", exec_ns.get("_result", None))
 
         success = True
 
@@ -466,6 +477,40 @@ def run_ue_python(arguments: dict) -> str:
                 response["retry_context"] = retry_ctx
         except ImportError:
             pass  # self_healing 模块可能尚未加载
+
+    # --- 记忆系统: 记录操作/崩溃到定制记忆 ---
+    try:
+        from memory_store import get_memory_store
+        mem = get_memory_store()
+        if mem:
+            mgr = mem.manager
+            # 从代码中提取工具/动作关键词
+            _tool_hint = "run_ue_python"
+            _action_hint = code_stripped[:60].replace("\n", " ") if code_stripped else "unknown"
+            _params_summary = f"code_len={len(code)}"
+            if success:
+                mgr.record_operation(
+                    tool=_tool_hint,
+                    action=_action_hint,
+                    params_summary=_params_summary,
+                    result=output_text[:200] if output_text else "ok",
+                    duration_ms=int(elapsed * 1000),
+                )
+            else:
+                # 只记录真正的异常（非 security block / user rejection）
+                mgr.record_crash(
+                    tool=_tool_hint,
+                    action=_action_hint,
+                    params_summary=_params_summary,
+                    error=error_msg[:300],
+                    root_cause="",  # Agent 可后续通过 memory API 补充
+                    avoidance_rule="",
+                    severity="medium",
+                )
+            # 执行完成（无论成功失败），清除哨兵
+            mgr.clear_execution_sentinel()
+    except Exception:
+        pass  # 记忆记录失败不应影响正常执行
 
     UELogger.info(
         f"[Exec #{exec_id}] {'OK' if success else 'FAIL'} "
@@ -539,6 +584,35 @@ TOOL_DEFINITION = {
 }
 
 
+def _discover_tool_scripts():
+    """扫描 tools/ 目录下的用户工具脚本，提取模块文档字符串作为简介。"""
+    tools_dir = os.path.dirname(os.path.abspath(__file__))
+    # 排除框架文件
+    framework_files = {
+        '__init__.py', 'universal_proxy.py', 'context_provider.py',
+        'risk_confirmation.py', 'self_healing.py', 'static_guard.py',
+    }
+    tool_infos = []
+    for fname in sorted(os.listdir(tools_dir)):
+        if not fname.endswith('.py') or fname in framework_files:
+            continue
+        fpath = os.path.join(tools_dir, fname)
+        module_name = fname[:-3]
+        # 提取 docstring（首个三引号块）
+        doc = ""
+        try:
+            import ast as _ast
+            with open(fpath, 'r', encoding='utf-8') as f:
+                tree = _ast.parse(f.read(), filename=fpath)
+            doc = _ast.get_docstring(tree) or ""
+        except Exception:
+            pass
+        # 取 docstring 第一行作为简介
+        summary = doc.strip().split('\n')[0] if doc.strip() else ""
+        tool_infos.append((module_name, summary))
+    return tool_infos
+
+
 def register_tools(mcp_server) -> None:
     """
     将所有阶段 1 的工具注册到 MCP 服务器。
@@ -547,10 +621,27 @@ def register_tools(mcp_server) -> None:
       - 核心机制 §1: 自动能力发现，Schema 转换
       - 开发路线图 §1.2: 注册 run_ue_python 到 MCP 工具列表
     """
+    # 动态发现可用工具脚本
+    tool_scripts = _discover_tool_scripts()
+    extra_desc = ""
+    if tool_scripts:
+        tools_dir = os.path.dirname(os.path.abspath(__file__))
+        extra_desc = (
+            f"\n\nAvailable tool scripts (import and use via this tool, "
+            f"located in {tools_dir}):\n"
+        )
+        for name, summary in tool_scripts:
+            line = f"- {name}"
+            if summary:
+                line += f": {summary}"
+            extra_desc += line + "\n"
+
+    desc = TOOL_DEFINITION["description"] + extra_desc
     mcp_server.register_tool(
         name=TOOL_DEFINITION["name"],
-        description=TOOL_DEFINITION["description"],
+        description=desc,
         input_schema=TOOL_DEFINITION["inputSchema"],
         handler=run_ue_python,
     )
-    UELogger.info("Phase 1 tools registered: run_ue_python")
+    UELogger.info(f"Phase 1 tools registered: run_ue_python "
+                  f"({len(tool_scripts)} tool scripts discovered)")

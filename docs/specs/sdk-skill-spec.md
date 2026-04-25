@@ -256,7 +256,7 @@ description: >
     ↓
 manifest.json + SKILL.md + __init__.py (源码)
     ↓
-artclaw skill install → ~/.openclaw/skills/ (安装到运行时)
+artclaw skill install → ~/.openclaw/workspace/skills/ (安装到运行时)
     ↓
 SkillRuntime.scan_and_register() → 发现并注册
     ↓

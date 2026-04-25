@@ -6,7 +6,7 @@
 **文档路径**: `docs/specs/skill-management-system.md`
 
 > **v2.2 变更说明 (2026-03-30)**:
-> - 统一 Skill 安装目录重构：删除 UE 插件内 `Content/Python/Skills/` 目录，统一安装到 `~/.openclaw/skills/`
+> - 统一 Skill 安装目录重构：删除 UE 插件内 `Content/Python/Skills/` 目录，统一安装到 `~/.openclaw/workspace/skills/`
 > - skill_hub.py 改为从 `~/.artclaw/config.json` 的 `skills.installed_path` 读取安装路径
 > - install.py 用 `shutil.copytree` 复制整个 Skill 目录（含代码），不再只复制 SKILL.md
 > - 支持扁平+分层两种目录结构扫描，向后兼容
@@ -128,7 +128,7 @@ artclaw/                              # 项目根目录
 ### 3.2 已安装目录（运行时，扁平结构）
 
 ```
-~/.openclaw/skills/                   # OpenClaw 平台统一安装目录
+~/.openclaw/workspace/skills/                   # OpenClaw 平台统一安装目录
 ├── ue54_material_node_edit/          # 扁平，直接是 Skill 包
 │   ├── SKILL.md
 │   ├── __init__.py
@@ -140,7 +140,7 @@ artclaw/                              # 项目根目录
 └── ...
 ```
 
-**注意**：Skills 现已统一安装到外部目录（`~/.openclaw/skills/` 或按平台配置），不再存储在 UE 插件内部的 `Content/Python/Skills/`。`skill_hub.py` 通过 `~/.artclaw/config.json` 的 `skills.installed_path` 字段读取安装路径。
+**注意**：Skills 现已统一安装到外部目录（`~/.openclaw/workspace/skills/` 或按平台配置），不再存储在 UE 插件内部的 `Content/Python/Skills/`。`skill_hub.py` 通过 `~/.artclaw/config.json` 的 `skills.installed_path` 字段读取安装路径。
 
 ### 3.3 用户库位置
 
@@ -404,7 +404,7 @@ AI 展示确认摘要:
         ↓
 自动安装 + 热加载（注册为内部 Python API，不再注册 MCP）
         ↓
-同时生成 OpenClaw SKILL.md → 保存到 ~/.openclaw/skills/
+同时生成 OpenClaw SKILL.md → 保存到 ~/.openclaw/workspace/skills/
 ```
 
 **AI 自动获取/推断的字段**:
@@ -526,15 +526,15 @@ result = skill_hub.execute_skill("skill_name", {"param1": "value1", "param2": "v
 
 #### 9.1.3 OpenClaw Skill（SKILL.md 触发文档）
 
-以下 5 个 OpenClaw Skill 保存在 `~/.openclaw/skills/`，作为按需加载的触发文档。当 AI 识别到相关意图时自动加载对应 SKILL.md，获取调用指引后通过 `run_ue_python` / `run_python` 执行 Python API。
+以下 5 个 OpenClaw Skill 保存在 `~/.openclaw/workspace/skills/`，作为按需加载的触发文档。当 AI 识别到相关意图时自动加载对应 SKILL.md，获取调用指引后通过 `run_ue_python` / `run_python` 执行 Python API。
 
 | OpenClaw Skill | 路径 | 说明 | 对应 Python API |
 |----------------|------|------|----------------|
-| `artclaw-context` | `~/.openclaw/skills/artclaw-context/SKILL.md` | 编辑器上下文获取与场景信息查询 | `artclaw.api.context.*` / `artclaw.api.scene.*` / `artclaw.api.level.*` |
-| `artclaw-memory` | `~/.openclaw/skills/artclaw-memory/SKILL.md` | 项目记忆读写（对话上下文、偏好设置等） | `artclaw.api.memory.*` |
-| `artclaw-knowledge` | `~/.openclaw/skills/artclaw-knowledge/SKILL.md` | 知识库搜索与索引 | `artclaw.api.knowledge.*` |
-| `artclaw-skill-manage` | `~/.openclaw/skills/artclaw-skill-manage/SKILL.md` | Skill 列表查看、创建、管理 | `artclaw.skill_hub.*` |
-| `artclaw-highlight` | `~/.openclaw/skills/artclaw-highlight/SKILL.md` | Actor 高亮与视觉反馈 | `artclaw.api.scene.highlight_actors()` |
+| `artclaw-context` | `~/.openclaw/workspace/skills/artclaw-context/SKILL.md` | 编辑器上下文获取与场景信息查询 | `artclaw.api.context.*` / `artclaw.api.scene.*` / `artclaw.api.level.*` |
+| `artclaw-memory` | `~/.openclaw/workspace/skills/artclaw-memory/SKILL.md` | 项目记忆读写（对话上下文、偏好设置等） | `artclaw.api.memory.*` |
+| `artclaw-knowledge` | `~/.openclaw/workspace/skills/artclaw-knowledge/SKILL.md` | 知识库搜索与索引 | `artclaw.api.knowledge.*` |
+| `artclaw-skill-manage` | `~/.openclaw/workspace/skills/artclaw-skill-manage/SKILL.md` | Skill 列表查看、创建、管理 | `artclaw.skill_hub.*` |
+| `artclaw-highlight` | `~/.openclaw/workspace/skills/artclaw-highlight/SKILL.md` | Actor 高亮与视觉反馈 | `artclaw.api.scene.highlight_actors()` |
 
 **工作流示意**:
 ```
@@ -678,10 +678,10 @@ notifications/skills/dependencies_resolved            # 依赖解析完成
 
 ### 11.2 目录结构
 
-Skills 统一安装到外部配置目录（`~/.openclaw/skills/`），采用扁平结构：
+Skills 统一安装到外部配置目录（`~/.openclaw/workspace/skills/`），采用扁平结构：
 
 ```
-~/.openclaw/skills/                   # 配置驱动的统一安装目录
+~/.openclaw/workspace/skills/                   # 配置驱动的统一安装目录
 ├── ue54_material_node_edit/          # 官方 Skill（扁平结构）
 ├── ue54_get_material_nodes/
 ├── artclaw-context/                  # OpenClaw 触发文档 Skill
@@ -774,7 +774,7 @@ my_skill/
 
 ```python
 mgr = VersionManager(
-    installed_path="~/.openclaw/skills",            # Skill 扁平安装目录
+    installed_path="~/.openclaw/workspace/skills",            # Skill 扁平安装目录
     source_paths={
         "00_official": "/path/to/project/skills/official",
         "02_user":     "~/.artclaw/skills",

@@ -10,7 +10,7 @@ Skill path resolution:
     1. ARTCLAW_SKILLS_DIR env / .env override
     2. ~/.artclaw/config.json → skills.installed_path  (set by platform switch)
     3. ~/.artclaw/config.json → platform.type → _PLATFORM_DEFAULTS.skills_installed_path
-    4. Hardcoded default: ~/.openclaw/skills
+    4. Hardcoded default: ~/.openclaw/workspace/skills
 
   This ensures Tool Manager always sees the same Skill directory as the active
   AI platform (OpenClaw / LobsterAI / Claude etc.).
@@ -27,7 +27,7 @@ from pydantic_settings import BaseSettings
 
 # Platform → default skills installed path (mirrors bridge_config._PLATFORM_DEFAULTS)
 _PLATFORM_SKILLS_DEFAULTS: dict = {
-    "openclaw":   "~/.openclaw/skills",
+    "openclaw":   "~/.openclaw/workspace/skills",
     "workbuddy":  "~/.workbuddy/skills",
     "claudecode": "~/.claude/skills",
     "cursor":     "~/.cursor/skills",
@@ -57,7 +57,7 @@ def _resolve_skills_path() -> str:
     Priority:
       1. ~/.artclaw/config.json → skills.installed_path  (explicit override)
       2. ~/.artclaw/config.json → platform.type → default for that platform
-      3. ~/.openclaw/skills  (hardcoded fallback)
+      3. ~/.openclaw/workspace/skills  (hardcoded fallback)
     """
     cfg = _read_artclaw_config()
 
@@ -75,7 +75,7 @@ def _resolve_skills_path() -> str:
         return os.path.expanduser(default)
 
     # 3. Hardcoded fallback
-    return str(Path.home() / ".openclaw" / "skills")
+    return str(Path.home() / ".openclaw" / "workspace" / "skills")
 
 
 def _default_data_dir() -> str:
@@ -162,7 +162,7 @@ class Settings(BaseSettings):
 
     # --- Server ---
     HOST: str = "0.0.0.0"
-    PORT: int = 9876
+    PORT: int = int(os.environ.get("ARTCLAW_PORT", "9876"))
 
     # --- CORS ---
     CORS_ORIGINS: List[str] = [

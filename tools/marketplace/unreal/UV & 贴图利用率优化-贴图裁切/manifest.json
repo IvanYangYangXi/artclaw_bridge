@@ -1,0 +1,80 @@
+{
+  "id": "user/uv-texture-optimize",
+  "name": "UV & 贴图利用率优化-贴图裁切",
+  "description": "分析使用同一贴图的所有 StaticMesh 的 UV 分布，计算共用 UV 包围盒，将贴图裁切到实际使用区域并重新映射 UV，提升贴图 texel density 利用率。导出 TGA，裁切后重新导入 UE。",
+  "version": "1.0.0",
+  "author": "杨己力",
+  "createdAt": "2026-04-23 15:00:00",
+  "updatedAt": "2026-04-24 03:40:28",
+  "targetDCCs": [
+    "ue5"
+  ],
+  "implementation": {
+    "type": "script",
+    "entry": "main.py",
+    "function": "uv_texture_optimize",
+    "aiPrompt": "UV 贴图利用率优化工具：分析选中材质实例所关联的所有 StaticMesh 的 UV bbox，裁切贴图到实际使用区域，重映射 UV，导入新贴图替换原贴图。"
+  },
+  "inputs": [
+    {
+      "id": "material_instance_path",
+      "name": "材质实例路径",
+      "description": "要优化的 MaterialInstance 的 UE 资产路径，如 /Game/Scenes/.../MI_Foo",
+      "type": "string",
+      "required": true,
+      "placeholder": "/Game/Scenes/Prop/Module/Catwalk/Material/MI_Props_WallRail"
+    },
+    {
+      "id": "texture_param_names",
+      "name": "要优化的贴图参数名",
+      "description": "逗号分隔的贴图参数名，如 tBaseMap,tMixMap。留空则自动检测所有非默认贴图。",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "placeholder": "tBaseMap,tMixMap"
+    },
+    {
+      "id": "uv_channel",
+      "name": "UV Channel",
+      "description": "要分析和重映射的 UV 通道索引（通常为 0）",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 7
+    },
+    {
+      "id": "padding_px",
+      "name": "裁切边距 (px)",
+      "description": "裁切时在 UV bbox 周围留出的像素边距，避免采样出界",
+      "type": "number",
+      "default": 4,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "export_dir",
+      "name": "临时导出目录",
+      "description": "TGA 文件临时存储目录，留空则使用 UE Saved/UVOptimize/<MaterialName>/",
+      "type": "string",
+      "required": false,
+      "default": ""
+    },
+    {
+      "id": "dry_run",
+      "name": "预演模式（不写入）",
+      "description": "仅分析和输出报告，不实际修改 UV 和导入贴图",
+      "type": "boolean",
+      "default": false
+    }
+  ],
+  "outputs": [
+    {
+      "id": "report",
+      "name": "优化报告",
+      "type": "string",
+      "description": "包含 UV bbox、贴图裁切区域、节省比例等信息的文字报告"
+    }
+  ],
+  "presets": [],
+  "source": "marketplace"
+}

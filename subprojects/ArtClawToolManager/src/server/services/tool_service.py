@@ -183,6 +183,8 @@ class ToolService:
         manifest.setdefault("version", version)
         # source in manifest always mirrors folder layer (authoritative)
         manifest["source"] = source
+        # id is always {source}/{name} derived from folder structure (authoritative)
+        manifest["id"] = tool_id
         manifest.setdefault("targetDCCs", target_dccs or [])
         manifest.setdefault("implementation", {"type": implementation_type})
 
@@ -422,7 +424,7 @@ class ToolService:
         # Determine DCC sub-directory (universal for general)
         dcc = tool.target_dccs[0] if tool.target_dccs else "general"
         dcc_dir_map = {
-            "ue57": "unreal", "maya2024": "maya", "max2024": "max",
+            "ue5": "unreal", "maya2024": "maya", "max2024": "max",
             "blender": "blender", "comfyui": "comfyui",
             "sp": "substance_painter", "sd": "substance_designer",
             "houdini": "houdini", "general": "universal",
@@ -442,6 +444,7 @@ class ToolService:
             with open(manifest_path, "r", encoding="utf-8") as f:
                 manifest_data = json.load(f)
             manifest_data["source"] = target
+            manifest_data["id"] = f"{target}/{tool.name}"
             manifest_data["version"] = version
             if description:
                 manifest_data["description"] = description

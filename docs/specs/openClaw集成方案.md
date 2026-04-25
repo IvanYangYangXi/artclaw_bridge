@@ -159,7 +159,7 @@ UE Editor API（C++ + Python）
 
 Skill 同样不再注册为 MCP 工具，AI 通过 `run_ue_python` / `run_python` 调用 `skill_hub.execute_skill()` Python API 来执行 Skill。
 
-**OpenClaw Skill（SKILL.md）** 部署在 `~/.openclaw/skills/` 目录下，作为按需加载的触发文档，指导 AI 如何通过 `run_python` / `run_ue_python` 调用各种内部 API。
+**OpenClaw Skill（SKILL.md）** 部署在 `~/.openclaw/workspace/skills/` 目录下，作为按需加载的触发文档，指导 AI 如何通过 `run_python` / `run_ue_python` 调用各种内部 API。
 
 **要求**：
 - [ ] `tools/list` 返回的工具数量极少（每个 DCC 仅 1 个）
@@ -409,7 +409,7 @@ OpenClaw → MCP Request → Command Queue → GameThread Execute → Result / E
 #### `feature/openclaw-skill-package-standard`
 - [ ] 定义面向 OpenClaw 的 Skill 包标准
 - [ ] 包含 Prompt 增强、MCP 配置、Python 逻辑、说明材料
-- [ ] **v1.3 更新**：Skill 包现在包含两部分——**Python 库**（部署到 DCC 端，提供 `skill_hub` 可调用的 Python API）+ **OpenClaw SKILL.md**（部署到 `~/.openclaw/skills/`，指导 AI 如何通过 `run_python` / `run_ue_python` 调用对应 Python API）
+- [ ] **v1.3 更新**：Skill 包现在包含两部分——**Python 库**（部署到 DCC 端，提供 `skill_hub` 可调用的 Python API）+ **OpenClaw SKILL.md**（部署到 `~/.openclaw/workspace/skills/`，指导 AI 如何通过 `run_python` / `run_ue_python` 调用对应 Python API）
 
 #### `feature/openclaw-audit-and-performance`
 - [ ] 记录完整执行链路

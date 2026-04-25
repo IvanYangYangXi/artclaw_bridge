@@ -1,0 +1,143 @@
+{
+  "id": "marketplace/uv-repack",
+  "name": "UV & 贴图利用率优化-UV重排",
+  "description": "将 Static Mesh 的 UV 岛重排到 0-1 空间，通过 MaxRects 装箱算法最大化贴图利用率。统一缩放比例保证纹理密度一致，支持同步适配贴图（逆映射重采样），贴图尺寸自动计算（2^n 或 4 的倍数）。适用于 Unique UV 贴图模式（非 Tiling）。",
+  "version": "1.1.0",
+  "author": "柒",
+  "createdAt": "2026-04-25 15:00:00",
+  "updatedAt": "2026-04-25 16:32:00",
+  "targetDCCs": [
+    "ue5"
+  ],
+  "implementation": {
+    "type": "script",
+    "entry": "main.py",
+    "function": "uv_repack_tool",
+    "aiPrompt": "UV 重排优化工具：对选中或指定 StaticMesh 的 UV 岛进行 MaxRects 装箱重排，统一缩放保证纹理密度一致，可同步适配关联贴图并自动计算最优贴图尺寸。贴图留空时自动从材质实例查找；支持检测并跳过多引用贴图。"
+  },
+  "inputs": [
+    {
+      "id": "mesh_paths",
+      "name": "Mesh 路径",
+      "description": "一个或多个 StaticMesh 的 UE 资产路径，逗号分隔。留空则使用 Content Browser 当前选中资产。",
+      "type": "string",
+      "required": false,
+      "placeholder": "/Game/Scenes/Prop/SM_Foo,/Game/Scenes/Prop/SM_Bar"
+    },
+    {
+      "id": "material_ids",
+      "name": "材质槽过滤",
+      "description": "只处理指定材质槽（Polygon Group）的面，逗号分隔整数。留空则处理全部材质槽。",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "placeholder": "0,1"
+    },
+    {
+      "id": "uv_channel",
+      "name": "UV 通道",
+      "description": "要重排的 UV 通道，通常为 0（主贴图 UV）。",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 7
+    },
+    {
+      "id": "padding",
+      "name": "UV 岛间距",
+      "description": "UV 岛之间的边距（0-1 空间），避免相邻岛采样污染。",
+      "type": "number",
+      "default": 0.002,
+      "min": 0,
+      "max": 0.05,
+      "step": 0.001
+    },
+    {
+      "id": "allow_rotation",
+      "name": "允许旋转",
+      "description": "允许旋转 UV 岛 90° 以提升装箱效率。注意：旋转会影响法线贴图方向，仅在无法线贴图时开启。",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "id": "texture_paths",
+      "name": "关联贴图路径",
+      "description": "需要同步适配的贴图路径，逗号分隔。留空则自动从 Mesh 关联的材质实例中查找（跳过母材质默认贴图）。",
+      "type": "string",
+      "required": false,
+      "default": "",
+      "placeholder": "/Game/Tex/T_Foo_D,/Game/Tex/T_Foo_NRM"
+    },
+    {
+      "id": "skip_shared_textures",
+      "name": "跳过多引用贴图",
+      "description": "True = 贴图被多个资产引用时跳过该贴图及对应材质槽的 UV 修改；False = 强制处理并同步修改所有引用方的 UV。",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "id": "overwrite_texture",
+      "name": "覆盖原贴图",
+      "description": "True = 直接覆盖原始贴图资产；False = 生成带 _repacked 后缀的新贴图。",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "id": "bleed_pixels",
+      "name": "边缘扩展像素",
+      "description": "贴图 bleed 扩展像素数，填充 UV 岛边缘空白区域防止采样越界。",
+      "type": "number",
+      "default": 4,
+      "min": 0,
+      "max": 32
+    },
+    {
+      "id": "dry_run",
+      "name": "预览模式（不写入）",
+      "description": "只分析输出报告，不修改 UV 和贴图。首次使用建议开启确认效果后再执行。",
+      "type": "boolean",
+      "default": false
+    }
+  ],
+  "outputs": [
+    {
+      "id": "report",
+      "name": "重排报告",
+      "type": "string",
+      "description": "包含 UV 岛数量、缩放系数、利用率对比、修改的资源列表、跳过的贴图及原因。"
+    },
+    {
+      "id": "modified_assets",
+      "name": "修改的资源列表",
+      "type": "string",
+      "description": "本次实际写入的所有资产路径（Mesh + 贴图），逗号分隔。"
+    }
+  ],
+  "presets": [
+    {
+      "id": "preview",
+      "name": "预览分析",
+      "description": "只分析不写入，查看优化效果",
+      "params": { "dry_run": true }
+    },
+    {
+      "id": "uv-only",
+      "name": "仅重排 UV",
+      "description": "重排 UV 但不处理贴图",
+      "params": { "dry_run": false, "texture_paths": "" }
+    },
+    {
+      "id": "full",
+      "name": "完整优化（覆盖）",
+      "description": "重排 UV + 同步适配贴图，直接覆盖原贴图",
+      "params": { "dry_run": false, "overwrite_texture": true }
+    },
+    {
+      "id": "full-copy",
+      "name": "完整优化（副本）",
+      "description": "重排 UV + 同步适配贴图，生成 _repacked 副本",
+      "params": { "dry_run": false, "overwrite_texture": false }
+    }
+  ],
+  "source": "marketplace"
+}

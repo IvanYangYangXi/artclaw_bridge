@@ -17,10 +17,10 @@ ArtClaw Version Manager SDK
     ok = matches_skill(manifest, "unreal_engine", "5.4.1")
 
     # VersionManager 类使用
-    # 安装目录为扁平结构：~/.openclaw/skills/{skill_name}/
+    # 安装目录为扁平结构：~/.openclaw/workspace/skills/{skill_name}/
     # source_paths 是源码端的分层目录，层级只在源码端存在
     mgr = VersionManager(
-        installed_path="~/.openclaw/skills",
+        installed_path="~/.openclaw/workspace/skills",
         source_paths={
             "00_official": "/path/to/project/skills/official",
             "02_user":     "~/.artclaw/skills",
@@ -466,7 +466,7 @@ class VersionManager:
 
     示例：
         mgr = VersionManager(
-            installed_path="~/.openclaw/skills",
+            installed_path="~/.openclaw/workspace/skills",
             source_paths={
                 "00_official": "/path/to/skills/official",
                 "02_user":     "~/.artclaw/skills",
@@ -527,7 +527,7 @@ class VersionManager:
         在 installed_path 中查找指定名称的 Skill 目录。
 
         安装目录为扁平结构（OpenClaw 规范），即：
-          ~/.openclaw/skills/{skill_name}/
+          ~/.openclaw/workspace/skills/{skill_name}/
         不存在层级子目录，层级（00_official / 02_user 等）只在源码端使用。
         """
         if not self.installed_path or not self.installed_path.exists():

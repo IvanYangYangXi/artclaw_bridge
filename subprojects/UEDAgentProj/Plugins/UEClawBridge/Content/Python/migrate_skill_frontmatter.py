@@ -331,7 +331,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", default=False,
                         help="只预览不修改")
     parser.add_argument("--dir", default=None,
-                        help="Skills 目录（默认: ~/.openclaw/skills/ 和项目源码 skills/）")
+                        help="Skills 目录（默认: ~/.openclaw/workspace/skills/ 和项目源码 skills/）")
     args = parser.parse_args()
 
     dirs_to_scan = []
@@ -339,7 +339,7 @@ def main():
         dirs_to_scan.append(Path(args.dir))
     else:
         # 默认扫描两个目录
-        oc_skills = Path.home() / ".openclaw" / "skills"
+        oc_skills = Path.home() / ".openclaw" / "workspace" / "skills"
         if oc_skills.exists():
             dirs_to_scan.append(oc_skills)
 

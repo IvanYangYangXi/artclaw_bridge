@@ -46,7 +46,7 @@ interface RecentSkillItem {
 
 const MOCK_RECENT_SKILLS: RecentSkillItem[] = [
   { id: '1', name: 'comfyui-txt2img', type: 'Skill', lastUsedAgo: '3 分钟前' },
-  { id: '2', name: 'ue57-operation-rules', type: 'Skill', lastUsedAgo: '25 分钟前' },
+  { id: '2', name: 'ue5-operation-rules', type: 'Skill', lastUsedAgo: '25 分钟前' },
   { id: '3', name: 'comfyui-controlnet', type: 'Skill', lastUsedAgo: '1 小时前' },
   { id: '4', name: 'blender-material-ops', type: 'Skill', lastUsedAgo: '2 小时前' },
 ]

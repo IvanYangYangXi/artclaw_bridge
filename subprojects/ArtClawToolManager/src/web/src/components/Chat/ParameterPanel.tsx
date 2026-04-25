@@ -2,7 +2,7 @@
 // Dynamic parameter form for workflow/tool execution
 // Includes: parameter form, trigger rules (editable), filter display, preset quick-switch
 import { useState, useEffect, useCallback } from 'react'
-import { Play, RefreshCw, Upload, Image, Zap, Star, Plus, Trash2, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { Play, RefreshCw, Upload, Image, Zap, Star, Plus, Trash2, ChevronDown, ChevronRight, Loader2, AlertTriangle, X } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import type { WorkflowParameter, ExecutionContext, TriggerRuleData, ParameterPreset, ToolItemExtended } from '../../types'
 import { DCC_DISPLAY_NAMES, getEventLabel } from '../../constants/dccTypes'
@@ -63,9 +63,43 @@ export default function ParameterPanel({
   useEffect(() => { loadData() }, [loadData])
 
   const [executing, setExecuting] = useState(false)
+  // DCC connection check dialog state
+  const [dccNotConnected, setDccNotConnected] = useState<{ dccNames: string[] } | null>(null)
+  const dccOptions = useAppStore((s) => s.dccOptions)
+
+  /**
+   * Check if the tool's target DCCs are connected via MCP.
+   * Returns the list of disconnected DCC display names, or empty if all OK.
+   */
+  const checkDCCConnection = useCallback((): string[] => {
+    // Determine target DCCs from toolData manifest or executionContext
+    const targetDCCs: string[] = toolData?.manifest?.targetDCCs ?? []
+    // Filter out "general" — general tools don't need DCC
+    const realTargets = targetDCCs.filter((d) => d && d !== 'general')
+    if (realTargets.length === 0) return []
+
+    const disconnected: string[] = []
+    for (const dcc of realTargets) {
+      const opt = dccOptions.find((o) => o.id === dcc)
+      if (!opt || !opt.connected) {
+        disconnected.push(DCC_DISPLAY_NAMES[dcc] || dcc)
+      }
+    }
+    return disconnected
+  }, [toolData, dccOptions])
 
   const handleExecute = async () => {
     if (executing) return
+
+    // Pre-flight: check DCC connection for DCC-bound tools
+    if (executionContext.needsAI === false) {
+      const disconnected = checkDCCConnection()
+      if (disconnected.length > 0) {
+        setDccNotConnected({ dccNames: disconnected })
+        return
+      }
+    }
+
     setExecuting(true)
 
     const mergedParams = { ...values }
@@ -108,13 +142,21 @@ export default function ParameterPanel({
           onSubmit()
         } else {
           // Backend returned an error response
+          const errCode = data.detail?.code || ''
           const errMsg = data.detail?.message || JSON.stringify(data)
-          addMessage({
-            id: `exec-err-${Date.now()}`,
-            role: 'system',
-            content: `❌ **${executionContext.name}** 执行失败: ${errMsg}`,
-            timestamp: new Date().toISOString(),
-          })
+          
+          // Special handling for DCC not connected
+          if (errCode === 'DCC_NOT_CONNECTED') {
+            const disconnected = checkDCCConnection()
+            setDccNotConnected({ dccNames: disconnected.length > 0 ? disconnected : [errMsg] })
+          } else {
+            addMessage({
+              id: `exec-err-${Date.now()}`,
+              role: 'system',
+              content: `❌ **${executionContext.name}** 执行失败: ${errMsg}`,
+              timestamp: new Date().toISOString(),
+            })
+          }
           // Don't close panel on error — let user retry
         }
       } catch (error) {
@@ -498,6 +540,59 @@ export default function ParameterPanel({
           {zh ? '取消' : 'Cancel'}
         </button>
       </div>
+
+      {/* DCC Not Connected Dialog */}
+      {dccNotConnected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-bg-secondary rounded-lg shadow-xl border border-border-default w-[380px] max-w-[90vw]">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border-default">
+              <AlertTriangle className="w-5 h-5 text-warning shrink-0" />
+              <h3 className="text-small font-medium text-text-primary">
+                {zh ? 'DCC 未连接' : 'DCC Not Connected'}
+              </h3>
+              <button
+                onClick={() => setDccNotConnected(null)}
+                className="ml-auto text-text-dim hover:text-text-secondary transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-4 py-4">
+              <p className="text-small text-text-secondary mb-3">
+                {zh
+                  ? `此工具需要连接 ${dccNotConnected.dccNames.join('、')} 才能执行。`
+                  : `This tool requires ${dccNotConnected.dccNames.join(', ')} to be connected.`}
+              </p>
+              <p className="text-small text-text-dim">
+                {zh
+                  ? '请先打开对应的 DCC 软件，并确认 ArtClaw Bridge 插件已加载且 MCP 服务已启动。'
+                  : 'Please open the DCC application and ensure the ArtClaw Bridge plugin is loaded with MCP service running.'}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 px-4 py-3 border-t border-border-default">
+              <button
+                onClick={async () => {
+                  setDccNotConnected(null)
+                  // Refresh DCC status
+                  try {
+                    await fetch('/api/v1/system/dcc-status/refresh', { method: 'POST' })
+                    await useAppStore.getState().fetchDCCOptions()
+                  } catch { /* ignore */ }
+                }}
+                className="px-3 py-1.5 rounded text-small text-accent hover:bg-bg-tertiary transition-colors"
+              >
+                {zh ? '刷新连接状态' : 'Refresh Status'}
+              </button>
+              <button
+                onClick={() => setDccNotConnected(null)}
+                className="px-3 py-1.5 rounded text-small bg-accent text-white hover:bg-accent/90 transition-colors"
+              >
+                {zh ? '知道了' : 'OK'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

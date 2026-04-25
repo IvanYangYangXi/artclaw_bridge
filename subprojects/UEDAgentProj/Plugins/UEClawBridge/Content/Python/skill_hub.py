@@ -557,7 +557,7 @@ class SkillHub:
     def _resolve_skills_dir() -> Path:
         """
         从 ~/.artclaw/config.json 读取已安装 Skill 目录。
-        回退到平台默认值，最终回退到 ~/.openclaw/skills。
+        回退到平台默认值，最终回退到 ~/.openclaw/workspace/skills。
         """
         import json as _json
         config_path = Path.home() / ".artclaw" / "config.json"
@@ -569,14 +569,14 @@ class SkillHub:
                     return Path(os.path.expanduser(installed))
                 platform_type = cfg.get("platform", {}).get("type", "openclaw")
                 defaults = {
-                    "openclaw": "~/.openclaw/skills",
+                    "openclaw": "~/.openclaw/workspace/skills",
                     "workbuddy": "~/.workbuddy/skills",
                     "claude": "~/.claude/skills",
                 }
-                return Path(os.path.expanduser(defaults.get(platform_type, "~/.openclaw/skills")))
+                return Path(os.path.expanduser(defaults.get(platform_type, "~/.openclaw/workspace/skills")))
             except Exception:
                 pass
-        return Path(os.path.expanduser("~/.openclaw/skills"))
+        return Path(os.path.expanduser("~/.openclaw/workspace/skills"))
 
     def _ensure_layer_dirs(self) -> None:
         """确保分层目录存在，并迁移旧目录名"""

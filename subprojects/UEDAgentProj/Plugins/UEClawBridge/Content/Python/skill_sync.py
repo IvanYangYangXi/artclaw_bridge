@@ -201,11 +201,11 @@ def _get_openclaw_skills_dir() -> Path:
     # 回退：根据 platform.type 确定默认路径
     platform_type = cfg.get("platform", {}).get("type", "openclaw")
     _defaults = {
-        "openclaw": "~/.openclaw/skills",
+        "openclaw": "~/.openclaw/workspace/skills",
         "workbuddy": "~/.workbuddy/skills",
         "claude": "~/.claude/skills",
     }
-    return Path(os.path.expanduser(_defaults.get(platform_type, "~/.openclaw/skills")))
+    return Path(os.path.expanduser(_defaults.get(platform_type, "~/.openclaw/workspace/skills")))
 
 
 # ============================================================================
