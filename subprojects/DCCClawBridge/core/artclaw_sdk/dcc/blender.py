@@ -51,6 +51,14 @@ class BlenderAdapter(BaseDCCBackend):
     
     def get_selected(self) -> List[Dict[str, Any]]:
         """Get currently selected Blender objects."""
+        return self.get_selected_assets() + self.get_selected_objects()
+    
+    def get_selected_assets(self) -> List[Dict[str, Any]]:
+        """Blender 无内置资源管理器，返回空列表。"""
+        return []
+
+    def get_selected_objects(self) -> List[Dict[str, Any]]:
+        """获取场景中选中的 Blender 对象。"""
         try:
             selected = self.bpy.context.selected_objects
             result = []
@@ -192,18 +200,6 @@ class BlenderAdapter(BaseDCCBackend):
             logger.debug(f"Could not get Blender viewport info: {e}")
             return {}
     
-    def rename_object(self, obj_name: str, new_name: str) -> bool:
-        """Rename a Blender object."""
-        try:
-            obj = self.bpy.data.objects.get(obj_name)
-            if obj:
-                obj.name = new_name
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to rename Blender object {obj_name}: {e}")
-            return False
-    
     def execute_on_main_thread(self, func, *args, **kwargs) -> Any:
         """Execute on Blender main thread."""
         # Blender Python typically runs on main thread
@@ -213,148 +209,3 @@ class BlenderAdapter(BaseDCCBackend):
     def is_main_thread(self) -> bool:
         """Blender Python typically runs on main thread."""
         return True
-    
-    def delete_objects(self, objects: List[Dict[str, Any]]) -> int:
-        """Delete Blender objects from the scene."""
-        count = 0
-        try:
-            for obj_info in objects:
-                obj_name = obj_info.get("name", "")
-                if not obj_name:
-                    continue
-                
-                obj = self.bpy.data.objects.get(obj_name)
-                if obj:
-                    self.bpy.data.objects.remove(obj, do_unlink=True)
-                    count += 1
-                    
-        except Exception as e:
-            logger.error(f"Failed to delete Blender objects: {e}")
-        return count
-    
-    def duplicate_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Duplicate Blender objects in the scene."""
-        results = []
-        try:
-            for obj_info in objects:
-                obj_name = obj_info.get("name", "")
-                if not obj_name:
-                    continue
-                
-                obj = self.bpy.data.objects.get(obj_name)
-                if obj:
-                    # Duplicate the object
-                    new_obj = obj.copy()
-                    if obj.data:
-                        new_obj.data = obj.data.copy()
-                    
-                    # Link to the current collection
-                    self.bpy.context.collection.objects.link(new_obj)
-                    
-                    # Offset location slightly
-                    new_obj.location = (
-                        obj.location[0] + 2.0,
-                        obj.location[1],
-                        obj.location[2]
-                    )
-                    
-                    results.append({
-                        "name": new_obj.name,
-                        "type": new_obj.type,
-                        "location": list(new_obj.location)
-                    })
-                    
-        except Exception as e:
-            logger.error(f"Failed to duplicate Blender objects: {e}")
-        return results
-    
-    def export_selected(self, path: str, format: str = "fbx") -> bool:
-        """Export selected Blender objects to file."""
-        try:
-            format_lower = format.lower()
-            
-            if format_lower == "fbx":
-                self.bpy.ops.export_scene.fbx(
-                    filepath=path,
-                    use_selection=True
-                )
-            elif format_lower == "obj":
-                self.bpy.ops.wm.obj_export(
-                    filepath=path,
-                    export_selected_objects=True
-                )
-            elif format_lower == "dae":
-                self.bpy.ops.wm.collada_export(
-                    filepath=path,
-                    selected=True
-                )
-            elif format_lower == "ply":
-                self.bpy.ops.export_mesh.ply(
-                    filepath=path,
-                    use_selection=True
-                )
-            elif format_lower == "stl":
-                self.bpy.ops.export_mesh.stl(
-                    filepath=path,
-                    use_selection=True
-                )
-            else:
-                logger.warning(f"Unsupported Blender export format: {format}")
-                return False
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to export from Blender: {e}")
-            return False
-    
-    def import_file(self, path: str) -> List[Dict[str, Any]]:
-        """Import file into Blender scene."""
-        try:
-            # Get objects before import
-            before = set(self.bpy.data.objects.keys())
-            
-            # Import based on file extension
-            ext = path.lower().rsplit(".", 1)[-1] if "." in path else ""
-            
-            if ext == "fbx":
-                self.bpy.ops.import_scene.fbx(filepath=path)
-            elif ext == "obj":
-                self.bpy.ops.wm.obj_import(filepath=path)
-            elif ext == "dae":
-                self.bpy.ops.wm.collada_import(filepath=path)
-            elif ext == "ply":
-                self.bpy.ops.import_mesh.ply(filepath=path)
-            elif ext == "stl":
-                self.bpy.ops.import_mesh.stl(filepath=path)
-            elif ext == "blend":
-                # For .blend files, use append/link
-                with self.bpy.data.libraries.load(path) as (data_from, data_to):
-                    data_to.objects = data_from.objects
-                
-                # Link objects to current scene
-                for obj in data_to.objects:
-                    self.bpy.context.collection.objects.link(obj)
-            else:
-                logger.warning(f"Unsupported Blender import format: {ext}")
-                return []
-            
-            # Get objects after import
-            after = set(self.bpy.data.objects.keys())
-            new_object_names = after - before
-            
-            # Build result list
-            results = []
-            for obj_name in new_object_names:
-                obj = self.bpy.data.objects.get(obj_name)
-                if obj:
-                    results.append({
-                        "name": obj.name,
-                        "type": obj.type,
-                        "location": list(obj.location)
-                    })
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Failed to import file into Blender: {e}")
-            return []

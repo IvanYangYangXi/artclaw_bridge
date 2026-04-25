@@ -53,6 +53,14 @@ class SubstancePainterAdapter(BaseDCCBackend):
     
     def get_selected(self) -> List[Dict[str, Any]]:
         """Get currently selected items in Substance Painter."""
+        return self.get_selected_assets() + self.get_selected_objects()
+    
+    def get_selected_assets(self) -> List[Dict[str, Any]]:
+        """暂未对接资源管理器。"""
+        return []
+
+    def get_selected_objects(self) -> List[Dict[str, Any]]:
+        """暂未实现，返回空列表。"""
         try:
             result = []
             
@@ -178,29 +186,6 @@ class SubstancePainterAdapter(BaseDCCBackend):
             logger.debug(f"Could not get SP viewport info: {e}")
             return {}
     
-    def rename_object(self, obj_name: str, new_name: str) -> bool:
-        """Rename a Substance Painter object (texture set, layer, etc.)."""
-        try:
-            if not self.sp.project.is_open():
-                return False
-                
-            # Try to rename texture set
-            try:
-                texture_sets = self.sp.textureset.all_texture_sets()
-                for ts in texture_sets:
-                    if ts.name() == obj_name:
-                        # Note: SP may not allow direct texture set renaming
-                        # This would depend on the specific SP API version
-                        return False  # Not typically supported
-            except Exception:
-                pass
-            
-            return False  # Renaming not typically supported in SP
-            
-        except Exception as e:
-            logger.error(f"Failed to rename SP object {obj_name}: {e}")
-            return False
-    
     def execute_on_main_thread(self, func, *args, **kwargs) -> Any:
         """Execute on Substance Painter main thread."""
         # SP Python API typically runs on main thread
@@ -299,25 +284,3 @@ class SubstancePainterAdapter(BaseDCCBackend):
         except Exception as e:
             logger.error(f"Failed to get SP layer stack: {e}")
             return []
-    
-    # Object manipulation methods (limited applicability to SP)
-    
-    def delete_objects(self, objects: List[Dict[str, Any]]) -> int:
-        """Delete objects - limited to texture sets and layers in SP context."""
-        logger.warning("delete_objects limited in Substance Painter - only applies to texture sets and layers")
-        return 0
-    
-    def duplicate_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Duplicate objects - limited to layers in SP context."""
-        logger.warning("duplicate_objects limited in Substance Painter - only applies to layers")
-        return []
-    
-    def export_selected(self, path: str, format: str = "fbx") -> bool:
-        """Export selected - not applicable to SP texture workflow."""
-        logger.warning("export_selected not applicable to Substance Painter - use texture export instead")
-        return False
-    
-    def import_file(self, path: str) -> List[Dict[str, Any]]:
-        """Import file - limited to mesh/texture imports in SP."""
-        logger.warning("import_file limited in Substance Painter - use mesh import or texture import instead")
-        return []

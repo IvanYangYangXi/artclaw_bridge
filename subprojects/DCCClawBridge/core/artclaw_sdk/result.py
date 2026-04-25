@@ -255,3 +255,7 @@ def print_result(result: Dict[str, Any]) -> None:
             
     else:
         print(f"📊 RESULT: {result}")
+
+
+# error 别名（兼容 sdk.result.error() 调用方式）
+error = fail

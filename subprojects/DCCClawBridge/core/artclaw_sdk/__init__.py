@@ -31,10 +31,11 @@ from typing import Any, Dict, List, Optional
 
 __version__ = "1.0.0"
 __all__ = [
-    "context", "filters", "params", "result", "progress", "logger",
+    "context", "filters", "params", "result", "progress", "logger", "log",
     "get_current_dcc", "is_available",
     # Convenience functions
-    "get_context", "get_selected", "get_scene_path", "rename_object",
+    "get_context", "get_selected", "get_selected_assets", "get_selected_objects", 
+    "get_scene_path", "parse_params", "rename_object",
     "delete_objects", "duplicate_objects", "export_selected", "import_file",
     "filter_objects"
 ]
@@ -163,6 +164,10 @@ from . import params
 from . import result
 from . import progress
 
+# log 别名（兼容 sdk.log.info() 调用方式）
+from . import logger as log
+from .params import parse_params
+
 
 # ── Convenience Functions ──
 # These delegate directly to the current adapter for easier API usage
@@ -284,3 +289,18 @@ def filter_objects(objects: list, **criteria) -> list:
     """
     from . import filters as _filters
     return _filters.filter_objects(objects, **criteria)
+
+
+def get_selected_assets() -> List[Dict[str, Any]]:
+    """获取资源管理器中选中的资产文件（UE Content Browser 等）。
+    非 UE 的 DCC 如无资源管理器对接，返回空列表。"""
+    if _current_adapter:
+        return _current_adapter.get_selected_assets()
+    return []
+
+
+def get_selected_objects() -> List[Dict[str, Any]]:
+    """获取场景/视口中选中的对象（UE Actor、Blender Object 等）。"""
+    if _current_adapter:
+        return _current_adapter.get_selected_objects()
+    return []

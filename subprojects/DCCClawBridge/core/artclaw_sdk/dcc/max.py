@@ -51,6 +51,14 @@ class MaxAdapter(BaseDCCBackend):
     
     def get_selected(self) -> List[Dict[str, Any]]:
         """Get currently selected 3ds Max objects."""
+        return self.get_selected_assets() + self.get_selected_objects()
+    
+    def get_selected_assets(self) -> List[Dict[str, Any]]:
+        """暂未对接资源管理器。"""
+        return []
+
+    def get_selected_objects(self) -> List[Dict[str, Any]]:
+        """暂未实现，返回空列表。"""
         try:
             selection = self.rt.selection
             result = []
@@ -215,18 +223,6 @@ class MaxAdapter(BaseDCCBackend):
             logger.debug(f"Could not get Max viewport info: {e}")
             return {}
     
-    def rename_object(self, obj_name: str, new_name: str) -> bool:
-        """Rename a 3ds Max object."""
-        try:
-            obj = self.rt.getNodeByName(obj_name)
-            if obj:
-                obj.name = new_name
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to rename Max object {obj_name}: {e}")
-            return False
-    
     def execute_on_main_thread(self, func, *args, **kwargs) -> Any:
         """Execute on 3ds Max main thread."""
         # 3ds Max pymxs typically runs on main thread
@@ -236,138 +232,3 @@ class MaxAdapter(BaseDCCBackend):
     def is_main_thread(self) -> bool:
         """3ds Max pymxs typically runs on main thread."""
         return True
-    
-    def delete_objects(self, objects: List[Dict[str, Any]]) -> int:
-        """Delete 3ds Max objects from the scene."""
-        count = 0
-        try:
-            for obj_info in objects:
-                obj_name = obj_info.get("name", "")
-                if not obj_name:
-                    continue
-                
-                node = self.rt.getNodeByName(obj_name)
-                if node is not None:
-                    self.rt.delete(node)
-                    count += 1
-                    
-        except Exception as e:
-            logger.error(f"Failed to delete Max objects: {e}")
-        return count
-    
-    def duplicate_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Duplicate 3ds Max objects in the scene."""
-        results = []
-        try:
-            for obj_info in objects:
-                obj_name = obj_info.get("name", "")
-                if not obj_name:
-                    continue
-                
-                node = self.rt.getNodeByName(obj_name)
-                if node is not None:
-                    # Clone/copy the node
-                    clone = self.rt.copy(node)
-                    if clone:
-                        # Offset position slightly
-                        clone.pos = self.rt.Point3(
-                            node.pos.x + 10,
-                            node.pos.y,
-                            node.pos.z
-                        )
-                        
-                        results.append({
-                            "name": clone.name,
-                            "type": obj_info.get("type", "unknown"),
-                            "class": str(clone.classOf()) if hasattr(clone, 'classOf') else "unknown"
-                        })
-                        
-        except Exception as e:
-            logger.error(f"Failed to duplicate Max objects: {e}")
-        return results
-    
-    def export_selected(self, path: str, format: str = "fbx") -> bool:
-        """Export selected 3ds Max objects to file."""
-        try:
-            format_lower = format.lower()
-            
-            if format_lower == "fbx":
-                # Use FBX export
-                self.rt.FBXExporterSetParam("ASCII", False)  # Binary FBX
-                self.rt.FBXExporterSetParam("FileVersion", "FBX201400")
-                self.rt.exportFile(path, selectedOnly=True, using="FBXEXP")
-                
-            elif format_lower == "obj":
-                self.rt.exportFile(path, selectedOnly=True, using="ObjExp")
-                
-            elif format_lower == "3ds":
-                self.rt.exportFile(path, selectedOnly=True, using="3DSEXP")
-                
-            elif format_lower == "max":
-                # Save selected as Max file
-                self.rt.saveNodes(self.rt.selection, path)
-                
-            else:
-                logger.warning(f"Unsupported Max export format: {format}")
-                return False
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to export from Max: {e}")
-            return False
-    
-    def import_file(self, path: str) -> List[Dict[str, Any]]:
-        """Import file into 3ds Max scene."""
-        try:
-            # Get object names before import
-            before = set()
-            for i in range(self.rt.objects.count):
-                obj = self.rt.objects[i]
-                before.add(obj.name)
-            
-            # Import based on file extension
-            ext = path.lower().rsplit(".", 1)[-1] if "." in path else ""
-            
-            if ext == "fbx":
-                self.rt.importFile(path, using="FBXIMP")
-            elif ext == "obj":
-                self.rt.importFile(path, using="ObjImp")
-            elif ext == "3ds":
-                self.rt.importFile(path, using="3DSIMP")
-            elif ext == "max":
-                self.rt.mergeMAXFile(path)
-            else:
-                # Generic import
-                self.rt.importFile(path)
-            
-            # Get object names after import
-            after = set()
-            for i in range(self.rt.objects.count):
-                obj = self.rt.objects[i]
-                after.add(obj.name)
-            
-            new_object_names = after - before
-            
-            # Build result list
-            results = []
-            for obj_name in new_object_names:
-                try:
-                    node = self.rt.getNodeByName(obj_name)
-                    if node:
-                        results.append({
-                            "name": node.name,
-                            "type": str(node.classOf()) if hasattr(node, 'classOf') else "unknown",
-                            "class": str(node.classOf()) if hasattr(node, 'classOf') else "unknown"
-                        })
-                except:
-                    results.append({
-                        "name": obj_name,
-                        "type": "unknown",
-                        "class": "unknown"
-                    })
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Failed to import file into Max: {e}")
-            return []

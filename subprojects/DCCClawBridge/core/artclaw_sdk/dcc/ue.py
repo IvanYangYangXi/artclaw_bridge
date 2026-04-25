@@ -51,36 +51,41 @@ class UEAdapter(BaseDCCBackend):
     
     def get_selected(self) -> List[Dict[str, Any]]:
         """Get currently selected actors."""
+        return self.get_selected_assets() + self.get_selected_objects()
+    
+    def get_selected_assets(self) -> List[Dict[str, Any]]:
+        """获取 Content Browser 中选中的资产。"""
         try:
-            selected_actors = self.unreal.EditorUtilityLibrary.get_selected_assets()
-            selected_level_actors = self.unreal.EditorLevelLibrary.get_selected_level_actors()
-            
+            selected_assets = self.unreal.EditorUtilityLibrary.get_selected_assets()
             result = []
-            
-            # Add selected assets
-            for asset in selected_actors:
+            for asset in selected_assets:
                 result.append({
                     "name": asset.get_name(),
-                    "path": asset.get_path_name(),
-                    "type": "asset",
+                    "path": asset.get_path_name().split(".")[0],
+                    "type": asset.get_class().get_name(),  # 使用实际 class 名而非 "asset"
                     "class": asset.get_class().get_name(),
-                    "is_level_actor": False
                 })
-            
-            # Add selected level actors  
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get UE selected assets: {e}")
+            return []
+
+    def get_selected_objects(self) -> List[Dict[str, Any]]:
+        """获取 Viewport 中选中的 Actor。"""
+        try:
+            selected_level_actors = self.unreal.EditorLevelLibrary.get_selected_level_actors()
+            result = []
             for actor in selected_level_actors:
                 result.append({
                     "name": actor.get_name(),
-                    "path": actor.get_path_name(), 
-                    "type": "actor",
+                    "path": actor.get_path_name(),
+                    "type": actor.get_class().get_name(),  # 使用实际 class 名而非 "actor"
                     "class": actor.get_class().get_name(),
                     "is_level_actor": True,
                     "location": tuple(actor.get_actor_location()),
-                    "rotation": tuple(actor.get_actor_rotation())
+                    "rotation": tuple(actor.get_actor_rotation()),
                 })
-            
             return result
-            
         except Exception as e:
             logger.error(f"Failed to get UE selected objects: {e}")
             return []
@@ -142,26 +147,6 @@ class UEAdapter(BaseDCCBackend):
             
         return {}
     
-    def rename_object(self, obj_path: str, new_name: str) -> bool:
-        """Rename a UE actor or asset."""
-        try:
-            # Try to find actor first
-            actor = self.unreal.EditorLevelLibrary.get_actor_reference(obj_path)
-            if actor:
-                actor.set_actor_label(new_name)
-                return True
-                
-            # Try as asset path
-            asset = self.unreal.EditorAssetLibrary.find_asset_data(obj_path)
-            if asset:
-                return self.unreal.EditorAssetLibrary.rename_asset(obj_path, f"/Game/{new_name}")
-                
-            return False
-            
-        except Exception as e:
-            logger.error(f"Failed to rename UE object {obj_path}: {e}")
-            return False
-    
     def execute_on_main_thread(self, func, *args, **kwargs) -> Any:
         """Execute on UE main thread."""
         # UE Python already runs on main thread in most cases
@@ -207,150 +192,3 @@ class UEAdapter(BaseDCCBackend):
             logger.debug(f"Could not calculate UE world bounds: {e}")
             
         return {}
-    
-    def delete_objects(self, objects: List[Dict[str, Any]]) -> int:
-        """Delete UE actors from the level."""
-        count = 0
-        try:
-            for obj in objects:
-                obj_path = obj.get("path", "")
-                if not obj_path:
-                    continue
-                
-                try:
-                    # Try to delete as actor
-                    actor = self.unreal.EditorLevelLibrary.get_actor_reference(obj_path)
-                    if actor:
-                        self.unreal.EditorLevelLibrary.destroy_actor(actor)
-                        count += 1
-                        continue
-                    
-                    # Try to delete as asset
-                    if self.unreal.EditorAssetLibrary.does_asset_exist(obj_path):
-                        self.unreal.EditorAssetLibrary.delete_asset(obj_path)
-                        count += 1
-                        
-                except Exception as e:
-                    logger.debug(f"Failed to delete UE object {obj_path}: {e}")
-                    
-        except Exception as e:
-            logger.error(f"Failed to delete UE objects: {e}")
-        return count
-    
-    def duplicate_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Duplicate UE actors in the level."""
-        results = []
-        try:
-            for obj in objects:
-                obj_path = obj.get("path", "")
-                if not obj_path or not obj.get("is_level_actor", False):
-                    continue  # Only duplicate level actors for now
-                
-                try:
-                    actor = self.unreal.EditorLevelLibrary.get_actor_reference(obj_path)
-                    if actor:
-                        # UE doesn't have a simple duplicate API, use spawn instead
-                        actor_class = actor.get_class()
-                        location = actor.get_actor_location()
-                        rotation = actor.get_actor_rotation()
-                        
-                        # Offset the location slightly
-                        new_location = self.unreal.Vector(
-                            location.x + 100,  # Offset by 100 units
-                            location.y,
-                            location.z
-                        )
-                        
-                        new_actor = self.unreal.EditorLevelLibrary.spawn_actor_from_class(
-                            actor_class, new_location, rotation
-                        )
-                        
-                        if new_actor:
-                            results.append({
-                                "name": new_actor.get_name(),
-                                "path": new_actor.get_path_name(),
-                                "type": "actor",
-                                "class": new_actor.get_class().get_name(),
-                                "is_level_actor": True
-                            })
-                            
-                except Exception as e:
-                    logger.debug(f"Failed to duplicate UE actor {obj_path}: {e}")
-                    
-        except Exception as e:
-            logger.error(f"Failed to duplicate UE objects: {e}")
-        return results
-    
-    def export_selected(self, path: str, format: str = "fbx") -> bool:
-        """Export selected UE assets/actors to file."""
-        try:
-            format_lower = format.lower()
-            
-            if format_lower == "fbx":
-                # Get selected static meshes and skeletal meshes
-                selected_assets = self.unreal.EditorUtilityLibrary.get_selected_assets()
-                selected_actors = self.unreal.EditorLevelLibrary.get_selected_level_actors()
-                
-                # Create export task
-                export_task = self.unreal.AssetExportTask()
-                export_task.filename = path
-                export_task.automated = True
-                export_task.replace_identical = True
-                
-                # Set objects to export
-                objects_to_export = []
-                
-                # Add selected assets
-                for asset in selected_assets:
-                    if isinstance(asset, (self.unreal.StaticMesh, self.unreal.SkeletalMesh)):
-                        objects_to_export.append(asset)
-                
-                # Add static mesh components from selected actors
-                for actor in selected_actors:
-                    static_mesh_comp = actor.get_component_by_class(self.unreal.StaticMeshComponent)
-                    if static_mesh_comp and static_mesh_comp.static_mesh:
-                        objects_to_export.append(static_mesh_comp.static_mesh)
-                
-                if objects_to_export:
-                    export_task.object = objects_to_export[0]  # Export first object
-                    self.unreal.Exporter.run_asset_export_task(export_task)
-                    return True
-                
-            logger.warning(f"UE export format '{format}' not implemented or no valid objects selected")
-            return False
-            
-        except Exception as e:
-            logger.error(f"Failed to export from UE: {e}")
-            return False
-    
-    def import_file(self, path: str) -> List[Dict[str, Any]]:
-        """Import file into UE project."""
-        try:
-            # Create import task
-            import_task = self.unreal.AssetImportTask()
-            import_task.filename = path
-            import_task.destination_path = "/Game/Imported"  # Default import location
-            import_task.automated = True
-            import_task.save = True
-            import_task.replace_existing = True
-            
-            # Execute import
-            self.unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([import_task])
-            
-            # Get imported assets
-            results = []
-            for imported_asset in import_task.imported_object_paths:
-                asset = self.unreal.EditorAssetLibrary.find_asset_data(imported_asset)
-                if asset:
-                    results.append({
-                        "name": asset.asset_name,
-                        "path": imported_asset,
-                        "type": "asset",
-                        "class": asset.asset_class
-                    })
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Failed to import file into UE: {e}")
-            return []

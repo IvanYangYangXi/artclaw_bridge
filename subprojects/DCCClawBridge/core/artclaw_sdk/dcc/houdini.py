@@ -48,6 +48,14 @@ class HoudiniAdapter(BaseDCCBackend):
     
     def get_selected(self) -> List[Dict[str, Any]]:
         """Get currently selected Houdini nodes."""
+        return self.get_selected_assets() + self.get_selected_objects()
+    
+    def get_selected_assets(self) -> List[Dict[str, Any]]:
+        """暂未对接资源管理器。"""
+        return []
+
+    def get_selected_objects(self) -> List[Dict[str, Any]]:
+        """暂未实现，返回空列表。"""
         try:
             selected_nodes = self.hou.selectedNodes()
             result = []
@@ -156,18 +164,6 @@ class HoudiniAdapter(BaseDCCBackend):
             logger.debug(f"Could not get Houdini viewport info: {e}")
             return {}
     
-    def rename_object(self, obj_path: str, new_name: str) -> bool:
-        """Rename a Houdini node."""
-        try:
-            node = self.hou.node(obj_path)
-            if node:
-                node.setName(new_name)
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to rename Houdini node {obj_path}: {e}")
-            return False
-    
     def execute_on_main_thread(self, func, *args, **kwargs) -> Any:
         """Execute on Houdini main thread."""
         try:
@@ -185,187 +181,3 @@ class HoudiniAdapter(BaseDCCBackend):
             return True
         except:
             return False
-    
-    def delete_objects(self, objects: List[Dict[str, Any]]) -> int:
-        """Delete Houdini nodes."""
-        count = 0
-        try:
-            for obj in objects:
-                node_path = obj.get("path", "")
-                if not node_path:
-                    continue
-                
-                node = self.hou.node(node_path)
-                if node:
-                    node.destroy()
-                    count += 1
-                    
-        except Exception as e:
-            logger.error(f"Failed to delete Houdini nodes: {e}")
-        return count
-    
-    def duplicate_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Duplicate Houdini nodes."""
-        results = []
-        try:
-            for obj in objects:
-                node_path = obj.get("path", "")
-                if not node_path:
-                    continue
-                
-                node = self.hou.node(node_path)
-                if node and node.parent():
-                    # Copy the node within its parent
-                    parent = node.parent()
-                    new_node = parent.copyItems([node])[0] if parent.copyItems([node]) else None
-                    
-                    if new_node:
-                        results.append({
-                            "name": new_node.name(),
-                            "path": new_node.path(),
-                            "type": new_node.type().name(),
-                            "category": new_node.type().category().name() if new_node.type().category() else "unknown"
-                        })
-                        
-        except Exception as e:
-            logger.error(f"Failed to duplicate Houdini nodes: {e}")
-        return results
-    
-    def export_selected(self, path: str, format: str = "fbx") -> bool:
-        """Export selected Houdini geometry to file."""
-        try:
-            selected_nodes = self.hou.selectedNodes()
-            if not selected_nodes:
-                logger.warning("No Houdini nodes selected for export")
-                return False
-            
-            format_lower = format.lower()
-            
-            # Filter for geometry nodes
-            geo_nodes = [node for node in selected_nodes if node.type().name() == "geo"]
-            if not geo_nodes:
-                logger.warning("No geometry nodes selected for export")
-                return False
-            
-            # For now, export the first geometry node
-            geo_node = geo_nodes[0]
-            
-            if format_lower == "fbx":
-                # Create ROP FBX node for export
-                rop_context = self.hou.node("/out")
-                if not rop_context:
-                    rop_context = self.hou.node("/").createNode("obj").createOutputNode("rop_fbx")
-                
-                fbx_rop = rop_context.createNode("rop_fbx")
-                fbx_rop.parm("soppath").set(geo_node.path())
-                fbx_rop.parm("sopoutput").set(path)
-                fbx_rop.render()
-                fbx_rop.destroy()
-                
-            elif format_lower == "obj":
-                # Use geometry ROP
-                geo_rop = self.hou.node("/out").createNode("rop_geometry")
-                geo_rop.parm("soppath").set(geo_node.path())
-                geo_rop.parm("sopoutput").set(path)
-                geo_rop.render()
-                geo_rop.destroy()
-                
-            elif format_lower in ("bgeo", "bgeo.sc"):
-                # Native Houdini format
-                geo_rop = self.hou.node("/out").createNode("rop_geometry")
-                geo_rop.parm("soppath").set(geo_node.path())
-                geo_rop.parm("sopoutput").set(path)
-                geo_rop.render()
-                geo_rop.destroy()
-                
-            else:
-                logger.warning(f"Unsupported Houdini export format: {format}")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to export from Houdini: {e}")
-            return False
-    
-    def import_file(self, path: str) -> List[Dict[str, Any]]:
-        """Import file into Houdini scene."""
-        try:
-            results = []
-            ext = path.lower().rsplit(".", 1)[-1] if "." in path else ""
-            
-            # Get obj context
-            obj_context = self.hou.node("/obj")
-            if not obj_context:
-                logger.error("Could not access /obj context in Houdini")
-                return []
-            
-            # Create appropriate importer based on file type
-            if ext == "fbx":
-                # Create FBX import node
-                fbx_node = obj_context.createNode("fbx")
-                fbx_node.parm("fbxfile").set(path)
-                fbx_node.parm("reload").pressButton()
-                
-                results.append({
-                    "name": fbx_node.name(),
-                    "path": fbx_node.path(),
-                    "type": "fbx",
-                    "category": "Object"
-                })
-                
-            elif ext == "obj":
-                # Create geometry node with File SOP
-                geo_node = obj_context.createNode("geo")
-                file_sop = geo_node.createNode("file")
-                file_sop.parm("file").set(path)
-                
-                results.append({
-                    "name": geo_node.name(),
-                    "path": geo_node.path(),
-                    "type": "geo",
-                    "category": "Object"
-                })
-                
-            elif ext in ("bgeo", "sc"):
-                # Native Houdini geometry
-                geo_node = obj_context.createNode("geo")
-                file_sop = geo_node.createNode("file")
-                file_sop.parm("file").set(path)
-                
-                results.append({
-                    "name": geo_node.name(),
-                    "path": geo_node.path(),
-                    "type": "geo",
-                    "category": "Object"
-                })
-                
-            elif ext == "hip":
-                # Merge another Houdini file
-                self.hou.hipFile.merge(path)
-                # Note: This will merge into existing scene, harder to track new objects
-                results.append({
-                    "name": "merged_scene",
-                    "path": path,
-                    "type": "merge",
-                    "category": "File"
-                })
-                
-            else:
-                # Generic file import via File SOP
-                geo_node = obj_context.createNode("geo")
-                file_sop = geo_node.createNode("file")
-                file_sop.parm("file").set(path)
-                
-                results.append({
-                    "name": geo_node.name(),
-                    "path": geo_node.path(),
-                    "type": "geo",
-                    "category": "Object"
-                })
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Failed to import file into Houdini: {e}")
-            return []

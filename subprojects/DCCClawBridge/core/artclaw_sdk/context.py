@@ -114,3 +114,25 @@ def get_viewport_info() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Failed to get viewport info: {e}")
         return {}
+
+
+def get_selected_assets() -> List[Dict[str, Any]]:
+    """获取资源管理器中选中的资产文件。"""
+    if not _current_adapter:
+        return []
+    try:
+        return _current_adapter.get_selected_assets()
+    except Exception as e:
+        logger.error(f"Failed to get selected assets: {e}")
+        return []
+
+
+def get_selected_objects() -> List[Dict[str, Any]]:
+    """获取场景/视口中选中的对象。"""
+    if not _current_adapter:
+        return []
+    try:
+        return _current_adapter.get_selected_objects()
+    except Exception as e:
+        logger.error(f"Failed to get selected objects: {e}")
+        return []

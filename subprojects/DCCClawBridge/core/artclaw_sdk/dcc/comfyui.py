@@ -85,11 +85,15 @@ class ComfyUIAdapter(BaseDCCBackend):
         return context
     
     def get_selected(self) -> List[Dict[str, Any]]:
-        """Get 'selected' items in ComfyUI context.
-        
-        For ComfyUI, this might mean active nodes or current workflow nodes.
-        Since ComfyUI doesn't have traditional selection, we return workflow info.
-        """
+        """Get 'selected' items in ComfyUI context."""
+        return self.get_selected_assets() + self.get_selected_objects()
+    
+    def get_selected_assets(self) -> List[Dict[str, Any]]:
+        """暂未对接资源管理器。"""
+        return []
+
+    def get_selected_objects(self) -> List[Dict[str, Any]]:
+        """暂未实现，返回空列表。"""
         try:
             # ComfyUI doesn't have traditional object selection
             # We could return active workflow nodes if available
@@ -169,11 +173,6 @@ class ComfyUIAdapter(BaseDCCBackend):
             "has_3d_viewport": False
         }
     
-    def rename_object(self, obj_id: str, new_name: str) -> bool:
-        """Rename operation not applicable to ComfyUI."""
-        logger.warning("Rename operation not supported in ComfyUI")
-        return False
-    
     def execute_on_main_thread(self, func, *args, **kwargs) -> Any:
         """Execute on ComfyUI main thread."""
         # ComfyUI runs in a web server context
@@ -218,25 +217,3 @@ class ComfyUIAdapter(BaseDCCBackend):
         except Exception as e:
             logger.error(f"Failed to get ComfyUI queue status: {e}")
             return {}
-    
-    # Object manipulation methods (not applicable to ComfyUI)
-    
-    def delete_objects(self, objects: List[Dict[str, Any]]) -> int:
-        """Delete objects - not applicable to ComfyUI workflow system."""
-        logger.warning("delete_objects not applicable to ComfyUI - ComfyUI works with node workflows, not scene objects")
-        return 0
-    
-    def duplicate_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Duplicate objects - not applicable to ComfyUI workflow system."""
-        logger.warning("duplicate_objects not applicable to ComfyUI - ComfyUI works with node workflows, not scene objects")
-        return []
-    
-    def export_selected(self, path: str, format: str = "fbx") -> bool:
-        """Export selected - not applicable to ComfyUI workflow system."""
-        logger.warning("export_selected not applicable to ComfyUI - use workflow execution and image saving instead")
-        return False
-    
-    def import_file(self, path: str) -> List[Dict[str, Any]]:
-        """Import file - not applicable to ComfyUI workflow system."""
-        logger.warning("import_file not applicable to ComfyUI - use LoadImage nodes in workflows instead")
-        return []
