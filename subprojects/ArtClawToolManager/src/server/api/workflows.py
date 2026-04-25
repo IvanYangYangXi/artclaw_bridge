@@ -3,7 +3,7 @@
 Workflows REST API – list / detail / favorite / parameters / execute.
 
 Workflow templates are discovered by scanning ``~/.artclaw/workflows/``
-and ``~/.openclaw/skills/`` for directories containing ``workflow.json``.
+and ``~/.openclaw/workspace/skills/`` for directories containing ``workflow.json``.
 """
 from __future__ import annotations
 

@@ -35,7 +35,7 @@ def _resolve_path_variables() -> Dict[str, str]:
         pass
 
     return {
-        "$skills_installed": str(Path.home() / ".openclaw" / "skills"),
+        "$skills_installed": str(Path.home() / ".openclaw" / "workspace" / "skills"),
         "$project_root": project_root,
         "$tools_dir": str(Path.home() / ".artclaw" / "tools"),
         "$home": str(Path.home()),

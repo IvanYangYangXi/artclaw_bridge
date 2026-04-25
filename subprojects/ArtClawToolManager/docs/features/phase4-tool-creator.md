@@ -145,7 +145,7 @@ interface ConfirmAction {
 ## 5. Tool Creator Skill 文件
 
 ```
-~/.openclaw/skills/artclaw-tool-creator/
+~/.openclaw/workspace/skills/artclaw-tool-creator/
 ├── SKILL.md                   # Skill 定义（含 artclaw_sdk API 速查）
 └── references/
     └── sdk-api-reference.md   # artclaw_sdk 完整 API 参考
@@ -182,7 +182,7 @@ Agent 创建工具时生成的触发规则**必须遵守以下范式**（详见 
 
 | 变量 | 解析值 |
 |------|--------|
-| `$skills_installed` | `~/.openclaw/skills` |
+| `$skills_installed` | `~/.openclaw/workspace/skills` |
 | `$project_root` | config.json → project_root |
 | `$tools_dir` | `~/.artclaw/tools` |
 | `$home` | 用户主目录 |

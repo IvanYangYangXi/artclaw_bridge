@@ -42,7 +42,7 @@ def _resolve_path_variables() -> Dict[str, str]:
     cfg_path = Path.home() / ".artclaw" / "config.json"
     project_root = ""
     platform_type = "openclaw"
-    skills_installed = str(Path.home() / ".openclaw" / "skills")
+    skills_installed = str(Path.home() / ".openclaw" / "workspace" / "skills")
 
     try:
         if cfg_path.exists():

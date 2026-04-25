@@ -18,7 +18,7 @@ description: >
 Skill 存在于两个位置，数据流是单向的：
 
 ```
-源码 skills/{layer}/{dcc}/{name}/     ──更新──>  已安装 ~/.openclaw/skills/{name}/
+源码 skills/{layer}/{dcc}/{name}/     ──更新──>  已安装 ~/.openclaw/workspace/skills/{name}/
   (Git 仓库，分发给其他用户)            <──发布──    (本地运行时，AI 实际使用)
 ```
 
@@ -99,7 +99,7 @@ result = rename_skill("old_skill_name", "new_skill_name")
 1. `hub.auto_name(description)` 生成名称
 2. AI 生成 `__init__.py` + `manifest.json`
 3. **必须**生成 `SKILL.md`（含 YAML frontmatter，见下方模板）
-4. 保存到已安装目录 `~/.openclaw/skills/<skill_name>/`
+4. 保存到已安装目录 `~/.openclaw/workspace/skills/<skill_name>/`
 5. `publish_skill()` 发布到源码仓库
 
 ### SKILL.md 模板（OpenClaw 兼容格式）

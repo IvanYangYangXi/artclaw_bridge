@@ -288,7 +288,7 @@ tags:
 
 **本地存储**:
 ```
-~/.openclaw/skills/comfyui-workflow-manager/
+~/.openclaw/workspace/skills/comfyui-workflow-manager/
 ├── templates/
 │   ├── official/          # 随 Skill 更新
 │   ├── marketplace/       # 从远程下载缓存

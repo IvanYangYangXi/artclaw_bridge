@@ -2,7 +2,7 @@
 """
 Skills REST API – list / detail / enable / disable / pin / favorite / batch.
 
-The skill list is populated by scanning ``~/.openclaw/skills/`` on demand.
+The skill list is populated by scanning ``~/.openclaw/workspace/skills/`` on demand.
 User preferences (pinned, disabled, favorites) are stored in
 ``~/.artclaw/config.json`` via ConfigManager.
 """

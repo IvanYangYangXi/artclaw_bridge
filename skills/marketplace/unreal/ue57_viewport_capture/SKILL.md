@@ -61,7 +61,7 @@ metadata:
 
 ```python
 import importlib, sys
-skill_path = r"C:\Users\yangjili\.openclaw\skills\ue57_viewport_capture"
+skill_path = r"C:\Users\yangjili\.openclaw\workspace\skills\ue57_viewport_capture"
 if skill_path not in sys.path:
     sys.path.insert(0, skill_path)
 if "ue57_viewport_capture" in sys.modules:

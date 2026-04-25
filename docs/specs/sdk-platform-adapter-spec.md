@@ -167,7 +167,7 @@ EVENT_TYPES = {
     "config_key": "mcp.servers"
   },
   "skills": {
-    "installed_path": "~/.openclaw/skills"
+    "installed_path": "~/.openclaw/workspace/skills"
   },
   "disabled_skills": [],
   "pinned_skills": []
@@ -199,7 +199,7 @@ _PLATFORM_DEFAULTS = {
         "gateway_url": "ws://127.0.0.1:18789",
         "mcp_config_path": "~/.openclaw/openclaw.json",
         "mcp_config_key": "mcp.servers",
-        "skills_path": "~/.openclaw/skills",
+        "skills_path": "~/.openclaw/workspace/skills",
         "visible": True,
     },
     "claude": {

@@ -45,7 +45,7 @@
 ┌─────────────────────────────────────────────────────────┐
 │                    Skill 生命周期                         │
 │                                                         │
-│  源码仓库 (skills/)  ←──发布──  已安装 (~/.openclaw/skills/) │
+│  源码仓库 (skills/)  ←──发布──  已安装 (~/.openclaw/workspace/skills/) │
 │       │                              │                  │
 │       └──────安装/更新──────→         │                  │
 │                                      │                  │
@@ -364,7 +364,7 @@ if hub:
 |------|----------|----------|
 | 纯 SKILL.md 的 Skill（无 manifest） | 列表显示版本为空或 `-`，作者从 frontmatter 读取 | 查看 `artclaw-knowledge` 等 |
 | 有 manifest.json 的 Skill | 版本号正确显示，作者正确显示 | 查看 `ue57_material_node_edit` |
-| 修改了已安装 Skill 文件后刷新 | 该 Skill 出现 [发布] 按钮 | 手动编辑 `~/.openclaw/skills/X/SKILL.md` |
+| 修改了已安装 Skill 文件后刷新 | 该 Skill 出现 [发布] 按钮 | 手动编辑 `~/.openclaw/workspace/skills/X/SKILL.md` |
 | 未修改的已安装 Skill | 不出现 [发布] 按钮 | 大多数 Skill 应该无发布按钮 |
 | 源码更新后（版本号高于运行时） | 出现 [更新] 按钮 | 手动改源码版本号 |
 | 全量更新按钮 | 数字只计 updatable，不含 not_installed | 当前应为 0（全部同步了） |

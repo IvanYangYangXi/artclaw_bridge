@@ -9,9 +9,9 @@
 
 ## 1. 概述
 
-Skill 是 ArtClaw 中可被 AI Agent 调用的最小功能单元。每个 Skill 通过 `@ue_tool` 装饰器声明为 MCP Tool，安装到统一的外部目录（`~/.openclaw/skills/`）后由 Skill Hub 自动发现、注册、热重载。
+Skill 是 ArtClaw 中可被 AI Agent 调用的最小功能单元。每个 Skill 通过 `@ue_tool` 装饰器声明为 MCP Tool，安装到统一的外部目录（`~/.openclaw/workspace/skills/`）后由 Skill Hub 自动发现、注册、热重载。
 
-**安装目录变更**：Skills 现已统一安装到外部目录（`~/.openclaw/skills/` 或按平台配置），不再存储在 UE 插件内部的 `Content/Python/Skills/`。`skill_hub.py` 通过 `~/.artclaw/config.json` 的 `skills.installed_path` 读取安装路径。
+**安装目录变更**：Skills 现已统一安装到外部目录（`~/.openclaw/workspace/skills/` 或按平台配置），不再存储在 UE 插件内部的 `Content/Python/Skills/`。`skill_hub.py` 通过 `~/.artclaw/config.json` 的 `skills.installed_path` 读取安装路径。
 
 本文档定义 Skill 开发的强制规范与推荐实践。
 
@@ -24,7 +24,7 @@ Skill 是 ArtClaw 中可被 AI Agent 调用的最小功能单元。每个 Skill 
 每个 Skill 是一个独立目录，安装到统一的外部目录：
 
 ```
-~/.openclaw/skills/my_skill/          # 统一安装目录（扁平结构）
+~/.openclaw/workspace/skills/my_skill/          # 统一安装目录（扁平结构）
 ├── SKILL.md                          # AI 文档 + OpenClaw/ClawHub 分发
 ├── manifest.json                     # MCP 注册元数据
 ├── __init__.py                       # Python 入口（@ue_tool 装饰器）

@@ -135,7 +135,7 @@
 ### 4.1 模板库结构
 
 ```
-~/.openclaw/skills/comfyui-workflow-templates/
+~/.openclaw/workspace/skills/comfyui-workflow-templates/
 ├── official/                    # 官方维护
 │   ├── txt2img-basic.json
 │   ├── txt2img-sdxl.json

@@ -254,7 +254,7 @@ switch_platform.py --to lobster
   ├─ 2. 更新 config.json
   │     → platform.type = "lobster"
   │     → platform.gateway_url = "http://127.0.0.1:18790"
-  │     → skills.installed_path = "~/.openclaw/skills"  (Skills 共享，不随平台变)
+  │     → skills.installed_path = "~/.openclaw/workspace/skills"  (Skills 共享，不随平台变)
   │     → mcp.config_path = "%APPDATA%/LobsterAI/openclaw/state/openclaw.json"
   │
   ├─ 3. 复制平台 bridge 文件到 DCC 安装目录
@@ -288,7 +288,7 @@ switch_platform.py --to lobster
 ### 5.5 Skills 共享策略
 
 **Skills 不随平台切换而变化**。无论用 OpenClaw 还是 LobsterAI：
-- Skills 始终安装在 `~/.openclaw/skills/`（或配置的路径）
+- Skills 始终安装在 `~/.openclaw/workspace/skills/`（或配置的路径）
 - `skill_hub.py` 从配置的 `skills.installed_path` 读取
 - 切换平台时 `skills.installed_path` **保持不变**
 
@@ -318,7 +318,7 @@ platforms/lobster/
 "lobster": {
     "gateway_url": "http://127.0.0.1:18790",  # LobsterAI Gateway 端口
     "mcp_port": 8080,                         # DCC MCP Server 端口（不变）
-    "skills_installed_path": "~/.openclaw/skills",  # Skills 共享
+    "skills_installed_path": "~/.openclaw/workspace/skills",  # Skills 共享
     "mcp_config_path": "%APPDATA%/LobsterAI/openclaw/state/openclaw.json",
     "mcp_config_key": "plugins.entries.mcp-bridge.config",
     "has_client_ui": True,                  # LobsterAI 有独立客户端
@@ -332,7 +332,7 @@ platforms/lobster/
 "lobster": {
     "gateway_url": "http://127.0.0.1:18790",
     "mcp_port": 8080,
-    "skills_installed_path": "~/.openclaw/skills",
+    "skills_installed_path": "~/.openclaw/workspace/skills",
     "mcp_config_path": "%APPDATA%/LobsterAI/openclaw/state/openclaw.json",
     "mcp_config_key": "plugins.entries.mcp-bridge.config",
     "bridge_file": "lobster_bridge.py",

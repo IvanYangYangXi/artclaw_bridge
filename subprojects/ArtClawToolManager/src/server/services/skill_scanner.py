@@ -1,6 +1,6 @@
 # Ref: docs/features/phase2-skill-management.md#SkillScanner
 """
-Scan ``~/.openclaw/skills/`` for installed skills by reading SKILL.md
+Scan ``~/.openclaw/workspace/skills/`` for installed skills by reading SKILL.md
 frontmatter.
 
 Each skill directory is expected to have a ``SKILL.md`` with YAML

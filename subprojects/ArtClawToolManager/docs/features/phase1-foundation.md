@@ -633,7 +633,7 @@ class Settings(BaseSettings):
     
     # Data paths
     DATA_DIR: str = "~/.artclaw"
-    SKILLS_DIR: str = "~/.openclaw/skills"
+    SKILLS_DIR: str = "~/.openclaw/workspace/skills"
     
     class Config:
         env_file = ".env"

@@ -85,7 +85,7 @@ python install.py --openclaw --platform lobster
 
 This step automatically:
 1. Copies the `mcp-bridge` Gateway plugin to `~/.openclaw/extensions/mcp-bridge/`
-2. Installs all official Skills to `~/.openclaw/skills/` (or LobsterAI SKILLs directory)
+2. Installs all official Skills to `~/.openclaw/workspace/skills/` (or LobsterAI SKILLs directory)
 3. Writes `~/.artclaw/config.json` with project root and platform settings
 4. **Automatically configures MCP servers** in the platform's config file:
    - OpenClaw: `~/.openclaw/openclaw.json`

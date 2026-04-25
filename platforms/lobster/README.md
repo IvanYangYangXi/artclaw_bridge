@@ -86,7 +86,7 @@ platforms/common/                      # 公共组件（所有平台共享）
 "lobster": {
     "gateway_url": "http://127.0.0.1:18790",
     "mcp_port": 8080,
-    "skills_installed_path": "~/.openclaw/skills",
+    "skills_installed_path": "~/.openclaw/workspace/skills",
     "mcp_config_path": "%APPDATA%/LobsterAI/openclaw/state/openclaw.json",
     "mcp_config_via_ui": True,  # 需通过客户端界面配置
 },

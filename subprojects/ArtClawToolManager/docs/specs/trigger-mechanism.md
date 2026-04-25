@@ -137,7 +137,7 @@ filters.path 的 pattern 支持 `$variable` 前缀，运行时由引擎解析为
 
 | 变量 | 解析来源 | 示例值 |
 |------|----------|--------|
-| `$skills_installed` | `~/.openclaw/skills` 或平台配置 | `C:/Users/x/.openclaw/skills` |
+| `$skills_installed` | `~/.openclaw/workspace/skills` 或平台配置 | `C:/Users/x/.openclaw/workspace/skills` |
 | `$project_root` | `~/.artclaw/config.json` → `project_root` | `D:/MyProject_D/artclaw_bridge` |
 | `$tools_dir` | `~/.artclaw/tools` | `C:/Users/x/.artclaw/tools` |
 | `$home` | 用户主目录 | `C:/Users/x` |
@@ -532,7 +532,7 @@ class FilterEvaluator:
     
     # 路径变量映射（运行时由引擎从配置解析）
     PATH_VARIABLES = {
-        "$skills_installed": "~/.openclaw/skills",   # 或平台配置值
+        "$skills_installed": "~/.openclaw/workspace/skills",   # 或平台配置值
         "$project_root": "",                          # ~/.artclaw/config.json
         "$tools_dir": "~/.artclaw/tools",
         "$home": "~",

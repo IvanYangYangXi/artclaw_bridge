@@ -362,7 +362,7 @@ UEClawBridgeAPI.Build.cs 需要的模块：
 每个 Phase 完成后：
 1. ✅ C++ 编译通过（UE 5.7）
 2. ✅ Python 可调用（`import unreal; unreal.XXX.method()` 正常返回）
-3. ✅ 配套 SKILL.md 写完并安装到 `~/.openclaw/skills/`
+3. ✅ 配套 SKILL.md 写完并安装到 `~/.openclaw/workspace/skills/`
 4. ✅ AI Agent 端到端测试：给 AI 一个任务描述，AI 能通过 Skill 引导完成操作
 5. ✅ 文档更新：troubleshooting + feature 文档
 

@@ -17,18 +17,18 @@ AI Agent 在 UE 对话中被要求"使用 ArtClaw 的 Skill 工具来处理 Skil
 
 ## 修复方案
 
-### 更新 `~/.openclaw/skills/artclaw-skill-manage/SKILL.md`
+### 更新 `~/.openclaw/workspace/skills/artclaw-skill-manage/SKILL.md`
 
 1. **前置核心 API**: 将 `skill_sync` 的常用操作（安装/卸载/更新/同步/发布）提前到文档前半部分
 2. **增加重命名流程**: 添加 Skill 重命名的完整步骤指南
 3. **增加决策指南**: 明确"何时用 ArtClaw Skill 管理 vs OpenClaw CLI vs ClawHub"
-4. **增加 OpenClaw SKILL.md 同步**: Skill 改名后如何同步更新 `~/.openclaw/skills/` 下的文档
+4. **增加 OpenClaw SKILL.md 同步**: Skill 改名后如何同步更新 `~/.openclaw/workspace/skills/` 下的文档
 
 ### 涉及文件
 
 | 文件 | 修改内容 |
 |------|----------|
-| `~/.openclaw/skills/artclaw-skill-manage/SKILL.md` | 全面更新 |
+| `~/.openclaw/workspace/skills/artclaw-skill-manage/SKILL.md` | 全面更新 |
 | `skills/official/universal/artclaw-skill-manage/SKILL.md` (源码) | 同步更新 |
 
 ### 更新后的 SKILL.md 结构

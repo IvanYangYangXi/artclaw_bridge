@@ -499,7 +499,7 @@ ChatPage (页面)
 
 | 按钮 | 条件 | 说明 |
 |------|------|------|
-| 安装 | 未安装 | 从源码安装到 `~/.openclaw/skills/` |
+| 安装 | 未安装 | 从源码安装到 `~/.openclaw/workspace/skills/` |
 | 卸载 | 已安装 | 从安装目录移除 |
 | 更新 | 有新版本 | 从源码更新 |
 | 启用/禁用 | 已安装 | 控制是否被 AI 加载 |
@@ -512,7 +512,7 @@ ChatPage (页面)
 **📂目录下拉菜单**:
 ```
 ┌───────────────────┐
-│ 📂 打开安装目录    │  → 打开 ~/.openclaw/skills/{name}/
+│ 📂 打开安装目录    │  → 打开 ~/.openclaw/workspace/skills/{name}/
 │ 📂 打开源码目录    │  → 打开 artclaw_bridge/skills/{layer}/{dcc}/{name}/ (如有)
 └───────────────────┘
 ```

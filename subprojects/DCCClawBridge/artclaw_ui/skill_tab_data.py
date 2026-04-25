@@ -43,9 +43,9 @@ def query_all_skills() -> List[dict]:
     installed_path = ac_cfg.get("skills", {}).get("installed_path", "")
     if not installed_path:
         pt = ac_cfg.get("platform", {}).get("type", "openclaw")
-        defaults = {"openclaw": "~/.openclaw/skills",
+        defaults = {"openclaw": "~/.openclaw/workspace/skills",
                     "workbuddy": "~/.workbuddy/skills"}
-        installed_path = defaults.get(pt, "~/.openclaw/skills")
+        installed_path = defaults.get(pt, "~/.openclaw/workspace/skills")
     oc_dir = os.path.expanduser(installed_path)
 
     # 项目源码扫描

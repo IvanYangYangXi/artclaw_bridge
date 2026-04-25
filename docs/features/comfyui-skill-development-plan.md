@@ -34,7 +34,7 @@ LoadImage → CLIPTextEncode(×2) → CheckpointLoader → KSampler
 
 **文件结构**:
 ```
-~/.openclaw/skills/comfyui-img2img/
+~/.openclaw/workspace/skills/comfyui-img2img/
 ├── SKILL.md
 └── references/
     └── img2img_patterns.md
@@ -76,7 +76,7 @@ download_model(
 
 **文件结构**:
 ```
-~/.openclaw/skills/comfyui-model-manager/
+~/.openclaw/workspace/skills/comfyui-model-manager/
 ├── SKILL.md
 ├── references/
 │   ├── civitai_api.md
@@ -147,7 +147,7 @@ wf = build_controlnet_workflow(
 
 **文件结构**:
 ```
-~/.openclaw/skills/comfyui-controlnet/
+~/.openclaw/workspace/skills/comfyui-controlnet/
 ├── SKILL.md
 └── references/
     ├── controlnet_types.md
@@ -181,7 +181,7 @@ save_template(current_wf, name="my-style", category="user", tags=["anime"])
 
 **模板库结构**:
 ```
-~/.openclaw/skills/comfyui-workflow-templates/
+~/.openclaw/workspace/skills/comfyui-workflow-templates/
 ├── SKILL.md
 ├── templates/
 │   ├── official/

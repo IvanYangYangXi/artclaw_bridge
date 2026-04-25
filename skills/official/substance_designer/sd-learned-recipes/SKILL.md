@@ -72,7 +72,7 @@ metadata:
 ```python
 # 在 SD 中读取配方
 import os
-recipes_dir = os.path.expanduser(r"~\.openclaw\skills\sd-learned-recipes\recipes")
+recipes_dir = os.path.expanduser(r"~\.openclaw\workspace\skills\sd-learned-recipes\recipes")
 
 # 先读总览
 with open(os.path.join(recipes_dir, "_overview.md"), "r", encoding="utf-8") as f:

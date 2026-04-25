@@ -633,7 +633,7 @@ def _get_skills_installed_path(platform_type: str = "openclaw") -> str:
 
     # 平台默认路径
     if platform_type == "openclaw":
-        return os.path.join(os.path.expanduser("~"), ".openclaw", "skills")
+        return os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", "skills")
 
     # 延迟导入避免循环依赖
     try:
@@ -646,7 +646,7 @@ def _get_skills_installed_path(platform_type: str = "openclaw") -> str:
         pass
 
     # 最终 fallback
-    return os.path.join(os.path.expanduser("~"), ".openclaw", "skills")
+    return os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", "skills")
 
 
 def install_dcc_skills(dcc_categories: list, platform_type: str = "openclaw") -> int:
@@ -674,12 +674,12 @@ def install_dcc_skills(dcc_categories: list, platform_type: str = "openclaw") ->
             if not (skill_dir / "SKILL.md").exists():
                 continue
             dst = os.path.join(skills_installed_path, skill_dir.name)
-            method = link_or_copy_dir(str(skill_dir), dst)
-            if method != "copy":
-                cprint("链接", f"Skill: {skill_dir.name} ({method})", "cyan")
+            # Skill 安装始终用复制（不用 symlink/junction），
+            # 因为版本管理需要独立副本，用户可能修改已安装 Skill。
+            copy_dir(str(skill_dir), dst)
+            cprint("复制", f"Skill: {skill_dir.name}", "cyan")
             skill_count += 1
 
     if skill_count:
-        method_label = "链接" if not USE_COPY_MODE else "复制"
-        cprint("OK", f"{skill_count} 个 DCC Skills 已{method_label}到: {skills_installed_path}", "green")
+        cprint("OK", f"{skill_count} 个 DCC Skills 已复制到: {skills_installed_path}", "green")
     return skill_count

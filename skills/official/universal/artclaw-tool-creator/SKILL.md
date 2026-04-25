@@ -264,7 +264,7 @@ watch trigger **不含 `paths` 字段**。监听路径统一写在 `filters.path
 
 | 变量 | 解析值 | 说明 |
 |------|--------|------|
-| `$skills_installed` | `~/.openclaw/skills` | 已安装 Skill 目录 |
+| `$skills_installed` | `~/.openclaw/workspace/skills` | 已安装 Skill 目录 |
 | `$project_root` | config.json → project_root | 项目源码根目录 |
 | `$tools_dir` | `~/.artclaw/tools` | 工具存储目录 |
 | `$home` | 用户主目录 | — |

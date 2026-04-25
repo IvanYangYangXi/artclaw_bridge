@@ -136,7 +136,7 @@ GET /skills/{id}
     },
     "status": "installed",
     "installedVersion": "0.1.0",
-    "installPath": "~/.openclaw/skills/comfyui-txt2img",
+    "installPath": "~/.openclaw/workspace/skills/comfyui-txt2img",
     "stats": { ... },
     "data": {
       "priority": 100,
@@ -170,7 +170,7 @@ POST /skills/{id}/install
   "success": true,
   "data": {
     "installedVersion": "0.1.0",
-    "installPath": "~/.openclaw/skills/comfyui-txt2img",
+    "installPath": "~/.openclaw/workspace/skills/comfyui-txt2img",
     "message": "安装成功"
   }
 }

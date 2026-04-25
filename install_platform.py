@@ -18,6 +18,7 @@ import sys
 from install_utils import (
     ROOT_DIR,
     SKILLS_SRC,
+    copy_dir,
     cprint,
     get_gateway_src,
     get_platform_src,
@@ -50,7 +51,7 @@ PLATFORM_CONFIGS = {
         "display_name": "OpenClaw",
         "gateway_url": "ws://127.0.0.1:18789",
         "mcp_port": 8080,
-        "skills_installed_path": "~/.openclaw/skills",
+        "skills_installed_path": "~/.openclaw/workspace/skills",
         "mcp_config_path": "~/.openclaw/openclaw.json",
         "mcp_config_key": "mcp.servers",
         "bridge_file": "openclaw_ws.py",
@@ -248,7 +249,7 @@ def install_openclaw(platform_type: str = "openclaw"):
 
     # 安装 Skills
     skills_installed_path = os.path.expanduser(
-        pcfg.get("skills_installed_path", "~/.openclaw/skills")
+        pcfg.get("skills_installed_path", "~/.openclaw/workspace/skills")
     )
     os.makedirs(skills_installed_path, exist_ok=True)
 
@@ -266,9 +267,9 @@ def install_openclaw(platform_type: str = "openclaw"):
                 if not (skill_dir / "SKILL.md").exists() and not (skill_dir / "manifest.json").exists():
                     continue
                 dst = os.path.join(skills_installed_path, skill_dir.name)
-                method = link_or_copy_dir(str(skill_dir), dst)
-                if method != "copy":
-                    cprint("链接", f"Skill: {skill_dir.name} ({method})", "cyan")
+                # Skill 安装始终用复制（版本管理需要独立副本）
+                copy_dir(str(skill_dir), dst)
+                cprint("复制", f"Skill: {skill_dir.name}", "cyan")
                 skill_count += 1
     if skill_count:
         cprint("OK", f"{skill_count} 个 Skills 已安装到: {skills_installed_path}", "green")

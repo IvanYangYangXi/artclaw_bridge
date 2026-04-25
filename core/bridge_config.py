@@ -51,7 +51,7 @@ _PLATFORM_DEFAULTS = {
         "gateway_url": "ws://127.0.0.1:18789",
         "mcp_port": 8080,
         "visible": True,
-        "skills_installed_path": "~/.openclaw/skills",
+        "skills_installed_path": "~/.openclaw/workspace/skills",
         "mcp_config_path": "~/.openclaw/openclaw.json",
         "mcp_config_key": "mcp.servers",
     },

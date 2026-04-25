@@ -3,7 +3,7 @@
 Skill business-logic service (filesystem + config, no database).
 
 Combines data from:
-  1. ``skill_scanner`` – live filesystem scan of ~/.openclaw/skills/
+  1. ``skill_scanner`` – live filesystem scan of ~/.openclaw/workspace/skills/
   2. ``config_manager`` – user preferences (pinned/disabled/favorites)
 
 The authoritative source of "which skills exist" is the filesystem scan.
@@ -153,7 +153,7 @@ class SkillService:
     # ------------------------------------------------------------------
 
     def install_skill(self, skill_id: str, force: bool = False) -> Dict[str, Any]:
-        """Install a skill from source directory to ~/.openclaw/skills/."""
+        """Install a skill from source directory to ~/.openclaw/workspace/skills/."""
         # Re-scan to find the skill (may be not_installed)
         items = self._scan_and_build()
         skill = None
@@ -191,7 +191,7 @@ class SkillService:
         }
 
     def uninstall_skill(self, skill_id: str) -> Dict[str, Any]:
-        """Uninstall a skill by removing it from ~/.openclaw/skills/."""
+        """Uninstall a skill by removing it from ~/.openclaw/workspace/skills/."""
         skill = self.get_skill(skill_id)
         if not skill:
             raise ValueError(f"Skill not found: {skill_id}")

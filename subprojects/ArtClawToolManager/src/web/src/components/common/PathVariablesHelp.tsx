@@ -21,7 +21,7 @@ const PATH_VARIABLES = [
     name: '$skills_installed',
     desc_zh: 'Skill 安装目录',
     desc_en: 'Installed skills directory',
-    source: '~/.openclaw/skills',
+    source: '~/.openclaw/workspace/skills',
     example: '$skills_installed/**/*.md',
   },
   {
