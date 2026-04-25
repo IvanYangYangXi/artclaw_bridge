@@ -171,6 +171,8 @@ sdk.context.get_viewport_info() -> dict
 
 ### get_selected_assets() 返回格式
 
+"资产"指资源管理器中选中的资产文件：UE 是 Content Browser，其他 DCC 是操作系统文件管理器中选中的文件（如果有对接的话）。
+
 **UE**:
 ```python
 [{
@@ -181,7 +183,7 @@ sdk.context.get_viewport_info() -> dict
 }]
 ```
 
-**Blender**: 返回空列表 `[]`（Blender 没有独立的资产管理器面板）。
+**Blender / Maya / 其他 DCC**: 如无资源管理器对接，返回 `[]`。未来可对接系统文件管理器选中的文件。
 
 ### get_selected_objects() 返回格式
 
