@@ -305,7 +305,7 @@ watch trigger **不含 `paths` 字段**。监听路径统一写在 `filters.path
 
 #### event 类型 — dcc 必须匹配 targetDCCs
 
-`trigger.event` 字段为完整事件名，timing 已包含在名称中：
+`trigger.event` 字段包含完整事件名（含 timing 后缀），格式为 `{base}.{timing}`：
 
 ```json
 {
@@ -325,9 +325,11 @@ watch trigger **不含 `paths` 字段**。监听路径统一写在 `filters.path
 |-----|--------|------|
 | ue5 | `asset.save.pre` | 保存前拦截（可 reject 阻止保存） |
 | ue5 | `asset.save.post` | 保存完成后（不可拦截，仅通知） |
-| ue5 | `asset.delete.pre` | 删除前（不可阻止，仅通知） |
-| ue5 | `asset.delete.post` | 删除完成后 |
+| ue5 | `asset.delete.pre` | 删除前 |
 | ue5 | `asset.import.post` | 导入完成后 |
+| ue5 | `level.save.pre` / `level.save.post` | 关卡保存前/后 |
+| ue5 | `level.load.post` | 关卡加载后 |
+| ue5 | `editor.startup.post` | 编辑器启动后（one-shot） |
 | maya2024 | `file.save.pre` | 文件保存前（可 reject） |
 | maya2024 | `file.save.post` | 文件保存后 |
 | blender | `file.save.pre` | 文件保存前 |
@@ -477,7 +479,7 @@ for rule in name_rules:
   - [ ] **filters.path pattern 无花括号语法**（`*.{py,md}` 是错的，必须拆为多条）
   - [ ] event trigger 的 `dcc` 在 `targetDCCs` 范围内
   - [ ] `targetDCCs=[]` 的通用工具不使用 event trigger
-  - [ ] event trigger 的 `trigger.event` 为完整事件名（如 `asset.save.pre`、`file.save.post`）
+  - [ ] event trigger 的 `trigger.event` 含完整 timing 后缀（如 `asset.save.pre`、`file.save.post`）
   - [ ] 每个 trigger 有 `id`（用于去重同步）
 
 ### 创建后自动合规检查

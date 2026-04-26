@@ -33,8 +33,22 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# ── 去重保护：防止同一事件在极短时间内重复触发 ───────────────────────────────
+_recent_events: Dict[str, float] = {}
+_DEDUP_WINDOW_SEC = 0.5   # 500ms 内同 key 只处理一次
+
+def _dedup_event(key: str) -> bool:
+    """返回 True 表示重复（应跳过），False 表示首次（应处理）。"""
+    now = time.monotonic()
+    if key in _recent_events and (now - _recent_events[key]) < _DEDUP_WINDOW_SEC:
+        logger.debug("Dedup skipped: %s", key)
+        return True
+    _recent_events[key] = now
+    return False
 
 # 自动切换到 UE 日志后端（在 UE Python 环境中 sys.stdout 会被路由成 Error 级别）
 try:
@@ -212,12 +226,20 @@ def _check_pre_event(event_base: str, event_data: Dict[str, Any]) -> Dict[str, A
         _ensure_sdk_path(config)
         triggers = _load_triggers()
 
+        # 匹配规则，同时对 tool_id 去重（同一次事件同一工具只执行一次）
+        seen_tool_ids: set = set()
         matched_rules = []
         for t in triggers:
             if not t.get("is_enabled", True) or t.get("trigger_type") != "event":
                 continue
-            if _match_event(t, event_base, "pre"):
-                matched_rules.append(t)
+            if not _match_event(t, event_base, "pre"):
+                continue
+            tid = t.get("tool_id", "")
+            if tid in seen_tool_ids:
+                logger.debug("Skipping duplicate tool_id rule: %s", tid)
+                continue
+            seen_tool_ids.add(tid)
+            matched_rules.append(t)
         
         if not matched_rules:
             return result
@@ -441,8 +463,16 @@ def handle_actor_placed(actor_path: str, actor_name: str, actor_class: str) -> D
     """Actor 放置到场景后执行检查工具。
 
     匹配 asset.place.post 规则，执行工具并返回结果。
-    actor_path 是 Actor 在关卡中的路径，需要额外获取其源资产路径。
+
+    去重保护：UE OnActorSpawned delegate 在单次拖入操作时会触发两次
+    （preview actor + real actor），用 actor_path+actor_name 做 key，
+    500ms 内只处理一次，避免重复弹窗。
     """
+    # 去重 key 只用源资产路径，不含 actor 实例名（UAID 每次不同）
+    dedup_key = f"asset.place.post::{actor_path}"
+    if _dedup_event(dedup_key):
+        return {"executed": 0, "issues": []}
+
     # C++ 侧已直接传入源资产路径（如 /Game/Foo/Bar），无需 Python 二次查询
     event_data = {
         "dcc_type": "ue5",
@@ -544,13 +574,23 @@ def _handle_post_event(event_base: str, event_data: Dict[str, Any]) -> Dict[str,
         _ensure_sdk_path(config)
         triggers = _load_triggers()
         
-        matched_rules = [
-            t for t in triggers
-            if t.get("is_enabled", True)
-            and t.get("trigger_type") == "event"
-            and _match_event(t, event_base, "post")
-        ]
-        
+        # 匹配规则，同时对 tool_id 去重（同一次事件同一工具只执行一次）
+        seen_tool_ids: set = set()
+        matched_rules = []
+        for t in triggers:
+            if not t.get("is_enabled", True):
+                continue
+            if t.get("trigger_type") != "event":
+                continue
+            if not _match_event(t, event_base, "post"):
+                continue
+            tid = t.get("tool_id", "")
+            if tid in seen_tool_ids:
+                logger.debug("Skipping duplicate tool_id rule: %s", tid)
+                continue
+            seen_tool_ids.add(tid)
+            matched_rules.append(t)
+
         if not matched_rules:
             return result
         

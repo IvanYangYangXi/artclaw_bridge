@@ -4,18 +4,16 @@ UV & 贴图利用率优化-UV重排 - 入口模块
 v1.2: 引用检测改为按材质实例维度判断（材质→贴图→UV槽三者联动跳过）
 """
 # ── SDK 头 ──
-import os as _os, json as _json_mod
+import os, json
 import artclaw_sdk as sdk
 
-def _load_manifest():
-    return _json_mod.loads(
-        open(_os.path.join(_os.path.dirname(__file__), "manifest.json"),
-             encoding="utf-8").read()
-    )
+def _load_manifest() -> dict:
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 # ── SDK 头结束 ──
 
 import sys
-import os
 
 _TOOLS_PATH = os.path.dirname(os.path.abspath(__file__))
 if _TOOLS_PATH not in sys.path:
@@ -312,145 +310,3 @@ if __name__ == "__main__":
     if len(_sys.argv) > 1:
         _params = _json.loads(_sys.argv[1])
         print(_json.dumps(uv_repack_tool(**_params), ensure_ascii=False, default=str))
-
-
-# 统计引用时只关心这些资产类型
-_REF_ASSET_CLASSES = frozenset({
-    "Material", "MaterialInstance", "MaterialInstanceConstant",
-    "StaticMesh", "SkeletalMesh", "Blueprint", "World",
-})
-_MESH_ASSET_CLASSES = frozenset({"StaticMesh", "SkeletalMesh"})
-
-
-def _count_mi_refs(ar, mi_path: str, dep_opt) -> int:
-    """统计材质实例被多少个相关资产（Mesh/Blueprint/World/其他MI）引用。"""
-    import unreal
-    refs = ar.get_referencers(unreal.Name(mi_path), dep_opt) or []
-    count = 0
-    for ref in refs:
-        for ad in ar.get_assets_by_package_name(ref):
-            if str(ad.asset_class_path.asset_name) in _REF_ASSET_CLASSES:
-                count += 1
-                break
-    return count
-
-
-def _collect_slot_info(mesh_paths: list, material_ids, ar, dep_opt):
-    """
-    收集每个材质槽的信息：材质实例路径、引用数、贴图列表。
-
-    Returns:
-        list of {
-            slot_idx, mi_path, mi_ref_count,
-            textures: [ue_path, ...]
-        }
-        去掉不是 MaterialInstance 或无有效贴图的槽。
-    """
-    import unreal
-    seen_mi = {}   # mi_path -> ref_count（缓存避免重复查询）
-    slots = []
-
-    for mesh_path in mesh_paths:
-        mesh = unreal.load_asset(mesh_path)
-        if not mesh:
-            continue
-        for slot_idx, slot in enumerate(mesh.static_materials):
-            if material_ids is not None and slot_idx not in material_ids:
-                continue
-            mi = slot.material_interface if slot else None
-            if not mi or not isinstance(mi, unreal.MaterialInstance):
-                continue
-            mi_path = mi.get_path_name().split(".")[0]
-
-            if mi_path not in seen_mi:
-                seen_mi[mi_path] = _count_mi_refs(ar, mi_path, dep_opt)
-            mi_ref_count = seen_mi[mi_path]
-
-            # 收集该 MI 上覆盖的有效贴图
-            tex_paths = []
-            seen_tex = set()
-            for tpv in getattr(mi, 'texture_parameter_values', []):
-                tex = tpv.parameter_value
-                if not tex:
-                    continue
-                try:
-                    w, h = tex.blueprint_get_size_x(), tex.blueprint_get_size_y()
-                except Exception:
-                    continue
-                if w <= 1 and h <= 1:
-                    continue
-                tp = tex.get_path_name().split(".")[0]
-                if tp not in seen_tex:
-                    seen_tex.add(tp)
-                    tex_paths.append(tp)
-
-            if tex_paths:
-                slots.append({
-                    "mesh_path": mesh_path,
-                    "slot_idx": slot_idx,
-                    "mi_path": mi_path,
-                    "mi_ref_count": mi_ref_count,
-                    "textures": tex_paths,
-                })
-    return slots
-
-
-def _expand_meshes_for_shared(mesh_paths: list, mi_paths: list, ar, dep_opt) -> list:
-    """
-    skip=False 时：查找引用这些 MI 的所有 Mesh，合并到 mesh_paths 统一装箱。
-    """
-    import unreal
-    extra = set()
-    for mi_path in mi_paths:
-        refs = ar.get_referencers(unreal.Name(mi_path), dep_opt) or []
-        for ref in refs:
-            for ad in ar.get_assets_by_package_name(ref):
-                if str(ad.asset_class_path.asset_name) in _MESH_ASSET_CLASSES:
-                    extra.add(str(ad.package_name))
-    return list(dict.fromkeys(mesh_paths + [p for p in extra if p not in mesh_paths]))
-
-
-def _build_report(raw: dict, dry_run: bool, skipped: list, modified: list) -> str:
-    lines = []
-    if not raw.get("success"):
-        lines.append(f"[失败] {raw.get('error', '未知错误')}")
-        return "\n".join(lines)
-
-    tag = "[预览]" if dry_run else "[完整优化]"
-    lines += [
-        f"{tag} UV 重排报告",
-        f"Mesh 数量   : {raw.get('num_meshes', '-')}",
-        f"UV 岛数量   : {raw.get('num_islands', '-')}",
-        f"材质槽过滤  : {raw.get('material_filter') or '全部'}",
-        f"缩放系数    : {raw.get('scale', '-')} （统一，纹理密度一致）",
-        f"原始利用率  : {raw.get('orig_utilization', '-')}%",
-        f"重排后利用率: {raw.get('utilization', '-')}%",
-        f"提升        : {raw.get('improvement', '-')}",
-    ]
-    if "vertices_updated" in raw:
-        lines.append(f"顶点已写回  : {raw['vertices_updated']}")
-
-    if raw.get("textures"):
-        lines.append("\n贴图适配结果:")
-        for tp, info in raw["textures"].items():
-            name = tp.rsplit("/", 1)[-1]
-            if "error" in info:
-                lines.append(f"  [{name}] 失败: {info['error']}")
-            else:
-                dr = info.get("density_ratio")
-                sz = info.get("out_size")
-                lines.append(f"  [{name}] 已生成 {sz}px"
-                             + (f"  密度比 {dr}" if dr else "")
-                             + f"  -> {info.get('asset', '').split('.')[0]}")
-
-    if skipped:
-        lines.append("\n跳过的材质槽（材质实例被多资产引用）:")
-        for s in skipped:
-            lines.append(f"  [Slot {s['slot_idx']} / {s['mi_path'].rsplit('/',1)[-1]}] {s['reason']}")
-
-    if modified and not dry_run:
-        lines.append(f"\n修改的资源（共 {len(modified)} 个）:")
-        for m in modified:
-            lines.append(f"  {m}")
-
-    return "\n".join(lines)

@@ -259,6 +259,7 @@ class TriggerService:
                 tool_name = manifest.get("name", "")
                 if not tool_name:
                     continue
+
                 tool_id = f"{tool_source}/{tool_name}"
                 manifest_triggers = manifest.get("triggers", [])
                 if not isinstance(manifest_triggers, list):
@@ -286,18 +287,38 @@ class TriggerService:
             # Remove triggers whose manifest_id no longer exists in any manifest
             # (only for tools that have manifests — don't touch user-created triggers without manifest_id)
             tool_ids_with_manifests = {k[0] for k in current_manifest_keys}
+
+            # Also build set of all currently scanned tool_ids (for orphan detection)
+            # When a tool is renamed, its old tool_id won't appear in any manifest scan.
+            # If triggers.json has a manifest_id-bound rule pointing to an unknown tool_id,
+            # it's an orphan left over from a rename — safe to remove.
+            all_known_tool_ids = {k[0] for k in current_manifest_keys}
+
             cleaned = []
             for r in all_rules:
                 mid = r.get("manifest_id", "")
                 tid = r.get("tool_id", "")
-                if mid and tid in tool_ids_with_manifests:
-                    # This is a manifest-synced trigger; keep only if still in manifest
-                    if (tid, mid) in current_manifest_keys:
-                        cleaned.append(r)
+                if mid and tid:
+                    if tid in tool_ids_with_manifests:
+                        # Known tool with manifests: keep only if manifest_id still exists
+                        if (tid, mid) in current_manifest_keys:
+                            cleaned.append(r)
+                        else:
+                            changes += 1  # manifest trigger removed from manifest → delete
+                    elif tid not in all_known_tool_ids:
+                        # Orphan: tool_id not found in any current manifest scan
+                        # (likely caused by a tool rename). Safe to remove.
+                        logger.info(
+                            "Removing orphan trigger rule (tool renamed or deleted): "
+                            "tool_id=%r manifest_id=%r name=%r",
+                            tid, mid, r.get("name", "")
+                        )
+                        changes += 1
                     else:
-                        changes += 1  # deleted
+                        # Known tool but without manifest triggers — keep user-created rule
+                        cleaned.append(r)
                 else:
-                    # User-created trigger (no manifest_id) or tool without manifest — keep
+                    # User-created trigger (no manifest_id) — always keep
                     cleaned.append(r)
             all_rules = cleaned
 

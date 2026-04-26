@@ -1,6 +1,6 @@
 {
-  "id": "user/blender-rename-prefix-suffix",
-  "name": "模型批量加前缀后缀",
+  "id": "marketplace/blender-rename-prefix-suffix",
+  "name": "Example-Blender-模型批量加前缀后缀",
   "description": "批量为 Blender 选中的对象添加命名前缀和/或后缀，支持自定义指定字符，符合资产命名规范标准",
   "version": "1.0.1",
   "author": "ArtClaw",
@@ -9,11 +9,9 @@
     "blender"
   ],
   "createdAt": "2026-04-13 18:00:00",
-  "updatedAt": "2026-04-13 21:30:00",
+  "updatedAt": "2026-04-26 13:49:57",
   "defaultFilters": {
-    "typeFilter": {
-      "source": "selection"
-    }
+    "path": []
   },
   "implementation": {
     "type": "script",
@@ -26,7 +24,7 @@
       "name": "前缀",
       "type": "string",
       "required": false,
-      "default": "",
+      "default": "sm",
       "description": "添加到对象名称前面的文本（留空则不添加）"
     },
     {
@@ -75,6 +73,23 @@
       "id": "renamed_objects",
       "name": "重命名清单",
       "type": "object"
+    }
+  ],
+  "presets": [],
+  "triggers": [
+    {
+      "id": "3415ec8d-403d-4edd-8f46-b2bd3edd100d",
+      "name": "BlenderSM命名检查",
+      "enabled": true,
+      "trigger": {
+        "type": "event",
+        "event": "file.save.pre",
+        "dcc": "blender"
+      },
+      "execution": {
+        "mode": "notify"
+      },
+      "useDefaultFilters": false
     }
   ]
 }

@@ -4,20 +4,17 @@ UV & 贴图利用率优化工具
 分析材质实例关联的所有 SM 的 UV bbox，裁切贴图到实际使用区域，重映射 UV。
 """
 # ── SDK 头 ──
-import os as _os, json as _json_mod
+import os, json
 import artclaw_sdk as sdk
 
-def _load_manifest():
-    return _json_mod.loads(
-        open(_os.path.join(_os.path.dirname(__file__), "manifest.json"),
-             encoding="utf-8").read()
-    )
+def _load_manifest() -> dict:
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 # ── SDK 头结束 ──
 
 import unreal
-import os
 import math
-import json
 
 
 def uv_texture_optimize(**kwargs):

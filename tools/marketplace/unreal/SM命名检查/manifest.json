@@ -1,6 +1,6 @@
 {
   "id": "marketplace/SM命名检查",
-  "name": "SM 命名检查",
+  "name": "Example-UE-SM-命名检查",
   "description": "静态网格体资产保存时触发前置命名检查，确保 /Game/_ToolManager 目录下的 StaticMesh 资产名称以 SM_ 为前缀，不符合则拦截保存并提示。",
   "version": "1.0.0",
   "author": "IvanYang",
@@ -9,7 +9,7 @@
     "ue5"
   ],
   "createdAt": "2026-04-26 00:23:00",
-  "updatedAt": "2026-04-26 11:57:57",
+  "updatedAt": "2026-04-26 13:38:07",
   "defaultFilters": {
     "typeFilter": {
       "types": [
@@ -28,18 +28,7 @@
     "entry": "main.py",
     "function": "check_sm_naming"
   },
-  "inputs": [
-    {
-      "id": "required_prefix",
-      "name": "命名前缀",
-      "label": "Required Prefix",
-      "type": "string",
-      "default": "SM_",
-      "required": false,
-      "placeholder": "如 SM_",
-      "description": "资产名称必须以此前缀开头，默认 SM_"
-    }
-  ],
+  "inputs": [],
   "outputs": [
     {
       "id": "action",

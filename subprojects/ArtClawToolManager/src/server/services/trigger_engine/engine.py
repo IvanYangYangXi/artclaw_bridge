@@ -235,9 +235,19 @@ class TriggerEngine:
     def _event_matches(
         rule: Dict[str, Any], event_type: str, event_data: Dict[str, Any]
     ) -> bool:
-        rule_evt = rule.get("event_type")
-        if rule_evt and rule_evt != event_type:
-            return False
+        """Match a rule against an incoming DCC event.
+
+        ``rule.event_type`` 存储格式为 ``"{base}.{timing}"``（如 ``"asset.save.pre"``）。
+        与入参 ``event_type``（基础名）+ ``event_data["timing"]`` 组合比较。
+        """
+        rule_evt = rule.get("event_type", "")
+        incoming_timing = event_data.get("timing", "")
+
+        if rule_evt:
+            expected = f"{event_type}.{incoming_timing}" if incoming_timing else event_type
+            if rule_evt != expected:
+                return False
+
         rule_dcc = rule.get("dcc_type")
         if rule_dcc and rule_dcc != event_data.get("dcc_type"):
             return False

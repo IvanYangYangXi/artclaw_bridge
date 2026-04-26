@@ -3,11 +3,10 @@
 import os, json
 import artclaw_sdk as sdk
 
-def _load_manifest():
-    return json.loads(
-        open(os.path.join(os.path.dirname(__file__), "manifest.json"),
-             encoding="utf-8").read()
-    )
+def _load_manifest() -> dict:
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 # ── SDK 头结束 ──
 
 import unreal

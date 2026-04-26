@@ -166,6 +166,7 @@ from . import result
 from . import progress
 
 from . import logger
+from . import event
 # log 别名（兼容 sdk.log.info() 调用方式）
 from . import logger as log
 from .params import parse_params
