@@ -130,11 +130,21 @@ class TriggerEngine:
                     exec_result = await self._execute_rule(rule, event_data)
                     executed.append(rule_id)
 
-                    if (event_data.get("timing") == "pre" and
-                            exec_result and not exec_result.get("success", True)):
-                        blocked = True
-                        block_reason = exec_result.get("error", "Blocked by trigger rule")
-                        break
+                    if event_data.get("timing") == "pre" and exec_result:
+                        # Check both sdk.result.fail (success=False) and
+                        # sdk.result.reject (action="reject") for blocking
+                        is_blocked = (
+                            not exec_result.get("success", True) or
+                            exec_result.get("action") == "reject"
+                        )
+                        if is_blocked:
+                            blocked = True
+                            block_reason = (
+                                exec_result.get("reason") or
+                                exec_result.get("error") or
+                                "Blocked by trigger rule"
+                            )
+                            break
 
                 except Exception:
                     logger.exception("Failed to execute rule %s", rule_id)
@@ -231,9 +241,6 @@ class TriggerEngine:
         rule_dcc = rule.get("dcc_type")
         if rule_dcc and rule_dcc != event_data.get("dcc_type"):
             return False
-        rule_timing = rule.get("event_timing")
-        if rule_timing and rule_timing != event_data.get("timing", "post"):
-            return False
         return True
 
     def _load_enabled_rules(self) -> List[Dict[str, Any]]:
@@ -247,8 +254,7 @@ class TriggerEngine:
                 "tool_id": row.get("tool_id", ""),
                 "trigger_type": row.get("trigger_type", "manual"),
                 "event_type": row.get("event_type", ""),
-                "event_timing": row.get("event_timing", "post"),
-                "dcc_type": row.get("dcc_type"),
+                "dcc_type": row.get("dcc_type") or row.get("dcc"),
                 "schedule_config": row.get("schedule_config", {}),
                 "conditions": row.get("conditions", {}),
                 "param_presets": row.get("parameter_preset", {}),
@@ -386,6 +392,58 @@ class TriggerEngine:
         if not success:
             result["error"] = error_msg
 
+        # ----- Parse tool output for action/reject (pre-event blocking) -----
+        # DCC tools: output is universal_proxy JSON wrapping tool's print() output
+        # Local tools: output is direct print() output
+        # Tool scripts return dicts via print(), e.g. {"action": "reject", "reason": "..."}
+        if exec_output and success:
+            try:
+                tool_result = None
+                stripped = exec_output.strip()
+
+                # Step 1: Try parsing as JSON (might be universal_proxy wrapper)
+                try:
+                    outer = json.loads(stripped)
+                    if isinstance(outer, dict):
+                        # Check if it's a universal_proxy wrapper with nested output
+                        inner_output = outer.get("output", "")
+                        if inner_output and isinstance(inner_output, str):
+                            # Try parsing the inner output (tool's print() result)
+                            inner_stripped = inner_output.strip()
+                            if inner_stripped.startswith("{"):
+                                try:
+                                    tool_result = json.loads(inner_stripped)
+                                except (json.JSONDecodeError, ValueError):
+                                    import ast
+                                    try:
+                                        tool_result = ast.literal_eval(inner_stripped)
+                                    except (ValueError, SyntaxError):
+                                        pass
+                        # If no nested output, the outer dict might be the tool result itself
+                        if tool_result is None and "action" in outer:
+                            tool_result = outer
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+                # Step 2: Fallback — try parsing as Python dict repr
+                if tool_result is None and stripped.startswith("{"):
+                    import ast
+                    try:
+                        tool_result = ast.literal_eval(stripped)
+                    except (ValueError, SyntaxError):
+                        pass
+
+                # Step 3: Merge parsed tool result into exec result
+                if isinstance(tool_result, dict):
+                    if "action" in tool_result:
+                        result["action"] = tool_result["action"]
+                    if "reason" in tool_result:
+                        result["reason"] = tool_result["reason"]
+                    if "success" in tool_result:
+                        result["success"] = tool_result["success"]
+            except Exception:
+                pass  # Non-parseable output is fine; just pass through
+
         # ----- Notify mode → create alert only on failure -----
         # Successful tools manage their own alerts via the Alert API;
         # the engine only reports crashes / timeouts.
@@ -425,9 +483,20 @@ class TriggerEngine:
         # fall back to calling the entry function with no arguments.
         driver_code = (
             "import sys, os, json\n"
+            # Add tool directory to path
             f"tool_dir = {repr(tool_path)}\n"
             "if tool_dir not in sys.path:\n"
             "    sys.path.insert(0, tool_dir)\n"
+            # Add artclaw_sdk to path (from project_root/subprojects/DCCClawBridge/core/)
+            "try:\n"
+            "    _cfg_path = os.path.expanduser('~/.artclaw/config.json')\n"
+            "    with open(_cfg_path, 'r', encoding='utf-8') as _f:\n"
+            "        _cfg = json.load(_f)\n"
+            "    _sdk_dir = os.path.join(_cfg.get('project_root', ''), 'subprojects', 'DCCClawBridge', 'core')\n"
+            "    if os.path.isdir(_sdk_dir) and _sdk_dir not in sys.path:\n"
+            "        sys.path.insert(0, _sdk_dir)\n"
+            "except Exception:\n"
+            "    pass\n"
             "import importlib, inspect\n"
             f"mod = importlib.import_module({repr(entry.replace('.py', ''))})\n"
             f"fn = getattr(mod, {repr(function)})\n"

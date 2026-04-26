@@ -46,8 +46,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAssetPostSaveEvent, const FStrin
 /** 资源导入后事件 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAssetImportEvent, const FString&, AssetPath, const FString&, AssetClass);
 
-/** 资源删除前事件 */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAssetDeleteEvent, const FString&, AssetPath);
+/** 资源删除前事件（拦截） */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAssetPreDeleteEvent, const FString&, AssetPath);
+
+/** 资源删除后事件 */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAssetPostDeleteEvent, const FString&, AssetPath);
 
 /** 关卡保存前/后事件 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLevelPreSaveEvent, const FString&, LevelPath);
@@ -55,6 +58,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnLevelPostSaveEvent, const FStrin
 
 /** 关卡加载后事件 */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLevelLoadEvent, const FString&, LevelPath);
+
+/** 编辑器启动完成事件 */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEditorStartupEvent);
 
 /**
  * 编辑器活跃面板枚举
@@ -150,9 +156,13 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
     FOnAssetImportEvent OnAssetImported;
 
-    /** 资源删除前 */
+    /** 资源删除前（拦截） */
     UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
-    FOnAssetDeleteEvent OnAssetPreDelete;
+    FOnAssetPreDeleteEvent OnAssetPreDelete;
+
+    /** 资源删除后 */
+    UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
+    FOnAssetPostDeleteEvent OnAssetPostDelete;
 
     /** 关卡保存前 */
     UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
@@ -165,6 +175,10 @@ public:
     /** 关卡/地图加载后 */
     UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
     FOnLevelLoadEvent OnLevelLoaded;
+
+    /** 编辑器启动完成 */
+    UPROPERTY(BlueprintAssignable, Category = "UEAgent|Events")
+    FOnEditorStartupEvent OnEditorStartup;
 
     // --- 活跃面板追踪 (选区感知) ---
 
@@ -206,11 +220,23 @@ private:
     /** UImportSubsystem::OnAssetPostImport 回调 */
     void HandleAssetPostImport(UFactory* Factory, UObject* CreatedObject);
 
+    /** FEditorDelegates::OnAssetsPreDelete 回调（资源删除前） */
+    void HandleAssetsPreDelete(const TArray<UObject*>& DeletedAssets);
+
+    /** FAssetRegistryModule::AssetRemovedEvent 回调（资源删除后） */
+    void HandleAssetRemoved(const FAssetData& AssetData);
+
     /** FEditorDelegates::PreSaveWorldWithContext 回调 */
     void HandlePreSaveWorld(UWorld* World, FObjectPreSaveContext Context);
 
     /** FEditorDelegates::PostSaveWorldWithContext 回调 */
     void HandlePostSaveWorld(UWorld* World, FObjectPostSaveContext Context);
+
+    /** FEditorDelegates::OnNewActorsDropped 回调（拖拽放置） */
+    void HandleActorsDropped(const TArray<UObject*>& DroppedObjects, const TArray<AActor*>& PlacedActors);
+
+    /** FEditorDelegates::OnNewActorsPlaced 回调（工具栏/快捷键放置） */
+    void HandleActorsPlaced(UObject* InContext, const TArray<AActor*>& PlacedActors);
 
     /** 当前活跃面板 */
     EUEAgentActivePanel ActivePanel = EUEAgentActivePanel::Viewport;
@@ -226,6 +252,46 @@ private:
     FDelegateHandle PackageSavedHandle;
     FDelegateHandle ObjectPreSaveHandle;
     FDelegateHandle AssetPostImportHandle;
+    FDelegateHandle AssetsPreDeleteHandle;
+    FDelegateHandle AssetRemovedHandle;
     FDelegateHandle PreSaveWorldHandle;
     FDelegateHandle PostSaveWorldHandle;
+    FDelegateHandle ActorsPlacedHandle;
+    FDelegateHandle ActorsPlacedHandle2;
+
+    // --- IsPackageOKToSave 保存拦截 ---
+
+    /** 备份原有的 IsPackageOKToSaveDelegate（链式调用） */
+    FCoreUObjectDelegates::FIsPackageOKToSaveDelegate OkToSaveBackupDelegate;
+
+    /** 挂钩 IsPackageOKToSaveDelegate */
+    void HookIsPackageOKToSave();
+
+    /** 卸钩 IsPackageOKToSaveDelegate */
+    void UnhookIsPackageOKToSave();
+
+    /** 实际的保存拦截回调 */
+    bool IsPackageOKToSave(UPackage* PackageToSave, const FString& PackageFileName, FOutputDevice* OutputDevice);
+
+    /** 标记是否已挂钩 */
+    bool bIsPackageSaveHooked = false;
+
+    /** 保存拦截静默放行模式（true = Tool Manager 不可达时放行，false = 默认拦截） */
+    bool bSaveInterceptSilentPass = false;
+
+public:
+    /** 设置保存拦截静默放行模式 */
+    UFUNCTION(BlueprintCallable, Category = "UEAgent|Events")
+    void SetSaveInterceptSilentPass(bool bInSilentPass) { bSaveInterceptSilentPass = bInSilentPass; }
+
+    /** 获取保存拦截静默放行模式 */
+    UFUNCTION(BlueprintPure, Category = "UEAgent|Events")
+    bool GetSaveInterceptSilentPass() const { return bSaveInterceptSilentPass; }
+
+private:
+    /** 自动检测并拉起 Tool Manager 服务 */
+    void AutoLaunchToolManager();
+
+    /** 从 config.json 读取保存拦截配置 */
+    void LoadSaveInterceptConfig();
 };

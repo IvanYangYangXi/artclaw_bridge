@@ -514,8 +514,8 @@ async def _execute_locally(tool, entry: str, function: str, params: dict):
 async def _execute_on_dcc(tool, entry: str, function: str, params: dict, target_dccs: list):
     """Run a DCC-bound script tool via MCP WebSocket on the target DCC.
 
-    If the script uses artclaw_sdk, it runs locally (SDK handles DCC communication).
-    Otherwise, the script is injected directly into the DCC via MCP.
+    The script is injected directly into the DCC process via MCP, where
+    both DCC-native modules (unreal, cmds, etc.) and artclaw_sdk are available.
     """
     from pathlib import Path
     from ..services.dcc_manager import DCCManager
@@ -553,14 +553,6 @@ async def _execute_on_dcc(tool, entry: str, function: str, params: dict, target_
             status_code=500,
             detail=err("ENTRY_NOT_FOUND", f"Entry script not found: {entry_path}"),
         )
-
-    script_source = entry_path.read_text(encoding="utf-8")
-
-    # Scripts using artclaw_sdk run locally — SDK handles DCC communication via MCP
-    uses_sdk = "artclaw_sdk" in script_source or "import sdk" in script_source
-    if uses_sdk:
-        print(f"[_execute_on_dcc] Script uses artclaw_sdk, redirecting to _execute_locally")
-        return await _execute_locally(tool, entry, function, params)
 
     # Direct DCC injection via importlib (avoids exec scope issues with nested functions)
     params_repr = repr(params)

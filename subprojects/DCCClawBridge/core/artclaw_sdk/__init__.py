@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional
 __version__ = "1.0.0"
 __all__ = [
     "context", "filters", "params", "result", "progress", "logger", "log",
+    "event",
     "get_current_dcc", "is_available",
     # Convenience functions
     "get_context", "get_selected", "get_selected_assets", "get_selected_objects", 
@@ -44,7 +45,7 @@ __all__ = [
 _current_adapter: Optional[Any] = None
 _dcc_type: Optional[str] = None
 
-logger = logging.getLogger("artclaw_sdk")
+_internal_logger = logging.getLogger("artclaw_sdk")
 
 
 def get_current_dcc() -> str:
@@ -67,7 +68,7 @@ def _detect_dcc_environment():
         from .dcc.ue import UEAdapter
         _current_adapter = UEAdapter()
         _dcc_type = "ue"
-        logger.info("ArtClaw SDK: Initialized for Unreal Engine")
+        _internal_logger.info("ArtClaw SDK: Initialized for Unreal Engine")
         return
     except ImportError:
         pass
@@ -78,7 +79,7 @@ def _detect_dcc_environment():
         from .dcc.maya import MayaAdapter  
         _current_adapter = MayaAdapter()
         _dcc_type = "maya"
-        logger.info("ArtClaw SDK: Initialized for Maya")
+        _internal_logger.info("ArtClaw SDK: Initialized for Maya")
         return
     except ImportError:
         pass
@@ -89,7 +90,7 @@ def _detect_dcc_environment():
         from .dcc.max import MaxAdapter
         _current_adapter = MaxAdapter()
         _dcc_type = "max" 
-        logger.info("ArtClaw SDK: Initialized for 3ds Max")
+        _internal_logger.info("ArtClaw SDK: Initialized for 3ds Max")
         return
     except ImportError:
         pass
@@ -100,7 +101,7 @@ def _detect_dcc_environment():
         from .dcc.houdini import HoudiniAdapter
         _current_adapter = HoudiniAdapter()
         _dcc_type = "houdini"
-        logger.info("ArtClaw SDK: Initialized for Houdini")
+        _internal_logger.info("ArtClaw SDK: Initialized for Houdini")
         return
     except ImportError:
         pass
@@ -111,7 +112,7 @@ def _detect_dcc_environment():
         from .dcc.blender import BlenderAdapter
         _current_adapter = BlenderAdapter()
         _dcc_type = "blender"
-        logger.info("ArtClaw SDK: Initialized for Blender")
+        _internal_logger.info("ArtClaw SDK: Initialized for Blender")
         return
     except ImportError:
         pass
@@ -122,7 +123,7 @@ def _detect_dcc_environment():
         from .dcc.comfyui import ComfyUIAdapter
         _current_adapter = ComfyUIAdapter()
         _dcc_type = "comfyui"
-        logger.info("ArtClaw SDK: Initialized for ComfyUI")
+        _internal_logger.info("ArtClaw SDK: Initialized for ComfyUI")
         return
     except ImportError:
         pass
@@ -133,7 +134,7 @@ def _detect_dcc_environment():
         from .dcc.substance_designer import SubstanceDesignerAdapter
         _current_adapter = SubstanceDesignerAdapter()
         _dcc_type = "substance_designer"
-        logger.info("ArtClaw SDK: Initialized for Substance Designer")
+        _internal_logger.info("ArtClaw SDK: Initialized for Substance Designer")
         return
     except ImportError:
         pass
@@ -144,13 +145,13 @@ def _detect_dcc_environment():
         from .dcc.substance_painter import SubstancePainterAdapter
         _current_adapter = SubstancePainterAdapter()
         _dcc_type = "substance_painter"
-        logger.info("ArtClaw SDK: Initialized for Substance Painter")
+        _internal_logger.info("ArtClaw SDK: Initialized for Substance Painter")
         return
     except ImportError:
         pass
     
     # No DCC detected
-    logger.warning("ArtClaw SDK: No supported DCC environment detected")
+    _internal_logger.warning("ArtClaw SDK: No supported DCC environment detected")
     _dcc_type = "unknown"
 
 
@@ -164,6 +165,7 @@ from . import params
 from . import result
 from . import progress
 
+from . import logger
 # log 别名（兼容 sdk.log.info() 调用方式）
 from . import logger as log
 from .params import parse_params

@@ -233,10 +233,13 @@ class ToolService:
         if tool.tool_path:
             manifest_path = os.path.join(tool.tool_path, "manifest.json")
             if os.path.exists(manifest_path):
-                manifest = tool.manifest.copy()
+                # Always read from disk — never use cache (tool.manifest may be stale/incomplete)
+                with open(manifest_path, "r", encoding="utf-8") as _f:
+                    manifest = json.load(_f)
+                # Apply explicit top-level fields (safe, always use these when present)
                 if "name" in kwargs and kwargs["name"]:
                     manifest["name"] = kwargs["name"]
-                if "description" in kwargs and kwargs["description"]:
+                if "description" in kwargs and kwargs["description"] is not None:
                     manifest["description"] = kwargs["description"]
                 if "version" in kwargs and kwargs["version"]:
                     manifest["version"] = kwargs["version"]
@@ -247,8 +250,14 @@ class ToolService:
                     manifest["targetDCCs"] = kwargs["target_dccs"]
                 if "implementation_type" in kwargs and kwargs["implementation_type"]:
                     manifest.setdefault("implementation", {})["type"] = kwargs["implementation_type"]
-                if "manifest" in kwargs and kwargs["manifest"]:
-                    manifest.update(kwargs["manifest"])
+                # From the manifest blob, only pick safe sub-fields (never overwrite the whole manifest)
+                if "manifest" in kwargs and isinstance(kwargs["manifest"], dict):
+                    m = kwargs["manifest"]
+                    SAFE_MANIFEST_KEYS = ("inputs", "outputs", "presets", "defaultFilters",
+                                          "implementation", "agentHint")
+                    for k in SAFE_MANIFEST_KEYS:
+                        if k in m:
+                            manifest[k] = m[k]
                 # Bump updatedAt on every update
                 now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
                 manifest["updatedAt"] = now

@@ -347,6 +347,59 @@ def _add_lib_to_path():
         UELogger.debug(f"Added to sys.path: {_PLUGIN_LIB_DIR}")
 
 
+def _add_artclaw_sdk_to_path():
+    """
+    将 artclaw_sdk 所在目录加入 sys.path，使 `import artclaw_sdk` 可用。
+
+    查找顺序:
+      1. DCCClawBridge/core/ (开发环境，从 Content/Python 相对推算)
+      2. ~/.artclaw/config.json project_root → subprojects/DCCClawBridge/core/
+      3. 当前 Python 目录下已存在 (copy 部署模式)
+    """
+    # 已经可以 import 就跳过
+    try:
+        __import__("artclaw_sdk")
+        return
+    except ImportError:
+        pass
+
+    # 方法 1: 从插件源码树相对路径推算
+    # Content/Python/ → ../../ = UEClawBridge/
+    # → ../../../../DCCClawBridge/core/ (开发模式)
+    candidates = [
+        os.path.normpath(os.path.join(
+            _PLUGIN_PYTHON_DIR, "..", "..", "..", "..", "..", "..",
+            "DCCClawBridge", "core")),
+        os.path.normpath(os.path.join(
+            _PLUGIN_PYTHON_DIR, "..", "..", "..", "..",
+            "DCCClawBridge", "core")),
+    ]
+
+    # 方法 2: 从 artclaw config 获取 project_root
+    try:
+        config_path = os.path.join(os.path.expanduser("~"), ".artclaw", "config.json")
+        if os.path.exists(config_path):
+            import json
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            project_root = cfg.get("project_root", "")
+            if project_root:
+                candidates.insert(0, os.path.join(
+                    project_root, "subprojects", "DCCClawBridge", "core"))
+    except Exception:
+        pass
+
+    for candidate in candidates:
+        sdk_dir = os.path.join(candidate, "artclaw_sdk")
+        if os.path.isdir(sdk_dir) and os.path.isfile(os.path.join(sdk_dir, "__init__.py")):
+            if candidate not in sys.path:
+                sys.path.append(candidate)
+            UELogger.info(f"artclaw_sdk available from: {candidate}")
+            return
+
+    UELogger.debug("artclaw_sdk not found (tools using it may fall back to raw dicts)")
+
+
 def _check_package_available(import_name: str) -> bool:
     """检查指定包是否可导入。"""
     try:
@@ -561,6 +614,7 @@ def _check_dependencies_fast() -> bool:
     """
     _ensure_lib_dir()
     _add_lib_to_path()
+    _add_artclaw_sdk_to_path()
 
     for import_name, _ in _REQUIRED_PACKAGES:
         if not _check_package_available(import_name):
@@ -585,6 +639,7 @@ def _install_dependencies():
     """
     _ensure_lib_dir()
     _add_lib_to_path()
+    _add_artclaw_sdk_to_path()
 
     missing_required = []
     missing_optional = []
@@ -728,15 +783,39 @@ def _start_mcp_gateway():
     # 步骤 2: 清理可能残留的旧实例（非阻塞：不 sleep）
     UELogger.info(f"MCP Server not detected on {host}:{port}, starting...")
     try:
-        from mcp_server import stop_mcp_server, _mcp_server
-        if _mcp_server is not None:
-            UELogger.info("Cleaning up stale MCP Server instance...")
-            stop_mcp_server()
+        # 确保导入的是插件自己的 mcp_server（不是 core/ 下的通用版本）
+        import importlib
+        _mcp_mod = importlib.import_module("mcp_server")
+        if not hasattr(_mcp_mod, "start_mcp_server"):
+            # 错误的模块被导入了，强制从插件目录重新加载
+            if "mcp_server" in sys.modules:
+                del sys.modules["mcp_server"]
+            # 确保插件 Python 目录在 sys.path 最前面
+            if _PLUGIN_PYTHON_DIR not in sys.path:
+                sys.path.insert(0, _PLUGIN_PYTHON_DIR)
+            else:
+                sys.path.remove(_PLUGIN_PYTHON_DIR)
+                sys.path.insert(0, _PLUGIN_PYTHON_DIR)
+            _mcp_mod = importlib.import_module("mcp_server")
+        
+        if hasattr(_mcp_mod, "stop_mcp_server") and hasattr(_mcp_mod, "_mcp_server"):
+            if _mcp_mod._mcp_server is not None:
+                UELogger.info("Cleaning up stale MCP Server instance...")
+                _mcp_mod.stop_mcp_server()
     except (ImportError, Exception) as e:
         UELogger.info(f"No stale instance to clean: {e}")
 
     # 步骤 3: 启动新实例（start_mcp_server 内部通过 slate tick 驱动 asyncio，不阻塞）
     try:
+        # 使用步骤 2 中已验证的模块引用（或重新导入）
+        if "mcp_server" not in sys.modules or not hasattr(sys.modules["mcp_server"], "start_mcp_server"):
+            if "mcp_server" in sys.modules:
+                del sys.modules["mcp_server"]
+            if _PLUGIN_PYTHON_DIR not in sys.path:
+                sys.path.insert(0, _PLUGIN_PYTHON_DIR)
+            elif sys.path[0] != _PLUGIN_PYTHON_DIR:
+                sys.path.remove(_PLUGIN_PYTHON_DIR)
+                sys.path.insert(0, _PLUGIN_PYTHON_DIR)
         from mcp_server import start_mcp_server
         success = start_mcp_server(host="localhost", port=port)
         if not success:

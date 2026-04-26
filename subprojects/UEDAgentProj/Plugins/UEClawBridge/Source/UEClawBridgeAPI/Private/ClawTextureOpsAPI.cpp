@@ -4,6 +4,7 @@
 
 #include "ClawTextureOpsAPI.h"
 #include "Engine/Texture2D.h"
+#include "Engine/TextureDefines.h"
 #include "TextureResource.h"
 #include "IImageWrapperModule.h"
 #include "IImageWrapper.h"
@@ -52,7 +53,7 @@ bool FClawTextureOps::ReadTexturePixels(
 			return false;
 		}
 	}
-	else if (SrcFormat == TSF_RGBA8)
+	else if (SrcFormat == TSF_RGBA8_DEPRECATED)
 	{
 		if (RawData.Num() >= NumPixels * 4)
 		{

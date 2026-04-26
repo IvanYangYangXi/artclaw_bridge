@@ -1,19 +1,20 @@
 // Ref: docs/features/phase4-tool-api.md#TriggerRules
 // Trigger rule editor: type, event, timing, mode, conditions, presets, schedule
 // Phase 6: DCC-grouped events, filter preset references, i18n
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Plus, Trash2 } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { DCC_EVENTS, DCC_DISPLAY_NAMES, DCC_TYPE_PRESETS } from '../../constants/dccTypes'
 import { useAppStore } from '../../stores/appStore'
 import PathVariablesHelp from '../common/PathVariablesHelp'
-import type { TriggerType, EventTiming, ExecutionMode, FilterConfig } from '../../types'
+import type { TriggerType, ExecutionMode, FilterConfig } from '../../types'
 
 interface TriggerRuleEditorProps {
   initialData?: TriggerFormData
   parameterPresets?: Array<{ id: string; name: string }>
   defaultFilters?: FilterConfig   // Tool-level default filter conditions
   onSave?: (data: TriggerFormData) => void
+  onChange?: (data: TriggerFormData) => void
   onCancel?: () => void
 }
 
@@ -21,8 +22,7 @@ export interface TriggerFormData {
   name: string
   triggerType: TriggerType
   dcc: string
-  eventType: string
-  eventTiming: EventTiming
+  eventType: string   // full value incl. timing suffix, e.g. "asset.save.pre", "file.save.post"
   executionMode: ExecutionMode
   useDefaultFilters: boolean
   conditions: FilterConfig
@@ -38,10 +38,10 @@ const TRIGGER_TYPES: { value: TriggerType; labelZh: string; labelEn: string }[] 
   { value: 'watch', labelZh: '文件监听', labelEn: 'Watch' },
 ]
 
-const EXECUTION_MODES: { value: ExecutionMode; labelZh: string; labelEn: string }[] = [
-  { value: 'silent', labelZh: '静默执行', labelEn: 'Silent' },
-  { value: 'notify', labelZh: '通知执行', labelEn: 'Notify' },
-  { value: 'interactive', labelZh: '交互式 (AI协助)', labelEn: 'Interactive (AI)' },
+const EXECUTION_MODES: { value: ExecutionMode; labelZh: string; labelEn: string; descZh: string; descEn: string }[] = [
+  { value: 'silent',      labelZh: '静默',   labelEn: 'Silent',      descZh: '拦截保存 + 右下角气泡提示（UE 系统"无法保存"对话框仍会出现，无法消除）', descEn: 'Block save + toast notification (UE system dialog cannot be suppressed)' },
+  { value: 'notify',      labelZh: '通知',   labelEn: 'Notify',      descZh: '拦截保存 + 弹出 ArtClaw 说明对话框（UE 系统"无法保存"对话框仍会出现）',   descEn: 'Block save + ArtClaw modal dialog (UE system dialog cannot be suppressed)' },
+  { value: 'interactive', labelZh: '交互',   labelEn: 'Interactive', descZh: '不自动执行，触发时跳转到 Chat 页面由 AI 协助',  descEn: 'Navigate to Chat for AI-assisted handling instead of auto-running' },
 ]
 
 const SCHEDULE_TYPES: { value: string; labelZh: string; labelEn: string }[] = [
@@ -55,7 +55,6 @@ const DEFAULT_FORM: TriggerFormData = {
   triggerType: 'event',
   dcc: '',
   eventType: '',
-  eventTiming: 'post',
   executionMode: 'notify',
   useDefaultFilters: true,
   conditions: { fileRules: [], sceneRules: [], typeFilter: undefined },
@@ -70,6 +69,7 @@ export default function TriggerRuleEditor({
   parameterPresets,
   defaultFilters,
   onSave,
+  onChange,
   onCancel,
 }: TriggerRuleEditorProps) {
   const [form, setForm] = useState<TriggerFormData>(() => ({
@@ -114,8 +114,22 @@ export default function TriggerRuleEditor({
   // Compute available events based on selected DCC
   const availableEvents = form.dcc ? (DCC_EVENTS[form.dcc] ?? []) : []
 
+  // Notify parent whenever form changes (do NOT call onChange inside setForm updater).
+  // Skip the very first render so that simply opening the editor doesn't mark dirty.
+  const isFirstRender = useRef(true)
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return }
+    onChange?.(form)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form])
+
   const updateField = <K extends keyof TriggerFormData>(key: K, value: TriggerFormData[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  /** Update multiple fields at once (avoids stale-closure issues with consecutive updateField calls) */
+  const updateFields = (patch: Partial<TriggerFormData>) => {
+    setForm((prev) => ({ ...prev, ...patch }))
   }
 
   const updateConditions = () => {
@@ -214,10 +228,7 @@ export default function TriggerRuleEditor({
             <FieldRow label={language === 'zh' ? 'DCC 软件' : 'DCC Software'}>
               <select
                 value={form.dcc}
-                onChange={(e) => {
-                  updateField('dcc', e.target.value)
-                  updateField('eventType', '')
-                }}
+                onChange={(e) => updateFields({ dcc: e.target.value, eventType: '' })}
                 className={inputCls}
               >
                 <option value="">{language === 'zh' ? '选择 DCC' : 'Select DCC'}</option>
@@ -229,7 +240,7 @@ export default function TriggerRuleEditor({
               </select>
             </FieldRow>
 
-            {/* Event type selector (only when DCC is selected) */}
+            {/* Event type selector — event value already encodes timing (e.g. "asset.save.pre") */}
             {form.dcc && (
               <FieldRow label={language === 'zh' ? '事件类型' : 'Event Type'}>
                 <select
@@ -246,34 +257,6 @@ export default function TriggerRuleEditor({
                 </select>
               </FieldRow>
             )}
-
-            {/* Event timing (only when event type is selected AND multiple timings available) */}
-            {form.eventType && (() => {
-              const timings = availableEvents.find((e) => e.event === form.eventType)?.timing ?? []
-              if (timings.length <= 1) return null
-              return (
-                <FieldRow label={language === 'zh' ? '事件时机' : 'Event Timing'}>
-                  <div className="flex gap-2">
-                    {timings.map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => updateField('eventTiming', t as EventTiming)}
-                        className={cn(
-                          'px-3 py-1.5 rounded text-small transition-colors',
-                          form.eventTiming === t
-                            ? 'bg-accent text-white'
-                            : 'bg-bg-tertiary text-text-secondary hover:text-text-primary',
-                        )}
-                      >
-                        {t === 'pre'
-                          ? (language === 'zh' ? '事件前 (可拦截)' : 'Before (interceptable)')
-                          : (language === 'zh' ? '事件后' : 'After')}
-                      </button>
-                    ))}
-                  </div>
-                </FieldRow>
-              )
-            })()}
           </>
         )}
 
@@ -359,7 +342,8 @@ export default function TriggerRuleEditor({
             {EXECUTION_MODES.map((m) => (
               <button
                 key={m.value}
-                onClick={() => updateField('executionMode', m.value)}
+                title={language === 'zh' ? m.descZh : m.descEn}
+                onClick={() => updateField('executionMode', m.value as ExecutionMode)}
                 className={cn(
                   'px-3 py-1.5 rounded text-small transition-colors',
                   form.executionMode === m.value
@@ -371,6 +355,9 @@ export default function TriggerRuleEditor({
               </button>
             ))}
           </div>
+          <p className="mt-1.5 text-[11px] text-text-dim">
+            {EXECUTION_MODES.find(m => m.value === form.executionMode)?.[language === 'zh' ? 'descZh' : 'descEn']}
+          </p>
         </FieldRow>
 
         {/* Inline Filter Conditions — only for watch (file paths) and event (scene objects) */}

@@ -38,9 +38,9 @@ class TriggerCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     trigger_type: TriggerTypeEnum = TriggerTypeEnum.MANUAL
     event_type: str = ""
-    event_timing: EventTimingEnum = EventTimingEnum.POST
     execution_mode: ExecutionModeEnum = ExecutionModeEnum.NOTIFY
     conditions: Dict[str, Any] = Field(default_factory=dict)
+    use_default_filters: bool = False
     parameter_preset: Dict[str, Any] = Field(default_factory=dict)
     is_enabled: bool = True
     schedule_config: Dict[str, Any] = Field(default_factory=dict)
@@ -54,7 +54,6 @@ class TriggerUpdateRequest(BaseModel):
     name: Optional[str] = None
     trigger_type: Optional[TriggerTypeEnum] = None
     event_type: Optional[str] = None
-    event_timing: Optional[EventTimingEnum] = None
     execution_mode: Optional[ExecutionModeEnum] = None
     conditions: Optional[Dict[str, Any]] = None
     parameter_preset: Optional[Dict[str, Any]] = None
@@ -74,7 +73,6 @@ class TriggerRuleResponse(BaseModel):
     name: str
     trigger_type: TriggerTypeEnum = TriggerTypeEnum.MANUAL
     event_type: str = ""
-    event_timing: EventTimingEnum = EventTimingEnum.POST
     execution_mode: ExecutionModeEnum = ExecutionModeEnum.NOTIFY
     conditions: Dict[str, Any] = Field(default_factory=dict)
     parameter_preset: Dict[str, Any] = Field(default_factory=dict)

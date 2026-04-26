@@ -51,6 +51,9 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 	// 加载上下文窗口大小配置
 	LoadContextWindowSize();
 
+	// 加载保存拦截配置
+	LoadSaveInterceptFromConfig();
+
 	// ==================================================================
 	// 构建 UI 布局
 	// ==================================================================

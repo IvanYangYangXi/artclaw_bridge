@@ -527,6 +527,17 @@ private:
 	/** 高风险静默切换按钮回调 */
 	FReply OnToggleSilentHighClicked();
 
+	// --- 保存拦截设置 ---
+
+	/** 保存拦截静默放行模式（true=放行，false=默认拦截） */
+	bool bSaveInterceptSilentPass = false;
+
+	/** 读取保存拦截配置 */
+	void LoadSaveInterceptFromConfig();
+
+	/** 写入保存拦截配置 */
+	void SaveSaveInterceptToConfig();
+
 	// --- 设置面板 ---
 
 	/** 设置弹窗回调: 打开设置 SWindow */

@@ -102,11 +102,10 @@ Agent: [生成脚本预览] 确认创建工具？
 import os, json
 import artclaw_sdk as sdk
 
-def _load_manifest():
-    return json.loads(
-        open(os.path.join(os.path.dirname(__file__), "manifest.json"),
-             encoding="utf-8").read()
-    )
+def _load_manifest() -> dict:
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 # ── SDK 头结束 ──
 
 
@@ -114,23 +113,23 @@ def main_function(**kwargs):
     """入口函数。kwargs 由 Tool Manager 传入。"""
     manifest = _load_manifest()
 
-    # ── 1. 参数解析（必须）──
+    # ── 1. 参数解析（必须）——从 manifest inputs 读取，不在脚本里硬编码默认值 ──
     parsed = sdk.params.parse_params(manifest.get("inputs", []), kwargs)
 
-    # ── 2. 对象获取 + 筛选（按需）──
+    # ── 2. 对象获取 + 筛选（按需；event trigger 工具通常不需要此段）──
     type_cfg = manifest.get("defaultFilters", {}).get("typeFilter", {})
-    types = type_cfg.get("types", [])
+    types = type_cfg.get("types", [])          # 来自 manifest，不硬编码
     source = type_cfg.get("source", "selection")
 
     if source == "selection":
         explicit = parsed.get("target_paths", "")
         if explicit:
-            objects = [{"path": p.strip(), "type": "", "name": p.strip().rsplit("/",1)[-1]}
+            objects = [{"path": p.strip(), "type": "", "name": p.strip().rsplit("/", 1)[-1]}
                        for p in explicit.split(",") if p.strip()]
         else:
-            # 根据工具需求选择:
+            # 根据工具需求二选一：
             # sdk.context.get_selected_assets()  — Content Browser / 资源管理器
-            # sdk.context.get_selected_objects()  — 场景 / 视口
+            # sdk.context.get_selected_objects() — 场景 / 视口
             objects = sdk.context.get_selected_assets()
         if types:
             objects = sdk.filters.filter_by_type(objects, types)
@@ -143,8 +142,10 @@ def main_function(**kwargs):
     # ...
 
     # ── 4. 结果上报（必须）──
-    return sdk.result.success(data={...}, message="完成")
+    return sdk.result.success(data={}, message="完成")
 ```
+
+> **脚本配置分层原则**（见下方 manifest.json Schema → 配置分层决策）：所有路径范围、类型列表等规则配置统一写入 manifest，脚本只负责读取。禁止将它们定义为模块级常量。
 
 ### 3. 组合工具 (composite)
 
@@ -195,6 +196,22 @@ Agent: 确认管线流程：
   "presets": []
 }
 ```
+
+### 配置分层决策
+
+创建工具时，每个配置项应按以下原则决定放哪一层：
+
+| 层 | manifest 字段 | 适合放什么 | 用户能否在 UI 里改 |
+|----|--------------|-----------|------------------|
+| **用户参数** | `inputs[]` | 每次运行可能不同的值：前缀、导出路径、选项开关 | ✅ 运行时填写 |
+| **规则配置** | `defaultFilters` | 工具生效范围：监控路径、目标类型，改后需重启工具 | ✅ 工具设置页 |
+| **固定元数据** | 顶层其他字段 | 工具名称、版本、作者、触发规则 | ❌ 仅开发者修改 |
+| **❌ 禁止** | 脚本模块级常量 | 任何配置都不应写死在 `main.py` 顶部 | ✗ 改了代码才生效 |
+
+**判断依据**：
+- "用户每次运行前想改" → `inputs[]`
+- "决定这个工具对什么资产生效" → `defaultFilters.path` / `defaultFilters.typeFilter`
+- "工具内部用到的命名规则/阈值等业务常量" → 也放 `inputs[]`，设好默认值，用户可以覆盖
 
 ### 触发规则范式（triggers）
 
@@ -288,11 +305,33 @@ watch trigger **不含 `paths` 字段**。监听路径统一写在 `filters.path
 
 #### event 类型 — dcc 必须匹配 targetDCCs
 
+`trigger.event` 字段为完整事件名，timing 已包含在名称中：
+
 ```json
 {
-  "trigger": { "type": "event", "dcc": "maya", "event": "file.save", "timing": "post" }
+  "trigger": { "type": "event", "dcc": "ue5", "event": "asset.save.pre" }
 }
 ```
+
+```json
+{
+  "trigger": { "type": "event", "dcc": "maya2024", "event": "file.save.post" }
+}
+```
+
+**常用事件名参考**（完整列表见 Tool Manager 前端事件选择器）：
+
+| DCC | 事件名 | 说明 |
+|-----|--------|------|
+| ue5 | `asset.save.pre` | 保存前拦截（可 reject 阻止保存） |
+| ue5 | `asset.save.post` | 保存完成后（不可拦截，仅通知） |
+| ue5 | `asset.delete.pre` | 删除前（不可阻止，仅通知） |
+| ue5 | `asset.delete.post` | 删除完成后 |
+| ue5 | `asset.import.post` | 导入完成后 |
+| maya2024 | `file.save.pre` | 文件保存前（可 reject） |
+| maya2024 | `file.save.post` | 文件保存后 |
+| blender | `file.save.pre` | 文件保存前 |
+| blender | `render.post` | 渲染完成后 |
 
 - event trigger 的 `dcc` 必须在 `targetDCCs` 范围内
 - `targetDCCs` 为 `[]`（通用工具）时**不能用** event trigger（没有绑定的 DCC）
@@ -421,6 +460,7 @@ for rule in name_rules:
 保存前必须验证：
 
 - [ ] manifest.json 包含所有必需字段（id, name, implementation.type）
+- [ ] 配置分层合规：路径范围→`defaultFilters.path`，类型范围→`defaultFilters.typeFilter`，业务常量→`inputs[]`，⛔ 无模块级硬编码常量
 - [ ] targetDCCs 已按推断规则正确设置（通用工具为 `[]`，非通用列出具体 DCC）
 - [ ] 脚本优先使用 `artclaw_sdk`（params 解析、filters 筛选、result 上报）
 - [ ] 脚本 DCC 专有操作使用原生 API（UE: `unreal`，Maya: `maya.cmds`，Blender: `bpy`）
@@ -437,6 +477,7 @@ for rule in name_rules:
   - [ ] **filters.path pattern 无花括号语法**（`*.{py,md}` 是错的，必须拆为多条）
   - [ ] event trigger 的 `dcc` 在 `targetDCCs` 范围内
   - [ ] `targetDCCs=[]` 的通用工具不使用 event trigger
+  - [ ] event trigger 的 `trigger.event` 为完整事件名（如 `asset.save.pre`、`file.save.post`）
   - [ ] 每个 trigger 有 `id`（用于去重同步）
 
 ### 创建后自动合规检查

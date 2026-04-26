@@ -109,3 +109,81 @@ AI 在调用 Execute API 前应完成：
 4. ✅ 路径格式符合目标 DCC 规范
 5. ✅ 如有 `agentHint`，已阅读并遵循
 6. ✅ `dry_run` 参数已确认（首次建议 true 预览）
+
+---
+
+## 5. 事件触发工具开发规范（强制）
+
+### 5.1 核心原则
+
+事件触发工具（trigger.type = "event"）的脚本 **必须** 遵循以下范式：
+
+| 规则 | 要求 | 级别 |
+|------|------|------|
+| **禁止直接调用 DCC API** | 脚本中不允许 `import unreal` / `import maya.cmds` / `import bpy` 等 | 🚨 error |
+| **必须通过 SDK 读取上下文** | 资产类型、路径等信息通过 `sdk.event.parse()` 获取 | 🚨 error |
+| **必须通过 SDK 返回结果** | 使用 `sdk.result.allow()` / `sdk.result.reject()` | 🚨 error |
+
+### 5.2 架构分层
+
+```
+┌─────────────────────────────────────────────┐
+│  运行时引擎层 (save_intercept.py 等)        │
+│  ✅ 允许调用 DCC API (unreal/bpy/maya...)   │
+│  职责: 查询 AssetRegistry → 填充 event_data │
+├─────────────────────────────────────────────┤
+│  artclaw_sdk.event                          │
+│  职责: 解析 event_data 为 EventData 对象    │
+├─────────────────────────────────────────────┤
+│  工具脚本层 (main.py)                       │
+│  ❌ 禁止调用 DCC API                        │
+│  职责: 纯业务逻辑 (命名检查/规范验证等)     │
+│  只通过 evt.asset_class / evt.asset_path 等 │
+└─────────────────────────────────────────────┘
+```
+
+### 5.3 event_data 可用字段
+
+运行时引擎保证以下字段在 event_data.data 中可用：
+
+| 事件类型 | 字段 | 类型 | 说明 |
+|----------|------|------|------|
+| asset.save.pre | asset_path | str | 完整资产路径 (含 .AssetName) |
+| | asset_name | str | 资产短名 |
+| | asset_class | str | 资产类型 (StaticMesh/Texture2D 等) |
+| | package_path | str | Package 路径 |
+| | file_name | str | 磁盘文件路径 |
+| asset.delete.pre | asset_paths | list[str] | 批量删除的资产路径列表 |
+| | asset_path | str | 第一个资产路径 |
+| | asset_name | str | 第一个资产名 |
+| | asset_class | str | 第一个资产类型 |
+| asset.import.pre | source_file | str | 导入源文件路径 |
+| | factory_class | str | 导入工厂类名 |
+
+### 5.4 正确的工具脚本示例
+
+```python
+from artclaw_sdk import result, event
+
+def check_naming(**kwargs):
+    evt = event.parse(kwargs)
+    
+    # ✅ 通过 SDK 读取上下文
+    asset_name = evt.asset_name
+    asset_class = evt.asset_class
+    
+    # ❌ 禁止: import unreal; registry.get_asset_by_object_path(...)
+    
+    if asset_class != "StaticMesh":
+        return result.allow("非目标类型")
+    
+    if not asset_name.startswith("SM_"):
+        return result.reject(reason=f"命名不合规: {asset_name}")
+    
+    return result.allow("命名合规")
+```
+
+### 5.5 合规检查
+
+Tool Compliance Checker (Rule 35) 会自动扫描事件触发工具的脚本，
+检测是否直接 import 了 DCC 原生模块。违规工具将被标记为 error 级别。

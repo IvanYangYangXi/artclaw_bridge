@@ -124,10 +124,30 @@ export default function ParameterPanel({
 
         if (data.success && data.data?.action === 'executed') {
           const r = data.data
-          const icon = r.success ? '✅' : '❌'
+
+          // Parse business-level result from stdout (tool may return JSON with its own success field)
+          let bizSuccess: boolean | undefined
+          let bizMessage = ''
+          if (r.stdout?.trim()) {
+            try {
+              const parsed = JSON.parse(r.stdout.trim())
+              // Direct result or wrapped in exec envelope (exec_id + result)
+              const inner = parsed.result ?? parsed
+              if (typeof inner.success === 'boolean') {
+                bizSuccess = inner.success
+                bizMessage = inner.message || inner.error || ''
+              }
+            } catch { /* not JSON, ignore */ }
+          }
+
+          // Overall success: process exit OK AND business logic OK (if reported)
+          const overallSuccess = r.success !== false && bizSuccess !== false
+          const icon = overallSuccess ? '✅' : '❌'
+          const statusText = overallSuccess ? '完成' : '失败'
           const lines = [
-            `${icon} **${executionContext.name}** 执行${r.success ? '完成' : '失败'} (exit ${r.exit_code})`,
+            `${icon} **${executionContext.name}** 执行${statusText} (exit ${r.exit_code})`,
           ]
+          if (bizMessage) lines.push(bizMessage)
           if (r.stdout?.trim()) lines.push(`\`\`\`\n${r.stdout.trim()}\n\`\`\``)
           if (r.stderr?.trim()) lines.push(`⚠️ stderr:\n\`\`\`\n${r.stderr.trim()}\n\`\`\``)
           addMessage({
@@ -190,7 +210,6 @@ export default function ParameterPanel({
         trigger_type: data.triggerType,
         dcc: data.dcc || undefined,
         event_type: data.eventType || undefined,
-        event_timing: data.eventTiming,
         execution_mode: data.executionMode,
         is_enabled: data.isEnabled,
         conditions: data.conditions,
@@ -419,7 +438,6 @@ export default function ParameterPanel({
                                 {TRIGGER_TYPE_LABEL[t.triggerType] ?? t.triggerType}
                                 {dccName && ` · ${dccName}`}
                                 {eventLabel && ` · ${eventLabel}`}
-                                {t.eventTiming && ` (${t.eventTiming})`}
                                 {` · ${EXEC_MODE_LABEL[t.executionMode] ?? t.executionMode}`}
                               </span>
                             </button>

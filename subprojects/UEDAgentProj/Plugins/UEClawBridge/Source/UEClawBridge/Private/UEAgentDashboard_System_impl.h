@@ -434,3 +434,68 @@ FReply SUEAgentDashboard::OnToggleSilentHighClicked()
 	SaveSilentModeToConfig();
 	return FReply::Handled();
 }
+
+// ==================================================================
+// 保存拦截配置 Load/Save
+// ==================================================================
+
+void SUEAgentDashboard::LoadSaveInterceptFromConfig()
+{
+	FString ConfigPath = FPlatformProcess::UserHomeDir();
+	ConfigPath = FPaths::Combine(ConfigPath, TEXT(".artclaw"), TEXT("config.json"));
+	if (!FPaths::FileExists(ConfigPath))
+	{
+		return;
+	}
+
+	FString JsonContent;
+	if (!FFileHelper::LoadFileToString(JsonContent, *ConfigPath))
+	{
+		return;
+	}
+
+	TSharedPtr<FJsonObject> JsonObj;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
+	if (!FJsonSerializer::Deserialize(Reader, JsonObj) || !JsonObj.IsValid())
+	{
+		return;
+	}
+
+	JsonObj->TryGetBoolField(TEXT("save_intercept_silent_pass"), bSaveInterceptSilentPass);
+
+	// 同步到 Subsystem
+	if (CachedSubsystem.IsValid())
+	{
+		CachedSubsystem->SetSaveInterceptSilentPass(bSaveInterceptSilentPass);
+	}
+}
+
+void SUEAgentDashboard::SaveSaveInterceptToConfig()
+{
+	FString ConfigPath = FPlatformProcess::UserHomeDir();
+	ConfigPath = FPaths::Combine(ConfigPath, TEXT(".artclaw"), TEXT("config.json"));
+
+	TSharedPtr<FJsonObject> JsonObj = MakeShared<FJsonObject>();
+
+	FString JsonContent;
+	if (FFileHelper::LoadFileToString(JsonContent, *ConfigPath))
+	{
+		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonContent);
+		TSharedPtr<FJsonObject> ExistingObj;
+		if (FJsonSerializer::Deserialize(Reader, ExistingObj) && ExistingObj.IsValid())
+		{
+			JsonObj = ExistingObj;
+		}
+	}
+
+	JsonObj->SetBoolField(TEXT("save_intercept_silent_pass"), bSaveInterceptSilentPass);
+
+	FString Dir = FPaths::GetPath(ConfigPath);
+	IFileManager::Get().MakeDirectory(*Dir, true);
+
+	FString OutputStr;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputStr);
+	FJsonSerializer::Serialize(JsonObj.ToSharedRef(), Writer);
+
+	FFileHelper::SaveStringToFile(OutputStr, *ConfigPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+}

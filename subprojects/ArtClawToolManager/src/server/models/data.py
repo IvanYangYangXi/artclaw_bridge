@@ -112,7 +112,6 @@ class TriggerRuleData:
     name: str = ""
     trigger_type: str = "manual"
     event_type: str = ""
-    event_timing: str = "post"
     execution_mode: str = "interactive"
     conditions: Dict[str, Any] = field(default_factory=dict)
     parameter_preset: Dict[str, Any] = field(default_factory=dict)

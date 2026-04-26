@@ -849,6 +849,17 @@ def start_mcp_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> bool
             # --- 阶段 3: 智能与优化子系统 ---
             _init_phase3_subsystems(_mcp_server)
 
+            # --- Tool Manager 事件桥接 ---
+            try:
+                from tool_event_bridge import init_tool_event_bridge
+                bridge = init_tool_event_bridge()
+                if bridge:
+                    UELogger.info("Tool Event Bridge: active (forwarding DCC events to Tool Manager)")
+                else:
+                    UELogger.info("Tool Event Bridge: skipped (Tool Manager not running or Subsystem unavailable)")
+            except Exception as e:
+                UELogger.warning(f"Tool Event Bridge init failed: {e}")
+
         return success
 
     except Exception as e:
@@ -965,6 +976,13 @@ def stop_mcp_server() -> None:
     在编辑器关闭时调用。
     """
     global _mcp_server, _async_bridge
+
+    # 先关闭 Tool Event Bridge
+    try:
+        from tool_event_bridge import shutdown_tool_event_bridge
+        shutdown_tool_event_bridge()
+    except Exception:
+        pass
 
     if _async_bridge is not None:
         try:

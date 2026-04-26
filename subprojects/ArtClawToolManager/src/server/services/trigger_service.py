@@ -97,15 +97,17 @@ class TriggerService:
     def create_trigger(
         self, tool_id: str, req: TriggerCreateRequest
     ) -> TriggerRuleData:
+        new_id = str(uuid.uuid4())
         rule_dict = {
-            "id": str(uuid.uuid4()),
+            "id": new_id,
+            "manifest_id": new_id,          # 新建规则同时作为 manifest_id，用于写回 manifest
             "tool_id": tool_id,
             "name": req.name,
             "trigger_type": req.trigger_type.value,
             "event_type": req.event_type,
-            "event_timing": req.event_timing.value,
             "execution_mode": req.execution_mode.value,
             "conditions": req.conditions,
+            "use_default_filters": req.use_default_filters if hasattr(req, "use_default_filters") else False,
             "parameter_preset": req.parameter_preset,
             "is_enabled": req.is_enabled,
             "schedule_config": req.schedule_config,
@@ -118,6 +120,9 @@ class TriggerService:
             all_rules = _load_all()
             all_rules.append(rule_dict)
             _save_all(all_rules)
+
+        # 同步写回 manifest.json（追加新条目）
+        self._append_rule_to_manifest(rule_dict)
 
         return self._dict_to_data(rule_dict)
 
@@ -146,6 +151,10 @@ class TriggerService:
                     found[key] = value
 
             _save_all(all_rules)
+
+            # Also update the source manifest.json so sync doesn't overwrite
+            self._sync_rule_to_manifest(found)
+
             return self._dict_to_data(found)
 
     # ------------------------------------------------------------------
@@ -198,7 +207,6 @@ class TriggerService:
             name=d.get("name", ""),
             trigger_type=d.get("trigger_type", "manual"),
             event_type=d.get("event_type", ""),
-            event_timing=d.get("event_timing", "post"),
             execution_mode=d.get("execution_mode", "interactive"),
             conditions=d.get("conditions", {}),
             parameter_preset=d.get("parameter_preset", {}),
@@ -264,17 +272,13 @@ class TriggerService:
                     current_manifest_keys.add(key)
 
                     if key in existing_index:
-                        # Update existing rule with latest manifest content
-                        idx = existing_index[key]
-                        old_rule = all_rules[idx]
-                        new_rule = self._manifest_trigger_to_rule(tool_id, mt)
-                        # Preserve internal id and user-modified fields
-                        new_rule["id"] = old_rule["id"]
-                        if old_rule != {**old_rule, **{k: v for k, v in new_rule.items() if k != "id"}}:
-                            all_rules[idx] = {**old_rule, **new_rule}
-                            changes += 1
+                        # Trigger already exists in triggers.json — do NOT overwrite
+                        # user modifications with stale manifest content.
+                        # The user's edits are the source of truth; _sync_rule_to_manifest
+                        # writes them back to manifest.json after every update_trigger call.
+                        pass
                     else:
-                        # Insert new trigger
+                        # Insert new trigger from manifest (first time only)
                         rule = self._manifest_trigger_to_rule(tool_id, mt)
                         all_rules.append(rule)
                         changes += 1
@@ -314,7 +318,7 @@ class TriggerService:
           { id, name, enabled, trigger: {type, ...}, filters: {...}, execution: {mode, ...} }
 
         Internal format:
-          { id, tool_id, manifest_id, name, trigger_type, event_type, event_timing,
+          { id, tool_id, manifest_id, name, trigger_type, event_type,
             execution_mode, is_enabled, conditions, schedule_config, dcc, ... }
         """
         trigger_block = mt.get("trigger", {})
@@ -324,13 +328,12 @@ class TriggerService:
 
         # Map trigger type specifics
         event_type = ""
-        event_timing = "post"
         dcc = ""
         schedule_config: Dict[str, Any] = {}
 
         if trigger_type == "event":
+            # event field is the full value including timing suffix, e.g. "asset.save.pre"
             event_type = trigger_block.get("event", "")
-            event_timing = trigger_block.get("timing", "post")
             dcc = trigger_block.get("dcc", "")
         elif trigger_type == "schedule":
             schedule_config = {
@@ -354,8 +357,7 @@ class TriggerService:
             "tool_id": tool_id,
             "name": mt.get("name", ""),
             "trigger_type": trigger_type,
-            "event_type": event_type,
-            "event_timing": event_timing,
+            "event_type": event_type,   # full value, e.g. "asset.save.pre"
             "execution_mode": execution_block.get("mode", "notify"),
             "is_enabled": mt.get("enabled", True),
             "use_default_filters": mt.get("useDefaultFilters", False),
@@ -366,3 +368,119 @@ class TriggerService:
             "filter_preset_id": "",
             "parameter_preset_id": mt.get("presetId", ""),
         }
+
+    def _append_rule_to_manifest(self, rule: Dict[str, Any]) -> None:
+        """将新建的触发规则追加到工具的 manifest.json triggers 数组中。"""
+        tool_id = rule.get("tool_id", "")
+        if not tool_id:
+            return
+
+        from .tool_scanner import scan_tools
+        tool_path = None
+        for scanned in scan_tools():
+            sid = f"{scanned.source}/{scanned.name}"
+            if sid == tool_id:
+                tool_path = scanned.tool_path
+                break
+        if not tool_path:
+            return
+
+        manifest_path = os.path.join(tool_path, "manifest.json")
+        if not os.path.exists(manifest_path):
+            return
+
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+
+            triggers = manifest.setdefault("triggers", [])
+            if not isinstance(triggers, list):
+                manifest["triggers"] = []
+                triggers = manifest["triggers"]
+
+            # 构建 manifest 格式的 trigger 条目
+            manifest_entry = {
+                "id": rule["manifest_id"],
+                "name": rule.get("name", ""),
+                "enabled": rule.get("is_enabled", True),
+                "trigger": {
+                    "type": rule.get("trigger_type", "event"),
+                    "event": rule.get("event_type", ""),
+                    "dcc": rule.get("dcc", ""),
+                },
+                "execution": {
+                    "mode": rule.get("execution_mode", "notify"),
+                },
+                "useDefaultFilters": rule.get("use_default_filters", False),
+            }
+            if rule.get("conditions"):
+                manifest_entry["filters"] = rule["conditions"]
+
+            triggers.append(manifest_entry)
+
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+        except Exception as e:
+            logger.warning("Failed to append rule to manifest: %s", e)
+
+    def _sync_rule_to_manifest(self, rule: Dict[str, Any]) -> None:
+        """Write trigger rule changes back to the source manifest.json.
+
+        This ensures sync_manifest_triggers won't overwrite user edits.
+        Uses tool_scanner directly to avoid triggering a full scan+sync cycle.
+        """
+        manifest_id = rule.get("manifest_id", "")
+        tool_id = rule.get("tool_id", "")
+        if not manifest_id or not tool_id:
+            return
+
+        # Resolve manifest path from the scanner (no full scan, just path lookup)
+        from .tool_scanner import scan_tools
+        tool_path = None
+        for scanned in scan_tools():
+            sid = f"{scanned.source}/{scanned.name}"
+            if sid == tool_id:
+                tool_path = scanned.tool_path
+                break
+        if not tool_path:
+            return
+
+        manifest_path = os.path.join(tool_path, "manifest.json")
+        if not os.path.exists(manifest_path):
+            return
+
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+
+            triggers = manifest.get("triggers", [])
+            if not isinstance(triggers, list):
+                return
+
+            for mt in triggers:
+                if mt.get("id") == manifest_id:
+                    # Update manifest trigger fields from rule
+                    mt["name"] = rule.get("name", mt.get("name", ""))
+                    mt["enabled"] = rule.get("is_enabled", True)
+
+                    trigger_block = mt.setdefault("trigger", {})
+                    trigger_block["type"] = rule.get("trigger_type", "event")
+                    if rule.get("trigger_type") == "event":
+                        trigger_block["event"] = rule.get("event_type", "")   # full value
+                        trigger_block["dcc"] = rule.get("dcc", "")
+
+                    exec_block = mt.setdefault("execution", {})
+                    exec_block["mode"] = rule.get("execution_mode", "notify")
+
+                    if rule.get("use_default_filters") is not None:
+                        mt["useDefaultFilters"] = rule.get("use_default_filters")
+                    if rule.get("conditions"):
+                        mt["filters"] = rule["conditions"]
+                    break
+
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+        except Exception as e:
+            logger.warning("Failed to sync rule to manifest: %s", e)

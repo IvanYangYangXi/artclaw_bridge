@@ -529,7 +529,29 @@ def _check_tool_compliance(tool_dir: Path, tool_id: str, fix_simple: bool) -> Li
 
             # event 专属规则
             if t_type == "event":
+                event_val = t_block.get("event", "")
                 event_dcc = t_block.get("dcc", "")
+
+                # Rule 25.5: trigger.event 不得为空
+                if not event_val:
+                    issues.append({"tool_id": tool_id, "severity": "error",
+                                    "message": f"triggers[{ti}] ({t_id}): trigger.event 缺失（必须为完整事件名，如 asset.save.pre）"})
+                # Rule 25.6: trigger.event 不应含已废弃的 timing 字段
+                elif t_block.get("timing"):
+                    issues.append({"tool_id": tool_id, "severity": "error",
+                                    "message": (f"triggers[{ti}] ({t_id}): 使用了废弃字段 trigger.timing，"
+                                                 f"请将 timing 合并到 event 字段，如 \"{event_val}.{t_block['timing']}\"")})
+                # Rule 25.7: trigger.event 格式检查（应包含 timing 后缀）
+                elif not (event_val.endswith(".pre") or event_val.endswith(".post")
+                          or "." not in event_val):
+                    # 允许无后缀的单次事件（如 editor.startup），但不允许 "file.save" 这种缺少后缀的
+                    # 判断标准：多段名称（有多个.）但末段不是 pre/post → 警告
+                    parts = event_val.split(".")
+                    if len(parts) >= 2 and parts[-1] not in ("pre", "post", "startup", "complete"):
+                        issues.append({"tool_id": tool_id, "severity": "warning",
+                                        "message": (f"triggers[{ti}] ({t_id}): trigger.event {event_val!r} "
+                                                     f"缺少 timing 后缀（.pre/.post），建议改为 {event_val!r}.pre 或 {event_val!r}.post")})
+
                 if event_dcc:
                     # Rule 26
                     if is_general:
@@ -623,6 +645,42 @@ def _check_tool_compliance(tool_dir: Path, tool_id: str, fix_simple: bool) -> Li
                             issues.append({"tool_id": tool_id, "severity": "warning",
                                           "message": "入口函数返回值建议使用 sdk.result.success/fail"})
                         break
+
+            # Rule 35: 事件触发工具禁止直接调用 DCC 原生 API（必须通过 SDK）
+            # 事件触发的工具脚本中，asset_class/asset_path 等上下文由运行时引擎
+            # (save_intercept.py) 查询并填入 event_data，工具脚本只能通过
+            # sdk.event.parse() 读取，不允许直接 import DCC 模块。
+            has_event_trigger = any(
+                isinstance(tr, dict) and (tr.get("trigger", {}) or {}).get("type") == "event"
+                for tr in triggers
+            ) if isinstance(triggers, list) else False
+
+            if has_event_trigger:
+                # 禁止的 DCC 原生模块（直接 import 视为违规）
+                _BANNED_DCC_IMPORTS = {
+                    "unreal", "maya", "maya.cmds", "maya.mel", "pymxs",
+                    "bpy", "hou", "sd", "substance_painter",
+                }
+                banned_found = []
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            top_mod = alias.name.split(".")[0]
+                            if alias.name in _BANNED_DCC_IMPORTS or top_mod in _BANNED_DCC_IMPORTS:
+                                banned_found.append(alias.name)
+                    elif isinstance(node, ast.ImportFrom):
+                        if node.module:
+                            top_mod = node.module.split(".")[0]
+                            if node.module in _BANNED_DCC_IMPORTS or top_mod in _BANNED_DCC_IMPORTS:
+                                banned_found.append(node.module)
+                if banned_found:
+                    issues.append({"tool_id": tool_id, "severity": "error",
+                                  "message": (
+                                      f"事件触发工具禁止直接 import DCC 模块: {', '.join(sorted(set(banned_found)))}。"
+                                      f"资产类型等上下文由运行时引擎填入 event_data，"
+                                      f"工具脚本必须通过 artclaw_sdk.event.parse() 读取。"
+                                  )})
+
         except SyntaxError:
             pass
 

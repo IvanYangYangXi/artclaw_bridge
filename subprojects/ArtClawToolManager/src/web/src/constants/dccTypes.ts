@@ -12,46 +12,55 @@ export const DCC_TYPE_PRESETS: Record<string, string[]> = {
 }
 
 export interface DCCEventDef {
-  event: string
+  event: string   // full value including timing suffix, e.g. "asset.save.pre", "file.save.post"
   label: string
   labelEn: string
-  timing: string[]
 }
 
 export const DCC_EVENTS: Record<string, DCCEventDef[]> = {
   ue5: [
-    { event: 'asset.save.pre',   label: '保存拦截',   labelEn: 'Save Intercept',    timing: ['pre'] },
-    { event: 'asset.save',       label: '资源保存',   labelEn: 'Asset Save',         timing: ['post'] },
-    { event: 'asset.import.pre', label: '导入拦截',   labelEn: 'Import Intercept',   timing: ['pre'] },
-    { event: 'asset.import',     label: '资源导入',   labelEn: 'Asset Import',        timing: ['post'] },
-    { event: 'asset.delete.pre', label: '删除拦截',   labelEn: 'Delete Intercept',   timing: ['pre'] },
-    { event: 'asset.delete',     label: '资源删除',   labelEn: 'Asset Delete',        timing: ['post'] },
-    { event: 'level.load',       label: '关卡加载',   labelEn: 'Level Load',          timing: ['post'] },
-    { event: 'editor.startup',   label: '编辑器启动', labelEn: 'Editor Startup',      timing: ['post'] },
+    { event: 'asset.save.pre',    label: '保存拦截 (pre)',     labelEn: 'Save Intercept (pre)'    },
+    { event: 'asset.save.post',   label: '资源保存 (post)',    labelEn: 'Asset Save (post)'       },
+    { event: 'asset.import.post', label: '资源导入 (post)',    labelEn: 'Asset Import (post)'     },
+    { event: 'asset.delete.pre',  label: '删除前检查 (pre)',   labelEn: 'Pre-Delete Check (pre)'  },
+    { event: 'asset.delete.post', label: '资源删除 (post)',    labelEn: 'Asset Delete (post)'     },
+    { event: 'asset.place.post',  label: '资源放置到场景 (post)', labelEn: 'Asset Placed (post)' },
+    { event: 'level.load.post',   label: '关卡加载 (post)',    labelEn: 'Level Load (post)'       },
+    { event: 'editor.startup',    label: '编辑器启动',         labelEn: 'Editor Startup'          },
   ],
   maya2024: [
-    { event: 'file.save', label: '文件保存', labelEn: 'File Save', timing: ['pre', 'post'] },
-    { event: 'file.export', label: '文件导出', labelEn: 'File Export', timing: ['pre', 'post'] },
-    { event: 'file.import', label: '文件导入', labelEn: 'File Import', timing: ['pre', 'post'] },
-    { event: 'file.open', label: '文件打开', labelEn: 'File Open', timing: ['post'] },
-    { event: 'scene.new', label: '新建场景', labelEn: 'New Scene', timing: ['post'] },
+    { event: 'file.save.pre',    label: '文件保存前',   labelEn: 'File Pre-Save'    },
+    { event: 'file.save.post',   label: '文件保存后',   labelEn: 'File Post-Save'   },
+    { event: 'file.export.pre',  label: '文件导出前',   labelEn: 'File Pre-Export'  },
+    { event: 'file.export.post', label: '文件导出后',   labelEn: 'File Post-Export' },
+    { event: 'file.import.pre',  label: '文件导入前',   labelEn: 'File Pre-Import'  },
+    { event: 'file.import.post', label: '文件导入后',   labelEn: 'File Post-Import' },
+    { event: 'file.open.post',   label: '文件打开后',   labelEn: 'File Open'        },
+    { event: 'scene.new.post',   label: '新建场景后',   labelEn: 'New Scene'        },
   ],
   blender: [
-    { event: 'file.save', label: '文件保存', labelEn: 'File Save', timing: ['pre', 'post'] },
-    { event: 'file.load', label: '文件加载', labelEn: 'File Load', timing: ['post'] },
-    { event: 'render.start', label: '开始渲染', labelEn: 'Render Start', timing: ['pre', 'post'] },
+    { event: 'file.save.pre',    label: '文件保存前',   labelEn: 'File Pre-Save'    },
+    { event: 'file.save.post',   label: '文件保存后',   labelEn: 'File Post-Save'   },
+    { event: 'file.load.post',   label: '文件加载后',   labelEn: 'File Load'        },
+    { event: 'render.pre',       label: '渲染开始前',   labelEn: 'Pre-Render'       },
+    { event: 'render.post',      label: '渲染完成后',   labelEn: 'Post-Render'      },
   ],
   comfyui: [
-    { event: 'workflow.queue', label: '提交工作流', labelEn: 'Queue Workflow', timing: ['pre', 'post'] },
-    { event: 'workflow.complete', label: '工作流完成', labelEn: 'Workflow Complete', timing: ['post'] },
+    { event: 'workflow.queue.pre',   label: '提交工作流前',   labelEn: 'Pre-Queue Workflow'    },
+    { event: 'workflow.queue.post',  label: '提交工作流后',   labelEn: 'Post-Queue Workflow'   },
+    { event: 'workflow.complete',    label: '工作流完成',     labelEn: 'Workflow Complete'     },
   ],
   sp: [
-    { event: 'project.save', label: '项目保存', labelEn: 'Project Save', timing: ['pre', 'post'] },
-    { event: 'export.textures', label: '导出贴图', labelEn: 'Export Textures', timing: ['pre', 'post'] },
+    { event: 'project.save.pre',       label: '项目保存前',   labelEn: 'Project Pre-Save'      },
+    { event: 'project.save.post',      label: '项目保存后',   labelEn: 'Project Post-Save'     },
+    { event: 'export.textures.pre',    label: '导出贴图前',   labelEn: 'Pre-Export Textures'   },
+    { event: 'export.textures.post',   label: '导出贴图后',   labelEn: 'Post-Export Textures'  },
   ],
   sd: [
-    { event: 'graph.compute', label: '图表计算', labelEn: 'Graph Compute', timing: ['pre', 'post'] },
-    { event: 'package.save', label: '包保存', labelEn: 'Package Save', timing: ['pre', 'post'] },
+    { event: 'graph.compute.pre',  label: '图表计算前',   labelEn: 'Pre-Compute Graph'  },
+    { event: 'graph.compute.post', label: '图表计算后',   labelEn: 'Post-Compute Graph' },
+    { event: 'package.save.pre',   label: '包保存前',     labelEn: 'Package Pre-Save'   },
+    { event: 'package.save.post',  label: '包保存后',     labelEn: 'Package Post-Save'  },
   ],
 }
 
