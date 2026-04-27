@@ -288,11 +288,17 @@ class TriggerService:
             # (only for tools that have manifests — don't touch user-created triggers without manifest_id)
             tool_ids_with_manifests = {k[0] for k in current_manifest_keys}
 
-            # Also build set of all currently scanned tool_ids (for orphan detection)
-            # When a tool is renamed, its old tool_id won't appear in any manifest scan.
-            # If triggers.json has a manifest_id-bound rule pointing to an unknown tool_id,
-            # it's an orphan left over from a rename — safe to remove.
-            all_known_tool_ids = {k[0] for k in current_manifest_keys}
+            # Build set of ALL currently scanned tool_ids (regardless of whether they have manifest triggers).
+            # This covers tools whose triggers[] array is empty — their tool_id is still "known",
+            # so manifest_id-bound rules pointing to them are NOT orphans from a rename.
+            # Only tool_ids that don't appear in ANY scan are truly orphaned (tool renamed/deleted).
+            all_known_tool_ids: set = set()
+            for tool in tools:
+                manifest = getattr(tool, "manifest", None) or {}
+                tool_source = getattr(tool, "source", "") or manifest.get("source", "user")
+                tool_name = manifest.get("name", "")
+                if tool_name:
+                    all_known_tool_ids.add(f"{tool_source}/{tool_name}")
 
             cleaned = []
             for r in all_rules:

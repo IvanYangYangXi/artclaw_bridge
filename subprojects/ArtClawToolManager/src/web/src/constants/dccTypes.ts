@@ -39,9 +39,8 @@ export const DCC_EVENTS: Record<string, DCCEventDef[]> = {
     { event: 'scene.new.post',   label: '新建场景后',   labelEn: 'New Scene'        },
   ],
   blender: [
-    { event: 'file.save.pre',    label: '文件保存前',   labelEn: 'File Pre-Save'    },
     { event: 'file.save.post',   label: '文件保存后',   labelEn: 'File Post-Save'   },
-    { event: 'file.load.post',   label: '文件加载后',   labelEn: 'File Load'        },
+    { event: 'file.open.post',   label: '文件打开后',   labelEn: 'File Open'        },
     { event: 'render.pre',       label: '渲染开始前',   labelEn: 'Pre-Render'       },
     { event: 'render.post',      label: '渲染完成后',   labelEn: 'Post-Render'      },
   ],

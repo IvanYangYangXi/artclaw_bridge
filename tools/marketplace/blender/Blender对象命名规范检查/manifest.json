@@ -1,0 +1,100 @@
+{
+  "id": "marketplace/blender-object-naming-check",
+  "name": "Example-Blender对象命名规范检查",
+  "description": "检查 Blender 场景中的对象命名是否符合命名规范（如 SM_/SK_/BP_ 等前缀）。可挂载触发器在保存时自动检查，也可手动运行查看命名报告",
+  "version": "1.0.0",
+  "author": "ArtClaw",
+  "source": "marketplace",
+  "targetDCCs": [
+    "blender"
+  ],
+  "createdAt": "2026-04-26 23:00:00",
+  "updatedAt": "2026-04-27 03:40:44",
+  "defaultFilters": {
+    "path": []
+  },
+  "implementation": {
+    "type": "script",
+    "entry": "main.py",
+    "function": "check_naming"
+  },
+  "inputs": [
+    {
+      "id": "prefixes",
+      "name": "合规前缀列表",
+      "type": "string",
+      "required": false,
+      "default": "SM_,SK_,BP_,VFX_,MAT_,TEX_,CH_,ENV_,PROP_",
+      "description": "逗号分隔的合规前缀，对象名必须以其中之一开头（留空跳过前缀检查）"
+    },
+    {
+      "id": "target",
+      "name": "检查范围",
+      "type": "select",
+      "required": false,
+      "default": "all",
+      "options": [
+        "all",
+        "selected",
+        "collection"
+      ],
+      "description": "all=全场景对象 selected=选中对象 collection=当前活跃集合"
+    },
+    {
+      "id": "skip_default_names",
+      "name": "跳过默认命名",
+      "type": "boolean",
+      "required": false,
+      "default": false,
+      "description": "跳过 Blender 默认生成的名称（如 Cube, Sphere, Camera, Light 等）"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "total",
+      "name": "检查对象总数",
+      "type": "number"
+    },
+    {
+      "id": "violations",
+      "name": "违规对象列表",
+      "type": "object"
+    },
+    {
+      "id": "pass_rate",
+      "name": "通过率",
+      "type": "string"
+    }
+  ],
+  "presets": [],
+  "triggers": [
+    {
+      "id": "61a94281-bfdf-4487-b4fd-4e2993d85f7b",
+      "name": "Blender保存时命名检查",
+      "enabled": false,
+      "trigger": {
+        "type": "event",
+        "event": "file.save.post",
+        "dcc": "blender"
+      },
+      "execution": {
+        "mode": "notify"
+      },
+      "useDefaultFilters": false
+    },
+    {
+      "id": "1a9c0360-28b2-4ee1-b192-d08dda5a90a6",
+      "name": " Blender打开文件时命名检查",
+      "enabled": false,
+      "trigger": {
+        "type": "event",
+        "event": "file.open.post",
+        "dcc": "blender"
+      },
+      "execution": {
+        "mode": "notify"
+      },
+      "useDefaultFilters": false
+    }
+  ]
+}

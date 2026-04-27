@@ -9,7 +9,7 @@
     "blender"
   ],
   "createdAt": "2026-04-13 18:00:00",
-  "updatedAt": "2026-04-26 13:49:57",
+  "updatedAt": "2026-04-26 16:11:44",
   "defaultFilters": {
     "path": []
   },
@@ -76,20 +76,5 @@
     }
   ],
   "presets": [],
-  "triggers": [
-    {
-      "id": "3415ec8d-403d-4edd-8f46-b2bd3edd100d",
-      "name": "BlenderSM命名检查",
-      "enabled": true,
-      "trigger": {
-        "type": "event",
-        "event": "file.save.pre",
-        "dcc": "blender"
-      },
-      "execution": {
-        "mode": "notify"
-      },
-      "useDefaultFilters": false
-    }
-  ]
+  "triggers": []
 }

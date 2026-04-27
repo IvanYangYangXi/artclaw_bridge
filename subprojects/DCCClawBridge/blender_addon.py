@@ -257,6 +257,13 @@ def unregister():
             _global_state["bridge"] = None
             _global_state["running"] = False
 
+    # 反注册触发器事件 handlers
+    try:
+        from blender_event_intercept import unregister_handlers
+        unregister_handlers()
+    except Exception as e:
+        logger.warning("ArtClaw: Failed to unregister event handlers: %s", e)
+
     # 反注册 Blender 类
     for cls in reversed(_registered_classes):
         try:

@@ -80,6 +80,18 @@ async def get_recent_tools(
 
 
 # ------------------------------------------------------------------
+# Sync triggers (must be registered BEFORE /{tool_id:path} routes)
+# ------------------------------------------------------------------
+
+@router.post("/sync-triggers")
+async def sync_triggers():
+    """Force-sync manifest triggers: insert new, update changed, remove orphans.
+    Bypasses the 5-second throttle so UI can trigger an immediate full sync."""
+    _tool_svc._last_sync_time = 0  # reset throttle
+    tools = _tool_svc.list_tools()  # re-scan + sync
+    return ok({"synced": True, "tool_count": len(tools)})
+
+
 # Batch  (must be registered BEFORE /{tool_id:path} routes)
 # ------------------------------------------------------------------
 

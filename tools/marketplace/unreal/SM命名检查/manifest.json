@@ -9,7 +9,7 @@
     "ue5"
   ],
   "createdAt": "2026-04-26 00:23:00",
-  "updatedAt": "2026-04-26 13:38:07",
+  "updatedAt": "2026-04-27 03:09:28",
   "defaultFilters": {
     "typeFilter": {
       "types": [
@@ -48,7 +48,7 @@
     {
       "id": "on-static-mesh-pre-save",
       "name": "静态网格体保存前检查",
-      "enabled": true,
+      "enabled": false,
       "trigger": {
         "type": "event",
         "dcc": "ue5",

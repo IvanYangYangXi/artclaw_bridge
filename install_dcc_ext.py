@@ -67,8 +67,17 @@ def install_blender(blender_version: str, force: bool, platform_type: str = "ope
     # 创建 __init__.py（Blender addon 包入口，必须存在）
     # bl_info 必须作为字面量定义（Blender AST 扫描，不执行 import）
     # link 模式下源码树应已包含此文件，仅在缺失时写入
+    # link 模式下源码树已含 __init__.py，此处始终用源码版本（保持同步）
+    init_src = os.path.join(
+        os.path.dirname(__file__), "subprojects", "DCCClawBridge", "__init__.py"
+    )
     init_path = os.path.join(dcc_dst, "__init__.py")
-    if not os.path.isfile(init_path):
+    if os.path.isfile(init_src):
+        import shutil
+        shutil.copy2(init_src, init_path)
+        cprint("OK", f"__init__.py 已同步 (from source)", "green")
+    elif not os.path.isfile(init_path):
+        # 兜底 fallback：仅在源码和目标都不存在时生成
         with open(init_path, "w", encoding="utf-8") as f:
             f.write(
                 "# ArtClaw Bridge - Blender Addon\n\n"
@@ -84,17 +93,34 @@ def install_blender(blender_version: str, force: bool, platform_type: str = "ope
                 "def _ensure_path():\n"
                 "    import os, sys\n"
                 "    addon_dir = os.path.dirname(os.path.abspath(__file__))\n"
-                "    if addon_dir not in sys.path:\n"
-                "        sys.path.insert(0, addon_dir)\n\n\n"
+                "    core_dir = os.path.join(addon_dir, 'core')\n"
+                "    for d in [addon_dir, core_dir]:\n"
+                "        if d not in sys.path:\n"
+                "            sys.path.insert(0, d)\n\n\n"
                 "def register():\n"
+                "    import sys, traceback\n"
                 "    _ensure_path()\n"
+                "    try:\n"
+                "        for m in list(sys.modules.keys()):\n"
+                "            if m in ('blender_event_intercept', 'dcc_event_intercept_shared'):\n"
+                "                del sys.modules[m]\n"
+                "        import blender_event_intercept as _bei\n"
+                "        _bei.register_handlers()\n"
+                "    except Exception as e:\n"
+                "        print(f'[ArtClaw] register_handlers FAILED: {e}')\n"
+                "        traceback.print_exc()\n"
                 "    from .blender_addon import register as _register\n"
                 "    _register()\n\n\n"
                 "def unregister():\n"
+                "    try:\n"
+                "        import blender_event_intercept as _bei\n"
+                "        _bei.unregister_handlers()\n"
+                "    except Exception as e:\n"
+                "        print(f'[ArtClaw] unregister_handlers error: {e}')\n"
                 "    from .blender_addon import unregister as _unregister\n"
                 "    _unregister()\n"
             )
-        cprint("OK", "已创建 __init__.py (Blender addon 入口)", "green")
+        cprint("OK", "已创建 __init__.py (Blender addon 入口，含触发器注册)", "green")
     else:
         cprint("OK", "__init__.py 已存在，跳过创建", "green")
 

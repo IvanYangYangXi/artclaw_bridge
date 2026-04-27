@@ -488,8 +488,8 @@ goto :summary
 echo.
 echo  -- Blender 插件安装 --
 echo.
-set "BLENDER_VER=4.2"
-echo  请输入 Blender 版本 (默认 4.2):
+set "BLENDER_VER=5.1"
+echo  请输入 Blender 版本 (默认 5.1):
 set /p BLENDER_VER_INPUT="  > "
 if not "!BLENDER_VER_INPUT!"=="" set "BLENDER_VER=!BLENDER_VER_INPUT!"
 echo [安装] 正在安装 Blender !BLENDER_VER! 插件...

@@ -112,8 +112,11 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
         if (saved.author != null) setAuthor(saved.author)
         if (saved.description != null) setDescription(saved.description)
       }
-      // Refresh tool list so ToolCard also reflects the latest data
+      // Refresh tool list so ToolCard also reflects the latest data (triggers sync_manifest too)
       await useToolsStore.getState().fetchToolsList()
+      // Re-fetch triggers: if name changed, orphan rules were cleaned up by sync_manifest
+      const tr = await fetchTriggers(tool.id)
+      if (tr.success) setTriggers((tr.data ?? []) as TriggerRuleData[])
       onPresetsChange?.()
     } catch (e) { console.error('[handleSave] error:', e) }
     setSaving(false)
@@ -699,10 +702,13 @@ function DefaultFiltersEditor({
 
 // ---------- Section wrapper ----------
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, headerRight }: { title: string; children: React.ReactNode; headerRight?: React.ReactNode }) {
   return (
     <div className="px-5 py-4 border-b border-border-default">
-      <h3 className="text-small font-medium text-text-primary mb-3">{title}</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-small font-medium text-text-primary">{title}</h3>
+        {headerRight}
+      </div>
       {children}
     </div>
   )

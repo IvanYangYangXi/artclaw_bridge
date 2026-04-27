@@ -1,0 +1,24 @@
+[
+  {
+    "id": "a1b2c3d4-0001-4000-8000-000000000001",
+    "tool_id": "marketplace/Blender对象命名规范检查",
+    "name": "Blender保存时命名检查(post)",
+    "trigger_type": "event",
+    "event_type": "file.save.post",
+    "execution_mode": "notify",
+    "is_enabled": true,
+    "use_default_filters": true,
+    "conditions": {}
+  },
+  {
+    "id": "a1b2c3d4-0002-4000-8000-000000000002",
+    "tool_id": "marketplace/Blender对象命名规范检查",
+    "name": "Blender保存前命名警告(pre)",
+    "trigger_type": "event",
+    "event_type": "file.save.pre",
+    "execution_mode": "notify",
+    "is_enabled": false,
+    "use_default_filters": true,
+    "conditions": {}
+  }
+]
