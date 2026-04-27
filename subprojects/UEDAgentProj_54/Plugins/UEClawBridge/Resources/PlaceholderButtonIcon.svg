@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
+  <!-- Bridge arc -->
+  <path d="M 2 13 Q 10 5 18 13" stroke="#6AB4FF" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  <!-- Bridge pillars -->
+  <line x1="6" y1="8" x2="6" y2="14" stroke="#6AB4FF" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="14" y1="8" x2="14" y2="14" stroke="#6AB4FF" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Claw marks (3 strokes) -->
+  <line x1="8" y1="2" x2="8" y2="7" stroke="#FFA530" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="10" y1="1.5" x2="10" y2="6.5" stroke="#FFA530" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="12" y1="2" x2="12" y2="7" stroke="#FFA530" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Connection dot -->
+  <circle cx="3" cy="3" r="1.5" fill="#50E090"/>
+</svg>
