@@ -52,8 +52,7 @@
       "trigger": {
         "type": "event",
         "dcc": "ue5",
-        "event": "asset.save.pre",
-        "timing": "post"
+        "event": "asset.save.pre"
       },
       "useDefaultFilters": true,
       "filters": {},
