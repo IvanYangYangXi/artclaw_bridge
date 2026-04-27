@@ -1,6 +1,6 @@
 """
-mcp_server.py - MCP WebSocket 通信网关
-========================================
+ue_mcp_server.py - UE MCP WebSocket 通信网关
+===============================================
 
 阶段 1.1: MCP WebSocket 通信网关
 

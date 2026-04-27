@@ -211,7 +211,7 @@ class ToolEventBridge:
 # ==================================================================
 
 def init_tool_event_bridge(tool_manager_url: str = _TOOL_MANAGER_URL) -> Optional[ToolEventBridge]:
-    """初始化 Tool Event Bridge（由 mcp_server.py 启动后调用）。"""
+    """初始化 Tool Event Bridge（由 ue_mcp_server.py 启动后调用）。"""
     global _bridge
 
     if _bridge is not None:

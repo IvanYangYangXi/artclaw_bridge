@@ -35,13 +35,9 @@ from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-# 共享核心: core/ → DCC core/ + UE Content/Python/
+# 共享核心: core/ → DCC core/（UE 不再复制，通过 sys.path 引用）
 CORE_DIR = PROJECT_ROOT / "core"
 DCC_CORE_DIR = PROJECT_ROOT / "subprojects" / "DCCClawBridge" / "core"
-UE_PYTHON_DIR = (
-    PROJECT_ROOT / "subprojects" / "UEDAgentProj" / "Plugins"
-    / "UEClawBridge" / "Content" / "Python"
-)
 
 # 核心共享模块列表（core/ 是唯一源码）
 CORE_MODULES = [
@@ -56,10 +52,9 @@ CORE_MODULES = [
     "skill_sync.py",
 ]
 
-# 平台 Bridge: platforms/openclaw/ → UE Content/Python/
-PLATFORM_DIR = PROJECT_ROOT / "platforms" / "openclaw"
-
 # 平台模块列表（platforms/openclaw/ 是唯一源码）
+# 注: UE 不再复制这些模块，通过 sys.path 引用源码。
+#     仅检查 DCC core/ 是否同步。
 PLATFORM_MODULES = [
     "openclaw_ws.py",
     "openclaw_chat.py",
@@ -68,6 +63,23 @@ PLATFORM_MODULES = [
 
 # DCC 源码: subprojects/DCCClawBridge/ → Maya 安装目录
 DCC_SRC_DIR = PROJECT_ROOT / "subprojects" / "DCCClawBridge"
+
+# 平台 Bridge 源码
+PLATFORM_DIR = PROJECT_ROOT / "platforms" / "openclaw"
+
+# 各 DCC 需要的共享子目录（安装时 junction）
+_DCC_SHARED_DIRS = ["adapters", "artclaw_ui", "core", "skills"]
+
+# 各 DCC 特有的顶层文件/目录（安装时 symlink/junction）
+_DCC_SPECIFIC_FILES: dict = {
+    "maya":    ["maya_setup"],
+    "max":     ["max_setup"],
+    "blender": ["blender_addon.py", "blender_qt_bridge.py", "blender_event_intercept.py", "__init__.py"],
+    "houdini": ["houdini_shelf.py"],
+    "sp":      ["sp_plugin.py"],
+    "sd":      ["sd_plugin.py"],
+    "comfyui": [],
+}
 
 # Maya 安装目录（自动检测）
 def _detect_maya_install_dirs() -> List[Path]:
@@ -175,50 +187,69 @@ def _scan_dcc_source_files() -> List[Path]:
     )
 
 
+def _get_expected_files_for_dcc(dcc_type: str) -> List[Path]:
+    """获取某个 DCC 安装目录应该包含的文件列表（相对路径）。
+
+    只返回共享子目录 + 该 DCC 特有的文件，不包含其他 DCC 的文件。
+    """
+    all_files = _scan_dcc_source_files()
+    expected = []
+    shared_dirs = set(_DCC_SHARED_DIRS)
+    specific = set(_DCC_SPECIFIC_FILES.get(dcc_type, []))
+
+    for rel in all_files:
+        parts = rel.parts
+        # 共享子目录内的文件
+        if parts[0] in shared_dirs:
+            expected.append(rel)
+            continue
+        # 该 DCC 特有的顶层文件/目录
+        if parts[0] in specific:
+            expected.append(rel)
+            continue
+        # 单文件匹配（如 blender_addon.py, __init__.py）
+        if len(parts) == 1 and str(rel) in specific:
+            expected.append(rel)
+
+    return expected
+
+
 def collect_sync_pairs() -> List[Tuple[Path, Path, str]]:
     """收集所有需要同步校验的 (源码, 副本, 说明) 三元组"""
     pairs = []
 
-    # --- core/ → DCC core/ + UE Content/Python/ ---
+    # --- core/ → DCC core/ （不再检查 UE，UE 通过 sys.path 引用源码）---
     for mod in CORE_MODULES:
         src = CORE_DIR / mod
         pairs.append((src, DCC_CORE_DIR / mod, f"core->DCC  {mod}"))
-        pairs.append((src, UE_PYTHON_DIR / mod, f"core->UE   {mod}"))
-
-    # --- platforms/openclaw/ → UE Content/Python/ ---
-    for mod in PLATFORM_MODULES:
-        src = PLATFORM_DIR / mod
-        pairs.append((src, UE_PYTHON_DIR / mod, f"plat->UE   {mod}"))
 
     # --- DCC source → Maya install dirs ---
     maya_dirs = _detect_maya_install_dirs()
-    dcc_files = _scan_dcc_source_files()
+    maya_files = _get_expected_files_for_dcc("maya")
     for maya_dir in maya_dirs:
-        # 简短标签: scripts/ 或 zh_CN/
-        label = maya_dir.parent.parent.name  # "2023" or locale like "zh_CN"
-        if label.isdigit():
-            tag = "Maya"
-        else:
-            tag = f"Maya/{label}"
-        for rel in dcc_files:
+        label = maya_dir.parent.parent.name
+        tag = "Maya" if label.isdigit() else f"Maya/{label}"
+        for rel in maya_files:
             src = DCC_SRC_DIR / rel
             dst = maya_dir / rel
             pairs.append((src, dst, f"DCC->{tag}  {rel}"))
 
     # --- DCC source → Blender install dirs ---
     blender_dirs = _detect_blender_install_dirs()
+    blender_files = _get_expected_files_for_dcc("blender")
     for blender_dir in blender_dirs:
-        ver = blender_dir.parent.parent.parent.name  # e.g. "5.1"
-        for rel in dcc_files:
+        ver = blender_dir.parent.parent.parent.name
+        for rel in blender_files:
             src = DCC_SRC_DIR / rel
             dst = blender_dir / rel
             pairs.append((src, dst, f"DCC->Blender/{ver}  {rel}"))
 
     # --- DCC source → Houdini install dirs ---
     houdini_dirs = _detect_houdini_install_dirs()
+    houdini_files = _get_expected_files_for_dcc("houdini")
     for houdini_dir in houdini_dirs:
-        ver = houdini_dir.parent.parent.parent.name  # e.g. "houdini20.5"
-        for rel in dcc_files:
+        ver = houdini_dir.parent.parent.parent.name
+        for rel in houdini_files:
             src = DCC_SRC_DIR / rel
             dst = houdini_dir / rel
             pairs.append((src, dst, f"DCC->{ver}  {rel}"))
@@ -226,7 +257,8 @@ def collect_sync_pairs() -> List[Tuple[Path, Path, str]]:
     # --- DCC source → Substance Painter install dir ---
     sp_dir = _detect_sp_install_dir()
     if sp_dir:
-        for rel in dcc_files:
+        sp_files = _get_expected_files_for_dcc("sp")
+        for rel in sp_files:
             src = DCC_SRC_DIR / rel
             dst = sp_dir / rel
             pairs.append((src, dst, f"DCC->SP  {rel}"))
@@ -234,10 +266,13 @@ def collect_sync_pairs() -> List[Tuple[Path, Path, str]]:
     # --- DCC source → Substance Designer install dir ---
     sd_dir = _detect_sd_install_dir()
     if sd_dir:
-        for rel in dcc_files:
+        sd_files = _get_expected_files_for_dcc("sd")
+        for rel in sd_files:
             src = DCC_SRC_DIR / rel
             dst = sd_dir / rel
             pairs.append((src, dst, f"DCC->SD  {rel}"))
+
+    return pairs
 
     return pairs
 

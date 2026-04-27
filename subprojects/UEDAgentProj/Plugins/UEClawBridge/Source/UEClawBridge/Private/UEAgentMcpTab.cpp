@@ -82,7 +82,7 @@ void SUEAgentMcpTab::RefreshData()
 	// 探测端口
 	FString PyCode = TEXT(
 		"import json, socket\n"
-		"from mcp_server import get_mcp_server\n"
+		"from ue_mcp_server import get_mcp_server\n"
 		"local_server = get_mcp_server()\n"
 		"local_tools = len(local_server._tools) if local_server else 0\n"
 		"\n"

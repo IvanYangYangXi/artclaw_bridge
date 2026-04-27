@@ -190,7 +190,7 @@ def _check_mcp_server() -> CheckResult:
         r.ok(f"{host}:{port} listening")
     except (socket.timeout, ConnectionRefusedError, OSError):
         r.fail(f"{host}:{port} not reachable — MCP Server not running")
-        r.info("Fix: Ensure mcp_server.py is initialized (check init_unreal.py)")
+        r.info("Fix: Ensure ue_mcp_server.py is initialized (check init_unreal.py)")
         return r
 
     # 尝试 WebSocket 握手 (快速连接+断开)
@@ -358,7 +358,7 @@ def _check_filesystem() -> CheckResult:
     r.info(f"Python scripts: {script_dir}")
 
     # 检查关键文件存在
-    key_files = ["mcp_server.py", "openclaw_bridge.py", "init_unreal.py"]
+    key_files = ["ue_mcp_server.py", "openclaw_bridge.py", "init_unreal.py"]
     for kf in key_files:
         fp = os.path.join(script_dir, kf)
         if os.path.isfile(fp):

@@ -290,7 +290,7 @@ _DCC_SHARED_DIRS = [
 _DCC_SPECIFIC_FILES: dict[str, list[str]] = {
     "maya":    ["maya_setup"],
     "max":     ["max_setup"],
-    "blender": ["blender_addon.py", "blender_qt_bridge.py"],
+    "blender": ["blender_addon.py", "blender_qt_bridge.py", "blender_event_intercept.py"],
     "houdini": ["houdini_shelf.py"],
     "sp":      ["sp_plugin.py"],
     "sd":      ["sd_plugin.py"],
