@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Request
 
@@ -157,6 +160,152 @@ def _check_platform_configured(platform_type: str) -> bool:
     elif platform_type == "workbuddy":
         return os.path.exists(os.path.expanduser("~/.workbuddy/config.json"))
     return False
+
+
+# ------------------------------------------------------------------
+# DCC Object Types (live query via MCP)
+# ------------------------------------------------------------------
+
+# Python snippets executed on each DCC to enumerate object/asset types.
+# Each must print a JSON list of {"type": str, "label": str} dicts.
+_DCC_TYPE_QUERY_CODE: dict[str, str] = {
+    "ue5": r"""
+import unreal, json
+class_set = set()
+try:
+    assets = unreal.EditorAssetLibrary.list_assets('/Game/', recursive=True, include_folder=False)
+    for path in assets:
+        ad = unreal.EditorAssetLibrary.find_asset_data(path)
+        try:
+            cls = str(ad.asset_class_path.asset_name)
+        except Exception:
+            cls = str(getattr(ad, 'asset_class', ''))
+        if cls:
+            class_set.add(cls)
+except Exception:
+    pass
+for name in ['StaticMesh', 'SkeletalMesh', 'Material', 'MaterialInstance',
+             'MaterialInstanceConstant', 'Texture2D', 'TextureCube',
+             'Blueprint', 'World', 'Level', 'LevelSequence',
+             'AnimSequence', 'AnimBlueprint', 'AnimMontage',
+             'SoundWave', 'SoundCue', 'NiagaraSystem', 'NiagaraEmitter',
+             'ParticleSystem', 'PhysicsAsset', 'DataTable', 'CurveFloat',
+             'WidgetBlueprint', 'MediaSource', 'ObjectRedirector']:
+    class_set.add(name)
+result = sorted([{"type": t, "label": t} for t in class_set], key=lambda x: x["type"])
+print(json.dumps(result, ensure_ascii=False))
+""",
+    "maya2024": r"""
+import maya.cmds as cmds, json
+types = sorted(cmds.allNodeTypes())
+result = [{"type": t, "label": t} for t in types]
+print(json.dumps(result, ensure_ascii=False))
+""",
+    "max2024": r"""
+import json
+from pymxs import runtime as rt
+classes = set()
+for sc in rt.superClasses:
+    for c in rt.showClass("*", asArray=True, superClass=sc):
+        classes.add(str(c))
+result = sorted([{"type": t, "label": t} for t in classes], key=lambda x: x["type"])
+print(json.dumps(result, ensure_ascii=False))
+""",
+    "blender": r"""
+import bpy, json
+types = sorted(set(o.type for o in bpy.data.objects))
+result = [{"type": t, "label": t} for t in types]
+print(json.dumps(result, ensure_ascii=False))
+""",
+    "comfyui": r"""
+import json
+try:
+    import nodes as _n
+    mapping = getattr(_n, 'NODE_CLASS_MAPPINGS', {})
+    types = sorted(mapping.keys())
+except Exception:
+    types = []
+result = [{"type": t, "label": t} for t in types]
+print(json.dumps(result, ensure_ascii=False))
+""",
+    "sp": r"""
+import substance_painter as sp, json
+types = ["TextureSet", "FillLayer", "PaintLayer", "GroupLayer", "MaskLayer", "FilterLayer", "GeneratorLayer"]
+result = [{"type": t, "label": t} for t in types]
+print(json.dumps(result, ensure_ascii=False))
+""",
+    "sd": r"""
+import sd, json
+types = ["SDSBSCompGraph", "SDSBSFunctionGraph", "SDNode", "SDResource", "SDPackage", "SDProperty", "SDConnection"]
+result = [{"type": t, "label": t} for t in types]
+print(json.dumps(result, ensure_ascii=False))
+""",
+}
+
+
+@router.get("/dcc-types/{dcc_type}")
+async def get_dcc_object_types(dcc_type: str, request: Request):
+    """Query a connected DCC for available object/asset types via MCP.
+
+    Falls back to static presets if the DCC is not connected or the query fails.
+    """
+    dcc_manager = request.app.state.dcc_manager
+
+    # Static fallback from dccTypes.ts presets (kept in sync here)
+    _STATIC_PRESETS: dict[str, list[str]] = {
+        "ue5": ["AActor", "UObject", "UStaticMesh", "USkeletalMesh", "UMaterial",
+                "UMaterialInstance", "UTexture2D", "UBlueprint", "UWorld",
+                "UStaticMeshComponent"],
+        "maya2024": ["mesh", "nurbsSurface", "nurbsCurve", "joint", "camera",
+                     "light", "transform", "locator"],
+        "max2024": ["Editable_Mesh", "Editable_Poly", "Bone", "Camera", "Light",
+                    "Spline", "Helper"],
+        "blender": ["MESH", "ARMATURE", "CURVE", "SURFACE", "CAMERA", "LIGHT",
+                    "EMPTY", "FONT", "GPENCIL"],
+        "comfyui": ["CheckpointLoaderSimple", "KSampler", "VAEDecode",
+                    "CLIPTextEncode", "SaveImage", "LoadImage", "ControlNetApply"],
+        "sp": ["TextureSet", "FillLayer", "PaintLayer", "GroupLayer", "MaskLayer"],
+        "sd": ["SDSBSCompGraph", "SDNode", "SDResource", "SDPackage"],
+    }
+
+    # Try live query first
+    code = _DCC_TYPE_QUERY_CODE.get(dcc_type)
+    if code:
+        statuses = await dcc_manager.get_all_status()
+        dcc_status = statuses.get(dcc_type, {})
+        if dcc_status.get("connected"):
+            try:
+                result = await dcc_manager.execute_on_dcc(dcc_type, code, timeout=15.0)
+                if result.get("success") and result.get("output"):
+                    import json as _json
+                    output = result["output"].strip()
+
+                    # Some DCC MCP servers (e.g. UE) wrap the result in a JSON envelope:
+                    #   {"success": true, "output": "<actual print output>", ...}
+                    # Unwrap if needed.
+                    try:
+                        envelope = _json.loads(output)
+                        if isinstance(envelope, dict) and "output" in envelope:
+                            if not envelope.get("success", True):
+                                # Inner execution failed
+                                raise ValueError(envelope.get("error", "inner exec failed"))
+                            output = envelope["output"].strip()
+                    except (ValueError, _json.JSONDecodeError):
+                        pass  # Not an envelope, use output as-is
+
+                    # Extract JSON array from output (find last JSON array line)
+                    for line in reversed(output.splitlines()):
+                        line = line.strip()
+                        if line.startswith("["):
+                            types = _json.loads(line)
+                            return ok({"dcc": dcc_type, "source": "live", "types": types})
+            except Exception as exc:
+                logger.warning("Live DCC type query failed for %s: %s", dcc_type, exc)
+
+    # Fallback to static presets
+    preset = _STATIC_PRESETS.get(dcc_type, [])
+    types = [{"type": t, "label": t} for t in preset]
+    return ok({"dcc": dcc_type, "source": "preset", "types": types})
 
 
 @router.get("/agents")

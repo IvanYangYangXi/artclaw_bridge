@@ -426,6 +426,24 @@ export async function deleteFilterPreset(id: string): Promise<ApiResponse<unknow
   return data
 }
 
+// ---------- DCC Object Types ----------
+
+export interface DCCObjectType {
+  type: string
+  label: string
+}
+
+export interface DCCObjectTypesResponse {
+  dcc: string
+  source: 'live' | 'preset'
+  types: DCCObjectType[]
+}
+
+export async function fetchDCCObjectTypes(dccType: string): Promise<ApiResponse<DCCObjectTypesResponse>> {
+  const { data } = await api.get(`/system/dcc-types/${encodeURIComponent(dccType)}`)
+  return data
+}
+
 // ---------- Sessions Extended ----------
 
 export async function updateSession(sessionId: string, updates: Record<string, unknown>): Promise<ApiResponse<ChatSession>> {

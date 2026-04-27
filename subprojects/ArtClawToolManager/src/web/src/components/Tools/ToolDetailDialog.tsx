@@ -13,6 +13,7 @@ import type {
 } from '../../types'
 import TriggerRuleEditor, { type TriggerFormData } from './TriggerRuleEditor'
 import PathVariablesHelp from '../common/PathVariablesHelp'
+import ObjectTypePicker from '../common/ObjectTypePicker'
 import {
   fetchPresets, fetchTriggers,
   createTrigger, deleteTrigger, updateTrigger, updateTool, createTool,
@@ -474,6 +475,7 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
             </p>
             <DefaultFiltersEditor
               filters={pendingDefaultFilters ?? tool.manifest?.defaultFilters}
+              dcc={tool.targetDCCs?.[0] || useAppStore.getState().currentDCC}
               onSave={async (filters) => {
                 setPendingDefaultFilters(filters)
                 markDirty()
@@ -601,45 +603,55 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
 
 function DefaultFiltersEditor({
   filters,
+  dcc: initialDcc,
   onSave,
   language,
 }: {
   filters?: import('../../types').FilterConfig
+  dcc: string
   onSave: (filters: import('../../types').FilterConfig) => Promise<void>
   language: string
 }) {
   const zh = language === 'zh'
+  const dccOptions = useAppStore((s) => s.dccOptions)
+  const [selectedDcc, setSelectedDcc] = useState(
+    () => filters?.typeFilter?.dcc || initialDcc || ''
+  )
   const [pathRules, setPathRules] = useState<string[]>(() =>
     (filters?.path || []).map(p => p.pattern)
   )
-  const [typeInput, setTypeInput] = useState<string>(
-    () => (filters?.typeFilter?.types || []).join(', ')
+  const [selectedTypes, setSelectedTypes] = useState<string[]>(
+    () => filters?.typeFilter?.types || []
   )
 
   const inputCls = 'w-full px-3 py-2 rounded bg-bg-tertiary text-text-primary text-small border border-border-default focus:border-accent focus:outline-none placeholder:text-text-dim transition-colors'
 
   // 每次变化立即上报给父级（父级统一在右下角保存）
-  const notify = (newPaths: string[], newTypeInput: string) => {
+  const notify = (newPaths: string[], newTypes: string[], dcc: string) => {
     const pathEntries = newPaths.filter(r => r.trim()).map(pattern => ({ pattern: pattern.trim() }))
-    const types = newTypeInput.split(',').map(s => s.trim()).filter(Boolean)
     onSave({
       ...filters,
       path: pathEntries,
-      typeFilter: types.length ? { types } : undefined,
+      typeFilter: newTypes.length ? { types: newTypes, dcc } : undefined,
     })
   }
 
   const updatePath = (index: number, value: string) => {
-    const next = [...pathRules]; next[index] = value; setPathRules(next); notify(next, typeInput)
+    const next = [...pathRules]; next[index] = value; setPathRules(next); notify(next, selectedTypes, selectedDcc)
   }
   const removePath = (index: number) => {
-    const next = pathRules.filter((_, i) => i !== index); setPathRules(next); notify(next, typeInput)
+    const next = pathRules.filter((_, i) => i !== index); setPathRules(next); notify(next, selectedTypes, selectedDcc)
   }
   const addPath = () => {
-    const next = [...pathRules, '']; setPathRules(next); notify(next, typeInput)
+    const next = [...pathRules, '']; setPathRules(next); notify(next, selectedTypes, selectedDcc)
   }
-  const updateTypeInput = (value: string) => {
-    setTypeInput(value); notify(pathRules, value)
+  const updateTypes = (types: string[]) => {
+    setSelectedTypes(types); notify(pathRules, types, selectedDcc)
+  }
+  const handleDccChange = (dcc: string) => {
+    setSelectedDcc(dcc)
+    // Keep existing selectedTypes — don't clear on DCC switch
+    notify(pathRules, selectedTypes, dcc)
   }
 
   return (
@@ -647,15 +659,44 @@ function DefaultFiltersEditor({
       {/* 对象类型筛选 */}
       <div className="space-y-1.5">
         <label className="block text-[11px] text-text-dim">
-          {zh ? '对象类型 (逗号分隔，如 StaticMesh, SkeletalMesh)' : 'Object types (comma-separated, e.g. StaticMesh, SkeletalMesh)'}
+          {zh ? '对象类型' : 'Object types'}
         </label>
-        <input
-          type="text"
-          value={typeInput}
-          onChange={(e) => updateTypeInput(e.target.value)}
-          placeholder="StaticMesh, SkeletalMesh"
-          className={cn(inputCls, 'font-mono text-[11px]')}
-        />
+
+        {/* DCC selector for type queries */}
+        <div className="flex items-center gap-2 mb-2">
+          <select
+            value={selectedDcc}
+            onChange={(e) => handleDccChange(e.target.value)}
+            className={cn(inputCls, 'w-44')}
+          >
+            <option value="">{zh ? '选择 DCC 软件' : 'Select DCC'}</option>
+            {dccOptions.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.connected ? '🟢' : '⚫'} {d.name}
+              </option>
+            ))}
+          </select>
+          {selectedDcc && (
+            <span className="text-[10px] text-text-dim">
+              {dccOptions.find((d) => d.id === selectedDcc)?.connected
+                ? (zh ? '已连接 · 可实时查询' : 'Connected · Live query')
+                : (zh ? '未连接 · 使用预设列表' : 'Offline · Using presets')}
+            </span>
+          )}
+        </div>
+
+        {selectedDcc ? (
+          <ObjectTypePicker
+            value={selectedTypes}
+            onChange={updateTypes}
+            dcc={selectedDcc}
+            language={language}
+          />
+        ) : (
+          <div className="text-[11px] text-text-dim py-2 px-3 rounded bg-bg-tertiary border border-border-default/50">
+            {zh ? '请先选择 DCC 软件以加载可用对象类型' : 'Select a DCC to load available object types'}
+          </div>
+        )}
       </div>
 
       {/* 路径规则 */}

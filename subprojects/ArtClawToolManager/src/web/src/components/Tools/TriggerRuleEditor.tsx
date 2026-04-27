@@ -4,9 +4,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Plus, Trash2 } from 'lucide-react'
 import { cn } from '../../utils/cn'
-import { DCC_EVENTS, DCC_DISPLAY_NAMES, DCC_TYPE_PRESETS } from '../../constants/dccTypes'
+import { DCC_EVENTS, DCC_DISPLAY_NAMES } from '../../constants/dccTypes'
 import { useAppStore } from '../../stores/appStore'
 import PathVariablesHelp from '../common/PathVariablesHelp'
+import ObjectTypePicker from '../common/ObjectTypePicker'
 import type { TriggerType, ExecutionMode, FilterConfig } from '../../types'
 
 interface TriggerRuleEditorProps {
@@ -80,13 +81,12 @@ export default function TriggerRuleEditor({
   }))
 
   const language = useAppStore((s) => s.language)
+  const dccOptions = useAppStore((s) => s.dccOptions)
 
   // Filter condition state
   const [filterFileRules, setFilterFileRules] = useState('')
   const [filterSceneRules, setFilterSceneRules] = useState('')
-  const [filterTypes, setFilterTypes] = useState<string[]>([])
-  const [filterCustomTypes, setFilterCustomTypes] = useState('')
-  const [filterIsRegex, setFilterIsRegex] = useState(false)
+  const [filterSelectedTypes, setFilterSelectedTypes] = useState<string[]>([])
   const [filterDcc, setFilterDcc] = useState('')
 
   // Initialize filter state from initialData (once on mount, not on every conditions change)
@@ -97,15 +97,7 @@ export default function TriggerRuleEditor({
     setFilterSceneRules(cond.sceneRules?.map(r => r.pattern).join('\n') || '')
     
     if (cond.typeFilter) {
-      const predefined = cond.typeFilter.types.filter(t => 
-        cond.typeFilter?.dcc && DCC_TYPE_PRESETS[cond.typeFilter.dcc]?.includes(t)
-      )
-      const custom = cond.typeFilter.types.filter(t => 
-        !cond.typeFilter?.dcc || !DCC_TYPE_PRESETS[cond.typeFilter.dcc]?.includes(t)
-      )
-      setFilterTypes(predefined)
-      setFilterCustomTypes(custom.join('\n'))
-      setFilterIsRegex(cond.typeFilter.isRegex || false)
+      setFilterSelectedTypes(cond.typeFilter.types || [])
       setFilterDcc(cond.typeFilter.dcc || '')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,15 +125,10 @@ export default function TriggerRuleEditor({
   }
 
   const updateConditions = () => {
-    const allTypes = [...filterTypes]
-    if (filterCustomTypes.trim()) {
-      allTypes.push(...filterCustomTypes.split('\n').filter(s => s.trim()).map(s => s.trim()))
-    }
-    
     const conditions: FilterConfig = {
       fileRules: filterFileRules.split('\n').filter(Boolean).map((p) => ({ pattern: p.trim() })),
       sceneRules: filterSceneRules.split('\n').filter(Boolean).map((p) => ({ pattern: p.trim(), isRegex: true })),
-      typeFilter: allTypes.length > 0 ? { types: allTypes, dcc: filterDcc, isRegex: filterIsRegex } : undefined,
+      typeFilter: filterSelectedTypes.length > 0 ? { types: filterSelectedTypes, dcc: filterDcc } : undefined,
     }
     updateField('conditions', conditions)
   }
@@ -149,7 +136,7 @@ export default function TriggerRuleEditor({
   // Update conditions when filter fields change
   useEffect(() => {
     updateConditions()
-  }, [filterFileRules, filterSceneRules, filterTypes, filterCustomTypes, filterIsRegex, filterDcc])
+  }, [filterFileRules, filterSceneRules, filterSelectedTypes, filterDcc])
 
   const addPresetRow = () => {
     setForm((prev) => ({
@@ -424,45 +411,28 @@ export default function TriggerRuleEditor({
               <div className="flex items-center gap-2 mb-2">
                 <select 
                   value={filterDcc} 
-                  onChange={(e) => { setFilterDcc(e.target.value); setFilterTypes([]) }} 
-                  className={cn(inputCls, 'w-32')}>
+                  onChange={(e) => { setFilterDcc(e.target.value) }} 
+                  className={cn(inputCls, 'w-44')}>
                   <option value="">{language === 'zh' ? '选择DCC' : 'Select DCC'}</option>
-                  {Object.keys(DCC_TYPE_PRESETS).map((d) => <option key={d} value={d}>{DCC_DISPLAY_NAMES[d] ?? d}</option>)}
+                  {dccOptions.map((d) => <option key={d.id} value={d.id}>{d.connected ? '🟢' : '⚫'} {d.name}</option>)}
                 </select>
-                <label className="flex items-center gap-1.5 text-[11px] text-text-secondary cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={filterIsRegex} 
-                    onChange={(e) => setFilterIsRegex(e.target.checked)}
-                    className="w-3 h-3 rounded border-border-default bg-bg-tertiary accent-accent" />
-                  {language === 'zh' ? '正则匹配' : 'Regex match'}
-                </label>
+                {filterDcc && (
+                  <span className="text-[10px] text-text-dim">
+                    {dccOptions.find((d) => d.id === filterDcc)?.connected
+                      ? (language === 'zh' ? '已连接 · 可实时查询' : 'Connected · Live query')
+                      : (language === 'zh' ? '未连接 · 使用预设列表' : 'Offline · Using presets')}
+                  </span>
+                )}
               </div>
               
               {filterDcc && (
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {(DCC_TYPE_PRESETS[filterDcc] ?? []).map((t) => (
-                    <button 
-                      key={t} 
-                      onClick={() => setFilterTypes(filterTypes.includes(t) ? filterTypes.filter((x) => x !== t) : [...filterTypes, t])}
-                      className={cn('text-[10px] px-2 py-0.5 rounded border transition-colors',
-                        filterTypes.includes(t) ? 'bg-accent/20 text-accent border-accent/50' : 'bg-bg-tertiary text-text-dim border-border-default hover:text-text-secondary',
-                      )}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
+                <ObjectTypePicker
+                  value={filterSelectedTypes}
+                  onChange={setFilterSelectedTypes}
+                  dcc={filterDcc}
+                  language={language}
+                />
               )}
-              
-              <div>
-                <label className="block text-[11px] text-text-dim mb-1">{language === 'zh' ? '自定义类型规则 (每行一条)' : 'Custom type rules (one per line)'}</label>
-                <textarea 
-                  value={filterCustomTypes} 
-                  onChange={(e) => setFilterCustomTypes(e.target.value)} 
-                  rows={2} 
-                  placeholder="BP_.*&#10;StaticMeshActor" 
-                  className={cn(inputCls, 'font-mono text-[11px] resize-y')} />
-              </div>
             </div>
             )}
               </>
