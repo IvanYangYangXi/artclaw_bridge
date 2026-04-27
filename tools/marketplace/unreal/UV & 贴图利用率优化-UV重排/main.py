@@ -3,8 +3,17 @@
 UV & 贴图利用率优化-UV重排 - 入口模块
 v1.2: 引用检测改为按材质实例维度判断（材质→贴图→UV槽三者联动跳过）
 """
+# ── SDK 头 ──
+import os, json
+import artclaw_sdk as sdk
+
+def _load_manifest() -> dict:
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+# ── SDK 头结束 ──
+
 import sys
-import os
 
 _TOOLS_PATH = os.path.dirname(os.path.abspath(__file__))
 if _TOOLS_PATH not in sys.path:
@@ -24,16 +33,6 @@ def _parse_material_ids(raw: str):
         return [int(x.strip()) for x in raw.split(",") if x.strip()]
     except ValueError:
         return None
-
-
-def _get_selected_meshes() -> list:
-    try:
-        import unreal
-        selected = unreal.EditorUtilityLibrary().get_selected_assets()
-        return [a.get_path_name().split(".")[0]
-                for a in selected if isinstance(a, unreal.StaticMesh)]
-    except Exception:
-        return []
 
 
 # 统计引用时只关心这些资产类型
@@ -180,24 +179,33 @@ def _build_report(raw: dict, dry_run: bool, skipped: list, modified: list) -> st
 
 def uv_repack_tool(**kwargs):
     """入口函数，由 ArtClaw Tool Manager 通过 keyword arguments 调用。"""
+    manifest = _load_manifest()
+    parsed = sdk.params.parse_params(manifest.get("inputs", []), kwargs)
+    
+    # 获取 mesh 路径：参数优先，fallback 到选中的 StaticMesh
+    mesh_paths_str = parsed.get("mesh_paths", "")
+    if mesh_paths_str:
+        mesh_paths = [p.strip() for p in mesh_paths_str.split(",") if p.strip()]
+    else:
+        selected = sdk.context.get_selected_assets()
+        mesh_paths = [a["path"] for a in selected if a.get("class") == "StaticMesh" or a.get("type") == "StaticMesh"]
+    
+    if not mesh_paths:
+        return sdk.result.fail("NO_INPUT", "未指定 Mesh 路径，且 Content Browser 中无选中的 StaticMesh。")
+
     import unreal
 
-    mesh_paths = _parse_paths(kwargs.get("mesh_paths", "")) or _get_selected_meshes()
-    if not mesh_paths:
-        return {"success": False,
-                "report": "未指定 Mesh 路径，且 Content Browser 中无选中的 StaticMesh。"}
-
-    material_ids      = _parse_material_ids(kwargs.get("material_ids", ""))
-    uv_channel        = int(kwargs.get("uv_channel", 0))
-    padding           = float(kwargs.get("padding", 0.002))
-    allow_rotation    = bool(kwargs.get("allow_rotation", False))
-    skip_shared       = bool(kwargs.get("skip_shared_textures", True))
-    overwrite_texture = bool(kwargs.get("overwrite_texture", True))
-    bleed_pixels      = int(kwargs.get("bleed_pixels", 4))
-    dry_run           = bool(kwargs.get("dry_run", False))
+    material_ids      = _parse_material_ids(parsed.get("material_ids", ""))
+    uv_channel        = int(parsed.get("uv_channel", 0))
+    padding           = float(parsed.get("padding", 0.002))
+    allow_rotation    = bool(parsed.get("allow_rotation", False))
+    skip_shared       = bool(parsed.get("skip_shared_textures", True))
+    overwrite_texture = bool(parsed.get("overwrite_texture", True))
+    bleed_pixels      = int(parsed.get("bleed_pixels", 4))
+    dry_run           = bool(parsed.get("dry_run", False))
 
     # ── 手动指定贴图路径时直接走旧逻辑（不做引用检测）──────
-    tex_paths_manual = _parse_paths(kwargs.get("texture_paths", ""))
+    tex_paths_manual = _parse_paths(parsed.get("texture_paths", ""))
     if tex_paths_manual:
         texture_paths = tex_paths_manual
         skipped_slots = []
@@ -258,7 +266,7 @@ def uv_repack_tool(**kwargs):
         importlib.reload(_m)
         from uv_repack import uv_repack
     except ImportError as exc:
-        return {"success": False, "report": f"无法导入 uv_repack 模块: {exc}"}
+        return sdk.result.fail("IMPORT_ERROR", f"无法导入 uv_repack 模块: {exc}")
 
     raw = uv_repack(
         mesh_paths=mesh_paths,
@@ -282,17 +290,19 @@ def uv_repack_tool(**kwargs):
 
     report = _build_report(raw, dry_run, skipped_slots, modified_assets)
 
-    return {
-        "success": raw.get("success", False),
-        "report": report,
-        "modified_assets": modified_assets,
-        "skipped_slots": skipped_slots,
-        "num_islands": raw.get("num_islands"),
-        "scale": raw.get("scale"),
-        "utilization_before": raw.get("orig_utilization"),
-        "utilization_after": raw.get("utilization"),
-        "dry_run": dry_run,
-    }
+    return sdk.result.success(
+        data={
+            "report": report,
+            "modified_assets": modified_assets,
+            "skipped_slots": skipped_slots,
+            "num_islands": raw.get("num_islands"),
+            "scale": raw.get("scale"),
+            "utilization_before": raw.get("orig_utilization"),
+            "utilization_after": raw.get("utilization"),
+            "dry_run": dry_run,
+        },
+        message=report
+    )
 
 
 if __name__ == "__main__":

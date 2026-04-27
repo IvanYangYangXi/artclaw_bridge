@@ -60,6 +60,14 @@ class SubstanceDesignerAdapter(BaseDCCBackend):
     
     def get_selected(self) -> List[Dict[str, Any]]:
         """Get currently selected nodes/graphs in Substance Designer."""
+        return self.get_selected_assets() + self.get_selected_objects()
+    
+    def get_selected_assets(self) -> List[Dict[str, Any]]:
+        """暂未对接资源管理器。"""
+        return []
+
+    def get_selected_objects(self) -> List[Dict[str, Any]]:
+        """暂未实现，返回空列表。"""
         try:
             result = []
             
@@ -164,38 +172,6 @@ class SubstanceDesignerAdapter(BaseDCCBackend):
             logger.debug(f"Could not get SD viewport info: {e}")
             return {}
     
-    def rename_object(self, obj_identifier: str, new_name: str) -> bool:
-        """Rename a Substance Designer node or graph."""
-        try:
-            current_package = self.app.getCurrentPackage()
-            if not current_package:
-                return False
-            
-            # Try to find and rename node in any graph
-            graphs = current_package.getChildrenOfType(self.SDGraph)
-            
-            for graph in graphs:
-                try:
-                    nodes = graph.getNodes()
-                    for node in nodes:
-                        if node.getIdentifier() == obj_identifier:
-                            node.setIdentifier(new_name)
-                            return True
-                except Exception:
-                    continue
-            
-            # Try to rename graph itself
-            for graph in graphs:
-                if graph.getIdentifier() == obj_identifier:
-                    graph.setIdentifier(new_name)
-                    return True
-            
-            return False
-            
-        except Exception as e:
-            logger.error(f"Failed to rename SD object {obj_identifier}: {e}")
-            return False
-    
     def execute_on_main_thread(self, func, *args, **kwargs) -> Any:
         """Execute on Substance Designer main thread."""
         # SD Python API typically runs on main thread
@@ -262,25 +238,3 @@ class SubstanceDesignerAdapter(BaseDCCBackend):
         except Exception as e:
             logger.error(f"Failed to get SD graph outputs: {e}")
             return []
-    
-    # Object manipulation methods (limited applicability to SD)
-    
-    def delete_objects(self, objects: List[Dict[str, Any]]) -> int:
-        """Delete objects - limited to nodes and graphs in SD context."""
-        logger.warning("delete_objects limited in Substance Designer - only applies to graph nodes")
-        return 0
-    
-    def duplicate_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Duplicate objects - limited to nodes in SD context."""
-        logger.warning("duplicate_objects limited in Substance Designer - only applies to graph nodes")
-        return []
-    
-    def export_selected(self, path: str, format: str = "fbx") -> bool:
-        """Export selected - not applicable to SD node graph workflow."""
-        logger.warning("export_selected not applicable to Substance Designer - use substance/texture export instead")
-        return False
-    
-    def import_file(self, path: str) -> List[Dict[str, Any]]:
-        """Import file - limited to substance/resource imports in SD."""
-        logger.warning("import_file limited in Substance Designer - use resource import instead")
-        return []

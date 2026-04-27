@@ -123,6 +123,11 @@ export async function unfavoriteWorkflow(id: string): Promise<ApiResponse<unknow
 
 // ---------- Tools ----------
 
+export async function syncTriggers(): Promise<ApiResponse<{ synced: boolean; tool_count: number }>> {
+  const { data } = await api.post('/tools/sync-triggers')
+  return data
+}
+
 export async function fetchTools(params?: {
   source?: string
   targetDCC?: string

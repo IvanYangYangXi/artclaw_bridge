@@ -5,10 +5,18 @@
   "version": "1.1.0",
   "author": "柒",
   "createdAt": "2026-04-25 15:00:00",
-  "updatedAt": "2026-04-25 16:32:00",
+  "updatedAt": "2026-04-26 13:40:15",
   "targetDCCs": [
     "ue5"
   ],
+  "defaultFilters": {
+    "typeFilter": {
+      "types": [
+        "StaticMesh"
+      ],
+      "source": "selection"
+    }
+  },
   "implementation": {
     "type": "script",
     "entry": "main.py",
@@ -21,7 +29,7 @@
       "name": "Mesh 路径",
       "description": "一个或多个 StaticMesh 的 UE 资产路径，逗号分隔。留空则使用 Content Browser 当前选中资产。",
       "type": "string",
-      "required": false,
+      "required": true,
       "placeholder": "/Game/Scenes/Prop/SM_Foo,/Game/Scenes/Prop/SM_Bar"
     },
     {
@@ -118,25 +126,36 @@
       "id": "preview",
       "name": "预览分析",
       "description": "只分析不写入，查看优化效果",
-      "params": { "dry_run": true }
+      "params": {
+        "dry_run": true
+      }
     },
     {
       "id": "uv-only",
       "name": "仅重排 UV",
       "description": "重排 UV 但不处理贴图",
-      "params": { "dry_run": false, "texture_paths": "" }
+      "params": {
+        "dry_run": false,
+        "texture_paths": ""
+      }
     },
     {
       "id": "full",
       "name": "完整优化（覆盖）",
       "description": "重排 UV + 同步适配贴图，直接覆盖原贴图",
-      "params": { "dry_run": false, "overwrite_texture": true }
+      "params": {
+        "dry_run": false,
+        "overwrite_texture": true
+      }
     },
     {
       "id": "full-copy",
       "name": "完整优化（副本）",
       "description": "重排 UV + 同步适配贴图，生成 _repacked 副本",
-      "params": { "dry_run": false, "overwrite_texture": false }
+      "params": {
+        "dry_run": false,
+        "overwrite_texture": false
+      }
     }
   ],
   "source": "marketplace"

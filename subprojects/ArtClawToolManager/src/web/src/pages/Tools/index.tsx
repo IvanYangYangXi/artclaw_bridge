@@ -1,7 +1,7 @@
 // Ref: docs/ui/ui-design.md#Tools
 // Tool manager page: tabs, search, tool cards, batch actions, creator panel
-import { useEffect, useCallback } from 'react'
-import { Loader2, Star } from 'lucide-react'
+import { useEffect, useCallback, useState } from 'react'
+import { Loader2, Star, RefreshCw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import TabBar from '../../components/common/TabBar'
 import SearchBar from '../../components/common/SearchBar'
@@ -11,6 +11,7 @@ import ToolsBatchActionBar from '../../components/Tools/ToolsBatchActionBar'
 import { useToolsStore } from '../../stores/toolsStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useAppStore } from '../../stores/appStore'
+import { syncTriggers } from '../../api/client'
 import { cn } from '../../utils/cn'
 import type { ToolTab, ToolItemExtended } from '../../types'
 
@@ -193,12 +194,16 @@ export default function ToolsPage() {
 
           <div className="flex-1" />
           {activeTab !== 'create' && (
-            <SearchBar
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder={language === 'zh' ? '搜索工具...' : 'Search tools...'}
-              className="w-64"
-            />
+            <>
+              {/* Sync triggers button */}
+              <SyncTriggersButton language={language} onSync={async () => { await syncTriggers(); await fetchToolsList() }} />
+              <SearchBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder={language === 'zh' ? '搜索工具...' : 'Search tools...'}
+                className="w-64"
+              />
+            </>
           )}
         </div>
       </div>
@@ -248,5 +253,48 @@ export default function ToolsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+// ── SyncTriggersButton ────────────────────────────────────────────────────────
+function SyncTriggersButton({ language, onSync }: { language: string; onSync: () => Promise<void> }) {
+  const [syncing, setSyncing] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const handleSync = async () => {
+    setSyncing(true)
+    setDone(false)
+    try {
+      // POST /tools/sync-triggers: resets throttle + full scan + removes orphans
+      await onSync()
+      setDone(true)
+      setTimeout(() => setDone(false), 2000)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleSync}
+      disabled={syncing}
+      title={language === 'zh'
+        ? '同步触发规则：清理已改名/删除工具的旧触发条目，确保触发器与当前工具一致'
+        : 'Sync triggers: clean up stale trigger entries for renamed/deleted tools'}
+      className={cn(
+        'flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs border transition-colors',
+        done
+          ? 'bg-green-600/20 text-green-400 border-green-500/50'
+          : 'bg-gray-800 text-gray-300 border-gray-600 hover:border-gray-400 hover:text-white',
+        syncing && 'opacity-60 cursor-not-allowed',
+      )}
+    >
+      <RefreshCw className={cn('w-3 h-3', syncing && 'animate-spin')} />
+      {syncing
+        ? (language === 'zh' ? '同步中...' : 'Syncing...')
+        : done
+          ? (language === 'zh' ? '已同步 ✓' : 'Synced ✓')
+          : (language === 'zh' ? '同步触发器' : 'Sync Triggers')}
+    </button>
   )
 }

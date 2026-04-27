@@ -44,6 +44,18 @@ class BaseDCCBackend(ABC):
         pass
     
     @abstractmethod
+    def get_selected_assets(self) -> List[Dict[str, Any]]:
+        """获取资源管理器中选中的资产。
+        UE: Content Browser 选中的资产。
+        其他 DCC: 如无资源管理器对接，返回空列表。"""
+        pass
+
+    @abstractmethod
+    def get_selected_objects(self) -> List[Dict[str, Any]]:
+        """获取场景/视口中选中的对象。"""
+        pass
+    
+    @abstractmethod
     def get_scene_path(self) -> Optional[str]:
         """Get current scene/file path."""
         pass
@@ -57,19 +69,7 @@ class BaseDCCBackend(ABC):
         """Get viewport/camera state (optional, not all DCCs support this)."""
         return {}
     
-    # ── Object Operations ──
-    
-    def rename_object(self, obj_id: str, new_name: str) -> bool:
-        """Rename an object (optional, not all DCCs support this).
-        
-        Args:
-            obj_id: Object identifier  
-            new_name: New object name
-            
-        Returns:
-            True if successful
-        """
-        return False
+    # ── Object Filtering ──
     
     def filter_objects(
         self, 
@@ -106,50 +106,3 @@ class BaseDCCBackend(ABC):
             True if on main thread (default assumes yes)
         """
         return True
-    
-    # ── Additional Object Operations ──
-    
-    def delete_objects(self, objects: List[Dict[str, Any]]) -> int:
-        """Delete objects from the scene.
-        
-        Args:
-            objects: List of object dictionaries to delete
-            
-        Returns:
-            Number of objects successfully deleted
-        """
-        return 0
-    
-    def duplicate_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Duplicate objects in the scene.
-        
-        Args:
-            objects: List of object dictionaries to duplicate
-            
-        Returns:
-            List of newly created object dictionaries
-        """
-        return []
-    
-    def export_selected(self, path: str, format: str = "fbx") -> bool:
-        """Export selected objects to file.
-        
-        Args:
-            path: Output file path
-            format: Export format (fbx, obj, etc.)
-            
-        Returns:
-            True if export was successful
-        """
-        return False
-    
-    def import_file(self, path: str) -> List[Dict[str, Any]]:
-        """Import file into scene.
-        
-        Args:
-            path: Path to file to import
-            
-        Returns:
-            List of imported object dictionaries
-        """
-        return []

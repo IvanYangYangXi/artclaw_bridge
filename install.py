@@ -182,7 +182,7 @@ def main():
     parser.add_argument("--maya-version", default="2023", help="Maya 版本 (默认: 2023)")
     parser.add_argument("--max-version", default="2024", help="3ds Max 版本 (默认: 2024)")
     parser.add_argument("--ue-project", default="", help="UE 项目路径 (包含 .uproject 的目录)")
-    parser.add_argument("--blender-version", default="4.2", help="Blender 版本 (默认: 4.2)")
+    parser.add_argument("--blender-version", default="5.1", help="Blender 版本 (默认: 5.1)")
     parser.add_argument("--houdini-version", default="20.5", help="Houdini 版本 (默认: 20.5)")
     parser.add_argument("--comfyui-path", default="", help="ComfyUI 安装目录 (包含 main.py 的目录)")
 

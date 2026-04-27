@@ -364,6 +364,54 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 				SNew(SSeparator)
 			]
 
+			// --- 保存拦截模式 ---
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(TEXT("保存拦截")))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text_Lambda([Self]() -> FText
+				{
+					return Self->bSaveInterceptSilentPass
+						? FText::FromString(TEXT("静默放行 ✅"))
+						: FText::FromString(TEXT("默认拦截 🚫"));
+				})
+				.OnClicked_Lambda([Self]()
+				{
+					Self->bSaveInterceptSilentPass = !Self->bSaveInterceptSilentPass;
+					Self->SaveSaveInterceptToConfig();
+					// 同步到 Subsystem
+					if (Self->CachedSubsystem.IsValid())
+					{
+						Self->CachedSubsystem->SetSaveInterceptSilentPass(Self->bSaveInterceptSilentPass);
+					}
+					return FReply::Handled();
+				})
+				.ToolTipText(FText::FromString(TEXT("开启后，当 Tool Manager 服务未运行时保存操作将直接放行；关闭则默认拦截保存并弹窗提示")))
+				.ButtonColorAndOpacity_Lambda([Self]() -> FSlateColor
+				{
+					return Self->bSaveInterceptSilentPass
+						? FSlateColor(FLinearColor(0.4f, 0.6f, 0.4f))  // 绿色 = 放行
+						: FSlateColor(FLinearColor(0.7f, 0.4f, 0.4f)); // 红色 = 拦截
+				})
+				.ContentPadding(FMargin(8.0f, 4.0f))
+			]
+
+			// --- 分隔线 ---
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 8.0f, 0.0f, 8.0f)
+			[
+				SNew(SSeparator)
+			]
+
 			// --- Skills 管理 ---
 			+ SVerticalBox::Slot()
 			.AutoHeight()

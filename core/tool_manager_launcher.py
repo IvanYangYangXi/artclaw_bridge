@@ -200,14 +200,14 @@ def start_server(open_browser: bool = True) -> dict:
 
     try:
         # 直接用 python 启动，不经过 bat/cmd
-        # -m src.server.main 需要 cwd 在 ArtClawToolManager 目录
+        # -m src.server 需要 cwd 在 ArtClawToolManager 目录
         creation_flags = 0
         if sys.platform == "win32":
             # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
             creation_flags = 0x08000000 | 0x00000200
 
         subprocess.Popen(
-            [python_exe, "-m", "src.server.main"],
+            [python_exe, "-m", "src.server"],
             cwd=str(tm_dir),
             creationflags=creation_flags,
             stdout=subprocess.DEVNULL,

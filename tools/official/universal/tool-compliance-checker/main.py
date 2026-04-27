@@ -8,12 +8,19 @@ ArtClaw Tool Compliance Checker v3.0
   优先从自身 manifest.json 的 defaultFilters.path 读取（$variable 路径变量）
   手动运行 / watch 触发 / 定时触发 共用同一套路径。
 """
-import json
+# ── SDK 头 ──
+import os, json
+import artclaw_sdk as sdk
+
+def _load_manifest() -> dict:
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+# ── SDK 头结束 ──
+
 import re
-import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Set
-import requests
 
 
 # ============================================================================
@@ -119,7 +126,7 @@ def _get_source_tool_names(project_root: str) -> set:
     return names
 
 
-def check_compliance(tools_dir: str = "", fix_simple: bool = False, source_only: bool = True) -> Dict[str, Any]:
+def check_compliance(**kwargs) -> Dict[str, Any]:
     """
     检查工具合规性。
     
@@ -136,6 +143,12 @@ def check_compliance(tools_dir: str = "", fix_simple: bool = False, source_only:
     Returns:
         检查结果字典: {total_checked, issues_found, issues: [...], report}
     """
+    manifest = _load_manifest()
+    parsed = sdk.params.parse_params(manifest.get("inputs", []), kwargs)
+    
+    tools_dir = parsed.get("tools_dir", "")
+    fix_simple = parsed.get("fix_simple", False)
+    source_only = parsed.get("source_only", False)  # 默认 False，与 manifest inputs default 一致
     # 路径解析：manifest filters 优先
     if tools_dir:
         scan_dirs = [str(Path(tools_dir).expanduser())]
@@ -147,12 +160,13 @@ def check_compliance(tools_dir: str = "", fix_simple: bool = False, source_only:
     # 验证至少有一个有效目录
     valid_dirs = [d for d in scan_dirs if Path(d).exists()]
     if not valid_dirs:
-        return {
+        return sdk.result.fail("NO_VALID_DIRS", f"工具目录不存在: {', '.join(scan_dirs)}", data={
             "total_checked": 0,
             "issues_found": 0,
             "issues": [],
-            "report": f"工具目录不存在: {', '.join(scan_dirs)}"
-        }
+            "report": f"工具目录不存在: {', '.join(scan_dirs)}",
+            "success": False
+        })
     
     # 获取源码工具名集合
     variables = _resolve_path_variables()
@@ -162,12 +176,13 @@ def check_compliance(tools_dir: str = "", fix_simple: bool = False, source_only:
         try:
             source_names = _get_source_tool_names(project_root)
         except RuntimeError as e:
-            return {
+            return sdk.result.fail("GET_SOURCE_ERROR", str(e), data={
                 "total_checked": 0,
                 "issues_found": 1,
                 "issues": [{"tool_id": "system", "severity": "error", "message": str(e)}],
-                "report": f"❌ 无法获取源码工具列表：{e}\n\n请检查 ArtClaw 安装配置。"
-            }
+                "report": f"❌ 无法获取源码工具列表：{e}\n\n请检查 ArtClaw 安装配置。",
+                "success": False
+            })
     else:
         source_names = None  # 检查全部
 
@@ -218,12 +233,18 @@ def check_compliance(tools_dir: str = "", fix_simple: bool = False, source_only:
     # 调用报警 API
     _update_alerts(issues)
     
-    return {
+    result_data = {
         "total_checked": total_checked,
         "issues_found": len(issues),
         "issues": issues,
-        "report": report
+        "report": report,
+        "success": len(issues) == 0
     }
+    
+    if len(issues) == 0:
+        return sdk.result.success(data=result_data, message=report)
+    else:
+        return sdk.result.fail("COMPLIANCE_ISSUES", report, data=result_data)
 
 
 def _check_tool_compliance(tool_dir: Path, tool_id: str, fix_simple: bool) -> List[Dict[str, str]]:
@@ -504,7 +525,27 @@ def _check_tool_compliance(tool_dir: Path, tool_id: str, fix_simple: bool) -> Li
 
             # event 专属规则
             if t_type == "event":
+                event_val = t_block.get("event", "")
                 event_dcc = t_block.get("dcc", "")
+
+                # Rule 25.5: trigger.event 不得为空
+                if not event_val:
+                    issues.append({"tool_id": tool_id, "severity": "error",
+                                    "message": f"triggers[{ti}] ({t_id}): trigger.event 缺失（必须为完整事件名，如 asset.save.pre）"})
+                # Rule 25.6: trigger.event 不应含已废弃的 timing 字段
+                elif t_block.get("timing"):
+                    issues.append({"tool_id": tool_id, "severity": "error",
+                                    "message": (f"triggers[{ti}] ({t_id}): 使用了废弃字段 trigger.timing，"
+                                                 f"请将 timing 合并到 event 字段，如 \"{event_val}.{t_block['timing']}\"")})
+                # Rule 25.7: trigger.event 格式检查（应包含 timing 后缀 .pre 或 .post）
+                elif "." in event_val:
+                    parts = event_val.split(".")
+                    if parts[-1] not in ("pre", "post", "startup", "complete", "queue"):
+                        issues.append({"tool_id": tool_id, "severity": "warning",
+                                        "message": (f"triggers[{ti}] ({t_id}): trigger.event {event_val!r} "
+                                                     f"末段不是合法 timing（pre/post），"
+                                                     f"建议使用 {event_val!r}.pre 或 {event_val!r}.post")})
+
                 if event_dcc:
                     # Rule 26
                     if is_general:
@@ -535,6 +576,161 @@ def _check_tool_compliance(tool_dir: Path, tool_id: str, fix_simple: bool) -> Li
         if val and not ts_pattern.match(str(val)):
             issues.append({"tool_id": tool_id, "severity": "warning",
                             "message": f"{ts_field} 格式不正确: {val!r}，应为 YYYY-MM-DD HH:MM:SS"})
+
+    # ── Rule 30-36: artclaw_sdk 合规检查（AST 静态分析）────────────────────
+    entry_file = impl.get("entry", "main.py") if impl else "main.py"
+    entry_path_file = tool_dir / entry_file
+    if entry_path_file.exists() and impl.get("type") == "script":
+        try:
+            script_source = entry_path_file.read_text(encoding="utf-8")
+            import ast
+            tree = ast.parse(script_source)
+
+            # ── 判断触发类型（影响后续多条规则）─────────────────────────────
+            has_event_trigger = any(
+                isinstance(tr, dict) and (tr.get("trigger", {}) or {}).get("type") == "event"
+                for tr in triggers
+            ) if isinstance(triggers, list) else False
+
+            # Rule 30: main.py 必须 import artclaw_sdk ──────────────────────
+            has_sdk_import = False
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if "artclaw_sdk" in alias.name:
+                            has_sdk_import = True
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module and "artclaw_sdk" in node.module:
+                        has_sdk_import = True
+            if not has_sdk_import:
+                issues.append({"tool_id": tool_id, "severity": "error",
+                              "message": "main.py 未 import artclaw_sdk（所有工具必须使用 SDK）"})
+
+            func_name = impl.get("function", "") if impl else ""
+
+            # Rule 31: selection 工具入口函数应调用 parse_params ─────────────
+            # event trigger 工具使用 sdk.event.parse()，不需要 parse_params
+            if func_name and has_sdk_import and not has_event_trigger:
+                has_parse_params = any(
+                    isinstance(node, ast.Attribute) and node.attr == "parse_params"
+                    for node in ast.walk(tree)
+                )
+                if not has_parse_params:
+                    issues.append({"tool_id": tool_id, "severity": "warning",
+                                  "message": "入口函数未调用 sdk.params.parse_params（建议使用 SDK 参数解析）"})
+
+            # Rule 33: 不应包含与 SDK 功能重复的 DCC 原生选中查询调用 ─────────
+            # 规范：sdk.context.get_selected_assets/objects 已覆盖这些调用
+            # event trigger 工具由 Rule 35 单独处理，此处跳过
+            if has_sdk_import and not has_event_trigger:
+                # 检测 attribute chain，避免误报同名方法
+                sdk_overlap_attrs = {
+                    "get_selected_assets",        # UE: EditorUtilityLibrary
+                    "get_selected_asset_data",    # UE: EditorUtilityLibrary
+                    "get_selected_level_actors",  # UE: EditorLevelLibrary
+                    "selected_objects",           # Blender: bpy.context
+                }
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Attribute) and node.attr in sdk_overlap_attrs:
+                        # 排除 sdk.context.xxx 自身的调用（value 是 sdk 相关的 attribute）
+                        if not (isinstance(node.value, ast.Attribute) and
+                                node.value.attr in ("context", "artclaw_sdk")):
+                            issues.append({"tool_id": tool_id, "severity": "warning",
+                                          "message": (f"脚本直接调用 .{node.attr}()，"
+                                                       f"建议改用 sdk.context.get_selected_assets() 或 get_selected_objects()")})
+                            break
+
+            # Rule 34: 入口函数返回值应通过 sdk.result.success/fail ───────────
+            if func_name:
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.FunctionDef) and node.name == func_name:
+                        has_success_return = False
+                        for child in ast.walk(node):
+                            if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
+                                if child.func.attr in ("success", "fail", "allow", "reject"):
+                                    has_success_return = True
+                                    break
+                            if isinstance(child, ast.Return) and isinstance(child.value, ast.Dict):
+                                for key in child.value.keys:
+                                    if isinstance(key, ast.Constant) and key.value == "success":
+                                        has_success_return = True
+                                        break
+                        if not has_success_return:
+                            issues.append({"tool_id": tool_id, "severity": "warning",
+                                          "message": "入口函数返回值建议使用 sdk.result.success/fail/allow/reject"})
+                        break
+
+            # Rule 35: 事件触发工具禁止在模块顶层 import DCC 原生模块 ─────────
+            # event_data 上下文由运行时引擎填入，工具脚本通过 sdk.event.parse() 读取。
+            # 注意：函数体内的 `import unreal` 是允许的（lazy import 常见用法），
+            # 只有模块级 import 才违规。
+            if has_event_trigger:
+                _BANNED_DCC_IMPORTS = {
+                    "unreal", "maya", "maya.cmds", "maya.mel", "pymxs",
+                    "bpy", "hou", "sd", "substance_painter",
+                }
+                banned_found = []
+                # 只检查模块顶层的 import 语句（body 直接子节点）
+                for node in tree.body:
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            top_mod = alias.name.split(".")[0]
+                            if alias.name in _BANNED_DCC_IMPORTS or top_mod in _BANNED_DCC_IMPORTS:
+                                banned_found.append(alias.name)
+                    elif isinstance(node, ast.ImportFrom):
+                        if node.module:
+                            top_mod = node.module.split(".")[0]
+                            if node.module in _BANNED_DCC_IMPORTS or top_mod in _BANNED_DCC_IMPORTS:
+                                banned_found.append(node.module)
+                if banned_found:
+                    issues.append({"tool_id": tool_id, "severity": "warning",
+                                  "message": (
+                                      f"事件触发工具在模块顶层 import 了 DCC 模块: {', '.join(sorted(set(banned_found)))}。"
+                                      f"上下文由运行时引擎填入 event_data，建议通过 sdk.event.parse() 读取，"
+                                      f"DCC 原生模块改为在函数体内 lazy import。"
+                                  )})
+
+            # Rule 36: 配置分层——脚本必须从 manifest 读取配置 ─────────────────
+            # 正向验证：检查脚本是否实际调用了 manifest 的 defaultFilters / inputs 读取。
+            # 若脚本声明了 inputs 但从不从 manifest 里读，说明配置可能被硬编码在脚本里。
+            manifest_inputs = manifest.get("inputs", [])
+            manifest_has_default_filters = bool(
+                manifest.get("defaultFilters", {}).get("path") or
+                manifest.get("defaultFilters", {}).get("typeFilter")
+            )
+            if manifest_inputs or manifest_has_default_filters:
+                # 检查脚本是否有 manifest 读取调用（_load_manifest 或等价写法）
+                reads_manifest = False
+                for node in ast.walk(tree):
+                    # 函数调用名含 load_manifest / read_manifest
+                    if isinstance(node, ast.Call):
+                        if isinstance(node.func, ast.Name) and "manifest" in node.func.id.lower():
+                            reads_manifest = True
+                            break
+                        if isinstance(node.func, ast.Attribute) and "manifest" in node.func.attr.lower():
+                            reads_manifest = True
+                            break
+                    # 字符串常量含 "manifest.json"（直接 open 读取）
+                    if isinstance(node, ast.Constant) and isinstance(node.value, str) and "manifest.json" in node.value:
+                        reads_manifest = True
+                        break
+                if not reads_manifest:
+                    issues.append({"tool_id": tool_id, "severity": "warning",
+                                  "message": (
+                                      "manifest 定义了 inputs/defaultFilters 但脚本未读取 manifest.json。"
+                                      "路径范围、类型列表、可配置参数等应从 manifest 读取，不应在脚本中硬编码。"
+                                  )})
+
+        except SyntaxError:
+            pass
+
+    # Rule 32: DCC 工具应有 defaultFilters.typeFilter
+    real_dccs = [d for d in target_dccs if d and d != "general"]
+    if real_dccs:
+        type_filter = manifest.get("defaultFilters", {}).get("typeFilter", None)
+        if type_filter is None:
+            issues.append({"tool_id": tool_id, "severity": "warning",
+                          "message": "DCC 工具建议设置 defaultFilters.typeFilter（声明对象类型筛选条件）"})
 
     return issues
 
@@ -614,14 +810,19 @@ def _generate_report(total_checked: int, issues: List[Dict[str, str]]) -> str:
 
 
 def _update_alerts(issues: List[Dict[str, str]]) -> None:
-    """更新报警状态"""
+    """更新报警状态。requests 为软依赖，Tool Manager 未运行时静默跳过。"""
+    try:
+        import requests
+    except ImportError:
+        return
+
     api_url = "http://localhost:9876/api/v1/alerts"
     source = "tool-compliance-checker"
-    
+
     # 统计问题
     errors = [i for i in issues if i['severity'] == 'error']
     warnings = [i for i in issues if i['severity'] == 'warning']
-    
+
     try:
         if errors or warnings:
             # 有问题，创建报警

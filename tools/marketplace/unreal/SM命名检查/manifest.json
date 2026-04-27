@@ -1,0 +1,95 @@
+{
+  "id": "marketplace/SM命名检查",
+  "name": "Example-UE-SM-命名检查",
+  "description": "静态网格体资产保存时触发前置命名检查，确保 /Game/_ToolManager 目录下的 StaticMesh 资产名称以 SM_ 为前缀，不符合则拦截保存并提示。",
+  "version": "1.0.0",
+  "author": "IvanYang",
+  "source": "marketplace",
+  "targetDCCs": [
+    "ue5"
+  ],
+  "createdAt": "2026-04-26 00:23:00",
+  "updatedAt": "2026-04-27 03:09:28",
+  "defaultFilters": {
+    "typeFilter": {
+      "types": [
+        "StaticMesh",
+        "StaticMeshActor"
+      ]
+    },
+    "path": [
+      {
+        "pattern": "/Game/_ToolManager/**/*"
+      }
+    ]
+  },
+  "implementation": {
+    "type": "script",
+    "entry": "main.py",
+    "function": "check_sm_naming"
+  },
+  "inputs": [],
+  "outputs": [
+    {
+      "id": "action",
+      "name": "action",
+      "label": "拦截动作",
+      "type": "string",
+      "description": "allow 或 reject"
+    },
+    {
+      "id": "reason",
+      "name": "reason",
+      "label": "拦截原因",
+      "type": "string"
+    }
+  ],
+  "triggers": [
+    {
+      "id": "on-static-mesh-pre-save",
+      "name": "静态网格体保存前检查",
+      "enabled": false,
+      "trigger": {
+        "type": "event",
+        "dcc": "ue5",
+        "event": "asset.save.pre",
+        "timing": "post"
+      },
+      "useDefaultFilters": true,
+      "filters": {},
+      "execution": {
+        "mode": "notify",
+        "timeout": 10
+      }
+    },
+    {
+      "id": "f25ace5e-7d8e-4b6b-8cda-0849ee6efe28",
+      "name": "静态网格体放置时检查",
+      "enabled": true,
+      "trigger": {
+        "type": "event",
+        "event": "asset.place.post",
+        "dcc": "ue5"
+      },
+      "execution": {
+        "mode": "notify"
+      },
+      "useDefaultFilters": false
+    },
+    {
+      "id": "4e8fadcd-b2b6-4f75-b1d6-f10d23b98791",
+      "name": "静态模型导入检查",
+      "enabled": true,
+      "trigger": {
+        "type": "event",
+        "event": "asset.import.post",
+        "dcc": "ue5"
+      },
+      "execution": {
+        "mode": "notify"
+      },
+      "useDefaultFilters": false
+    }
+  ],
+  "presets": []
+}

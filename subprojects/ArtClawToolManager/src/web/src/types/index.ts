@@ -352,8 +352,8 @@ export interface TriggerRuleData {
   toolId: string
   name: string
   triggerType: TriggerType
+  dcc: string
   eventType: string
-  eventTiming: EventTiming
   executionMode: ExecutionMode
   conditions: FilterConfig
   parameterPreset: Record<string, unknown>
@@ -370,7 +370,6 @@ export interface TriggerCreateData {
   trigger_type: TriggerType
   dcc?: string
   event_type?: string
-  event_timing?: EventTiming
   execution_mode?: ExecutionMode
   conditions?: FilterConfig
   parameter_preset?: Record<string, unknown>

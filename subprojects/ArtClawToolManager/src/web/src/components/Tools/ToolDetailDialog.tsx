@@ -17,6 +17,7 @@ import {
   fetchPresets, fetchTriggers,
   createTrigger, deleteTrigger, updateTrigger, updateTool, createTool,
 } from '../../api/client'
+import { useToolsStore } from '../../stores/toolsStore'
 
 // ---------- Props ----------
 
@@ -53,8 +54,10 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
   const [showNewPreset, setShowNewPreset] = useState(false)
   const [showNewTrigger, setShowNewTrigger] = useState(false)
   const [editingTriggerId, setEditingTriggerId] = useState<string | null>(null)
+  const [pendingTriggerForm, setPendingTriggerForm] = useState<import('./TriggerRuleEditor').TriggerFormData | null>(null)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [pendingDefaultFilters, setPendingDefaultFilters] = useState<import('../../types').FilterConfig | null>(null)
 
   // New preset form
   const [newPresetName, setNewPresetName] = useState('')
@@ -86,10 +89,36 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
   const handleSave = async () => {
     setSaving(true)
     try {
-      await updateTool(tool.id, { name, description, author, manifest: { ...(tool.manifest ?? {}), inputs: editedInputs ?? tool.manifest?.inputs, presets } })
+      // Save pending trigger edit if any
+      if (editingTriggerId && pendingTriggerForm) {
+        await handleUpdateTrigger(editingTriggerId, pendingTriggerForm)
+        setPendingTriggerForm(null)
+      }
+      // Only send the sub-fields that the user can actually edit in this dialog.
+      // Never spread the full tool.manifest — it may be stale/incomplete and would overwrite
+      // fields on disk that are not exposed in the UI (triggers, outputs, implementation, etc.)
+      const manifestPatch: Record<string, unknown> = {
+        inputs: editedInputs ?? tool.manifest?.inputs,
+        presets,
+        defaultFilters: pendingDefaultFilters ?? tool.manifest?.defaultFilters,
+      }
+      const resp = await updateTool(tool.id, { name, description, author, manifest: manifestPatch })
       setDirty(false)
+      // Sync local state from API response so reopening the panel shows updated values
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const saved = (resp as any)?.data
+      if (saved) {
+        if (saved.name != null) setName(saved.name)
+        if (saved.author != null) setAuthor(saved.author)
+        if (saved.description != null) setDescription(saved.description)
+      }
+      // Refresh tool list so ToolCard also reflects the latest data (triggers sync_manifest too)
+      await useToolsStore.getState().fetchToolsList()
+      // Re-fetch triggers: if name changed, orphan rules were cleaned up by sync_manifest
+      const tr = await fetchTriggers(tool.id)
+      if (tr.success) setTriggers((tr.data ?? []) as TriggerRuleData[])
       onPresetsChange?.()
-    } catch { /* ignore */ }
+    } catch (e) { console.error('[handleSave] error:', e) }
     setSaving(false)
   }
 
@@ -162,7 +191,7 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
     try {
       const resp = await createTrigger(tool.id, {
         name: data.name, trigger_type: data.triggerType, dcc: data.dcc, event_type: data.eventType,
-        event_timing: data.eventTiming, execution_mode: data.executionMode, is_enabled: data.isEnabled,
+        execution_mode: data.executionMode, is_enabled: data.isEnabled,
         conditions: conditionsToApi(data), parameter_preset_id: data.parameterPresetId,
         schedule_config: data.scheduleConfig,
       })
@@ -180,7 +209,7 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
     try {
       const resp = await updateTrigger(id, {
         name: data.name, trigger_type: data.triggerType, dcc: data.dcc, event_type: data.eventType,
-        event_timing: data.eventTiming, execution_mode: data.executionMode, is_enabled: data.isEnabled,
+        execution_mode: data.executionMode, is_enabled: data.isEnabled,
         conditions: conditionsToApi(data), parameter_preset_id: data.parameterPresetId,
         schedule_config: data.scheduleConfig,
       })
@@ -223,9 +252,8 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
     return {
       name: t.name || '',
       triggerType: (t.triggerType || 'manual') as TriggerFormData['triggerType'],
-      dcc: (t as TriggerRuleData & { dcc?: string }).dcc || '',
+      dcc: t.dcc || '',
       eventType: t.eventType || '',
-      eventTiming: (t.eventTiming || 'post') as TriggerFormData['eventTiming'],
       executionMode: (t.executionMode || 'notify') as TriggerFormData['executionMode'],
       useDefaultFilters: (t as TriggerRuleData & { useDefaultFilters?: boolean; use_default_filters?: boolean }).useDefaultFilters
         ?? (t as TriggerRuleData & { use_default_filters?: boolean }).use_default_filters
@@ -445,14 +473,10 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
                 : 'Tool-level default filter conditions. Trigger rules can inherit or override. Scripts read this as the canonical source.'}
             </p>
             <DefaultFiltersEditor
-              filters={tool.manifest?.defaultFilters}
+              filters={pendingDefaultFilters ?? tool.manifest?.defaultFilters}
               onSave={async (filters) => {
-                const manifest = { ...(tool.manifest || { name: tool.name }), defaultFilters: filters }
-                try {
-                  await updateTool(tool.id, { manifest })
-                  // Update local tool reference
-                  tool.manifest = manifest
-                } catch { /* ignore */ }
+                setPendingDefaultFilters(filters)
+                markDirty()
               }}
               language={language}
             />
@@ -463,10 +487,10 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
             {triggers.length > 0 ? (
               <div className="space-y-2 mb-3">
                 {triggers.map((t) => {
-                  const tAny = t as TriggerRuleData & { dcc?: string; parameterPresetId?: string; trigger_type?: string }
-                  const triggerType = tAny.trigger_type || (tAny.dcc ? 'event' : 'manual')
-                  const dccLabel = tAny.dcc ? (DCC_DISPLAY_NAMES[tAny.dcc] ?? tAny.dcc) : ''
-                  const eventLabel = tAny.dcc && t.eventType ? getEventLabel(tAny.dcc, t.eventType, language) : t.eventType
+                  const tAny = t as TriggerRuleData & { parameterPresetId?: string; trigger_type?: string }
+                  const triggerType = tAny.trigger_type || (t.dcc ? 'event' : 'manual')
+                  const dccLabel = t.dcc ? (DCC_DISPLAY_NAMES[t.dcc] ?? t.dcc) : ''
+                  const eventLabel = t.dcc && t.eventType ? getEventLabel(t.dcc, t.eventType, language) : t.eventType
                   const ppName = tAny.parameterPresetId ? presets.find((p) => p.id === tAny.parameterPresetId)?.name : undefined
                   const hasInlineFilter = t.conditions && (
                     t.conditions.fileRules?.length ||
@@ -499,7 +523,6 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
                             <span className="px-1.5 py-0.5 rounded bg-bg-quaternary text-[10px]">{typeLabel}</span>
                             {dccLabel && <span>{dccLabel}</span>}
                             {eventLabel && <span>{eventLabel}</span>}
-                            {triggerType === 'event' && <span>({t.eventTiming})</span>}
                             <span>{t.executionMode}</span>
                           </div>
                           {(hasInlineFilter || ppName) && (
@@ -526,7 +549,8 @@ export default function ToolDetailDialog({ tool, open, onClose, onPresetsChange 
                             parameterPresets={presets.map((p) => ({ id: p.id, name: p.name }))}
                             defaultFilters={tool.manifest?.defaultFilters}
                             onSave={(data) => handleUpdateTrigger(t.id, data)}
-                            onCancel={() => setEditingTriggerId(null)}
+                            onChange={(data) => setPendingTriggerForm(data)}
+                            onCancel={() => { setEditingTriggerId(null); setPendingTriggerForm(null) }}
                           />
                         </div>
                       )}
@@ -585,92 +609,106 @@ function DefaultFiltersEditor({
   language: string
 }) {
   const zh = language === 'zh'
-  const [rules, setRules] = useState<string[]>(() => {
-    const paths = filters?.path || []
-    return paths.map(p => p.pattern)
-  })
-  const [dirty, setDirty] = useState(false)
+  const [pathRules, setPathRules] = useState<string[]>(() =>
+    (filters?.path || []).map(p => p.pattern)
+  )
+  const [typeInput, setTypeInput] = useState<string>(
+    () => (filters?.typeFilter?.types || []).join(', ')
+  )
 
   const inputCls = 'w-full px-3 py-2 rounded bg-bg-tertiary text-text-primary text-small border border-border-default focus:border-accent focus:outline-none placeholder:text-text-dim transition-colors'
 
-  const updateRule = (index: number, value: string) => {
-    const next = [...rules]
-    next[index] = value
-    setRules(next)
-    setDirty(true)
+  // 每次变化立即上报给父级（父级统一在右下角保存）
+  const notify = (newPaths: string[], newTypeInput: string) => {
+    const pathEntries = newPaths.filter(r => r.trim()).map(pattern => ({ pattern: pattern.trim() }))
+    const types = newTypeInput.split(',').map(s => s.trim()).filter(Boolean)
+    onSave({
+      ...filters,
+      path: pathEntries,
+      typeFilter: types.length ? { types } : undefined,
+    })
   }
 
-  const removeRule = (index: number) => {
-    setRules(rules.filter((_, i) => i !== index))
-    setDirty(true)
+  const updatePath = (index: number, value: string) => {
+    const next = [...pathRules]; next[index] = value; setPathRules(next); notify(next, typeInput)
   }
-
-  const addRule = () => {
-    setRules([...rules, ''])
-    setDirty(true)
+  const removePath = (index: number) => {
+    const next = pathRules.filter((_, i) => i !== index); setPathRules(next); notify(next, typeInput)
   }
-
-  const handleSave = async () => {
-    const pathEntries = rules.filter(r => r.trim()).map(pattern => ({ pattern: pattern.trim() }))
-    await onSave({ ...filters, path: pathEntries })
-    setDirty(false)
+  const addPath = () => {
+    const next = [...pathRules, '']; setPathRules(next); notify(next, typeInput)
+  }
+  const updateTypeInput = (value: string) => {
+    setTypeInput(value); notify(pathRules, value)
   }
 
   return (
-    <div className="space-y-2">
-      <label className="block text-[11px] text-text-dim">
-        {zh ? '路径规则 (支持 $variable 和 glob)' : 'Path rules (supports $variable and glob)'}
-      </label>
-      {rules.map((rule, i) => (
-        <div key={i} className="flex items-center gap-1.5">
-          <input
-            type="text"
-            value={rule}
-            onChange={(e) => updateRule(i, e.target.value)}
-            placeholder="$project_root/tools/**/*"
-            className={cn(inputCls, 'flex-1 font-mono text-[11px]')}
-          />
-          <button
-            onClick={() => removeRule(i)}
-            className="p-1 rounded text-error/60 hover:text-error hover:bg-error/10 transition-colors shrink-0"
-          >
-            <Trash2 className="w-3 h-3" />
-          </button>
-        </div>
-      ))}
-      {rules.length === 0 && (
-        <div className="text-[11px] text-text-dim py-1">
-          {zh ? '暂无默认路径规则，触发规则将使用自定义筛选条件' : 'No default path rules. Trigger rules will use custom filters.'}
-        </div>
-      )}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={addRule}
-          className="flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
-        >
-          <Plus className="w-3 h-3" />
-          {zh ? '添加路径规则' : 'Add path rule'}
-        </button>
-        {dirty && (
-          <button
-            onClick={handleSave}
-            className="text-[11px] px-2 py-0.5 rounded bg-accent text-white hover:bg-accent/90 transition-colors"
-          >
-            {zh ? '保存' : 'Save'}
-          </button>
-        )}
+    <div className="space-y-4">
+      {/* 对象类型筛选 */}
+      <div className="space-y-1.5">
+        <label className="block text-[11px] text-text-dim">
+          {zh ? '对象类型 (逗号分隔，如 StaticMesh, SkeletalMesh)' : 'Object types (comma-separated, e.g. StaticMesh, SkeletalMesh)'}
+        </label>
+        <input
+          type="text"
+          value={typeInput}
+          onChange={(e) => updateTypeInput(e.target.value)}
+          placeholder="StaticMesh, SkeletalMesh"
+          className={cn(inputCls, 'font-mono text-[11px]')}
+        />
       </div>
-      <PathVariablesHelp language={language} />
+
+      {/* 路径规则 */}
+      <div className="space-y-1.5">
+        <label className="block text-[11px] text-text-dim">
+          {zh ? '路径规则 (支持 $variable 和 glob)' : 'Path rules (supports $variable and glob)'}
+        </label>
+        {pathRules.map((rule, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <input
+              type="text"
+              value={rule}
+              onChange={(e) => updatePath(i, e.target.value)}
+              placeholder="/Game/MyContent/**/*"
+              className={cn(inputCls, 'flex-1 font-mono text-[11px]')}
+            />
+            <button
+              onClick={() => removePath(i)}
+              className="p-1 rounded text-error/60 hover:text-error hover:bg-error/10 transition-colors shrink-0"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        ))}
+        {pathRules.length === 0 && (
+          <div className="text-[11px] text-text-dim py-1">
+            {zh ? '暂无路径规则（匹配全部路径）' : 'No path rules (match all paths)'}
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={addPath}
+            className="flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+          >
+            <Plus className="w-3 h-3" />
+            {zh ? '添加路径规则' : 'Add path rule'}
+          </button>
+        </div>
+        <PathVariablesHelp language={language} />
+      </div>
     </div>
   )
 }
 
 // ---------- Section wrapper ----------
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, headerRight }: { title: string; children: React.ReactNode; headerRight?: React.ReactNode }) {
   return (
     <div className="px-5 py-4 border-b border-border-default">
-      <h3 className="text-small font-medium text-text-primary mb-3">{title}</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-small font-medium text-text-primary">{title}</h3>
+        {headerRight}
+      </div>
       {children}
     </div>
   )

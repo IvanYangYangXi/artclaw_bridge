@@ -2,12 +2,17 @@
   "id": "marketplace/资产批量改名",
   "name": "资产批量改名",
   "description": "批量为 UE 选中的资产添加前缀或后缀，支持自定义分隔符。",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "ArtClaw",
   "source": "marketplace",
   "targetDCCs": ["ue5"],
   "createdAt": "2026-04-24 18:30:00",
-  "updatedAt": "2026-04-24 18:30:00",
+  "updatedAt": "2026-04-25 23:43:00",
+  "defaultFilters": {
+    "typeFilter": {
+      "source": "selection"
+    }
+  },
   "implementation": {
     "type": "script",
     "entry": "main.py",
@@ -16,7 +21,8 @@
   "inputs": [
     {
       "id": "prefix",
-      "name": "前缀",
+      "name": "prefix",
+      "label": "前缀",
       "type": "string",
       "required": false,
       "default": "",
@@ -24,7 +30,8 @@
     },
     {
       "id": "suffix",
-      "name": "后缀",
+      "name": "suffix",
+      "label": "后缀",
       "type": "string",
       "required": false,
       "default": "",
@@ -32,7 +39,8 @@
     },
     {
       "id": "separator",
-      "name": "分隔符",
+      "name": "separator",
+      "label": "分隔符",
       "type": "select",
       "required": false,
       "default": "_",
@@ -45,6 +53,11 @@
       "id": "renamed_count",
       "name": "改名数量",
       "type": "number"
+    },
+    {
+      "id": "renamed_assets",
+      "name": "改名明细",
+      "type": "array"
     }
   ]
 }

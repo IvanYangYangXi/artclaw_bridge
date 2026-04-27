@@ -49,6 +49,7 @@ public class UEClawBridge : ModuleRules
 				"Json",               // 流式 JSON 解析
 				"JsonUtilities",
 				"ContentBrowser",     // 活跃面板追踪: Content Browser 选区变化监听
+				"AssetRegistry",      // DCC 事件：资源删除后事件监听
 				"ImageWrapper",       // 剪贴板图片 → PNG 编码
 				"DesktopPlatform",    // 文件选择对话框
 				"ApplicationCore",    // FWindowsPlatformApplicationMisc::ClipboardPaste

@@ -77,8 +77,6 @@ Agent: [生成预览] 确认创建工具"快速文生图"？
 
 使用 DCC 原生 Python API 创建自定义脚本工具。
 
-> ⛔ **禁止使用 `artclaw_sdk`** — 该模块尚未实现，导入会直接报错。所有脚本必须使用 DCC 原生 API。
-
 **对话模板**：
 ```
 Agent: 请描述工具功能：
@@ -98,57 +96,56 @@ Agent: [生成脚本预览] 确认创建工具？
 
 **生成的脚本必须遵循以下规则**：
 
-- MUST 优先使用 `artclaw_sdk` 统一 API（参数解析、对象筛选、结果上报）
-- 对于 `artclaw_sdk` 不覆盖的 DCC 专有操作，使用原生 API（UE: `import unreal`，Maya: `import maya.cmds`，Blender: `import bpy`）
-- ⛔ MUST NOT `import subprocess` — 会被 UE 安全扫描器拦截
-- MUST 入口函数使用 `**kwargs` 签名（Tool Manager 通过 keyword arguments 调用）
-- MUST 返回 dict 结果（`{"success": True/False, ...}`）
-- 可以使用 `PIL`/`Pillow`（UE Python 环境已内置）
-- 可以使用 `os`, `json`, `math` 等标准库（除 subprocess）
-- 如果工具有筛选条件需求，优先使用 `artclaw_sdk.filters` 和 manifest 的 `defaultFilters` 机制
-- 如果工具有参数校验需求，优先使用 `artclaw_sdk.params.parse_params(manifest_inputs, raw_params)`
-
-**脚本模板**：
 ```python
-"""
-工具名称
-工具描述（一行）。
-"""
-import os
-import json
+"""工具名称 — 一句话描述。"""
+# ── SDK 头（tool-creator 自动注入）──
+import os, json
+import artclaw_sdk as sdk
 
-# artclaw_sdk: 参数解析 + 对象筛选 + 结果上报
-from artclaw_sdk import params, filters, result, context
-# DCC 原生 API（按需导入）
-# import unreal  # UE
-# import maya.cmds as cmds  # Maya
-# import bpy  # Blender
-
-
-def _helper_function():
-    """内部辅助函数。"""
-    pass
+def _load_manifest() -> dict:
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+# ── SDK 头结束 ──
 
 
 def main_function(**kwargs):
     """入口函数。kwargs 由 Tool Manager 传入。"""
-    # 参数解析（自动类型转换 + required 校验）
-    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
-    with open(manifest_path, "r", encoding="utf-8") as f:
-        manifest = json.load(f)
-    parsed = params.parse_params(manifest.get("inputs", []), kwargs)
-    
-    param1 = parsed.get("param1", "")
-    dry_run = parsed.get("dry_run", False)
+    manifest = _load_manifest()
 
-    # 对象筛选（如果工具有筛选需求）
-    # selected = context.get_selected()
-    # meshes = filters.filter_by_type(selected, "MESH")
+    # ── 1. 参数解析（必须）——从 manifest inputs 读取，不在脚本里硬编码默认值 ──
+    parsed = sdk.params.parse_params(manifest.get("inputs", []), kwargs)
 
-    # ... 业务逻辑 ...
+    # ── 2. 对象获取 + 筛选（按需；event trigger 工具通常不需要此段）──
+    type_cfg = manifest.get("defaultFilters", {}).get("typeFilter", {})
+    types = type_cfg.get("types", [])          # 来自 manifest，不硬编码
+    source = type_cfg.get("source", "selection")
 
-    return {"success": True, "message": "完成", "data": {...}}
+    if source == "selection":
+        explicit = parsed.get("target_paths", "")
+        if explicit:
+            objects = [{"path": p.strip(), "type": "", "name": p.strip().rsplit("/", 1)[-1]}
+                       for p in explicit.split(",") if p.strip()]
+        else:
+            # 根据工具需求二选一：
+            # sdk.context.get_selected_assets()  — Content Browser / 资源管理器
+            # sdk.context.get_selected_objects() — 场景 / 视口
+            objects = sdk.context.get_selected_assets()
+        if types:
+            objects = sdk.filters.filter_by_type(objects, types)
+        if not objects:
+            return sdk.result.fail("NO_INPUT", "未指定目标，且当前无选中对象。")
+
+    # ── 3. 业务逻辑（DCC 原生 API）──
+    # import unreal  # UE
+    # import bpy     # Blender
+    # ...
+
+    # ── 4. 结果上报（必须）──
+    return sdk.result.success(data={}, message="完成")
 ```
+
+> **脚本配置分层原则**（见下方 manifest.json Schema → 配置分层决策）：所有路径范围、类型列表等规则配置统一写入 manifest，脚本只负责读取。禁止将它们定义为模块级常量。
 
 ### 3. 组合工具 (composite)
 
@@ -199,6 +196,22 @@ Agent: 确认管线流程：
   "presets": []
 }
 ```
+
+### 配置分层决策
+
+创建工具时，每个配置项应按以下原则决定放哪一层：
+
+| 层 | manifest 字段 | 适合放什么 | 用户能否在 UI 里改 |
+|----|--------------|-----------|------------------|
+| **用户参数** | `inputs[]` | 每次运行可能不同的值：前缀、导出路径、选项开关 | ✅ 运行时填写 |
+| **规则配置** | `defaultFilters` | 工具生效范围：监控路径、目标类型，改后需重启工具 | ✅ 工具设置页 |
+| **固定元数据** | 顶层其他字段 | 工具名称、版本、作者、触发规则 | ❌ 仅开发者修改 |
+| **❌ 禁止** | 脚本模块级常量 | 任何配置都不应写死在 `main.py` 顶部 | ✗ 改了代码才生效 |
+
+**判断依据**：
+- "用户每次运行前想改" → `inputs[]`
+- "决定这个工具对什么资产生效" → `defaultFilters.path` / `defaultFilters.typeFilter`
+- "工具内部用到的命名规则/阈值等业务常量" → 也放 `inputs[]`，设好默认值，用户可以覆盖
 
 ### 触发规则范式（triggers）
 
@@ -292,11 +305,35 @@ watch trigger **不含 `paths` 字段**。监听路径统一写在 `filters.path
 
 #### event 类型 — dcc 必须匹配 targetDCCs
 
+`trigger.event` 字段包含完整事件名（含 timing 后缀），格式为 `{base}.{timing}`：
+
 ```json
 {
-  "trigger": { "type": "event", "dcc": "maya", "event": "file.save", "timing": "post" }
+  "trigger": { "type": "event", "dcc": "ue5", "event": "asset.save.pre" }
 }
 ```
+
+```json
+{
+  "trigger": { "type": "event", "dcc": "maya2024", "event": "file.save.post" }
+}
+```
+
+**常用事件名参考**（完整列表见 Tool Manager 前端事件选择器）：
+
+| DCC | 事件名 | 说明 |
+|-----|--------|------|
+| ue5 | `asset.save.pre` | 保存前拦截（可 reject 阻止保存） |
+| ue5 | `asset.save.post` | 保存完成后（不可拦截，仅通知） |
+| ue5 | `asset.delete.pre` | 删除前 |
+| ue5 | `asset.import.post` | 导入完成后 |
+| ue5 | `level.save.pre` / `level.save.post` | 关卡保存前/后 |
+| ue5 | `level.load.post` | 关卡加载后 |
+| ue5 | `editor.startup.post` | 编辑器启动后（one-shot） |
+| maya2024 | `file.save.pre` | 文件保存前（可 reject） |
+| maya2024 | `file.save.post` | 文件保存后 |
+| blender | `file.save.pre` | 文件保存前 |
+| blender | `render.post` | 渲染完成后 |
 
 - event trigger 的 `dcc` 必须在 `targetDCCs` 范围内
 - `targetDCCs` 为 `[]`（通用工具）时**不能用** event trigger（没有绑定的 DCC）
@@ -361,6 +398,15 @@ for rule in name_rules:
 
 **关键原则**：筛选逻辑来自 manifest `defaultFilters`，不是脚本硬编码。用户通过 Tool Manager UI 修改筛选条件后，脚本行为自动跟随变化。
 
+#### typeFilter.source
+
+| source | 含义 |
+|--------|------|
+| `"selection"` | 从 DCC 当前选中获取 + 按类型过滤（默认值） |
+| `"parameter"` | 只从参数输入获取，不读选中 |
+
+`types` 中的值必须与目标 DCC 的实际 type 值一致。
+
 ### targetDCCs 推断规则
 
 `targetDCCs` 表示工具适用的 DCC 范围。**AI 必须根据工具功能自动推断，不要让用户手动选择。**
@@ -416,6 +462,7 @@ for rule in name_rules:
 保存前必须验证：
 
 - [ ] manifest.json 包含所有必需字段（id, name, implementation.type）
+- [ ] 配置分层合规：路径范围→`defaultFilters.path`，类型范围→`defaultFilters.typeFilter`，业务常量→`inputs[]`，⛔ 无模块级硬编码常量
 - [ ] targetDCCs 已按推断规则正确设置（通用工具为 `[]`，非通用列出具体 DCC）
 - [ ] 脚本优先使用 `artclaw_sdk`（params 解析、filters 筛选、result 上报）
 - [ ] 脚本 DCC 专有操作使用原生 API（UE: `unreal`，Maya: `maya.cmds`，Blender: `bpy`）
@@ -432,7 +479,18 @@ for rule in name_rules:
   - [ ] **filters.path pattern 无花括号语法**（`*.{py,md}` 是错的，必须拆为多条）
   - [ ] event trigger 的 `dcc` 在 `targetDCCs` 范围内
   - [ ] `targetDCCs=[]` 的通用工具不使用 event trigger
+  - [ ] event trigger 的 `trigger.event` 含完整 timing 后缀（如 `asset.save.pre`、`file.save.post`）
   - [ ] 每个 trigger 有 `id`（用于去重同步）
+
+### 创建后自动合规检查
+
+工具创建保存后，自动调用合规检查器验证脚本结构：
+- `import artclaw_sdk` 是否存在
+- 入口函数是否调用 `parse_params`
+- 返回值是否包含 `success` 字段
+- DCC 工具是否有 `defaultFilters.typeFilter`
+
+如检查不通过，提示用户修复后再保存。
 
 ## 前端-Agent 交互协议
 
@@ -527,7 +585,7 @@ result = filters.filter_objects(selected, type="MESH", name_pattern="SM_*")
 ```python
 from artclaw_sdk import result
 result.success(data={"count": 10})
-result.error("操作失败: xxx")
+result.fail("操作失败: xxx")
 ```
 
 ### 进度条

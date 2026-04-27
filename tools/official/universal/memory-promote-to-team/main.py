@@ -2,6 +2,17 @@
 memory-promote-to-team
 将个人记忆中的高价值踩坑记录晋升到团队记忆。
 """
+# ── SDK 头 ──
+import os as _os, json as _json_mod
+import artclaw_sdk as sdk
+
+def _load_manifest():
+    return _json_mod.loads(
+        open(_os.path.join(_os.path.dirname(__file__), "manifest.json"),
+             encoding="utf-8").read()
+    )
+# ── SDK 头结束 ──
+
 import json
 import os
 import sys
@@ -32,23 +43,28 @@ def promote_to_team(**kwargs):
         min_importance (float): 最低重要性阈值 (0-1), 默认 0.7
         dry_run (bool): True=预览, False=实际写入, 默认 True
     """
-    min_importance = float(kwargs.get("min_importance", 0.7))
-    dry_run = bool(kwargs.get("dry_run", True))
+    manifest = _load_manifest()
+    parsed = sdk.params.parse_params(manifest.get("inputs", []), kwargs)
+    
+    min_importance = float(parsed.get("min_importance", 0.7))
+    dry_run = bool(parsed.get("dry_run", True))
 
     if not _ensure_core_path():
-        return {"success": False, "error": "无法找到 memory_core 模块。"}
+        return sdk.result.fail("NO_MEMORY_CORE", "无法找到 memory_core 模块。")
 
     try:
         from memory_core import MemoryManagerV2
     except ImportError:
-        return {"success": False, "error": "无法导入 memory_core 模块。"}
+        return sdk.result.fail("IMPORT_ERROR", "无法导入 memory_core 模块。")
 
     if not os.path.exists(UNIFIED_MEMORY_PATH):
-        return {
-            "success": True,
-            "report": "记忆文件不存在: ~/.artclaw/memory.json\n尚未产生任何记忆数据。",
-            "candidates_count": 0,
-        }
+        return sdk.result.success(
+            data={
+                "candidates_count": 0,
+                "report": "记忆文件不存在: ~/.artclaw/memory.json\n尚未产生任何记忆数据。"
+            },
+            message="记忆文件不存在: ~/.artclaw/memory.json\n尚未产生任何记忆数据。"
+        )
 
     mgr = MemoryManagerV2(storage_path=UNIFIED_MEMORY_PATH, dcc_name="artclaw")
     stats = mgr.get_stats()
@@ -97,4 +113,7 @@ def promote_to_team(**kwargs):
         lines.append("💡 确认后请将 dry_run 设为 false 重新运行以实际写入。")
 
     report = "\n".join(lines)
-    return {"success": True, "report": report, "candidates_count": len(candidates)}
+    return sdk.result.success(
+        data={"candidates_count": len(candidates), "report": report},
+        message=report
+    )
