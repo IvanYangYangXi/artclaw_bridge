@@ -513,6 +513,12 @@ void SUEAgentDashboard::LoadCachedAgents()
 			}
 		}
 	}
+
+	// 缓存为空时自动从 Gateway 刷新一次
+	if (CachedAgents.Num() == 0)
+	{
+		OnRefreshAgentsClicked();
+	}
 }
 
 FReply SUEAgentDashboard::OnRefreshAgentsClicked()
@@ -581,6 +587,36 @@ FReply SUEAgentDashboard::OnRefreshAgentsClicked()
 						Entry.Emoji = (*AgentObj)->GetStringField(TEXT("emoji"));
 						Self->CachedAgents.Add(MoveTemp(Entry));
 					}
+				}
+			}
+
+			// 恢复上次使用的 Agent（CurrentAgentId 为空时从 config 读取）
+			if (Self->CurrentAgentId.IsEmpty() && Self->CachedAgents.Num() > 0)
+			{
+				// 从 Python 端读取 last_agent_id
+				FString LastId = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
+					"from openclaw_chat import get_agent_id\n"
+					"_result = {'id': get_agent_id()}\n"
+				));
+				TSharedPtr<FJsonObject> IdObj;
+				TSharedRef<TJsonReader<>> IdReader = TJsonReaderFactory<>::Create(LastId);
+				if (FJsonSerializer::Deserialize(IdReader, IdObj) && IdObj.IsValid())
+				{
+					FString RestoredId = IdObj->GetStringField(TEXT("id"));
+					// 验证该 ID 在列表中存在
+					for (const auto& A : Self->CachedAgents)
+					{
+						if (A.Id == RestoredId)
+						{
+							Self->CurrentAgentId = RestoredId;
+							break;
+						}
+					}
+				}
+				// 仍然为空则选第一个
+				if (Self->CurrentAgentId.IsEmpty())
+				{
+					Self->CurrentAgentId = Self->CachedAgents[0].Id;
 				}
 			}
 

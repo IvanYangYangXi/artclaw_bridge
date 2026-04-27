@@ -781,6 +781,12 @@ void SUEAgentDashboard::HandleConnectionStatusChanged(bool bNewStatus)
 		? FUEAgentL10n::GetStr(TEXT("McpConnected"))
 		: FUEAgentL10n::GetStr(TEXT("McpDisconnected"));
 	AddMessage(TEXT("system"), StatusMsg);
+
+	// 连接成功且 Agent 列表为空时自动刷新一次
+	if (bNewStatus && CachedAgents.Num() == 0)
+	{
+		OnRefreshAgentsClicked();
+	}
 }
 
 // ==================================================================
