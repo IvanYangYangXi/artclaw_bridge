@@ -53,7 +53,7 @@ bool FClawTextureOps::ReadTexturePixels(
 			return false;
 		}
 	}
-	else if (SrcFormat == TSF_RGBA8_DEPRECATED)
+	else if (SrcFormat == TSF_RGBA8)
 	{
 		if (RawData.Num() >= NumPixels * 4)
 		{
