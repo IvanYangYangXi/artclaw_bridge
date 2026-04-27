@@ -703,6 +703,14 @@ def _install_dependencies():
 
     # 最终验证
     if required_ok:
+        # pip install 到 Lib 后，Python import 缓存可能过期，必须刷新
+        import importlib
+        importlib.invalidate_caches()
+        # 重新 insert Lib 路径，强制 sys.path_importer_cache 更新
+        if _PLUGIN_LIB_DIR in sys.path:
+            sys.path.remove(_PLUGIN_LIB_DIR)
+        sys.path.insert(0, _PLUGIN_LIB_DIR)
+
         # 重新验证所有必需包
         all_verified = True
         for import_name, _ in _REQUIRED_PACKAGES:
