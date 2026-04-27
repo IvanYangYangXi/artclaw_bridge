@@ -347,57 +347,66 @@ def _add_lib_to_path():
         UELogger.debug(f"Added to sys.path: {_PLUGIN_LIB_DIR}")
 
 
-def _add_artclaw_sdk_to_path():
+def _get_project_root() -> str:
     """
-    将 artclaw_sdk 所在目录加入 sys.path，使 `import artclaw_sdk` 可用。
+    获取 artclaw_bridge 项目根目录。
 
     查找顺序:
-      1. DCCClawBridge/core/ (开发环境，从 Content/Python 相对推算)
-      2. ~/.artclaw/config.json project_root → subprojects/DCCClawBridge/core/
-      3. 当前 Python 目录下已存在 (copy 部署模式)
+      1. ~/.artclaw/config.json 的 project_root
+      2. 从插件源码树相对路径推算
+    返回空串表示未找到。
     """
-    # 已经可以 import 就跳过
-    try:
-        __import__("artclaw_sdk")
-        return
-    except ImportError:
-        pass
-
-    # 方法 1: 从插件源码树相对路径推算
-    # Content/Python/ → ../../ = UEClawBridge/
-    # → ../../../../DCCClawBridge/core/ (开发模式)
-    candidates = [
-        os.path.normpath(os.path.join(
-            _PLUGIN_PYTHON_DIR, "..", "..", "..", "..", "..", "..",
-            "DCCClawBridge", "core")),
-        os.path.normpath(os.path.join(
-            _PLUGIN_PYTHON_DIR, "..", "..", "..", "..",
-            "DCCClawBridge", "core")),
-    ]
-
-    # 方法 2: 从 artclaw config 获取 project_root
+    # 方法 1: config.json
     try:
         config_path = os.path.join(os.path.expanduser("~"), ".artclaw", "config.json")
         if os.path.exists(config_path):
             import json
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-            project_root = cfg.get("project_root", "")
-            if project_root:
-                candidates.insert(0, os.path.join(
-                    project_root, "subprojects", "DCCClawBridge", "core"))
+            root = cfg.get("project_root", "")
+            if root and os.path.isdir(root):
+                return os.path.normpath(root)
     except Exception:
         pass
 
-    for candidate in candidates:
-        sdk_dir = os.path.join(candidate, "artclaw_sdk")
-        if os.path.isdir(sdk_dir) and os.path.isfile(os.path.join(sdk_dir, "__init__.py")):
-            if candidate not in sys.path:
-                sys.path.append(candidate)
-            UELogger.info(f"artclaw_sdk available from: {candidate}")
-            return
+    # 方法 2: 相对路径推算
+    # Content/Python/ → ../../ = UEClawBridge/ → 不同层级尝试找 core/
+    for levels in (6, 4):
+        candidate = os.path.normpath(os.path.join(
+            _PLUGIN_PYTHON_DIR, *([os.pardir] * levels)))
+        if os.path.isdir(os.path.join(candidate, "core")):
+            return candidate
 
-    UELogger.debug("artclaw_sdk not found (tools using it may fall back to raw dicts)")
+    return ""
+
+
+def _add_shared_modules_to_path():
+    """
+    将共享模块目录加入 sys.path，使 UE 可以直接引用源码而非副本。
+
+    添加的目录（优先级低于 _PLUGIN_PYTHON_DIR，用 append）:
+      - {project_root}/core/               → bridge_core, bridge_config 等
+      - {project_root}/platforms/openclaw/  → openclaw_ws, openclaw_chat 等
+      - {project_root}/subprojects/DCCClawBridge/core/
+                                            → artclaw_sdk, tool_event_writer 等
+    """
+    project_root = _get_project_root()
+    if not project_root:
+        UELogger.debug("Project root not found, shared modules will use local copies")
+        return
+
+    dirs_to_add = [
+        os.path.join(project_root, "core"),
+        os.path.join(project_root, "platforms", "openclaw"),
+        os.path.join(project_root, "subprojects", "DCCClawBridge", "core"),
+    ]
+
+    for d in dirs_to_add:
+        if os.path.isdir(d) and d not in sys.path:
+            sys.path.append(d)
+            UELogger.debug(f"Shared modules path: {d}")
+
+    UELogger.info(f"Shared modules loaded from project root: {project_root}")
 
 
 def _check_package_available(import_name: str) -> bool:
@@ -614,7 +623,7 @@ def _check_dependencies_fast() -> bool:
     """
     _ensure_lib_dir()
     _add_lib_to_path()
-    _add_artclaw_sdk_to_path()
+    _add_shared_modules_to_path()
 
     for import_name, _ in _REQUIRED_PACKAGES:
         if not _check_package_available(import_name):
@@ -639,7 +648,7 @@ def _install_dependencies():
     """
     _ensure_lib_dir()
     _add_lib_to_path()
-    _add_artclaw_sdk_to_path()
+    _add_shared_modules_to_path()
 
     missing_required = []
     missing_optional = []
@@ -783,21 +792,8 @@ def _start_mcp_gateway():
     # 步骤 2: 清理可能残留的旧实例（非阻塞：不 sleep）
     UELogger.info(f"MCP Server not detected on {host}:{port}, starting...")
     try:
-        # 确保导入的是插件自己的 mcp_server（不是 core/ 下的通用版本）
         import importlib
-        _mcp_mod = importlib.import_module("mcp_server")
-        if not hasattr(_mcp_mod, "start_mcp_server"):
-            # 错误的模块被导入了，强制从插件目录重新加载
-            if "mcp_server" in sys.modules:
-                del sys.modules["mcp_server"]
-            # 确保插件 Python 目录在 sys.path 最前面
-            if _PLUGIN_PYTHON_DIR not in sys.path:
-                sys.path.insert(0, _PLUGIN_PYTHON_DIR)
-            else:
-                sys.path.remove(_PLUGIN_PYTHON_DIR)
-                sys.path.insert(0, _PLUGIN_PYTHON_DIR)
-            _mcp_mod = importlib.import_module("mcp_server")
-        
+        _mcp_mod = importlib.import_module("ue_mcp_server")
         if hasattr(_mcp_mod, "stop_mcp_server") and hasattr(_mcp_mod, "_mcp_server"):
             if _mcp_mod._mcp_server is not None:
                 UELogger.info("Cleaning up stale MCP Server instance...")
@@ -807,16 +803,7 @@ def _start_mcp_gateway():
 
     # 步骤 3: 启动新实例（start_mcp_server 内部通过 slate tick 驱动 asyncio，不阻塞）
     try:
-        # 使用步骤 2 中已验证的模块引用（或重新导入）
-        if "mcp_server" not in sys.modules or not hasattr(sys.modules["mcp_server"], "start_mcp_server"):
-            if "mcp_server" in sys.modules:
-                del sys.modules["mcp_server"]
-            if _PLUGIN_PYTHON_DIR not in sys.path:
-                sys.path.insert(0, _PLUGIN_PYTHON_DIR)
-            elif sys.path[0] != _PLUGIN_PYTHON_DIR:
-                sys.path.remove(_PLUGIN_PYTHON_DIR)
-                sys.path.insert(0, _PLUGIN_PYTHON_DIR)
-        from mcp_server import start_mcp_server
+        from ue_mcp_server import start_mcp_server
         success = start_mcp_server(host="localhost", port=port)
         if not success:
             UELogger.warning("MCP Gateway start_mcp_server returned False")
@@ -869,7 +856,7 @@ def _register_shutdown_hook():
     def _on_shutdown():
         UELogger.info("Editor shutting down, stopping MCP Gateway...")
         try:
-            from mcp_server import stop_mcp_server
+            from ue_mcp_server import stop_mcp_server
             stop_mcp_server()
         except Exception:
             pass
@@ -958,28 +945,20 @@ def _initialize():
     UELogger.info("UE Claw Bridge - Python Layer Initializing")
     UELogger.info("=" * 60)
 
+    # --- 阶段 0.4.1: 共享模块路径注册 ---
+    _add_lib_to_path()
+    _add_shared_modules_to_path()
+
     # --- 阶段 0.3.5: 共享模块完整性检查 ---
     try:
-        # integrity_check.py 本身也是共享模块，先尝试导入
-        try:
-            from integrity_check import check_and_repair
-        except ImportError:
-            # integrity_check.py 也缺失 → 尝试从开发路径导入
-            _bridge_dir = os.path.normpath(
-                os.path.join(_PLUGIN_PYTHON_DIR, "..", "..", "..", "..", "..", "..",
-                             "core")
-            )
-            if os.path.isdir(_bridge_dir) and _bridge_dir not in sys.path:
-                # append 而非 insert(0): 确保 Content/Python 优先于 core/
-                sys.path.append(_bridge_dir)
-            from integrity_check import check_and_repair
+        from integrity_check import check_and_repair
 
         integrity = check_and_repair(_PLUGIN_PYTHON_DIR, auto_repair=True)
         if integrity.repaired:
             UELogger.info(f"共享模块自动修复: {', '.join(integrity.repaired)}")
         if not integrity.ok:
             UELogger.error(f"共享模块缺失且无法修复: {', '.join(integrity.failed)}")
-            UELogger.error("请使用 setup.bat 重新安装插件，或查看 _integrity_issues.md")
+            UELogger.error("请使用 install.py 重新安装插件")
     except Exception as e:
         UELogger.warning(f"完整性检查跳过: {e}")
 

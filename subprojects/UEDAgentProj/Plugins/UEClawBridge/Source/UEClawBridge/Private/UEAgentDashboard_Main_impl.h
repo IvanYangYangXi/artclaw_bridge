@@ -541,7 +541,7 @@ void SUEAgentDashboard::Construct(const FArguments& InArgs)
 				{
 					FString McpCheck = FUEAgentManageUtils::RunPythonAndCapture(TEXT(
 						"try:\n"
-						"    from mcp_server import get_mcp_server\n"
+						"    from ue_mcp_server import get_mcp_server\n"
 						"    s = get_mcp_server()\n"
 						"    _result = {'mcp_ready': bool(s and s.is_running)}\n"
 						"except:\n"
