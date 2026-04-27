@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 ArtClaw Skill Version Checker v4
 
@@ -28,8 +29,6 @@ def _load_manifest():
              encoding="utf-8").read()
     )
 # ── SDK 头结束 ──
-
-from __future__ import annotations
 
 import hashlib
 import json
