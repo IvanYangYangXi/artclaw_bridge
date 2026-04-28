@@ -295,24 +295,110 @@ def check_openclaw() -> bool:
 
 
 def install_openclaw_package() -> bool:
-    """通过 npm 全局安装 OpenClaw"""
+    """通过 npm 全局安装 OpenClaw，失败则自动尝试备选方案"""
     cprint("安装", "正在安装 OpenClaw (npm install -g openclaw)...", "cyan")
     print()
 
+    # 方案 1: 标准全局安装
     result = run_cmd(
         ["npm", "install", "-g", "openclaw"],
         check=False,
+        capture=True,
         timeout=120,
     )
 
     if result and result.returncode == 0:
         cprint("OK", "OpenClaw 安装完成!", "green")
         return check_openclaw()
-    else:
-        cprint("错误", "OpenClaw 安装失败", "red")
-        print("  请手动运行: npm install -g openclaw")
-        print("  如果权限不足，尝试: npm install -g openclaw --prefix ~/.npm-global")
-        return False
+
+    # 打印失败原因供诊断
+    stderr_msg = ""
+    if result and hasattr(result, "stderr") and result.stderr:
+        stderr_msg = result.stderr.strip()
+        # 只显示最后几行，避免刷屏
+        lines = stderr_msg.splitlines()
+        if len(lines) > 5:
+            lines = lines[-5:]
+        for line in lines:
+            print(f"    {line}")
+
+    # 方案 2: Windows 上尝试用户级 prefix 安装
+    if platform.system() == "Windows":
+        cprint("重试", "尝试用户目录安装方案...", "yellow")
+        user_npm_dir = Path(os.path.expanduser("~/.npm-global"))
+        user_npm_dir.mkdir(parents=True, exist_ok=True)
+
+        # 设置 npm prefix
+        run_cmd(
+            ["npm", "config", "set", "prefix", str(user_npm_dir)],
+            check=False, capture=True, timeout=30,
+        )
+
+        result2 = run_cmd(
+            ["npm", "install", "-g", "openclaw", "--prefix", str(user_npm_dir)],
+            check=False,
+            capture=True,
+            timeout=120,
+        )
+
+        if result2 and result2.returncode == 0:
+            # 将用户 npm bin 加入 PATH
+            user_bin = user_npm_dir
+            os.environ["PATH"] = f"{user_bin};{os.environ.get('PATH', '')}"
+            _add_to_user_path_windows(str(user_bin))
+            cprint("OK", "OpenClaw 安装完成 (用户目录模式)!", "green")
+            cprint("提示", f"已将 {user_bin} 加入用户 PATH (重开终端生效)", "yellow")
+            return check_openclaw()
+
+    # 方案 3: 尝试使用淘宝镜像 (中国网络常见问题)
+    cprint("重试", "尝试使用镜像源安装...", "yellow")
+    result3 = run_cmd(
+        ["npm", "install", "-g", "openclaw", "--registry", "https://registry.npmmirror.com"],
+        check=False,
+        capture=True,
+        timeout=120,
+    )
+
+    if result3 and result3.returncode == 0:
+        cprint("OK", "OpenClaw 安装完成 (镜像源)!", "green")
+        return check_openclaw()
+
+    # 全部失败
+    print()
+    cprint("错误", "OpenClaw 自动安装失败", "red")
+    print()
+    print("  请手动安装:")
+    print("    npm install -g openclaw")
+    print()
+    print("  常见解决方案:")
+    print("    权限问题: 以管理员身份运行命令提示符")
+    print("    网络问题: npm install -g openclaw --registry https://registry.npmmirror.com")
+    print("    路径问题: npm install -g openclaw --prefix %USERPROFILE%\\.npm-global")
+    print()
+    return False
+
+
+def _add_to_user_path_windows(new_path: str):
+    """将路径永久添加到 Windows 用户 PATH 环境变量"""
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, r"Environment",
+            0, winreg.KEY_READ | winreg.KEY_WRITE,
+        )
+        try:
+            current_path, _ = winreg.QueryValueEx(key, "Path")
+        except FileNotFoundError:
+            current_path = ""
+
+        # 避免重复添加
+        paths = [p.strip() for p in current_path.split(";") if p.strip()]
+        if new_path not in paths:
+            paths.append(new_path)
+            winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, ";".join(paths))
+        winreg.CloseKey(key)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
