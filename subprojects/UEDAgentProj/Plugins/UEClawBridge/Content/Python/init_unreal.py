@@ -319,6 +319,7 @@ def log_mcp_call(func):
 _REQUIRED_PACKAGES = [
     ("websockets", "websockets>=12.0"),
     ("pydantic", "pydantic>=2.0"),
+    ("cryptography", "cryptography>=46.0"),
 ]
 
 # 可选依赖：安装失败不影响核心功能
@@ -410,12 +411,29 @@ def _add_shared_modules_to_path():
 
 
 def _check_package_available(import_name: str) -> bool:
-    """检查指定包是否可导入。"""
+    """检查指定包是否可导入。
+
+    对 cryptography 做深度验证：不仅检查 import，还验证 _cffi_backend C 扩展
+    是否与当前 Python 版本匹配。避免 pip 用错 Python 版本导致 .pyd 不兼容。
+    """
     try:
         __import__(import_name)
-        return True
     except ImportError:
         return False
+
+    if import_name == "cryptography":
+        try:
+            from cryptography.hazmat.primitives.serialization import load_pem_public_key  # noqa: F401
+        except ImportError as exc:
+            UELogger.warning(
+                f"cryptography import OK but hazmat module failed: {exc}. "
+                f"This usually means _cffi_backend .pyd is for the wrong Python version. "
+                f"UE uses Python {sys.version_info.major}.{sys.version_info.minor}, "
+                f"please reinstall with UE's own Python."
+            )
+            return False
+
+    return True
 
 
 def _find_ue_python_executable() -> str:

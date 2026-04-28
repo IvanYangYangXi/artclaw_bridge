@@ -240,7 +240,14 @@ def _load_device_identity():
         pub_b64url = base64.urlsafe_b64encode(raw_pub).rstrip(b"=").decode()
         return (device_id, pub_b64url, priv_pem)
     except Exception as exc:
-        UELogger.warning(f"[openclaw_ws] load device identity: {exc}")
+        if "No module named" in str(exc):
+            UELogger.error(
+                f"[openclaw_ws] CRITICAL: cryptography or cffi not installed for UE Python. "
+                f"Device auth will fail, scopes will be limited. "
+                f"Run: pip install cryptography --target \"UE_PLUGIN/Python/Lib\" with UE's Python 3.11"
+            )
+        else:
+            UELogger.warning(f"[openclaw_ws] load device identity: {exc}")
         return None
 
 

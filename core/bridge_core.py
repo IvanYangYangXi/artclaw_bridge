@@ -507,7 +507,14 @@ class OpenClawBridge:
                     )
                     self._log.info("OpenClaw Bridge: device identity attached")
             except Exception as exc:
-                self._log.warning(f"OpenClaw Bridge: device auth skipped: {exc}")
+                exc_str = str(exc)
+                if "No module named" in exc_str or "_cffi_backend" in exc_str:
+                    self._log.error(
+                        f"OpenClaw Bridge: cryptography/cffi not properly installed for this Python version. "
+                        f"Device auth failed ({exc_str}). Install with UE Python 3.11 pip."
+                    )
+                else:
+                    self._log.warning(f"OpenClaw Bridge: device auth skipped: {exc}")
 
             connect_id = str(uuid.uuid4())
             connect_frame = {
