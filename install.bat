@@ -1,26 +1,20 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul 2>&1
 setlocal EnableDelayedExpansion
 
 :: ============================================================
-::  ArtClaw Bridge — 统一一键安装器 (Windows)
+::  ArtClaw Bridge - Unified Installer [Windows]
 ::
-::  用法:
-::    双击运行，选择平台后按菜单选择安装目标
+::  Usage:
+::    Run this script, select platform and installation target.
 ::
-::  功能:
-::    - 安装 UE 插件到 UE 项目
-::    - 安装 Maya 插件到 Maya scripts 目录 (幂等追加 userSetup.py)
-::    - 安装 3ds Max 插件到 Max scripts 目录 (幂等注入 startup)
-::    - 安装 Blender / Houdini / SP / SD / ComfyUI 插件
-::    - 配置平台 (OpenClaw / WorkBuddy / Claude / LobsterAI)
-::    - 自动打包 bridge_core 共享模块（自包含部署）
-::    - 卸载已安装的插件
+::  Targets:
+::    UE / Maya / Max / Blender / Houdini / SP / SD / ComfyUI
+::    Platform config, Tool Manager deps, Uninstall
 ::
-::  注意:
-::    userSetup.py / startup.py 使用追加模式，不会覆盖用户已有内容。
-::    重复运行安装是安全的（幂等）。
-::    更完整的功能请使用 install.py (支持跨平台、卸载、CLI 参数等)。
+::  Notes:
+::    userSetup.py / startup.py - append mode, safe to re-run.
+::    For full CLI features: python install.py --help
 :: ============================================================
 
 :: ----- 定位项目根目录 -----
@@ -55,13 +49,13 @@ if not exist "%UE_PLUGIN_SRC%\UEClawBridge.uplugin" (
 where python >nul 2>&1
 if !ERRORLEVEL! NEQ 0 (
     echo.
-    echo  ╔══════════════════════════════════════════════════════════╗
-    echo  ║  [错误] 未检测到 Python 环境                              ║
-    echo  ╚══════════════════════════════════════════════════════════╝
+    echo  ============================================================
+    echo    [错误] 未检测到 Python 环境
+    echo  ============================================================
     echo.
     echo  本安装器需要 Python 3.10+ 环境。
     echo.
-    echo  推荐安装 Python 3.11 (稳定且兼容性最佳):
+    echo  推荐安装 Python 3.11 ^(稳定且兼容性最佳^):
     echo    https://www.python.org/downloads/
     echo.
     echo  安装时请勾选 "Add Python to PATH"。
@@ -74,10 +68,10 @@ if !ERRORLEVEL! NEQ 0 (
 )
 
 echo.
-echo  ╔══════════════════════════════════════════════════════════╗
-echo  ║       ArtClaw Bridge — 统一安装器 v2.1                   ║
-echo  ║       UE / Maya / Max / Blender / Houdini / SP / SD / CU ║
-echo  ╚══════════════════════════════════════════════════════════╝
+echo  ============================================================
+echo    ArtClaw Bridge - Unified Installer v2.1
+echo    UE / Maya / Max / Blender / Houdini / SP / SD / ComfyUI
+echo  ============================================================
 echo.
 echo  项目目录: %ROOT_DIR%
 echo.
@@ -208,7 +202,7 @@ if "%FOUND_UPROJECT%"=="" (
 )
 echo [OK] UE 项目: %FOUND_UPROJECT%
 
-:: 委托给 install.py (精细化引用安装: junction/symlink)
+:: 委托给 install.py [精细化引用安装: junction/symlink]
 echo [安装] 正在安装 UE 插件 (精细引用模式)...
 where python >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
@@ -267,7 +261,7 @@ echo  请输入 Maya 版本 (默认 2023):
 set /p MAYA_VER_INPUT="  > "
 if not "%MAYA_VER_INPUT%"=="" set "MAYA_VER=%MAYA_VER_INPUT%"
 
-:: 委托给 install.py (精细化引用安装: junction/symlink)
+:: 委托给 install.py [精细化引用安装: junction/symlink]
 echo [安装] 正在安装 Maya !MAYA_VER! 插件 (精细引用模式)...
 where python >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
@@ -290,17 +284,17 @@ set "TARGET_DIR=%~1"
 set "SETUP_DST=%TARGET_DIR%\userSetup.py"
 set "SETUP_SRC=%DCC_BRIDGE_SRC%\maya_setup\userSetup.py"
 
-:: 目标不存在 -> 创建新文件 (带标记块)
+:: 目标不存在 -> 创建新文件 [带标记块]
 if not exist "%SETUP_DST%" (
     echo %INJECT_START%> "%SETUP_DST%"
     type "%SETUP_SRC%" >> "%SETUP_DST%"
     echo.>> "%SETUP_DST%"
     echo %INJECT_END%>> "%SETUP_DST%"
-    echo [创建] userSetup.py (新建)
+    echo [创建] userSetup.py ^(新建^)
     goto :eof
 )
 
-:: 已有标记块 -> 委托给 Python 更新 (bat 不擅长多行替换)
+:: 已有标记块 -> 委托给 Python 更新 [bat 不擅长多行替换]
 findstr /C:"ArtClaw Bridge START" "%SETUP_DST%" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo [更新] userSetup.py 中已有 ArtClaw 标记块，通过 install.py 更新...
@@ -313,10 +307,10 @@ if %ERRORLEVEL% EQU 0 (
     goto :eof
 )
 
-:: 检查是否已有 ArtClaw 代码 (非标记版)
+:: 检查是否已有 ArtClaw 代码 [非标记版]
 findstr /I /C:"artclaw" "%SETUP_DST%" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
-    echo [跳过] userSetup.py 已包含 ArtClaw 代码 (非标记块)，请手动检查
+    echo [跳过] userSetup.py 已包含 ArtClaw 代码 ^(非标记块^)，请手动检查
     goto :eof
 )
 
@@ -342,7 +336,7 @@ echo  请输入 Maya 版本 (默认 2023):
 set /p MAYA_VER_INPUT="  > "
 if not "%MAYA_VER_INPUT%"=="" set "MAYA_VER=%MAYA_VER_INPUT%"
 
-:: 检测 locale 目录 (同安装逻辑)
+:: 检测 locale 目录 [同安装逻辑]
 set "MAYA_BASE=%USERPROFILE%\Documents\maya\%MAYA_VER%"
 set "MAYA_SCRIPTS=%MAYA_BASE%\scripts"
 for /D %%D in ("%MAYA_BASE%\*") do (
@@ -360,7 +354,7 @@ if exist "%DCC_DST%" (
     echo [跳过] DCCClawBridge 不存在: %DCC_DST%
 )
 
-:: 从 userSetup.py 移除 ArtClaw 块 (委托给 install.py)
+:: 从 userSetup.py 移除 ArtClaw 块 [委托给 install.py]
 where python >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     python "%ROOT_DIR%\install.py" --uninstall --maya --maya-version %MAYA_VER% --force 2>nul
@@ -392,7 +386,7 @@ echo  请输入 3ds Max 版本 (默认 2024):
 set /p MAX_VER_INPUT="  > "
 if not "%MAX_VER_INPUT%"=="" set "MAX_VER=%MAX_VER_INPUT%"
 
-:: 委托给 install.py (精细化引用安装: junction/symlink)
+:: 委托给 install.py [精细化引用安装: junction/symlink]
 echo [安装] 正在安装 3ds Max !MAX_VER! 插件 (精细引用模式)...
 where python >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
@@ -420,7 +414,7 @@ if not exist "%STARTUP_DST%" (
     type "%STARTUP_SRC%" >> "%STARTUP_DST%"
     echo.>> "%STARTUP_DST%"
     echo %INJECT_END%>> "%STARTUP_DST%"
-    echo [创建] artclaw_startup.py (新建)
+    echo [创建] artclaw_startup.py ^(新建^)
     goto :eof
 )
 
@@ -503,7 +497,7 @@ echo [提示] 平台配置需手动修改（参考 ~/.artclaw/config.json）
 goto :summary
 
 :: ============================================================
-:: 安装 Blender 插件 (委托 install.py)
+:: 安装 Blender 插件 [委托 install.py]
 :: ============================================================
 :install_blender
 call :do_install_blender
@@ -532,7 +526,7 @@ if !ERRORLEVEL! EQU 0 (
 exit /b 0
 
 :: ============================================================
-:: 安装 Houdini 插件 (委托 install.py)
+:: 安装 Houdini 插件 [委托 install.py]
 :: ============================================================
 :install_houdini
 call :do_install_houdini
@@ -561,7 +555,7 @@ if !ERRORLEVEL! EQU 0 (
 exit /b 0
 
 :: ============================================================
-:: 安装 Substance Painter 插件 (委托 install.py)
+:: 安装 Substance Painter 插件 [委托 install.py]
 :: ============================================================
 :install_sp
 call :do_install_sp
@@ -586,7 +580,7 @@ if !ERRORLEVEL! EQU 0 (
 exit /b 0
 
 :: ============================================================
-:: 安装 Substance Designer 插件 (委托 install.py)
+:: 安装 Substance Designer 插件 [委托 install.py]
 :: ============================================================
 :install_sd
 call :do_install_sd
@@ -611,7 +605,7 @@ if !ERRORLEVEL! EQU 0 (
 exit /b 0
 
 :: ============================================================
-:: 安装 ComfyUI 插件 (委托 install.py)
+:: 安装 ComfyUI 插件 [委托 install.py]
 :: ============================================================
 :install_comfyui
 call :do_install_comfyui
@@ -817,7 +811,7 @@ echo [配置] 安装 Skills + 写入配置...
 where python >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     python "%ROOT_DIR%\install.py" --openclaw --platform !PLATFORM! --force 2>nul
-    echo [OK] Skills + 平台配置已完成 (platform=!PLATFORM!)
+    echo [OK] Skills + 平台配置已完成 ^(platform=!PLATFORM!^)
 ) else (
     echo [跳过] 未找到 Python，请手动运行: python install.py --openclaw --platform !PLATFORM!
 )
@@ -891,9 +885,9 @@ goto :summary
 :: ============================================================
 :summary
 echo.
-echo  ╔══════════════════════════════════════════════════════╗
-echo  ║              操作完成!                                ║
-echo  ╚══════════════════════════════════════════════════════╝
+echo  ============================================================
+echo    操作完成!
+echo  ============================================================
 echo.
 echo  后续步骤:
 echo.
