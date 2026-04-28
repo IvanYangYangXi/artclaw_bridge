@@ -1055,6 +1055,10 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 
 		FString StatusDot = Plat.bConfigured ? TEXT("\u25CF ") : TEXT("\u25CB ");
 		FString BtnText = StatusDot + Plat.DisplayName;
+		if (Plat.GatewayPort > 0)
+		{
+			BtnText += FString::Printf(TEXT(" :%d"), Plat.GatewayPort);
+		}
 
 		FLinearColor BtnColor = bIsCurrent
 			? FLinearColor(0.2f, 0.45f, 0.7f)
