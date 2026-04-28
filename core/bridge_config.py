@@ -474,7 +474,7 @@ def get_gateway_token() -> str:
     ac = load_artclaw_config()
 
     # 1. artclaw config 直读
-    token = ac.get("platform", {}).get("token", "")
+    token = _resolve_env_var(ac.get("platform", {}).get("token", ""))
     if token:
         return token
 
