@@ -632,17 +632,10 @@ def switch_platform(platform_type: str) -> bool:
     # 解析 token
     token = target.get("token", "")
     if not token:
-        # 尝试从目标平台配置文件读取
+        # priority: gateway-token file > openclaw.json auth.token
+        # gateway-token is the most reliable source (written by gateway at startup)
         target_config_path = os.path.expanduser(defaults.get("mcp_config_path", ""))
-        if target_config_path and os.path.exists(target_config_path):
-            try:
-                with open(target_config_path, "r", encoding="utf-8") as f:
-                    target_cfg = json.load(f)
-                token = target_cfg.get("gateway", {}).get("auth", {}).get("token", "")
-            except Exception:
-                pass
-        # fallback: gateway-token 文件
-        if not token and target_config_path:
+        if target_config_path:
             token_file = os.path.join(os.path.dirname(target_config_path), "gateway-token")
             if os.path.exists(token_file):
                 try:
@@ -650,6 +643,14 @@ def switch_platform(platform_type: str) -> bool:
                         token = f.read().strip()
                 except Exception:
                     pass
+        # fallback: openclaw.json gateway.auth.token
+        if not token and target_config_path and os.path.exists(target_config_path):
+            try:
+                with open(target_config_path, "r", encoding="utf-8") as f:
+                    target_cfg = json.load(f)
+                token = target_cfg.get("gateway", {}).get("auth", {}).get("token", "")
+            except Exception:
+                pass
 
     # 解析 token 中的环境变量占位符（如 \）
     token = _resolve_env_var(token)
