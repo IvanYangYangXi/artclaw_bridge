@@ -75,6 +75,17 @@ def _save_artclaw_config(config: dict) -> None:
         UELogger.mcp_error(f"[openclaw_chat] save artclaw config: {exc}")
 
 
+def _resolve_env_var(value: str) -> str:
+    """解析字符串中的 ${ENV_VAR} 或 $ENV_VAR 环境变量引用。"""
+    if not isinstance(value, str) or "$" not in value:
+        return value
+    import re
+    def _replace(match):
+        var_name = match.group(1) or match.group(2)
+        return os.environ.get(var_name, match.group(0))
+    return re.sub(r'\$\{([^}]+)\}|\$(\w+)', _replace, value)
+
+
 def _get_gateway_config() -> dict:
     try:
         from bridge_config import _resolve_platform_config_path
@@ -97,12 +108,22 @@ def _get_gateway_url() -> str:
 
 
 def _get_token() -> str:
+    # 强制重载 bridge_config，确保使用最新代码
+    try:
+        import importlib, sys
+        for mod_name in list(sys.modules.keys()):
+            if mod_name.startswith("bridge_config"):
+                importlib.reload(sys.modules[mod_name])
+    except Exception:
+        pass
     try:
         from bridge_config import get_gateway_token
-        return get_gateway_token()
+        token = get_gateway_token()
+        # 安全网：即使 bridge_config 没有解析环境变量，这里补做一次
+        return _resolve_env_var(token) if token else token
     except ImportError:
         gw = _get_gateway_config()
-        return gw.get("auth", {}).get("token", _DEFAULT_TOKEN)
+        return _resolve_env_var(gw.get("auth", {}).get("token", _DEFAULT_TOKEN))
 
 
 # ---------------------------------------------------------------------------
