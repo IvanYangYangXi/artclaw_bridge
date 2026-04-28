@@ -555,6 +555,7 @@ private:
 		FString Type;        // "openclaw", "lobster", etc.
 		FString DisplayName; // "OpenClaw", "LobsterAI", etc.
 		FString GatewayUrl;
+		int32 GatewayPort = 0;  // 从 GatewayUrl 提取的端口号 (e.g., 18789)
 		bool bConfigured = false; // 平台是否已配置 (gateway_url/token 等)
 	};
 
@@ -575,6 +576,9 @@ private:
 
 	/** 重建平台按钮列表 UI */
 	void RebuildPlatformListUI();
+
+	/** 保存平台 Gateway 端口到 config.json */
+	void OnSaveGatewayPort(const FString& PlatformType, int32 NewPort);
 
 	// --- Agent 切换 ---
 

@@ -22,7 +22,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 
 	SettingsWindow = SNew(SWindow)
 		.Title(FUEAgentL10n::Get(TEXT("SettingsTitle")))
-		.ClientSize(FVector2D(380.0f, 480.0f))
+		.ClientSize(FVector2D(580.0f, 520.0f))
 		.SupportsMinimize(false)
 		.SupportsMaximize(false)
 		[
@@ -810,6 +810,18 @@ void SUEAgentDashboard::LoadAvailablePlatforms()
 		"import json\n"
 		"from bridge_config import get_available_platforms, get_platform_type\n"
 		"_platforms = get_available_platforms()\n"
+		"for _p in _platforms:\n"
+		"    _url = _p.get('gateway_url', '')\n"
+		"    _port = 0\n"
+		"    if ':' in _url:\n"
+		"        _port_str = _url.rsplit(':', 1)[-1]\n"
+		"        if '/' in _port_str:\n"
+		"            _port_str = _port_str.split('/')[0]\n"
+		"        try:\n"
+		"            _port = int(_port_str)\n"
+		"        except ValueError:\n"
+		"            _port = 0\n"
+		"    _p['gateway_port'] = _port\n"
 		"_result = {'platforms': _platforms, 'current': get_platform_type()}\n"
 	));
 
@@ -835,6 +847,30 @@ void SUEAgentDashboard::LoadAvailablePlatforms()
 					Entry.DisplayName = (*PlatObj)->GetStringField(TEXT("display_name"));
 					Entry.GatewayUrl = (*PlatObj)->GetStringField(TEXT("gateway_url"));
 					(*PlatObj)->TryGetBoolField(TEXT("configured"), Entry.bConfigured);
+
+					// 从 gateway_url 提取端口号 (e.g., "ws://127.0.0.1:18794" -> 18794)
+					// 优先使用 Python 侧已解析的 gateway_port 字段
+					int32 Port = 0;
+					(*PlatObj)->TryGetNumberField(TEXT("gateway_port"), Port);
+					if (Port == 0)
+					{
+						// fallback: 从 URL 字符串解析
+						FString Url = Entry.GatewayUrl;
+						int32 ColonIndex;
+						if (Url.FindLastChar(':', ColonIndex))
+						{
+							FString PortStr = Url.RightChop(ColonIndex + 1);
+							// 只取数字部分，防止 URL 中含有路径等其他字段
+							int32 SlashIndex;
+							if (PortStr.FindChar('/', SlashIndex))
+							{
+								PortStr = PortStr.Left(SlashIndex);
+							}
+							Port = FCString::Atoi(*PortStr);
+						}
+					}
+					Entry.GatewayPort = Port;
+
 					AvailablePlatforms.Add(MoveTemp(Entry));
 				}
 			}
@@ -1015,10 +1051,15 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 	{
 		const bool bIsCurrent = (Plat.Type == CurrentPlatformType);
 		FString CapturedType = Plat.Type;
+		int32 CapturedPort = Plat.GatewayPort;
 
 		// 状态指示: ● (已配置/绿色) 或 ○ (未配置/灰色)
 		FString StatusDot = Plat.bConfigured ? TEXT("\u25CF ") : TEXT("\u25CB ");
 		FString BtnText = StatusDot + Plat.DisplayName;
+		if (Plat.GatewayPort > 0)
+		{
+			BtnText += FString::Printf(TEXT(" :%d"), Plat.GatewayPort);
+		}
 
 		FLinearColor BtnColor = bIsCurrent
 			? FLinearColor(0.2f, 0.45f, 0.7f)   // 蓝色高亮
@@ -1038,6 +1079,125 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 			.ButtonColorAndOpacity(FSlateColor(BtnColor))
 			.ContentPadding(FMargin(10.0f, 4.0f))
 		];
+
+		// --- 端口编辑行 ---
+		// 为每个平台添加一个端口输入框和保存按钮
+		TSharedPtr<SEditableTextBox> PortInputBox;
+		PlatformListBox->AddSlot()
+		.AutoWidth()
+		.Padding(2.0f, 0.0f, 8.0f, 0.0f)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(TEXT("Port:")))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+				.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SAssignNew(PortInputBox, SEditableTextBox)
+				.Text(Plat.GatewayPort > 0
+					? FText::AsNumber(Plat.GatewayPort)
+					: FText::GetEmpty())
+				.MinDesiredWidth(50.0f)
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(FText::FromString(TEXT("Save")))
+				.ContentPadding(FMargin(6.0f, 2.0f))
+				.OnClicked_Lambda([Self, CapturedType, PortInputBox]() -> FReply
+				{
+					FText InputText = PortInputBox->GetText();
+					int32 NewPort = FCString::Atoi(*InputText.ToString());
+					if (NewPort > 0 && NewPort <= 65535)
+					{
+						Self->OnSaveGatewayPort(CapturedType, NewPort);
+					}
+					return FReply::Handled();
+				})
+			]
+		];
+	}
+}
+
+void SUEAgentDashboard::OnSaveGatewayPort(const FString& PlatformType, int32 NewPort)
+{
+	// 构建新的 gateway URL
+	FString NewGatewayUrl = FString::Printf(TEXT("ws://127.0.0.1:%d"), NewPort);
+
+	// 通过 Python 更新 config.json 中的 gateway_url
+	FString EscapedType = PlatformType;
+	EscapedType.ReplaceInline(TEXT("'"), TEXT("\\'"));
+	FString EscapedUrl = NewGatewayUrl;
+	EscapedUrl.ReplaceInline(TEXT("'"), TEXT("\\'"));
+
+	FString SaveCmd = FString::Printf(
+		TEXT(
+			"import json, os\n"
+			"_cfg_path = os.path.expanduser('~/.artclaw/config.json')\n"
+			"_cfg = {}\n"
+			"if os.path.exists(_cfg_path):\n"
+			"    with open(_cfg_path, 'r', encoding='utf-8') as _f:\n"
+			"        _cfg = json.load(_f)\n"
+			"_platform = _cfg.setdefault('platform', {})\n"
+			"_platform['type'] = '%s'\n"
+			"_platform['gateway_url'] = '%s'\n"
+			"with open(_cfg_path, 'w', encoding='utf-8') as _f:\n"
+			"    json.dump(_cfg, _f, ensure_ascii=False, indent=2)\n"
+			"_result = {'ok': True, 'port': %d}\n"
+		),
+		*EscapedType,
+		*EscapedUrl,
+		NewPort
+	);
+
+	FString ResultJson = FUEAgentManageUtils::RunPythonAndCapture(*SaveCmd);
+
+	// 刷新平台列表 UI（显示新端口）
+	RebuildPlatformListUI();
+
+	// 如果修改的是当前平台，自动重新连接
+	if (PlatformType == CurrentPlatformType)
+	{
+		// 更新本地 URL 缓存
+		for (auto& P : AvailablePlatforms)
+		{
+			if (P.Type == PlatformType)
+			{
+				P.GatewayUrl = NewGatewayUrl;
+				P.GatewayPort = NewPort;
+				break;
+			}
+		}
+
+		// 断开旧连接 + 重新连接
+		PlatformBridge->Disconnect();
+
+		FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
+		IFileManager::Get().MakeDirectory(*TempDir, true);
+		FString StatusFile = TempDir / TEXT("_connect_status.txt");
+		IFileManager::Get().Delete(*StatusFile, false, false, true);
+		PlatformBridge->Connect(StatusFile);
+
+		AddMessage(TEXT("system"),
+			FString::Printf(TEXT("Gateway port updated to %d, reconnecting..."), NewPort));
+	}
+	else
+	{
+		AddMessage(TEXT("system"),
+			FString::Printf(TEXT("Gateway port for %s updated to %d"), *PlatformType, NewPort));
 	}
 }
 
