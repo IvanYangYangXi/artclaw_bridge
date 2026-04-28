@@ -51,9 +51,31 @@ if not exist "%UE_PLUGIN_SRC%\UEClawBridge.uplugin" (
     exit /b 1
 )
 
+:: ── Python 环境预检 ──
+where python >nul 2>&1
+if !ERRORLEVEL! NEQ 0 (
+    echo.
+    echo  ╔══════════════════════════════════════════════════════════╗
+    echo  ║  [错误] 未检测到 Python 环境                              ║
+    echo  ╚══════════════════════════════════════════════════════════╝
+    echo.
+    echo  本安装器需要 Python 3.10+ 环境。
+    echo.
+    echo  推荐安装 Python 3.11 (稳定且兼容性最佳):
+    echo    https://www.python.org/downloads/
+    echo.
+    echo  安装时请勾选 "Add Python to PATH"。
+    echo.
+    echo  或通过 winget 快速安装:
+    echo    winget install Python.Python.3.11
+    echo.
+    pause
+    exit /b 1
+)
+
 echo.
 echo  ╔══════════════════════════════════════════════════════════╗
-echo  ║       ArtClaw Bridge — 统一安装器 v2.0                   ║
+echo  ║       ArtClaw Bridge — 统一安装器 v2.1                   ║
 echo  ║       UE / Maya / Max / Blender / Houdini / SP / SD / CU ║
 echo  ╚══════════════════════════════════════════════════════════╝
 echo.
@@ -87,6 +109,7 @@ echo.
 :: ============================================================
 :: 交互菜单
 :: ============================================================
+:main_menu
 echo  请选择操作:
 echo.
 echo    [1] 安装 Unreal Engine 插件
@@ -98,6 +121,7 @@ echo    [6] 安装 Substance Painter 插件
 echo    [7] 安装 Substance Designer 插件
 echo    [8] 安装 ComfyUI 插件 (含节点包+依赖)
 echo    [9] 配置平台 (Gateway + Skills + config)
+echo    [T] 安装 Tool Manager 依赖 (Python + Node.js)
 echo    [A] 全部安装 (所有 DCC + 平台配置)
 echo    [U] 卸载菜单
 echo    [0] 退出
@@ -114,6 +138,7 @@ if "%CHOICE%"=="6" goto :install_sp
 if "%CHOICE%"=="7" goto :install_sd
 if "%CHOICE%"=="8" goto :install_comfyui
 if "%CHOICE%"=="9" goto :install_openclaw
+if /I "%CHOICE%"=="T" goto :install_tool_manager_deps
 if /I "%CHOICE%"=="A" goto :install_all
 if /I "%CHOICE%"=="U" goto :uninstall_menu
 echo [错误] 无效选项: %CHOICE%
@@ -644,18 +669,16 @@ if "%UCHOICE%"=="5" goto :uninstall_houdini_menu
 if "%UCHOICE%"=="6" goto :uninstall_sp_menu
 if "%UCHOICE%"=="7" goto :uninstall_sd_menu
 if "%UCHOICE%"=="8" goto :uninstall_comfyui_menu
-if "%UCHOICE%"=="7" goto :uninstall_sd_menu
 echo [错误] 无效选项
 goto :uninstall_menu
 
 :main_menu_return
-:: 重新显示主菜单（简化：直接跳到 summary）
-goto :summary
+goto :main_menu
 
 :uninstall_blender_menu
 echo.
-set "BLENDER_VER=4.2"
-echo  请输入 Blender 版本 (默认 4.2):
+set "BLENDER_VER=5.1"
+echo  请输入 Blender 版本 (默认 5.1):
 set /p BLENDER_VER_INPUT="  > "
 if not "!BLENDER_VER_INPUT!"=="" set "BLENDER_VER=!BLENDER_VER_INPUT!"
 where python >nul 2>&1
@@ -803,24 +826,65 @@ echo [完成] 平台配置成功 (!PLATFORM!)!
 exit /b 0
 
 :: ============================================================
-:: 辅助函数: 查找 UE Python
+:: 安装 Tool Manager 依赖
 :: ============================================================
-:find_ue_python
-set "UE_PYTHON="
-for %%v in (5.7 5.6 5.5 5.4 5.3) do (
-    if exist "C:\Epic Games\UE_%%v\Engine\Binaries\ThirdParty\Python3\Win64\python.exe" (
-        set "UE_PYTHON=C:\Epic Games\UE_%%v\Engine\Binaries\ThirdParty\Python3\Win64\python.exe"
-        echo       找到 UE %%v Python: !UE_PYTHON!
-        goto :eof
+:install_tool_manager_deps
+echo.
+echo  ── Tool Manager 依赖安装 ──────────────────────────────
+echo.
+
+set "TM_DIR=%ROOT_DIR%\subprojects\ArtClawToolManager"
+
+:: Python 依赖
+echo [1/2] 安装 Python 依赖 (FastAPI, uvicorn, etc.)...
+if exist "%TM_DIR%\requirements.txt" (
+    python -m pip install -r "%TM_DIR%\requirements.txt" --quiet
+    if !ERRORLEVEL! EQU 0 (
+        echo [OK] Python 依赖安装完成
+    ) else (
+        echo [错误] Python 依赖安装失败，请检查 pip 配置
     )
-    if exist "C:\Program Files\Epic Games\UE_%%v\Engine\Binaries\ThirdParty\Python3\Win64\python.exe" (
-        set "UE_PYTHON=C:\Program Files\Epic Games\UE_%%v\Engine\Binaries\ThirdParty\Python3\Win64\python.exe"
-        echo       找到 UE %%v Python: !UE_PYTHON!
-        goto :eof
-    )
+) else (
+    echo [错误] 未找到 requirements.txt: %TM_DIR%\requirements.txt
 )
-echo [警告] 未自动找到 UE Python
-goto :eof
+
+echo.
+
+:: Node.js + 前端依赖
+echo [2/2] 安装前端依赖 (React, Vite, etc.)...
+where node >nul 2>&1
+if !ERRORLEVEL! NEQ 0 (
+    echo [错误] 未检测到 Node.js，前端依赖无法安装
+    echo        请安装 Node.js 18+: https://nodejs.org/
+    echo        或: winget install OpenJS.NodeJS.LTS
+    goto :summary
+)
+
+set "TM_WEB_DIR=%TM_DIR%\src\web"
+if exist "%TM_WEB_DIR%\package.json" (
+    pushd "%TM_WEB_DIR%"
+    call npm install --silent
+    if !ERRORLEVEL! EQU 0 (
+        echo [OK] 前端依赖安装完成
+        echo [构建] 正在构建前端静态文件...
+        call npm run build
+        if !ERRORLEVEL! EQU 0 (
+            echo [OK] 前端构建完成
+        ) else (
+            echo [警告] 前端构建失败，可稍后手动执行: cd %TM_WEB_DIR% ^&^& npm run build
+        )
+    ) else (
+        echo [错误] npm install 失败
+    )
+    popd
+) else (
+    echo [错误] 未找到 package.json: %TM_WEB_DIR%\package.json
+)
+
+echo.
+echo [完成] Tool Manager 依赖安装完成!
+echo        启动: start-tool-manager.bat
+goto :summary
 
 :: ============================================================
 :: 安装总结
