@@ -8,9 +8,24 @@ bridge_config.py - ArtClaw Bridge 配置加载
 
 import json
 import os
+import re
 import socket
 import subprocess
 from pathlib import Path
+
+
+def _resolve_env_var(value: str) -> str:
+    """解析字符串中的 ${ENV_VAR} 或 $ENV_VAR 环境变量引用。"""
+    if not isinstance(value, str) or "$" not in value:
+        return value
+
+    def _replace(match):
+        var_name = match.group(1) or match.group(2)
+        return os.environ.get(var_name, match.group(0))
+
+    # 匹配 ${VAR_NAME} 和 $VAR_NAME（仅单词字符）
+    resolved = re.sub(r'\$\{([^}]+)\}|\$(\w+)', _replace, value)
+    return resolved
 
 # ---------------------------------------------------------------------------
 # 协议常量
@@ -463,9 +478,10 @@ def get_gateway_token() -> str:
     if token:
         return token
 
-    # 2. 平台配置文件 → gateway.auth.token
+    # 2. 平台配置文件 → gateway.auth.token（解析环境变量占位符）
     config = load_config()
     token = config.get("gateway", {}).get("auth", {}).get("token", "")
+    token = _resolve_env_var(token)
     if token:
         return token
 
@@ -476,6 +492,7 @@ def get_gateway_token() -> str:
         try:
             with open(token_file, "r", encoding="utf-8") as f:
                 token = f.read().strip()
+            token = _resolve_env_var(token)
             if token:
                 return token
         except Exception:
@@ -633,6 +650,9 @@ def switch_platform(platform_type: str) -> bool:
                         token = f.read().strip()
                 except Exception:
                     pass
+
+    # 解析 token 中的环境变量占位符（如 \）
+    token = _resolve_env_var(token)
 
     # 更新 config
     ac["platform"] = {
