@@ -9,6 +9,7 @@ Handles:
 * Client chat messages (including slash-command interception)
 * Gateway response messages (streaming chunks, tool calls, etc.)
 * DCC status-change notifications
+* ArtClaw context injection (first message per session)
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,9 @@ class MessageRouter:
         self._ws = ws_manager
         self._gw = gateway_client
         self._dcc = dcc_manager
+
+        # Track which sessions have received context injection
+        self._injected_sessions: Set[str] = set()
 
         # Wire up callbacks so components can push messages through us
         self._gw.on_message(self.handle_gateway_message)
@@ -107,17 +111,42 @@ class MessageRouter:
             {"type": "typing", "is_typing": True, "source": "assistant"},
         )
 
+        # --- Context injection (first message per session) ---
+        enriched_content = self._enrich_with_context(session_id, content)
+
         # Fire-and-forget: do NOT await here, so cancel messages can be
         # processed concurrently while the SSE stream is running.
         asyncio.create_task(
             self._gw.send_chat_message(
                 session_id=session_id,
-                content=content,
+                content=enriched_content,
                 agent_id=message.get("agent_id"),
                 attachments=message.get("attachments"),
             ),
             name=f"chat-{session_id}",
         )
+
+    # ------------------------------------------------------------------
+    # context injection
+    # ------------------------------------------------------------------
+
+    def _enrich_with_context(self, session_id: str, message: str) -> str:
+        """Prepend ArtClaw Tool Manager context on first message per session.
+
+        Injects a brief architecture description so the agent knows where
+        tools live and how to discover them on demand. Keeps token usage
+        minimal (~150 tokens) — the agent reads manifest files as needed.
+        """
+        if session_id in self._injected_sessions:
+            return message
+
+        self._injected_sessions.add(session_id)
+
+        context = _build_artclaw_context()
+        if not context:
+            return message
+
+        return f"{context}\n\n[User Message]\n{message}"
 
     # ------------------------------------------------------------------
     # gateway → router
@@ -235,6 +264,65 @@ class MessageRouter:
             ),
             "ts": time.time(),
         }
+
+
+# ---------------------------------------------------------------------------
+# ArtClaw context builder
+# ---------------------------------------------------------------------------
+
+
+def _build_artclaw_context() -> str:
+    """Build a concise ArtClaw Tool Manager context string.
+
+    This tells the agent:
+      1. What the Tool Manager is
+      2. Where tools live (directory structure)
+      3. How to discover details (read manifest.json)
+      4. How to execute tools
+
+    Designed to be minimal (~150 tokens) so the agent can self-serve
+    by reading manifest files on demand.
+    """
+    from ..services.config_manager import ConfigManager
+
+    try:
+        cfg = ConfigManager().load()
+        project_root = cfg.get("project_root", "")
+    except Exception:
+        project_root = ""
+
+    if not project_root:
+        # Fallback: try reading from ~/.artclaw/config.json directly
+        try:
+            import json
+            from pathlib import Path
+            artclaw_cfg = Path.home() / ".artclaw" / "config.json"
+            if artclaw_cfg.exists():
+                data = json.loads(artclaw_cfg.read_text(encoding="utf-8"))
+                project_root = data.get("project_root", "")
+        except Exception:
+            pass
+
+    tools_dir = f"{project_root}/tools" if project_root else "~/.artclaw/tools"
+
+    lines = [
+        "[ArtClaw Tool Manager Context]",
+        "当前对话来自 ArtClaw Tool Manager 面板。",
+        "",
+        "工具目录结构:",
+        f"  {tools_dir}/official/{{dcc}}/{{tool-name}}/   — 官方工具",
+        f"  {tools_dir}/marketplace/{{dcc}}/{{tool-name}}/ — 市集工具",
+        "  ~/.artclaw/tools/user/{tool-name}/            — 用户自建工具",
+        "",
+        "每个工具 = 文件夹，内含:",
+        "  manifest.json — 元信息（name/description/targetDCCs/inputs/outputs/triggers）",
+        "  main.py       — 入口脚本（implementation.function 指定入口函数）",
+        "",
+        "发现工具: 列出目录或读取 manifest.json 获取详情",
+        "执行工具: import main.py 并调用入口函数，或通过 Tool Manager API (localhost:9876)",
+        "[End ArtClaw Context]",
+    ]
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
