@@ -934,6 +934,24 @@ def _schedule_mcp_start_on_game_thread():
 
     def _do_start():
         try:
+                # 自动修复 config.json 中的 token 环境变量占位符
+                try:
+                    import json, os, re
+                    _cf = os.path.expanduser("~/.artclaw/config.json")
+                    if os.path.exists(_cf):
+                        with open(_cf, "r", encoding="utf-8") as _f: _cfg = json.load(_f)
+                        _t = _cfg.get("platform", {}).get("token", "")
+                        if isinstance(_t, str) and "${" in _t:
+                            _t2 = re.sub(r'\$\{([^}]+)\}|\$(\w+)', lambda m: os.environ.get(m.group(1) or m.group(2), m.group(0)), _t)
+                            if _t2 and _t2 != _t:
+                                _cfg["platform"]["token"] = _t2
+                                import tempfile
+                                _fd, _tmp = tempfile.mkstemp(dir=os.path.dirname(_cf), suffix=".tmp")
+                                with os.fdopen(_fd, "w", encoding="utf-8") as _f: json.dump(_cfg, _f, ensure_ascii=False, indent=2)
+                                os.replace(_tmp, _cf)
+                                UELogger.info(f"Fixed config.json token placeholder in deferred startup")
+                except Exception as _fx:
+                    pass
             _start_mcp_gateway()
             _register_shutdown_hook()
             UELogger.info("MCP Gateway started (from game thread)")
