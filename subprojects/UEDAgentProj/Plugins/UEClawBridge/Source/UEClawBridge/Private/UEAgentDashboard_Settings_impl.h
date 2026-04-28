@@ -22,7 +22,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 
 	SettingsWindow = SNew(SWindow)
 		.Title(FUEAgentL10n::Get(TEXT("SettingsTitle")))
-		.ClientSize(FVector2D(580.0f, 520.0f))
+		.ClientSize(FVector2D(380.0f, 520.0f))
 		.SupportsMinimize(false)
 		.SupportsMaximize(false)
 		[
@@ -49,7 +49,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 			.AutoHeight()
 			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
 			[
-				SAssignNew(Self->PlatformListBox, SHorizontalBox)
+				SAssignNew(Self->PlatformListBox, SVerticalBox)
 			]
 
 			// --- 分隔线 ---
@@ -1034,7 +1034,7 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 	if (AvailablePlatforms.Num() == 0)
 	{
 		PlatformListBox->AddSlot()
-		.AutoWidth()
+		.AutoHeight()
 		.Padding(4.0f)
 		[
 			SNew(STextBlock)
@@ -1053,54 +1053,38 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 		FString CapturedType = Plat.Type;
 		int32 CapturedPort = Plat.GatewayPort;
 
-		// 状态指示: ● (已配置/绿色) 或 ○ (未配置/灰色)
 		FString StatusDot = Plat.bConfigured ? TEXT("\u25CF ") : TEXT("\u25CB ");
 		FString BtnText = StatusDot + Plat.DisplayName;
-		if (Plat.GatewayPort > 0)
-		{
-			BtnText += FString::Printf(TEXT(" :%d"), Plat.GatewayPort);
-		}
 
 		FLinearColor BtnColor = bIsCurrent
-			? FLinearColor(0.2f, 0.45f, 0.7f)   // 蓝色高亮
-			: FLinearColor(0.22f, 0.22f, 0.22f);  // 默认灰
+			? FLinearColor(0.2f, 0.45f, 0.7f)
+			: FLinearColor(0.22f, 0.22f, 0.22f);
 
-		PlatformListBox->AddSlot()
-		.AutoWidth()
-		.Padding(2.0f, 0.0f)
-		[
-			SNew(SButton)
-			.Text(FText::FromString(BtnText))
-			.OnClicked_Lambda([Self, CapturedType]() -> FReply
-			{
-				Self->OnPlatformSelected(CapturedType);
-				return FReply::Handled();
-			})
-			.ButtonColorAndOpacity(FSlateColor(BtnColor))
-			.ContentPadding(FMargin(10.0f, 4.0f))
-		];
-
-		// --- 端口编辑行 ---
-		// 为每个平台添加一个端口输入框和保存按钮
+		// 每个平台一行：按钮 + 端口 + 保存
 		TSharedPtr<SEditableTextBox> PortInputBox;
 		PlatformListBox->AddSlot()
-		.AutoWidth()
-		.Padding(2.0f, 0.0f, 8.0f, 0.0f)
+		.AutoHeight()
+		.Padding(0.0f, 2.0f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
-			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
 			[
-				SNew(STextBlock)
-				.Text(FText::FromString(TEXT("Port:")))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
-				.ColorAndOpacity(FSlateColor(FLinearColor(0.6f, 0.6f, 0.6f)))
+				SNew(SButton)
+				.Text(FText::FromString(BtnText))
+				.OnClicked_Lambda([Self, CapturedType]() -> FReply
+				{
+					Self->OnPlatformSelected(CapturedType);
+					return FReply::Handled();
+				})
+				.ButtonColorAndOpacity(FSlateColor(BtnColor))
+				.ContentPadding(FMargin(8.0f, 4.0f))
 			]
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
+			.Padding(6.0f, 0.0f, 0.0f, 0.0f)
 			[
 				SAssignNew(PortInputBox, SEditableTextBox)
 				.Text(Plat.GatewayPort > 0
@@ -1119,8 +1103,7 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 				.ContentPadding(FMargin(6.0f, 2.0f))
 				.OnClicked_Lambda([Self, CapturedType, PortInputBox]() -> FReply
 				{
-					FText InputText = PortInputBox->GetText();
-					int32 NewPort = FCString::Atoi(*InputText.ToString());
+					int32 NewPort = FCString::Atoi(*PortInputBox->GetText().ToString());
 					if (NewPort > 0 && NewPort <= 65535)
 					{
 						Self->OnSaveGatewayPort(CapturedType, NewPort);
