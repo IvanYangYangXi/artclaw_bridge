@@ -41,10 +41,12 @@ import shutil
 REQUIRED_PACKAGES = [
     "websockets>=12.0",
     "pydantic>=2.0",
+    "cryptography>=46.0",
 ]
 
 OPTIONAL_PACKAGES = [
     "PyYAML>=6.0",
+    "cffi>=2.0",  # cryptography 的 C 扩展依赖，需要匹配 Python 版本
 ]
 
 ALL_PACKAGES = REQUIRED_PACKAGES + OPTIONAL_PACKAGES
