@@ -668,7 +668,6 @@ def switch_platform(platform_type: str) -> bool:
     ac.setdefault("skills", {})["installed_path"] = defaults.get("skills_installed_path", "")
 
     _save_artclaw_config(ac)
-    UELogger.debug(f"switch_platform: token=\"{token[:12] if token else 'EMPTY'}\"... url={gateway_url}")
     return True
 
 
