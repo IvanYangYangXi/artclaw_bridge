@@ -566,7 +566,7 @@ private:
 	FString CurrentPlatformType;
 
 	/** 平台列表容器 (设置面板中) */
-	TSharedPtr<SHorizontalBox> PlatformListBox;
+	TSharedPtr<SVerticalBox> PlatformListBox;
 
 	/** 加载可用平台列表 (config.json) */
 	void LoadAvailablePlatforms();

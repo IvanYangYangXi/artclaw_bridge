@@ -22,7 +22,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 
 	SettingsWindow = SNew(SWindow)
 		.Title(FUEAgentL10n::Get(TEXT("SettingsTitle")))
-		.ClientSize(FVector2D(580.0f, 520.0f))
+		.ClientSize(FVector2D(380.0f, 520.0f))
 		.SupportsMinimize(false)
 		.SupportsMaximize(false)
 		[
@@ -49,7 +49,7 @@ FReply SUEAgentDashboard::OnSettingsClicked()
 			.AutoHeight()
 			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
 			[
-				SAssignNew(Self->PlatformListBox, SHorizontalBox)
+				SAssignNew(Self->PlatformListBox, SVerticalBox)
 			]
 
 			// --- 分隔线 ---
@@ -1034,7 +1034,7 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 	if (AvailablePlatforms.Num() == 0)
 	{
 		PlatformListBox->AddSlot()
-		.AutoWidth()
+		.AutoHeight()
 		.Padding(4.0f)
 		[
 			SNew(STextBlock)
@@ -1053,7 +1053,6 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 		FString CapturedType = Plat.Type;
 		int32 CapturedPort = Plat.GatewayPort;
 
-		// 状态指示: ● (已配置/绿色) 或 ○ (未配置/灰色)
 		FString StatusDot = Plat.bConfigured ? TEXT("\u25CF ") : TEXT("\u25CB ");
 		FString BtnText = StatusDot + Plat.DisplayName;
 		if (Plat.GatewayPort > 0)
@@ -1062,22 +1061,60 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 		}
 
 		FLinearColor BtnColor = bIsCurrent
-			? FLinearColor(0.2f, 0.45f, 0.7f)   // 蓝色高亮
-			: FLinearColor(0.22f, 0.22f, 0.22f);  // 默认灰
+			? FLinearColor(0.2f, 0.45f, 0.7f)
+			: FLinearColor(0.22f, 0.22f, 0.22f);
 
+		// 每个平台一行：按钮 + 端口 + 保存
+		TSharedPtr<SEditableTextBox> PortInputBox;
 		PlatformListBox->AddSlot()
-		.AutoWidth()
-		.Padding(2.0f, 0.0f)
+		.AutoHeight()
+		.Padding(0.0f, 2.0f)
 		[
-			SNew(SButton)
-			.Text(FText::FromString(BtnText))
-			.OnClicked_Lambda([Self, CapturedType]() -> FReply
-			{
-				Self->OnPlatformSelected(CapturedType);
-				return FReply::Handled();
-			})
-			.ButtonColorAndOpacity(FSlateColor(BtnColor))
-			.ContentPadding(FMargin(10.0f, 4.0f))
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+				.Text(FText::FromString(BtnText))
+				.OnClicked_Lambda([Self, CapturedType]() -> FReply
+				{
+					Self->OnPlatformSelected(CapturedType);
+					return FReply::Handled();
+				})
+				.ButtonColorAndOpacity(FSlateColor(BtnColor))
+				.ContentPadding(FMargin(8.0f, 4.0f))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(6.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SAssignNew(PortInputBox, SEditableTextBox)
+				.Text(Plat.GatewayPort > 0
+					? FText::AsNumber(Plat.GatewayPort)
+					: FText::GetEmpty())
+				.MinDesiredWidth(50.0f)
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(4.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(FText::FromString(TEXT("Save")))
+				.ContentPadding(FMargin(6.0f, 2.0f))
+				.OnClicked_Lambda([Self, CapturedType, PortInputBox]() -> FReply
+				{
+					int32 NewPort = FCString::Atoi(*PortInputBox->GetText().ToString());
+					if (NewPort > 0 && NewPort <= 65535)
+					{
+						Self->OnSaveGatewayPort(CapturedType, NewPort);
+					}
+					return FReply::Handled();
+				})
+			]
 		];
 
 		// --- 端口编辑行 ---
@@ -1129,6 +1166,75 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 				})
 			]
 		];
+	}
+}
+
+void SUEAgentDashboard::OnSaveGatewayPort(const FString& PlatformType, int32 NewPort)
+{
+	// 构建新的 gateway URL
+	FString NewGatewayUrl = FString::Printf(TEXT("ws://127.0.0.1:%d"), NewPort);
+
+	// 通过 Python 更新 config.json 中的 gateway_url
+	FString EscapedType = PlatformType;
+	EscapedType.ReplaceInline(TEXT("'"), TEXT("\\'"));
+	FString EscapedUrl = NewGatewayUrl;
+	EscapedUrl.ReplaceInline(TEXT("'"), TEXT("\\'"));
+
+	FString SaveCmd = FString::Printf(
+		TEXT(
+			"import json, os\n"
+			"_cfg_path = os.path.expanduser('~/.artclaw/config.json')\n"
+			"_cfg = {}\n"
+			"if os.path.exists(_cfg_path):\n"
+			"    with open(_cfg_path, 'r', encoding='utf-8') as _f:\n"
+			"        _cfg = json.load(_f)\n"
+			"_platform = _cfg.setdefault('platform', {})\n"
+			"_platform['type'] = '%s'\n"
+			"_platform['gateway_url'] = '%s'\n"
+			"with open(_cfg_path, 'w', encoding='utf-8') as _f:\n"
+			"    json.dump(_cfg, _f, ensure_ascii=False, indent=2)\n"
+			"_result = {'ok': True, 'port': %d}\n"
+		),
+		*EscapedType,
+		*EscapedUrl,
+		NewPort
+	);
+
+	FString ResultJson = FUEAgentManageUtils::RunPythonAndCapture(*SaveCmd);
+
+	// 刷新平台列表 UI（显示新端口）
+	RebuildPlatformListUI();
+
+	// 如果修改的是当前平台，自动重新连接
+	if (PlatformType == CurrentPlatformType)
+	{
+		// 更新本地 URL 缓存
+		for (auto& P : AvailablePlatforms)
+		{
+			if (P.Type == PlatformType)
+			{
+				P.GatewayUrl = NewGatewayUrl;
+				P.GatewayPort = NewPort;
+				break;
+			}
+		}
+
+		// 断开旧连接 + 重新连接
+		PlatformBridge->Disconnect();
+
+		FString TempDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectSavedDir()) / TEXT("ClawBridge");
+		IFileManager::Get().MakeDirectory(*TempDir, true);
+		FString StatusFile = TempDir / TEXT("_connect_status.txt");
+		IFileManager::Get().Delete(*StatusFile, false, false, true);
+		PlatformBridge->Connect(StatusFile);
+
+		AddMessage(TEXT("system"),
+			FString::Printf(TEXT("Gateway port updated to %d, reconnecting..."), NewPort));
+	}
+	else
+	{
+		AddMessage(TEXT("system"),
+			FString::Printf(TEXT("Gateway port for %s updated to %d"), *PlatformType, NewPort));
 	}
 }
 
