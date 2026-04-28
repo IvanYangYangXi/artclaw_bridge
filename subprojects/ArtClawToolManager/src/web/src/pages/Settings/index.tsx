@@ -1,11 +1,11 @@
 // Ref: docs/features/phase5-dcc-integration.md
 // Settings page with General, Connection, and Advanced tabs
 import { useState, useEffect, useCallback } from 'react'
-import { Globe, Server, Zap, RefreshCw, ExternalLink, Moon } from 'lucide-react'
+import { Globe, Server, Zap, RefreshCw, ExternalLink, Moon, Wifi, WifiOff, Save } from 'lucide-react'
 import TabBar from '../../components/common/TabBar'
 import DCCStatusPanel from '../../components/Layout/DCCStatusPanel'
 import { useAppStore } from '../../stores/appStore'
-import { fetchTriggerStats } from '../../api/client'
+import { fetchTriggerStats, fetchPlatformsConfig, updatePlatformGateway, detectPlatformPort } from '../../api/client'
 import type { TriggerEngineStats } from '../../types'
 
 type SettingsTab = 'general' | 'connection' | 'advanced'
@@ -68,9 +68,20 @@ function GeneralSettings() {
 }
 
 // --- Connection Settings Tab ---
+interface PlatformState {
+  type: string
+  name: string
+  currentUrl: string
+  editUrl: string
+  isDetecting: boolean
+  isSaving: boolean
+  connected: boolean
+}
+
 function ConnectionSettings() {
   const [gatewayUrl, setGatewayUrl] = useState('ws://localhost:9876')
   const [triggerStats, setTriggerStats] = useState<TriggerEngineStats | null>(null)
+  const [platforms, setPlatforms] = useState<PlatformState[]>([])
 
   const loadTriggerStats = useCallback(async () => {
     try {
@@ -83,9 +94,81 @@ function ConnectionSettings() {
     }
   }, [])
 
+  const loadPlatforms = useCallback(async () => {
+    try {
+      const res = await fetchPlatformsConfig()
+      if (res.success && res.data) {
+        setPlatforms(
+          res.data.map((p) => ({
+            type: p.type,
+            name: p.name,
+            currentUrl: p.gateway_url,
+            editUrl: p.gateway_url,
+            isDetecting: false,
+            isSaving: false,
+            connected: true,
+          })),
+        )
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
   useEffect(() => {
     loadTriggerStats()
-  }, [loadTriggerStats])
+    loadPlatforms()
+  }, [loadTriggerStats, loadPlatforms])
+
+  const handleSavePlatform = useCallback(async (platform: PlatformState) => {
+    setPlatforms((prev) =>
+      prev.map((p) => (p.type === platform.type ? { ...p, isSaving: true } : p)),
+    )
+    try {
+      await updatePlatformGateway(platform.type, platform.editUrl)
+      setPlatforms((prev) =>
+        prev.map((p) =>
+          p.type === platform.type
+            ? { ...p, currentUrl: p.editUrl, isSaving: false }
+            : p,
+        ),
+      )
+    } catch {
+      setPlatforms((prev) =>
+        prev.map((p) => (p.type === platform.type ? { ...p, isSaving: false } : p)),
+      )
+    }
+  }, [])
+
+  const handleDetectPlatform = useCallback(async (platform: PlatformState) => {
+    setPlatforms((prev) =>
+      prev.map((p) => (p.type === platform.type ? { ...p, isDetecting: true } : p)),
+    )
+    try {
+      const res = await detectPlatformPort(platform.type)
+      if (res.success && res.data) {
+        setPlatforms((prev) =>
+          prev.map((p) =>
+            p.type === platform.type
+              ? { ...p, editUrl: res.data!.url, isDetecting: false }
+              : p,
+          ),
+        )
+      } else {
+        setPlatforms((prev) =>
+          prev.map((p) =>
+            p.type === platform.type ? { ...p, isDetecting: false } : p,
+          ),
+        )
+      }
+    } catch {
+      setPlatforms((prev) =>
+        prev.map((p) =>
+          p.type === platform.type ? { ...p, isDetecting: false } : p,
+        ),
+      )
+    }
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -101,6 +184,86 @@ function ConnectionSettings() {
           <button className="px-3 py-1.5 rounded text-sm bg-accent text-white hover:bg-accent/80 transition-colors">
             Save
           </button>
+        </div>
+      </SettingSection>
+
+      {/* Platform Gateways */}
+      <SettingSection title="Platform Gateways" icon={<Server className="w-4 h-4" />}>
+        <div className="space-y-3">
+          {platforms.map((platform) => (
+            <div
+              key={platform.type}
+              className="rounded-lg border border-border-default bg-bg-secondary p-4 space-y-3"
+            >
+              {/* Platform header row */}
+              <div className="flex items-center gap-2">
+                <Server className="w-4 h-4 text-text-secondary" />
+                <span className="text-sm font-medium text-text-primary">{platform.name}</span>
+                {/* Connection status */}
+                <span className="flex items-center gap-1 ml-auto">
+                  {platform.connected ? (
+                    <>
+                      <Wifi className="w-3.5 h-3.5 text-success" />
+                      <span className="text-xs text-success">Connected</span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="w-3.5 h-3.5 text-text-dim" />
+                      <span className="text-xs text-text-dim">Disconnected</span>
+                    </>
+                  )}
+                </span>
+              </div>
+
+              {/* Gateway URL row */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-secondary shrink-0">Gateway:</span>
+                <input
+                  type="text"
+                  value={platform.editUrl}
+                  onChange={(e) =>
+                    setPlatforms((prev) =>
+                      prev.map((p) =>
+                        p.type === platform.type
+                          ? { ...p, editUrl: e.target.value }
+                          : p,
+                      ),
+                    )
+                  }
+                  className="flex-1 px-3 py-1.5 rounded text-sm bg-bg-tertiary text-text-primary border border-border-default focus:border-accent focus:outline-none"
+                  placeholder="ws://127.0.0.1:18789"
+                />
+                <button
+                  onClick={() => handleDetectPlatform(platform)}
+                  disabled={platform.isDetecting}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded text-xs bg-bg-tertiary text-text-secondary border border-border-default hover:bg-bg-tertiary/70 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw
+                    className={`w-3 h-3 ${platform.isDetecting ? 'animate-spin' : ''}`}
+                  />
+                  Auto Detect
+                </button>
+                <button
+                  onClick={() => handleSavePlatform(platform)}
+                  disabled={platform.isSaving || platform.editUrl === platform.currentUrl}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded text-xs bg-accent text-white hover:bg-accent/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Save className="w-3 h-3" />
+                  Save
+                </button>
+              </div>
+
+              {/* Current saved URL indicator */}
+              {platform.editUrl !== platform.currentUrl && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-text-dim">Saved:</span>
+                  <code className="text-[11px] text-text-secondary bg-bg-tertiary px-1.5 py-0.5 rounded">
+                    {platform.currentUrl}
+                  </code>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </SettingSection>
 

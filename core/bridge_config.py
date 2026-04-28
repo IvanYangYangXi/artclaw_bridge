@@ -8,6 +8,8 @@ bridge_config.py - ArtClaw Bridge 配置加载
 
 import json
 import os
+import socket
+import subprocess
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -84,7 +86,7 @@ _PLATFORM_DEFAULTS = {
     },
     "lobster": {
         "display_name": "LobsterAI",
-        "gateway_url": "ws://127.0.0.1:18790",
+        "gateway_url": "ws://127.0.0.1:18794",
         "mcp_port": 8080,
         "visible": True,
         "skills_installed_path": _get_lobster_skills_path(),
@@ -94,9 +96,14 @@ _PLATFORM_DEFAULTS = {
 }
 
 
+def _get_artclaw_config_path() -> str:
+    """返回 ~/.artclaw/config.json 路径（全平台统一）。"""
+    return os.path.expanduser("~/.artclaw/config.json")
+
+
 def load_artclaw_config() -> dict:
     """读取 ~/.artclaw/config.json（ArtClaw 统一配置）"""
-    config_path = os.path.expanduser("~/.artclaw/config.json")
+    config_path = _get_artclaw_config_path()
     if not os.path.exists(config_path):
         return {}
     try:
@@ -398,7 +405,8 @@ def get_gateway_url() -> str:
     1. ~/.artclaw/config.json → platform.gateway_url
     2. 平台配置文件 → gateway.port（OpenClaw 格式）
     3. gateway-port.json（LobsterAI 等平台格式）
-    4. _PLATFORM_DEFAULTS 中的默认值
+    4. 动态端口检测（detect_gateway_port；检测成功则自动保存到配置）
+    5. _PLATFORM_DEFAULTS 中的默认值
     """
     ac = load_artclaw_config()
 
@@ -426,7 +434,15 @@ def get_gateway_url() -> str:
         except Exception:
             pass
 
-    # 4. 平台默认值
+    # 4. 动态端口检测（检测成功自动保存，下次启动直接用）
+    current_pt = ac.get("platform", {}).get("type", "openclaw")
+    detected_port = detect_gateway_port(current_pt)
+    if detected_port is not None:
+        url = f"ws://127.0.0.1:{detected_port}"
+        update_platform_gateway_url(current_pt, url)
+        return url
+
+    # 5. 平台默认值
     defaults = get_platform_defaults()
     return defaults.get("gateway_url", DEFAULT_GATEWAY_URL)
 
@@ -655,3 +671,315 @@ def _save_artclaw_config(config: dict) -> None:
             raise
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# 动态网关端口检测
+# ---------------------------------------------------------------------------
+
+def _is_port_listening(host: str, port: int, timeout: float = 0.5) -> bool:
+    """检查指定 host:port 是否正在监听（TCP 连接探测）。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    try:
+        s.connect((host, port))
+        s.close()
+        return True
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        return False
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
+def _try_read_gateway_port_json(config_dir: str) -> int | None:
+    """
+    从给定目录读取 gateway-port.json，返回端口号或 None。
+
+    支持两种文件名: gateway-port.json（新）和 gateway_port.json（旧）。
+    """
+    for fname in ("gateway-port.json", "gateway_port.json"):
+        port_json = os.path.join(config_dir, fname)
+        if os.path.isfile(port_json):
+            try:
+                with open(port_json, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                port = data.get("port")
+                if port and isinstance(port, int):
+                    return port
+            except Exception:
+                continue
+    return None
+
+
+def _find_process_listening_port(process_name: str, host: str = "127.0.0.1",
+                                  port_range: tuple = (18780, 18810)) -> int | None:
+    """
+    通过扫描已知端口范围来检测进程是否在监听。
+
+    这是后备方案：当无法读取配置文件时，通过主动端口探测定位网关。
+    不需要读取 /proc 或调用 ps（避免跨平台兼容问题）。
+    """
+    for port in range(port_range[0], port_range[1] + 1):
+        if _is_port_listening(host, port):
+            return port
+    return None
+
+
+def detect_gateway_port(platform_type: str) -> int | None:
+    """
+    动态检测实际运行的网关端口。
+
+    检测策略（按优先级）:
+
+    1. **gateway-port.json**：
+       - LobsterAI: %APPDATA%/LobsterAI/openclaw/state/gateway-port.json
+       - OpenClaw: ~/.openclaw/state/gateway-port.json
+       文件内容如 {"port": 18794}
+
+    2. **配置文件 gateway.port**：
+       从平台配置文件的 gateway.port 字段读取（OpenClaw 格式）
+
+    3. **端口扫描**：
+       在已知端口范围内（18780-18810）探测 127.0.0.1 上的 TCP 监听端口
+
+    Args:
+        platform_type: 平台类型字符串（'openclaw', 'lobster', 等）
+
+    Returns:
+        检测到的端口号，或 None（如果未找到）
+    """
+    defaults = get_platform_defaults(platform_type)
+    mcp_config_path = defaults.get("mcp_config_path", "")
+
+    # ── Strategy 1: gateway-port.json ──────────────────────────────
+    if mcp_config_path:
+        expanded = os.path.expanduser(mcp_config_path)
+        config_dir = os.path.dirname(expanded)
+        if config_dir:
+            port = _try_read_gateway_port_json(config_dir)
+            if port is not None and _is_port_listening("127.0.0.1", port):
+                return port
+
+    # ── Strategy 2: 配置文件 gateway.port ──────────────────────────
+    if mcp_config_path:
+        expanded = os.path.expanduser(mcp_config_path)
+        if os.path.isfile(expanded):
+            try:
+                with open(expanded, "r", encoding="utf-8") as f:
+                    platform_cfg = json.load(f)
+                port = platform_cfg.get("gateway", {}).get("port")
+                if port and isinstance(port, int) and port > 0:
+                    if _is_port_listening("127.0.0.1", port):
+                        return port
+            except Exception:
+                pass
+
+    # ── Strategy 3: openclaw gateway status (命令行探测) ───────────
+    # 仅对 openclaw 平台尝试
+    if platform_type == "openclaw":
+        try:
+            result = subprocess.run(
+                ["openclaw", "gateway", "status"],
+                capture_output=True, text=True, timeout=5,
+                cwd=os.path.expanduser("~"),
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    line = line.strip()
+                    if ":" in line and "127.0.0.1" in line:
+                        # 解析类似 "url: ws://127.0.0.1:18789" 的行
+                        parts = line.split(":")
+                        if parts:
+                            last_part = parts[-1].strip()
+                            try:
+                                port = int(last_part)
+                                if _is_port_listening("127.0.0.1", port):
+                                    return port
+                            except ValueError:
+                                pass
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+
+    # ── Strategy 4: 端口范围扫描 ──────────────────────────────────
+    port = _find_process_listening_port(
+        "LobsterAI" if platform_type == "lobster" else platform_type,
+        host="127.0.0.1",
+        port_range=(18780, 18810),
+    )
+    if port is not None:
+        return port
+
+    # ── Final: 端口范围扩展扫描 ────────────────────────────────────
+    # 如果常见范围没找到，尝试直接探测默认端口
+    default_url = defaults.get("gateway_url", "")
+    if default_url and ":" in default_url:
+        try:
+            default_port = int(default_url.rsplit(":", 1)[-1])
+            if _is_port_listening("127.0.0.1", default_port):
+                return default_port
+        except (ValueError, IndexError):
+            pass
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# 配置更新 API
+# ---------------------------------------------------------------------------
+
+def update_platform_gateway_url(platform_type: str, new_url: str) -> bool:
+    """
+    将新的网关 URL 保存到 ~/.artclaw/config.json。
+
+    更新位置:
+    - config['platform']['gateway_url']
+    - config['platforms_registry'] 中匹配 platform_type 的条目
+
+    Args:
+        platform_type: 平台类型字符串
+        new_url: 新的 WebSocket URL（如 "ws://127.0.0.1:18794"）
+
+    Returns:
+        True 表示保存成功
+    """
+    try:
+        ac = load_artclaw_config()
+
+        # 更新 platform 节
+        ac.setdefault("platform", {})[("gateway_url")] = new_url
+        ac["platform"]["type"] = ac["platform"].get("type", platform_type)
+
+        # 同步更新 platforms_registry
+        registry = ac.get("platforms_registry", [])
+        found = False
+        for entry in registry:
+            if entry.get("type") == platform_type:
+                entry["gateway_url"] = new_url
+                found = True
+                break
+        if not found:
+            defaults = get_platform_defaults(platform_type)
+            registry.append({
+                "type": platform_type,
+                "display_name": defaults.get("display_name", platform_type.title()),
+                "gateway_url": new_url,
+            })
+            ac["platforms_registry"] = registry
+
+        _save_artclaw_config(ac)
+        return True
+    except Exception:
+        return False
+
+
+def update_platform_mcp_port(platform_type: str, new_port: int) -> bool:
+    """
+    将新的 MCP 端口保存到 ~/.artclaw/config.json。
+
+    更新位置: config['platform']['mcp_port']
+
+    Args:
+        platform_type: 平台类型字符串
+        new_port: 新的 MCP 端口号
+
+    Returns:
+        True 表示保存成功
+    """
+    try:
+        ac = load_artclaw_config()
+        ac.setdefault("platform", {})[("mcp_port")] = new_port
+        ac["platform"]["type"] = ac["platform"].get("type", platform_type)
+        _save_artclaw_config(ac)
+        return True
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Tool Manager UI 数据源
+# ---------------------------------------------------------------------------
+
+def get_all_platforms_config() -> list[dict]:
+    """
+    返回所有平台的当前配置（供 Tool Manager UI 使用）。
+
+    对每个已注册/已知的平台，返回:
+    - type: 平台类型标识
+    - display_name: 显示名称
+    - gateway_url: 当前配置的网关 URL
+    - detected_port: 动态检测到的端口（可能为 null）
+    - configured: 平台是否已安装/配置
+    - mcp_port: MCP 服务端口
+
+    Returns:
+        [{type, display_name, gateway_url, detected_port, configured, mcp_port}, ...]
+    """
+    ac = load_artclaw_config()
+    registry = ac.get("platforms_registry", [])
+    result = []
+
+    if registry:
+        for entry in registry:
+            p_type = entry.get("type", "")
+            defaults = _PLATFORM_DEFAULTS.get(p_type, {})
+            if not defaults.get("visible", True):
+                continue
+
+            detected = detect_gateway_port(p_type)
+            result.append({
+                "type": p_type,
+                "display_name": entry.get("display_name", defaults.get("display_name", p_type.title())),
+                "gateway_url": entry.get("gateway_url", defaults.get("gateway_url", "")),
+                "detected_port": detected,
+                "configured": check_platform_configured(p_type),
+                "mcp_port": entry.get("mcp_port", defaults.get("mcp_port", 8080)),
+            })
+    else:
+        # Fallback: 从 _PLATFORM_DEFAULTS 生成
+        current_type = ac.get("platform", {}).get("type", "openclaw")
+        for k, v in _PLATFORM_DEFAULTS.items():
+            if not v.get("visible", True):
+                continue
+            detected = detect_gateway_port(k)
+            gateway_url = v.get("gateway_url", "")
+            # 如果当前平台就是它，从 artclaw config 读取覆盖
+            if k == current_type:
+                platform_cfg = ac.get("platform", {})
+                gateway_url = platform_cfg.get("gateway_url", gateway_url)
+
+            result.append({
+                "type": k,
+                "display_name": v.get("display_name", k.title()),
+                "gateway_url": gateway_url,
+                "detected_port": detected,
+                "configured": check_platform_configured(k),
+                "mcp_port": v.get("mcp_port", 8080),
+            })
+
+    return result
+
+
+def detect_and_save_gateway_port(platform_type: str) -> str:
+    """
+    自动检测网关端口并保存到配置。
+
+    这是 UI "Auto Detect" 按钮对应的后端函数。
+    检测到端口后自动写入 ~/.artclaw/config.json，下次启动即可直接使用。
+
+    Args:
+        platform_type: 平台类型字符串
+
+    Returns:
+        格式化的网关 URL（如 "ws://127.0.0.1:18794"），或空字符串（检测失败）
+    """
+    port = detect_gateway_port(platform_type)
+    if port is None:
+        defaults = get_platform_defaults(platform_type)
+        return defaults.get("gateway_url", "")
+
+    url = f"ws://127.0.0.1:{port}"
+    update_platform_gateway_url(platform_type, url)
+    return url

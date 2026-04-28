@@ -482,3 +482,48 @@ export async function cleanupAlerts(days: number = 7): Promise<{ message: string
   const { data } = await api.post('/alerts/cleanup', null, { params: { days } })
   return data
 }
+
+// ---------- Platform Gateway Configuration ----------
+
+export interface PlatformGatewayConfig {
+  type: string
+  name: string
+  gateway_url: string
+}
+
+/** Mock: fetch platform gateway configs (will be replaced with real API later) */
+export async function fetchPlatformsConfig(): Promise<ApiResponse<PlatformGatewayConfig[]>> {
+  // TODO: Replace with real API call when backend is ready
+  // const { data } = await api.get('/platforms')
+  // return data
+  return {
+    success: true,
+    data: [
+      { type: 'openclaw', name: 'OpenClaw', gateway_url: 'ws://127.0.0.1:18789' },
+      { type: 'lobster', name: 'LobsterAI', gateway_url: 'ws://127.0.0.1:18794' },
+    ],
+  }
+}
+
+/** Mock: update platform gateway URL (will be replaced with real API later) */
+export async function updatePlatformGateway(platform: string, url: string): Promise<ApiResponse<null>> {
+  // TODO: Replace with real API call when backend is ready
+  // const { data } = await api.post('/platforms/gateway', { platform, url })
+  // return data
+  void platform
+  void url
+  return { success: true, data: null }
+}
+
+/** Mock: auto-detect platform port (will be replaced with real API later) */
+export async function detectPlatformPort(platform: string): Promise<ApiResponse<{ url: string }>> {
+  // TODO: Replace with real API call when backend is ready
+  // const { data } = await api.post('/platforms/detect', { platform })
+  // return data
+  await new Promise((r) => setTimeout(r, 500))
+  const defaults: Record<string, string> = {
+    openclaw: 'ws://127.0.0.1:18789',
+    lobster: 'ws://127.0.0.1:18794',
+  }
+  return { success: true, data: { url: defaults[platform] ?? 'ws://127.0.0.1:18789' } }
+}

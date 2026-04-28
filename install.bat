@@ -729,6 +729,50 @@ echo.
 echo  ── 平台配置 (!PLATFORM!) ────────────────────────────
 echo.
 
+:: ── 自动检测并安装 OpenClaw 环境 ──
+if "!PLATFORM!"=="openclaw" (
+    where openclaw >nul 2>&1
+    if !ERRORLEVEL! NEQ 0 (
+        echo [检测] 未找到 OpenClaw，自动安装环境...
+        echo.
+        where python >nul 2>&1
+        if !ERRORLEVEL! EQU 0 (
+            python "%ROOT_DIR%\scripts\setup_openclaw_env.py"
+            if !ERRORLEVEL! NEQ 0 (
+                echo [警告] OpenClaw 环境安装未完成，继续配置插件...
+            )
+        ) else (
+            echo [错误] 未找到 Python，无法自动安装 OpenClaw
+            echo        请手动安装: npm install -g openclaw
+        )
+        echo.
+    ) else (
+        echo [OK] OpenClaw 已安装
+    )
+)
+
+:: 如果选了不支持的平台，引导安装 OpenClaw
+if "!PLATFORM!" NEQ "openclaw" if "!PLATFORM!" NEQ "lobster" (
+    echo [提示] 平台 "!PLATFORM!" 不支持完整 Agent 功能
+    echo        推荐使用 OpenClaw 作为 Agent 后端
+    echo.
+    set /p USE_OPENCLAW="  是否安装 OpenClaw? [Y/n]: "
+    if /I "!USE_OPENCLAW!" NEQ "n" (
+        where python >nul 2>&1
+        if !ERRORLEVEL! EQU 0 (
+            python "%ROOT_DIR%\scripts\setup_openclaw_env.py" --from-platform !PLATFORM!
+            if !ERRORLEVEL! EQU 0 (
+                set "PLATFORM=openclaw"
+                set "PLATFORM_SRC=%ROOT_DIR%\platforms\openclaw"
+                set "MCP_BRIDGE_SRC=!PLATFORM_SRC!\gateway"
+            )
+        ) else (
+            echo [错误] 未找到 Python
+        )
+    )
+    echo.
+)
+
 :: 复制 mcp-bridge 插件（仅 openclaw 有 gateway）
 if "!PLATFORM!"=="openclaw" (
     set "OPENCLAW_EXT=%USERPROFILE%\.openclaw\extensions\mcp-bridge"

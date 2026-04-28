@@ -33,6 +33,18 @@ import sys
 
 from install_utils import ROOT_DIR, cprint, get_platform_src, set_copy_mode
 from install_platform import PLATFORM_CONFIGS, install_openclaw
+
+# 添加 scripts/ 到搜索路径
+import os as _os
+_scripts_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "scripts")
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
+from setup_openclaw_env import (
+    setup_openclaw_env,
+    check_openclaw as check_openclaw_installed,
+    check_nodejs,
+    SUPPORTED_PLATFORMS,
+)
 from install_dcc import (
     install_ue, uninstall_ue,
     install_maya, uninstall_maya,
@@ -263,6 +275,42 @@ def main():
 
 def _run_installs(args, pt: str, installed: list[str], uninstalled: list[str]):
     """执行所有安装任务"""
+
+    # ── 平台环境自动安装 ──
+    # 如果选择了 openclaw 平台（或不支持的平台），自动确保 OpenClaw 环境就绪
+    if args.openclaw or pt == "openclaw":
+        if not check_openclaw_installed():
+            cprint("信息", "未检测到 OpenClaw，自动安装环境...", "cyan")
+            # 收集本次安装的 DCC 列表
+            dccs = []
+            for dcc in ["ue", "maya", "max", "blender", "houdini", "sp", "sd", "comfyui"]:
+                if getattr(args, dcc, False):
+                    dccs.append(dcc)
+            env_ok = setup_openclaw_env(
+                skip_gateway=False,
+                dccs=dccs or None,
+            )
+            if env_ok:
+                installed.append("OpenClaw 环境")
+            else:
+                cprint("警告", "OpenClaw 环境安装未完成，继续安装 DCC 插件", "yellow")
+    elif pt not in SUPPORTED_PLATFORMS:
+        # 用户选择了不支持的平台，引导安装 OpenClaw
+        cprint("信息", f"平台 '{pt}' 不支持完整 Agent 功能，引导安装 OpenClaw...", "cyan")
+        dccs = []
+        for dcc in ["ue", "maya", "max", "blender", "houdini", "sp", "sd", "comfyui"]:
+            if getattr(args, dcc, False):
+                dccs.append(dcc)
+        env_ok = setup_openclaw_env(
+            skip_gateway=False,
+            dccs=dccs or None,
+            from_platform=pt,
+        )
+        if env_ok:
+            installed.append("OpenClaw 环境 (推荐替代)")
+            pt = "openclaw"  # 切换到 openclaw 继续后续配置
+
+    # ── DCC 插件安装 ──
     if args.ue and install_ue(args.ue_project, args.force, pt):
         installed.append("UE 插件")
     if args.maya and install_maya(args.maya_version, args.force, pt):
