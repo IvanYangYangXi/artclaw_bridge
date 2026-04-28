@@ -11,7 +11,7 @@ echo.
 :: Check node/npm
 where node >nul 2>&1
 if !ERRORLEVEL! NEQ 0 (
-    echo [ERROR] Node.js not found
+    echo [ERROR] Node.js not found in PATH
     pause
     exit /b 1
 )
@@ -19,7 +19,7 @@ for /f "tokens=*" %%v in ('node --version') do echo [OK] Node.js: %%v
 
 where npm >nul 2>&1
 if !ERRORLEVEL! NEQ 0 (
-    echo [ERROR] npm not found
+    echo [ERROR] npm not found in PATH
     pause
     exit /b 1
 )
@@ -27,9 +27,9 @@ for /f "tokens=*" %%v in ('npm --version') do echo [OK] npm: %%v
 
 echo.
 echo -- npm config --
-npm config get prefix
-npm config get cache
-npm config get registry
+for /f "tokens=*" %%v in ('npm config get prefix') do echo   prefix: %%v
+for /f "tokens=*" %%v in ('npm config get cache') do echo   cache: %%v
+for /f "tokens=*" %%v in ('npm config get registry') do echo   registry: %%v
 echo.
 
 :: Test 1: standard global install
@@ -37,11 +37,11 @@ echo ============================================================
 echo [TEST 1] npm install -g openclaw
 echo ============================================================
 echo.
-npm install -g openclaw 2>&1
+call npm install -g openclaw
 if !ERRORLEVEL! EQU 0 (
     echo.
     echo [SUCCESS] Test 1 passed!
-    where openclaw
+    where openclaw 2>nul
     goto :done
 )
 echo.
@@ -50,16 +50,15 @@ echo.
 
 :: Test 2: user prefix
 echo ============================================================
-echo [TEST 2] npm install -g openclaw --prefix %USERPROFILE%\.npm-global
+echo [TEST 2] npm install -g openclaw --prefix "%USERPROFILE%\.npm-global"
 echo ============================================================
 echo.
 if not exist "%USERPROFILE%\.npm-global" mkdir "%USERPROFILE%\.npm-global"
-npm install -g openclaw --prefix "%USERPROFILE%\.npm-global" 2>&1
+call npm install -g openclaw --prefix "%USERPROFILE%\.npm-global"
 if !ERRORLEVEL! EQU 0 (
     echo.
     echo [SUCCESS] Test 2 passed!
     echo Installed to: %USERPROFILE%\.npm-global
-    dir "%USERPROFILE%\.npm-global" /B 2>nul
     goto :done
 )
 echo.
@@ -71,11 +70,11 @@ echo ============================================================
 echo [TEST 3] npm install -g openclaw --registry https://registry.npmmirror.com
 echo ============================================================
 echo.
-npm install -g openclaw --registry https://registry.npmmirror.com 2>&1
+call npm install -g openclaw --registry https://registry.npmmirror.com
 if !ERRORLEVEL! EQU 0 (
     echo.
     echo [SUCCESS] Test 3 passed!
-    where openclaw
+    where openclaw 2>nul
     goto :done
 )
 echo.
@@ -84,10 +83,10 @@ echo.
 
 :: Test 4: mirror + user prefix
 echo ============================================================
-echo [TEST 4] npm install -g openclaw --prefix %USERPROFILE%\.npm-global --registry https://registry.npmmirror.com
+echo [TEST 4] npm install -g openclaw --prefix "%USERPROFILE%\.npm-global" --registry https://registry.npmmirror.com
 echo ============================================================
 echo.
-npm install -g openclaw --prefix "%USERPROFILE%\.npm-global" --registry https://registry.npmmirror.com 2>&1
+call npm install -g openclaw --prefix "%USERPROFILE%\.npm-global" --registry https://registry.npmmirror.com
 if !ERRORLEVEL! EQU 0 (
     echo.
     echo [SUCCESS] Test 4 passed!
@@ -107,16 +106,18 @@ echo   - Antivirus blocking npm operations
 echo   - Disk permission issues
 echo   - Corporate proxy not configured
 echo.
-echo Try manually:
-echo   1. Open cmd as Administrator
-echo   2. npm install -g openclaw
+echo Try manually in Admin cmd:
+echo   npm install -g openclaw
 echo.
-echo Or check proxy:
+echo Or set proxy:
 echo   npm config set proxy http://your-proxy:port
 echo   npm config set https-proxy http://your-proxy:port
 echo ============================================================
 
 :done
 echo.
-pause
+echo ============================================================
+echo Press any key to exit...
+echo ============================================================
+pause >nul
 exit /b 0
