@@ -13,6 +13,7 @@ ArtClaw Bridge — 跨平台安装器
     python install.py --maya --maya-version 2024          # 指定 Maya 版本
     python install.py --max --max-version 2024            # 安装 Max 插件
     python install.py --ue --ue-project "C:\\path\\to\\proj"  # 安装 UE 插件
+    python install.py --ue-mcp-only                       # 仅安装 UE MCP+依赖 (不部署插件)
     python install.py --blender                           # 安装 Blender 插件 (默认 4.2)
     python install.py --blender --blender-version 4.3     # 指定 Blender 版本
     python install.py --houdini                           # 安装 Houdini 插件 (默认 20.5)
@@ -47,6 +48,7 @@ from setup_openclaw_env import (
 )
 from install_dcc import (
     install_ue, uninstall_ue,
+    install_ue_mcp_only,
     install_maya, uninstall_maya,
     install_max, uninstall_max,
 )
@@ -97,10 +99,17 @@ def _print_post_steps(installed: list[str]):
     joined = " ".join(installed)
     print("  后续步骤:")
     print()
-    if "UE" in joined:
+    if "UE 插件" in installed:
         print("    UE:")
         print("      1. 打开 UE 项目，启用 \"UE Claw Bridge\" 插件")
         print("      2. 重启编辑器")
+        print("      3. Window 菜单 → UE Claw Bridge")
+        print("      4. 输入 /diagnose 验证连接")
+        print()
+    if "UE MCP" in joined:
+        print("    UE (MCP only):")
+        print("      1. 通过版本管理拉取 UEClawBridge 插件到项目 Plugins/ 目录")
+        print("      2. 编译/打开 UE 项目，启用插件")
         print("      3. Window 菜单 → UE Claw Bridge")
         print("      4. 输入 /diagnose 验证连接")
         print()
@@ -162,6 +171,7 @@ def main():
   python install.py --maya --maya-version 2024           安装到 Maya 2024
   python install.py --max --max-version 2024             安装 Max 插件
   python install.py --ue --ue-project "C:\\MyProject"     安装 UE 插件
+  python install.py --ue-mcp-only                        仅安装 UE MCP+依赖 (插件通过VCS拉取)
   python install.py --blender                            安装 Blender 插件 (默认 4.2)
   python install.py --houdini --houdini-version 20.0     安装 Houdini 插件
   python install.py --sp                                 安装 Substance Painter 插件
@@ -182,6 +192,8 @@ def main():
     parser.add_argument("--maya", action="store_true", help="安装/卸载 Maya 插件")
     parser.add_argument("--max", action="store_true", help="安装/卸载 3ds Max 插件")
     parser.add_argument("--ue", action="store_true", help="安装/卸载 UE 插件")
+    parser.add_argument("--ue-mcp-only", action="store_true",
+                        help="仅安装 UE MCP 配置+Python依赖+Skills (不部署插件，插件通过版本管理拉取)")
     parser.add_argument("--blender", action="store_true", help="安装/卸载 Blender 插件")
     parser.add_argument("--houdini", action="store_true", help="安装/卸载 Houdini 插件")
     parser.add_argument("--sp", action="store_true", help="安装/卸载 Substance Painter 插件")
@@ -205,6 +217,14 @@ def main():
         help="目标平台 (默认: openclaw)，决定部署哪个平台的 bridge 和配置",
     )
 
+    # OpenClaw 模型配置 (非交互式传入，适用于自动化/CI)
+    parser.add_argument("--provider", default=None,
+                        help="模型提供商 (openrouter/aliyun/zhipu/siliconflow/anthropic/openai)")
+    parser.add_argument("--api-key", default=None,
+                        help="模型 API Key (配合 --provider 使用，跳过交互式输入)")
+    parser.add_argument("--model", default=None,
+                        help="自定义模型名称 (可选，配合 --provider)")
+
     # 选项
     parser.add_argument("--force", action="store_true", help="跳过覆盖确认")
     parser.add_argument("--copy", action="store_true",
@@ -215,7 +235,7 @@ def main():
 
     # 无参数时显示帮助
     any_target = (
-        args.maya or args.max or args.ue or args.blender
+        args.maya or args.max or args.ue or args.ue_mcp_only or args.blender
         or args.houdini or args.sp or args.sd or args.comfyui
         or args.openclaw or args.all
     )
@@ -277,23 +297,28 @@ def _run_installs(args, pt: str, installed: list[str], uninstalled: list[str]):
     """执行所有安装任务"""
 
     # ── 平台环境自动安装 ──
-    # 如果选择了 openclaw 平台（或不支持的平台），自动确保 OpenClaw 环境就绪
-    if args.openclaw or pt == "openclaw":
+    # 选择 openclaw 平台时（无论是否传 --openclaw），先确保 OpenClaw 环境就绪
+    if pt == "openclaw":
         if not check_openclaw_installed():
             cprint("信息", "未检测到 OpenClaw，自动安装环境...", "cyan")
             # 收集本次安装的 DCC 列表
             dccs = []
             for dcc in ["ue", "maya", "max", "blender", "houdini", "sp", "sd", "comfyui"]:
-                if getattr(args, dcc, False):
+                if getattr(args, dcc, False) or (dcc == "ue" and args.ue_mcp_only):
                     dccs.append(dcc)
             env_ok = setup_openclaw_env(
                 skip_gateway=False,
+                provider=args.provider,
+                api_key=args.api_key,
+                model=args.model,
                 dccs=dccs or None,
             )
             if env_ok:
                 installed.append("OpenClaw 环境")
             else:
                 cprint("警告", "OpenClaw 环境安装未完成，继续安装 DCC 插件", "yellow")
+        else:
+            cprint("OK", "OpenClaw 已安装", "green")
     elif pt not in SUPPORTED_PLATFORMS:
         # 用户选择了不支持的平台，引导安装 OpenClaw
         cprint("信息", f"平台 '{pt}' 不支持完整 Agent 功能，引导安装 OpenClaw...", "cyan")
@@ -313,6 +338,8 @@ def _run_installs(args, pt: str, installed: list[str], uninstalled: list[str]):
     # ── DCC 插件安装 ──
     if args.ue and install_ue(args.ue_project, args.force, pt):
         installed.append("UE 插件")
+    if args.ue_mcp_only and install_ue_mcp_only(pt):
+        installed.append("UE MCP 配置 + 依赖 (无插件部署)")
     if args.maya and install_maya(args.maya_version, args.force, pt):
         installed.append(f"Maya {args.maya_version} 插件")
     if args.max and install_max(args.max_version, args.force, pt):

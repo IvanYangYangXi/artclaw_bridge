@@ -20,6 +20,13 @@
 | 9 | [Gateway 重启后 Chat Panel 卡死](#issue-9-gateway-重启后-chat-panel-卡死) | 🔴 致命 | ✅ 已修复 | 2026-03-17 |
 | 10 | [Create Skill 按钮乱码](#issue-10-create-skill-按钮乱码) | 🟡 中等 | ✅ 已修复 | 2026-03-17 |
 | 11 | [connect 缺 device identity 签名导致权限不足](#issue-11-connect-缺-device-identity-签名导致权限不足) | 🔴 致命 | ✅ 已修复 | 2026-04-22 |
+| 12 | [安装脚本 models 块被整体覆盖丢失 onboard 配置](#issue-12-安装脚本-models-块被整体覆盖丢失-onboard-配置) | 🟠 高 | ✅ 已修复 | 2026-04-29 |
+| 13 | [subprocess 列表方式找不到 openclaw.cmd](#issue-13-subprocess-列表方式找不到-openclaw-cmd) | 🔴 致命 | ✅ 已修复 | 2026-04-29 |
+| 14 | [token_mismatch：代理软件注入 X-Forwarded-For 头](#issue-14-token_mismatch代理软件注入-x-forwarded-for-头) | 🔴 致命 | ✅ 已修复 | 2026-04-29 |
+| 15 | [device_token_mismatch：浏览器缓存旧 device token](#issue-15-device_token_mismatch浏览器缓存旧-device-token) | 🔴 致命 | ✅ 已修复 | 2026-04-29 |
+| 16 | [device pairing required：新设备未批准无法进入 Chat](#issue-16-device-pairing-required新设备未批准无法进入-chat) | 🔴 致命 | ✅ 已修复 | 2026-04-29 |
+| 17 | [Gateway 读取 LobsterAI state 目录而非 ~/.openclaw](#issue-17-gateway-读取-lobsterai-state-目录而非-openclaw) | 🟠 高 | ✅ 已修复 | 2026-04-29 |
+| 18 | [Gateway 启动缓慢：~49 个 provider 插件串行 require](#issue-18-gateway-启动缓慢49-个-provider-插件串行-require) | 🟠 高 | ✅ 已缓解 | 2026-04-29 |
 
 ---
 
@@ -445,3 +452,263 @@ if identity:
 - Gateway 协议升级后，所有 WS 客户端都需要同步更新握手逻辑
 - 多个文件各自实现 handshake 会导致遗漏，应该抽公共模块
 - 签名相关的代码应该有清晰的 fallback 路径，不能因为缺依赖就崩溃
+
+---
+
+## Issue 12: 安装脚本 models 块被整体覆盖丢失 onboard 配置
+
+### 现象
+重新运行安装脚本后，`openclaw.json` 中 `models` 块的其他字段（onboard 自动生成的内置模型列表、缓存设置等）全部丢失，只剩下脚本注入的 `netease-codemaker` provider。
+
+### 根因
+脚本中使用直接赋值覆盖整个 `models` 块：
+```python
+# 错误做法：整体替换
+cfg["models"] = {
+    "mode": "merge",
+    "providers": { "netease-codemaker": { ... } }
+}
+```
+`onboard` 生成的配置里 `models` 可能已有其他内容，直接赋值会全部清空。
+
+### 修复
+改为 merge 写法，只修改需要的字段：
+```python
+# 正确做法：只注入，不覆盖
+cfg.setdefault("models", {})["mode"] = "merge"
+cfg["models"].setdefault("providers", {})["netease-codemaker"] = { ... }
+```
+
+### 顺带修复
+model 条目补全了参考格式要求的完整字段（`contextWindow`、`maxTokens`、`input`、`cost`、`reasoning`），避免 UI 显示异常或 token 计费逻辑报错。
+
+### 教训
+- 对 onboard 生成的配置文件只做增量注入，永远不要整体替换某个块
+- 对照 `openclaw.json` 参考格式验证每个字段的完整性
+
+---
+
+## Issue 13: subprocess 列表方式找不到 openclaw.cmd
+
+### 现象
+安装脚本 Step 4 运行时崩溃：
+```
+FileNotFoundError: [WinError 2] 系统找不到指定的文件。
+subprocess.run(["openclaw", "gateway", "stop"], ...)
+```
+
+### 根因
+Windows 上 `openclaw` 是 npm 全局安装的 `.cmd` 脚本，不是 `.exe`。
+`subprocess.run` 传入列表时，Python 直接调用 `CreateProcess` 查找可执行文件，找不到 `.cmd` 后缀的文件。
+
+`subprocess.run` 只有在 `shell=True` 时才会通过 `cmd.exe` 解析 `.cmd` 脚本。
+
+### 修复
+所有 openclaw 相关调用统一加 `shell=True`：
+```python
+# 错误（Linux/Mac 可以，Windows 不行）
+subprocess.run(["openclaw", "gateway", "stop"], ...)
+
+# 正确（Windows 兼容）
+subprocess.run("openclaw gateway stop", shell=True, ...)
+```
+
+### 教训
+- Windows 上 npm 全局命令（`openclaw`、`node`、`npm` 等）都是 `.cmd` 脚本
+- Python `subprocess` 在 Windows 上调用 `.cmd` 必须使用 `shell=True`
+- `shell=True` 时参数传字符串，`shell=False` 时传列表，不能混用
+
+---
+
+## Issue 14: token_mismatch：代理软件注入 X-Forwarded-For 头
+
+### 现象
+Gateway 启动正常，`openclaw dashboard` 打开浏览器后连接被拒绝，日志报：
+```
+[ws] unauthorized reason=token_mismatch
+[ws] Proxy headers detected from untrusted address.
+     Connection will not be treated as local.
+     fwd=4.2.2.2
+```
+
+### 根因
+本机运行的 **Clash/VPN 代理软件**在劫持本地流量时，自动给请求加上了 `X-Forwarded-For: 4.2.2.2` 等转发头。
+
+Gateway 检测到转发头来自「未受信任的地址」，不再把该连接视为本地连接，token 验证走了不同的分支（远程客户端模式），导致 token_mismatch。
+
+### 修复
+在 `openclaw.json` 的 `gateway` 块中添加 `trustedProxies`，告知 Gateway 信任本机 loopback 的代理头：
+```json
+"gateway": {
+  "trustedProxies": ["127.0.0.1", "::1"]
+}
+```
+
+脚本注入方式：
+```python
+cfg.setdefault("gateway", {})["trustedProxies"] = ["127.0.0.1", "::1"]
+```
+
+### 教训
+- 开发环境中经常有代理/VPN 软件在运行，Gateway 的本地连接检测会被干扰
+- `trustedProxies` 应作为安装脚本的默认配置注入，而不是等问题出现再排查
+
+---
+
+## Issue 15: device_token_mismatch：浏览器缓存旧 device token
+
+### 现象
+重新安装 OpenClaw 后，打开 `http://127.0.0.1:18789/dashboard` 连接被拒绝：
+```
+[ws] unauthorized reason=device_token_mismatch
+(rotate/reissue device token)
+```
+
+### 根因
+浏览器 LocalStorage/Cookie 中保存了**上一次安装的 device token**。
+新安装的 Gateway 是全新 state，不认识旧 device token，握手时验证失败。
+
+### 修复
+**方案 A（推荐）**：使用 `openclaw dashboard` 命令打开浏览器，该命令会生成带签名 token 的 URL（`?token=xxx`），直接绕过 device token 验证。
+
+**方案 B**：手动清除浏览器站点数据：
+`F12` → `Application` → `Storage` → `Clear site data`（针对 `127.0.0.1:18789`）
+
+脚本修复：将 Step 4 的 `os.startfile(url)` 改为 `subprocess.run("openclaw dashboard", shell=True)`，确保始终带 token 打开。
+
+### 教训
+- 裸 URL（`http://127.0.0.1:18789/`）直接打开，浏览器使用缓存的 device token，重装后必然失败
+- 安装脚本必须通过 `openclaw dashboard` 打开，不能直接 `os.startfile(url)`
+
+---
+
+## Issue 16: device pairing required：新设备未批准无法进入 Chat
+
+### 现象
+清除浏览器缓存后重新打开 Dashboard，页面停留在连接界面，提示：
+```
+device pairing required (requestId: db9b1069-ad74-43eb-985b-7594824415d0)
+```
+无法进入 chat 界面。
+
+### 根因
+清除浏览器缓存后，浏览器作为一个**全新 device** 发起连接请求，Gateway 需要明确批准该设备才允许接入。这是 Gateway 的安全机制，防止未授权 client 接入。
+
+### 修复
+**手动修复**：在终端运行：
+```
+openclaw devices approve <requestId>
+```
+
+**脚本自动修复**：安装脚本 Step 4 在打开浏览器后等待 3 秒，自动查询并批准所有 pending 设备：
+```python
+pending = subprocess.run("openclaw devices list", shell=True, ...)
+for line in pending.stdout.splitlines():
+    if "pending" in line.lower():
+        # 提取 requestId 并自动 approve
+        subprocess.run(f"openclaw devices approve {request_id}", shell=True, ...)
+```
+
+### 教训
+- 重装 / 清浏览器缓存后必然触发 device pairing，安装脚本需要自动处理
+- `openclaw devices list/approve` 是安装流程的必要步骤，应纳入标准安装脚本
+
+---
+
+## Issue 17: Gateway 读取 LobsterAI state 目录而非 ~/.openclaw
+
+### 现象
+Gateway 日志中出现：
+```
+canvas host mounted at ...AppData\Roaming\LobsterAI\openclaw\state\canvas
+storePath: ...AppData\Roaming\LobsterAI\openclaw\state\cron\jobs.json
+```
+说明 Gateway 使用的是 LobsterAI 的 state 目录，而不是脚本指定的 `~/.openclaw`。
+导致 device token、auth state 与安装脚本的配置路径不一致，引发一系列认证问题。
+
+### 根因
+LobsterAI 在安装时设置了系统级环境变量 `OPENCLAW_HOME` 指向其自己的数据目录。
+Python 脚本中 `os.environ["OPENCLAW_HOME"] = home` 只修改了当前进程的环境变量，
+但传给子进程（`onboard`、`gateway start` 等）时若没有显式传递 `env` 参数，
+子进程会继承系统环境变量，忽略脚本的修改。
+
+同时 LobsterAI 进程（`LobsterAI.exe`）在后台运行时会启动自己的 Gateway 实例，
+与脚本安装的版本共用 18789 端口，造成环境污染。
+
+### 修复
+1. **确保 LobsterAI 完全退出**（系统托盘右键退出）再运行安装脚本
+2. 脚本中构建独立的 `oc_env` 字典并显式传给所有子进程：
+```python
+oc_env = os.environ.copy()
+oc_env["OPENCLAW_HOME"] = home
+oc_env["OPENCLAW_CONFIG_PATH"] = cfg_path
+
+subprocess.run("openclaw onboard ...", shell=True, env=oc_env, ...)
+subprocess.run("openclaw gateway stop", shell=True, env=oc_env, ...)
+subprocess.run("openclaw gateway start", shell=True, env=oc_env, ...)
+subprocess.run("openclaw dashboard", shell=True, env=oc_env, ...)
+```
+
+### 教训
+- `os.environ` 修改只对当前 Python 进程有效，子进程不会自动继承
+- 所有需要隔离环境的子进程调用都必须显式传 `env=oc_env`
+- 安装前必须确认 LobsterAI 等可能占用相同端口/目录的程序已完全退出
+
+---
+
+## Issue 18: Gateway 启动缓慢：~49 个 provider 插件串行 require
+
+### 现象
+Gateway 首次冷启动耗时 **~117 秒（约 2 分钟）**，启动期间 CPU 100%。
+Dashboard / Health API 在此期间不可用。
+
+### 根因
+OpenClaw v2026.4.26 打包了约 110+ 个 bundled 插件（49 个 provider 插件 + 其余 channel/utility 插件）。
+在启动的 `discovery` 阶段，gateway 会遍历所有插件目录并执行 require() 加载其 provider-discovery.js，
+随后执行 discovery 处理逻辑。49 个 provider 插件逐个串行加载，平均每个耗时 2-1600ms。
+
+从 PLUGIN_LOAD_PROFILE 数据看，最慢的插件：
+- `vydra`: 2161ms
+- `kimi`: 89ms
+- `zai`: 82ms
+- `xiaomi`: 68ms
+- `tencent`: 71ms + 39ms + 17ms
+
+总 startup trace：
+```
+sidecars.total 108091.9ms total=117342.4ms
+```
+
+之前（未配置 plugins.deny + entries.enabled=false）的启动时间为 **~253 秒**。
+配置 deny 后降至 **~117 秒**，因为插件虽无需 require() 多次（Node.js module cache），
+但 discovery 阶段仍需处理每个插件的元数据。
+
+### 修复方案（install_openclaw.py v2）
+1. **plugins.deny + plugins.entries.enabled=false** — 配置级别禁用不必要的 49 个 provider 插件
+   （注意：deny 列表中的插件 ID 必须与 `openclaw.plugin.json` 中的 id 字段一致，而非目录名。
+   例如 `kimi-coding` 目录的实际插件 ID 是 `kimi`）
+2. **`"kimi"` 替代 `"kimi-coding"`** — 修复了目录名与插件 ID 不一致导致的 config validation 失败
+3. **`OPENCLAW_SKIP_CHANNELS=1` 被移除** — 该选项会跳过 channel 启动，导致 webchat 路由不可用
+4. **网关配置优化**：
+   - `gateway.bind = "loopback"` — 仅绑定 loopback
+   - `discovery.mdns.mode = "off"` — 关闭 Bonjour 扫描
+   - `discovery.wideArea.enabled = false` — 关闭 LAN 广播
+   - `logging.level = "info"` — 避免 debug 日志刷屏
+5. **env vars**：PLUGIN_LOAD_PROFILE, GATEWAY_STARTUP_TRACE, SKIP_GMAIL_WATCHER,
+   SKIP_BROWSER_CONTROL_SERVER, DISABLE_BONJOUR, BROWSER_ENABLED=0,
+   INSTALL_SCAN_MAX_DEPTH=3, INSTALL_SCAN_MAX_DIRECTORIES=200
+
+### 已知局限
+- `plugins.deny` 仅在 `config-normalization-shared` 层面阻止插件激活（状态为 "blocked-by-denylist"），
+  但无法阻止 `startChannelInternal()` 中的 require() 调用（require 发生在 isEnabled() 检查之前）。
+- 不删除文件的情况下，首次冷启动仍需要 ~117 秒。后续启动（Node.js module cached）时间未知。
+- 如需进一步加速，可设置 `OPENCLAW_DISABLE_BUNDLED_PLUGINS=1` 环境变量（会禁用所有 bundled
+  插件包括 channels，需测试 webchat 是否正常）。
+
+### Plugins.deny 与插件 ID 映射
+部分 provider 插件的目录名与 `openclaw.plugin.json#id` 不一致：
+| 目录名 | 实际插件 ID |
+|--------|------------|
+| kimi-coding | kimi |
+
+其余 48 个 plugin 的目录名与 ID 一致。
