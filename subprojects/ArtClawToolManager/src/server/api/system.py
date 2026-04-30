@@ -308,6 +308,170 @@ async def get_dcc_object_types(dcc_type: str, request: Request):
     return ok({"dcc": dcc_type, "source": "preset", "types": types})
 
 
+# ------------------------------------------------------------------
+# Platform Gateway CRUD
+# ------------------------------------------------------------------
+
+_PLATFORM_DISPLAY_NAMES = {
+    "openclaw": "OpenClaw",
+    "lobster": "LobsterAI",
+    "claudecode": "Claude Code",
+    "cursor": "Cursor",
+    "workbuddy": "WorkBuddy",
+}
+
+_PLATFORM_DEFAULT_URLS: dict[str, str] = {
+    "openclaw": "ws://127.0.0.1:18789",
+    "lobster": "ws://127.0.0.1:18794",
+    "claudecode": "",
+    "cursor": "",
+    "workbuddy": "ws://127.0.0.1:18795",
+}
+
+
+def _artclaw_config_path() -> str:
+    return os.path.expanduser("~/.artclaw/config.json")
+
+
+def _load_artclaw_cfg() -> dict:
+    p = _artclaw_config_path()
+    if not os.path.exists(p):
+        return {}
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_artclaw_cfg(cfg: dict) -> None:
+    import tempfile
+    p = _artclaw_config_path()
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, p)
+    except Exception:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+@router.get("/platforms")
+async def get_platforms():
+    """Return platform list with current gateway_url from ~/.artclaw/config.json."""
+    cfg = _load_artclaw_cfg()
+    registry = cfg.get("platforms_registry", [])
+
+    # 如果 registry 为空，用当前 platform + defaults 构造
+    if not registry:
+        current = cfg.get("platform", {})
+        p_type = current.get("type", "openclaw")
+        registry = [
+            {"type": p_type, "gateway_url": current.get("gateway_url", _PLATFORM_DEFAULT_URLS.get(p_type, ""))},
+        ]
+        for k, url in _PLATFORM_DEFAULT_URLS.items():
+            if k != p_type:
+                registry.append({"type": k, "gateway_url": url})
+
+    result = []
+    # 当前 platform.gateway_url 覆盖 registry（以实际生效配置为准）
+    current_platform = cfg.get("platform", {})
+    current_type = current_platform.get("type", "")
+    current_url = current_platform.get("gateway_url", "")
+
+    for entry in registry:
+        p_type = entry.get("type", "")
+        url = entry.get("gateway_url", _PLATFORM_DEFAULT_URLS.get(p_type, ""))
+        if p_type == current_type and current_url:
+            url = current_url  # 以 config.json platform.gateway_url 为准
+        result.append({
+            "type": p_type,
+            "name": _PLATFORM_DISPLAY_NAMES.get(p_type, p_type.title()),
+            "gateway_url": url,
+            "configured": _check_platform_configured(p_type),
+            "is_current": p_type == current_type,
+        })
+
+    return ok(result)
+
+
+@router.post("/platforms/gateway")
+async def update_platform_gateway(body: dict):
+    """Save gateway_url for a platform to ~/.artclaw/config.json."""
+    platform_type = body.get("platform", "")
+    new_url = body.get("url", "").strip()
+
+    if not platform_type or not new_url:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="platform and url are required")
+
+    cfg = _load_artclaw_cfg()
+
+    # 更新 platforms_registry 中对应条目
+    registry = cfg.setdefault("platforms_registry", [])
+    found = False
+    for entry in registry:
+        if entry.get("type") == platform_type:
+            entry["gateway_url"] = new_url
+            found = True
+            break
+    if not found:
+        registry.append({"type": platform_type, "gateway_url": new_url,
+                         "display_name": _PLATFORM_DISPLAY_NAMES.get(platform_type, platform_type.title())})
+
+    # 如果修改的是当前平台，同步更新 platform.gateway_url
+    current = cfg.setdefault("platform", {})
+    if current.get("type", "openclaw") == platform_type:
+        current["gateway_url"] = new_url
+
+    _save_artclaw_cfg(cfg)
+    logger.info("Platform gateway updated: %s -> %s", platform_type, new_url)
+    return ok({"platform": platform_type, "url": new_url})
+
+
+@router.post("/platforms/detect")
+async def detect_platform_port(body: dict):
+    """Auto-detect gateway URL for a platform by reading its config files."""
+    platform_type = body.get("platform", "openclaw")
+
+    detected_url = ""
+
+    if platform_type == "openclaw":
+        # 读 ~/.openclaw/openclaw.json gateway.port
+        oc_cfg = _read_json("~/.openclaw/openclaw.json")
+        port = oc_cfg.get("gateway", {}).get("port", 0)
+        if port:
+            detected_url = f"ws://127.0.0.1:{port}"
+        # 再尝试 gateway-port.json
+        if not detected_url:
+            port_json = os.path.expanduser("~/.openclaw/gateway-port.json")
+            if os.path.exists(port_json):
+                try:
+                    with open(port_json, "r", encoding="utf-8") as f:
+                        p = json.load(f).get("port", 0)
+                    if p:
+                        detected_url = f"ws://127.0.0.1:{p}"
+                except Exception:
+                    pass
+
+    elif platform_type == "lobster":
+        appdata = os.environ.get("APPDATA", os.path.expanduser("~/AppData/Roaming"))
+        lb_cfg_path = os.path.join(appdata, "LobsterAI", "openclaw", "state", "openclaw.json")
+        lb_cfg = _read_json(lb_cfg_path) if os.path.exists(lb_cfg_path) else {}
+        port = lb_cfg.get("gateway", {}).get("port", 0)
+        if port:
+            detected_url = f"ws://127.0.0.1:{port}"
+
+    # fallback to default
+    if not detected_url:
+        detected_url = _PLATFORM_DEFAULT_URLS.get(platform_type, "ws://127.0.0.1:18789")
+
+    return ok({"platform": platform_type, "url": detected_url})
+
+
 @router.get("/agents")
 async def get_agents():
     """Return agent lists per platform by reading ~/.artclaw/config.json registry."""

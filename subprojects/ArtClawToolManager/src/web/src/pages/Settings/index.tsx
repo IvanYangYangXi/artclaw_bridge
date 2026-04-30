@@ -106,7 +106,7 @@ function ConnectionSettings() {
             editUrl: p.gateway_url,
             isDetecting: false,
             isSaving: false,
-            connected: true,
+            connected: p.configured ?? false,
           })),
         )
       }
@@ -126,19 +126,14 @@ function ConnectionSettings() {
     )
     try {
       await updatePlatformGateway(platform.type, platform.editUrl)
-      setPlatforms((prev) =>
-        prev.map((p) =>
-          p.type === platform.type
-            ? { ...p, currentUrl: p.editUrl, isSaving: false }
-            : p,
-        ),
-      )
+      // 保存成功后刷新列表，确保 currentUrl 与后端一致
+      await loadPlatforms()
     } catch {
       setPlatforms((prev) =>
         prev.map((p) => (p.type === platform.type ? { ...p, isSaving: false } : p)),
       )
     }
-  }, [])
+  }, [loadPlatforms])
 
   const handleDetectPlatform = useCallback(async (platform: PlatformState) => {
     setPlatforms((prev) =>
