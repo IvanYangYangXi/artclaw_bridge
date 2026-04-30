@@ -297,7 +297,20 @@ def _chat_worker(message: str, stream_file: str, response_file: str) -> None:
     if not _session_key:
         # 使用 Gateway 规范的 session key 格式: agent:<agentId>:<rest>
         # Gateway 通过 agent: 前缀识别目标 Agent，不用 bindings
-        _session_key = f"agent:{_agent_id}:ue-editor:{int(time.time())}"
+        dcc_name, _, _ = _detect_dcc()
+        # 映射 DCC 名 → session 后缀（与 mcp-bridge server name 一致）
+        _DCC_SESSION_SUFFIX = {
+            "Blender": "blender-editor",
+            "Maya": "maya-editor",
+            "3ds Max": "max-editor",
+            "Houdini": "houdini-editor",
+            "Substance Painter": "sp-editor",
+            "Substance Designer": "sd-editor",
+            "ComfyUI": "comfyui-editor",
+            "Unreal Engine": "ue-editor",
+        }
+        suffix = _DCC_SESSION_SUFFIX.get(dcc_name, "dcc-editor")
+        _session_key = f"agent:{_agent_id}:{suffix}:{int(time.time())}"
 
     UELogger.info(f"[openclaw_chat] connecting to {_get_gateway_url()}, session={_session_key}")
 

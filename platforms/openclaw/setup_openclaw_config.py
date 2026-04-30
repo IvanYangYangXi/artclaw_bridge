@@ -148,49 +148,49 @@ def main():
     servers = {}
     if args.ue:
         servers["ue-editor"] = {
-            "type": "websocket",
+            "transport": "websocket",
             "url": f"ws://127.0.0.1:{args.ue_port}",
         }
     if args.maya:
         servers["maya-primary"] = {
-            "type": "websocket",
+            "transport": "websocket",
             "url": f"ws://127.0.0.1:{args.maya_port}",
         }
     if args.max:
         servers["max-primary"] = {
-            "type": "websocket",
+            "transport": "websocket",
             "url": f"ws://127.0.0.1:{args.max_port}",
         }
     if args.blender:
         servers["blender-editor"] = {
-            "type": "websocket",
+            "transport": "websocket",
             "url": f"ws://127.0.0.1:{args.blender_port}",
         }
     if args.houdini:
         servers["houdini-editor"] = {
-            "type": "websocket",
+            "transport": "websocket",
             "url": f"ws://127.0.0.1:{args.houdini_port}",
         }
     if args.sp:
         servers["sp-editor"] = {
-            "type": "websocket",
+            "transport": "websocket",
             "url": f"ws://127.0.0.1:{args.sp_port}",
         }
     if args.sd:
         servers["sd-editor"] = {
-            "type": "websocket",
+            "transport": "websocket",
             "url": f"ws://127.0.0.1:{args.sd_port}",
         }
     if args.comfyui:
         servers["comfyui-editor"] = {
-            "type": "websocket",
+            "transport": "websocket",
             "url": f"ws://127.0.0.1:{args.comfyui_port}",
         }
 
     if not servers:
         print("  没有指定任何 server，使用默认 UE 配置")
         servers["ue-editor"] = {
-            "type": "websocket",
+            "transport": "websocket",
             "url": "ws://127.0.0.1:8080",
         }
 
@@ -209,31 +209,42 @@ def main():
     # 合并
     changed = ensure_mcp_bridge(config, servers)
 
-    # 自动注入 MCP 工具到 agent 的 tools.allow 列表
-    tool_map = {
-        "ue-editor-agent": ["mcp_ue-editor-agent_*"],
-        "maya-primary": ["mcp_maya-primary_*"],
-        "max-primary": ["mcp_max-primary_*"],
-        "blender-editor": ["mcp_blender-editor_*"],
-        "houdini-editor": ["mcp_houdini-editor_*"],
-        "sp-editor": ["mcp_sp-editor_*"],
-        "sd-editor": ["mcp_sd-editor_*"],
-        "comfyui-editor": ["mcp_comfyui-editor_*"],
-    }
+    # 自动注入 MCP 工具到全局 tools.allow
+    # DCC 连接使用 main agent + 不同 session key，所以工具权限加在全局
+    tools_allow_patterns = []
+    for server_name in servers:
+        pattern = f"mcp_{server_name}_*"
+        tools_allow_patterns.append(pattern)
 
-    agents_list = config.get("agents", {}).get("list", [])
-    for agent in agents_list:
-        allow = agent.get("tools", {}).get("allow", [])
-        added = 0
-        for server_name in servers:
-            if server_name in tool_map:
-                for tool in tool_map[server_name]:
-                    if tool not in allow:
-                        allow.append(tool)
-                        added += 1
-        if added > 0:
-            agent.setdefault("tools", {})["allow"] = allow
+    # 确保 agents.defaults.tools.allow 包含所有 MCP 工具通配符
+    if "agents" not in config:
+        config["agents"] = {}
+    if "defaults" not in config["agents"]:
+        config["agents"]["defaults"] = {}
+    defaults = config["agents"]["defaults"]
+    if "tools" not in defaults:
+        defaults["tools"] = {}
+    if "allow" not in defaults["tools"]:
+        defaults["tools"]["allow"] = []
+
+    existing_allow = defaults["tools"]["allow"]
+    for pattern in tools_allow_patterns:
+        if pattern not in existing_allow:
+            existing_allow.append(pattern)
             changed = True
+            print(f"  添加工具权限: {pattern}")
+
+    # 同时确保全局 tools.allow 也包含（兼容无 agents.list 配置的场景）
+    if "tools" not in config:
+        config["tools"] = {}
+    if "allow" not in config["tools"]:
+        config["tools"]["allow"] = []
+    global_allow = config["tools"]["allow"]
+    for pattern in tools_allow_patterns:
+        if pattern not in global_allow:
+            global_allow.append(pattern)
+            changed = True
+            print(f"  全局工具权限: {pattern}")
 
     if changed:
         save_config(config)
