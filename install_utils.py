@@ -420,6 +420,43 @@ def link_ue_plugin_selective(dst: str) -> str:
     return "selective-link"
 
 
+def copy_ue_plugin(dst: str) -> str:
+    """复制 UEClawBridge 到目标位置（非引用，适用于非开发环境部署）。
+
+    复制 Content/ Resources/ Source/ 三个子目录及 .uplugin 文件，
+    排除 Binaries/ Intermediate/ Saved/（编译/运行时产物）。
+
+    Args:
+        dst: 目标安装路径
+
+    Returns:
+        "selective-copy"
+    """
+    src_base = str(UE_PLUGIN_SRC)
+    dst = os.path.abspath(dst)
+
+    if os.path.exists(dst) or _is_junction_or_symlink(dst):
+        _remove_link_or_dir(dst)
+
+    os.makedirs(dst, exist_ok=True)
+
+    for subdir in ["Content", "Resources", "Source"]:
+        src_path = os.path.join(src_base, subdir)
+        dst_path = os.path.join(dst, subdir)
+        if os.path.isdir(src_path):
+            shutil.copytree(src_path, dst_path)
+            cprint("复制", f"{subdir}/", "cyan")
+        else:
+            cprint("警告", f"UE 子目录不存在: {src_path}", "yellow")
+
+    for name in os.listdir(src_base):
+        if name.endswith(".uplugin"):
+            shutil.copy2(os.path.join(src_base, name), os.path.join(dst, name))
+            cprint("复制", name, "cyan")
+
+    return "selective-copy"
+
+
 def link_comfyui_bridge_selective(dst: str) -> str:
     """按文件选择性引用 ComfyUIClawBridge 到目标位置。
 

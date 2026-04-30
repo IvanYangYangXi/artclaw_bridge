@@ -29,7 +29,7 @@ from install_utils import (
     install_dcc_skills,
     link_dcc_bridge_selective,
     link_or_copy_dir,
-    link_ue_plugin_selective,
+    copy_ue_plugin,
     remove_startup_injection,
 )
 
@@ -66,24 +66,19 @@ def install_ue(ue_project: str, force: bool, platform_type: str = "openclaw"):
         cprint("跳过", "UE 插件安装", "yellow")
         return True
 
-    # 精细化引用: 按子目录 junction (排除 Binaries/Intermediate/Saved)
-    cprint("部署", "UEClawBridge 插件 (精细引用)...")
-    method = link_ue_plugin_selective(plugin_dst)
+    # 复制模式: 直接复制 Content/ Resources/ Source/ 及 .uplugin
+    cprint("部署", "UEClawBridge 插件 (复制模式)...")
+    method = copy_ue_plugin(plugin_dst)
     cprint("OK", f"插件已安装到: {plugin_dst} ({method})", "green")
 
-    # 共享模块 & 平台 bridge: 不再复制到插件目录。
-    # UE 通过 init_unreal.py 的 _add_shared_modules_to_path() 从源码目录引用。
-    # 仅 copy 模式（非开发环境部署）才需要打包。
+    # 复制共享模块和平台 bridge
     python_dst = os.path.join(plugin_dst, "Content", "Python")
-    if "copy" in method:
-        cprint("复制", "bridge_core 共享模块 (copy 模式)...")
-        copy_shared_modules(python_dst)
-        cprint("OK", f"共享模块已打包到: {python_dst}", "green")
+    cprint("复制", "bridge_core 共享模块...")
+    copy_shared_modules(python_dst)
+    cprint("OK", f"共享模块已打包到: {python_dst}", "green")
 
-        cprint("复制", f"平台 bridge ({platform_type})...")
-        copy_platform_bridge(platform_type, python_dst)
-    else:
-        cprint("跳过", "共享模块打包 (link 模式，通过 sys.path 引用源码)", "cyan")
+    cprint("复制", f"平台 bridge ({platform_type})...")
+    copy_platform_bridge(platform_type, python_dst)
 
     # 尝试安装 Python 依赖
     _install_ue_python_deps()
