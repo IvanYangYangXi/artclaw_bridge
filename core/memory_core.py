@@ -291,10 +291,17 @@ class MemoryManagerV2:
             "maya": ["[Maya]", "[All]"],
             "3dsmax": ["[Max]", "[All]"],
             "max": ["[Max]", "[All]"],
+            "blender": ["[Blender]", "[All]"],
+            "houdini": ["[Houdini]", "[All]"],
+            "substance painter": ["[SP]", "[All]"],
+            "sp": ["[SP]", "[All]"],
+            "substance designer": ["[SD]", "[All]"],
+            "sd": ["[SD]", "[All]"],
+            "comfyui": ["[ComfyUI]", "[All]"],
         }
         allowed_tags = _DCC_TAG_MAP.get(dcc_lower, ["[All]"])
         filter_by_dcc = dcc_lower in _DCC_TAG_MAP
-        all_dcc_tags = ["[UE]", "[Maya]", "[Max]", "[All]", "[Python]", "[Windows]"]
+        all_dcc_tags = ["[UE]", "[Maya]", "[Max]", "[Blender]", "[Houdini]", "[SP]", "[SD]", "[ComfyUI]", "[All]", "[Python]", "[Windows]"]
         universal_tags = ["[Python]", "[Windows]"]
         
         loaded = 0
@@ -654,6 +661,16 @@ class MemoryManagerV2:
             return "[Maya]"
         if "max" in combined or "pymxs" in combined:
             return "[Max]"
+        if "blender" in combined or "bpy" in combined:
+            return "[Blender]"
+        if "houdini" in combined or " hou" in combined:
+            return "[Houdini]"
+        if "substance painter" in combined or " sp " in combined:
+            return "[SP]"
+        if "substance designer" in combined or " sd " in combined:
+            return "[SD]"
+        if "comfyui" in combined or "comfy" in combined:
+            return "[ComfyUI]"
         return "[All]"
 
     def _save(self):
