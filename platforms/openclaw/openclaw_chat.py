@@ -222,21 +222,55 @@ def _detect_dcc() -> tuple[str, str, str]:
 def _build_context_prefix() -> str:
     dcc_name, dcc_ver, tool_name = _detect_dcc()
     ver_str = f" {dcc_ver}" if dcc_ver else ""
-    lines = [f"[{dcc_name} Context - 重要]"]
-    lines.append(f"Software: {dcc_name}{ver_str}")
-    lines.append(f"Role: {dcc_name} Editor AI Assistant")
+
+    # 工具前缀映射（与 openclaw.json mcp-bridge servers 名一致）
+    _PREFIX_MAP = {
+        "Maya": "mcp_maya-primary_",
+        "3ds Max": "mcp_max-primary_",
+        "Substance Designer": "mcp_sd-editor_",
+        "Substance Painter": "mcp_sp-editor_",
+        "Blender": "mcp_blender-editor_",
+        "Houdini": "mcp_houdini-editor_",
+        "ComfyUI": "mcp_comfyui-editor_",
+        "Unreal Engine": "mcp_ue-editor_",
+    }
+    my_prefix = _PREFIX_MAP.get(dcc_name, f"mcp_{dcc_name.lower().replace(' ', '-')}-editor_")
+
+    # 构建其他工具列表（排除当前软件）
+    _ALL_TOOLS = {
+        "mcp_ue-editor_": "UE",
+        "mcp_maya-primary_": "Maya",
+        "mcp_max-primary_": "Max",
+        "mcp_sd-editor_": "Substance Designer",
+        "mcp_sp-editor_": "Substance Painter",
+        "mcp_blender-editor_": "Blender",
+        "mcp_houdini-editor_": "Houdini",
+        "mcp_comfyui-editor_": "ComfyUI",
+    }
+    other_tools = "、".join(
+        f"{prefix}（{label}）"
+        for prefix, label in _ALL_TOOLS.items()
+        if prefix != my_prefix
+    )
+
+    lines = [f"[DCC Context - 重要]"]
+    lines.append(f"当前对话环境: {dcc_name}{ver_str}")
+    lines.append(f"当前软件工具前缀: {my_prefix}")
     lines.append(
-        f"工具使用规则:\n"
-        f"- 当前 DCC 场景/资产的查询与操作使用 {tool_name}，参数字段为 code\n"
-        f"- 本地文件读写、不依赖 DCC 环境的任务，直接使用自身能力处理\n"
+        f"\n工具使用规则:\n"
+        f"- {dcc_name} 场景/资产的查询与操作使用 {tool_name}，参数字段为 code\n"
+        f"- 涉及其他 DCC 软件（{other_tools}）时，使用对应软件的工具\n"
+        f"- 本地文件读写、以及其他不依赖 {dcc_name} 环境的任务，直接使用自身能力处理\n"
         f"- 无需询问工具名，直接调用 {tool_name} 执行"
     )
+
+    # 记忆摘要
     try:
-        from core.memory_store import get_memory_store
+        from memory_store import get_memory_store
         store = get_memory_store()
         if store:
             briefing = store.manager.export_briefing()
-            if briefing:
+            if briefing and "记忆库为空" not in briefing:
                 lines.append(briefing)
     except Exception:
         pass
