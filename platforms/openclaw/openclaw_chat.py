@@ -162,20 +162,74 @@ except Exception:
 # UE 上下文注入
 # ---------------------------------------------------------------------------
 
-def _build_context_prefix() -> str:
-    lines = ["[UE Context - 重要]"]
+def _detect_dcc() -> tuple[str, str, str]:
+    """探测当前运行在哪个 DCC 中。
+    返回 (dcc_name, version, tool_name)。
+    """
+    # Blender
     try:
-        import unreal as ue
-        lines.append(f"Engine: Unreal Engine {ue.SystemLibrary.get_engine_version()}")
-        lines.append(f"Project: {ue.SystemLibrary.get_game_name()}")
-    except Exception:
-        lines.append("Engine: Unreal Engine")
-    lines.append("Role: UE Editor AI Assistant")
+        import bpy
+        ver = bpy.app.version_string
+        return "Blender", ver, "mcp_blender-editor_run_python"
+    except ImportError:
+        pass
+    # Maya
+    try:
+        import maya.cmds as mc
+        ver = mc.about(version=True) or ""
+        return "Maya", ver, "mcp_maya-primary_run_python"
+    except ImportError:
+        pass
+    # 3ds Max
+    try:
+        import MaxPlus  # noqa
+        return "3ds Max", "", "mcp_max-primary_run_python"
+    except ImportError:
+        pass
+    try:
+        import pymxs  # noqa
+        return "3ds Max", "", "mcp_max-primary_run_python"
+    except ImportError:
+        pass
+    # Houdini
+    try:
+        import hou
+        ver = hou.applicationVersionString()
+        return "Houdini", ver, "mcp_houdini-editor_run_python"
+    except ImportError:
+        pass
+    # Substance Painter
+    try:
+        import substance_painter  # noqa
+        return "Substance Painter", "", "mcp_sp-editor_run_python"
+    except ImportError:
+        pass
+    # Substance Designer
+    try:
+        import sd  # noqa
+        return "Substance Designer", "", "mcp_sd-editor_run_python"
+    except ImportError:
+        pass
+    # UE fallback（UE 有自己的 openclaw_chat.py，这里保底）
+    try:
+        import unreal  # noqa
+        return "Unreal Engine", "", "mcp_ue-editor_run_ue_python"
+    except ImportError:
+        pass
+    return "Unknown DCC", "", "run_python"
+
+
+def _build_context_prefix() -> str:
+    dcc_name, dcc_ver, tool_name = _detect_dcc()
+    ver_str = f" {dcc_ver}" if dcc_ver else ""
+    lines = [f"[{dcc_name} Context - 重要]"]
+    lines.append(f"Software: {dcc_name}{ver_str}")
+    lines.append(f"Role: {dcc_name} Editor AI Assistant")
     lines.append(
-        "工具使用规则:\n"
-        "- UE 场景/资产的查询与操作使用 run_ue_python\n"
-        "- 涉及其他 DCC 软件（Maya/Max 等）时，使用对应软件的 run_python\n"
-        "- 本地文件读写、以及其他不依赖 UE 环境的任务，直接使用自身能力处理"
+        f"工具使用规则:\n"
+        f"- 当前 DCC 场景/资产的查询与操作使用 {tool_name}，参数字段为 code\n"
+        f"- 本地文件读写、不依赖 DCC 环境的任务，直接使用自身能力处理\n"
+        f"- 无需询问工具名，直接调用 {tool_name} 执行"
     )
     try:
         from core.memory_store import get_memory_store

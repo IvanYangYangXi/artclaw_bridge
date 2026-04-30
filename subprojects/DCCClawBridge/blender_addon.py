@@ -152,6 +152,14 @@ class ARTCLAW_PT_MainPanel:
         """绘制面板 UI"""
         layout = self.layout
 
+        # 依赖缺失提示
+        if not _dep_status["ok"]:
+            box = layout.box()
+            if _dep_status["installing"]:
+                box.label(text="Installing dependencies...", icon="TIME")
+            else:
+                box.label(text="Missing deps: " + ", ".join(_dep_status["missing"]), icon="ERROR")
+            return
         if _global_state["running"]:
             # 运行中：显示状态 + 打开面板 / 停止按钮
             box = layout.box()
@@ -222,12 +230,51 @@ def _build_classes():
 
 # 缓存已构建的类列表
 _registered_classes: list = []
+_dep_status: dict = {"ok": True, "missing": [], "installing": False}
+
+
+def _on_dep_installed(success: bool, message: str):
+    """依赖安装回调，更新状态"""
+    _dep_status["installing"] = False
+    if success:
+        _dep_status["ok"] = True
+        _dep_status["missing"] = []
+        logger.info("ArtClaw: dependencies installed successfully")
+    else:
+        logger.error("ArtClaw: dependency install failed: %s", message)
+
+
+def _check_and_install_deps():
+    """启动时检查依赖，缺失则后台安装"""
+    import sys, os
+    # 把 core/ 加入 path 以便 import dependency_manager
+    core_dir = os.path.join(os.path.dirname(__file__), "core")
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    try:
+        from dependency_manager import check_all, install_missing
+        results = check_all()
+        missing = [name for name, ok in results if not ok]
+        if not missing:
+            _dep_status["ok"] = True
+            _dep_status["missing"] = []
+            return
+        _dep_status["ok"] = False
+        _dep_status["missing"] = missing
+        _dep_status["installing"] = True
+        logger.warning("ArtClaw: missing deps %s, installing in background...", missing)
+        install_missing(callback=_on_dep_installed)
+    except Exception as e:
+        logger.error("ArtClaw: dep check failed: %s", e)
 
 
 def register():
     """Blender addon 注册入口"""
     global _registered_classes
     bpy = _require_blender()
+
+    # 检查依赖，缺失则后台安装
+    _check_and_install_deps()
 
     _registered_classes = _build_classes()
     for cls in _registered_classes:

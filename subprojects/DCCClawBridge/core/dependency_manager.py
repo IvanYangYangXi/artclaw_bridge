@@ -20,6 +20,7 @@ logger = logging.getLogger("artclaw.deps")
 # 必需依赖列表: (import_name, pip_name, min_version)
 REQUIRED_DEPS = [
     ("websockets", "websockets", "10.0"),
+    ("cryptography", "cryptography", "3.0"),  # device identity 签名，获取 operator scopes
 ]
 
 
