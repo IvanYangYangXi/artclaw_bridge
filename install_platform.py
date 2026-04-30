@@ -289,7 +289,11 @@ def install_openclaw(platform_type: str = "openclaw"):
             cprint("配置", f"运行 {config_script.name}...")
             try:
                 subprocess.run(
-                    [sys.executable, str(config_script), "--ue", "--maya", "--max"],
+                    [
+                        sys.executable, str(config_script),
+                        "--ue", "--maya", "--max",
+                        "--blender", "--houdini", "--sp", "--sd", "--comfyui",
+                    ],
                     check=True, timeout=30,
                 )
                 cprint("OK", "平台配置已更新", "green")
