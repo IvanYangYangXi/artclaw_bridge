@@ -51,6 +51,7 @@ from install_dcc import (
     install_ue_mcp_only,
     install_maya, uninstall_maya,
     install_max, uninstall_max,
+    find_maya_versions, find_max_versions,
 )
 from install_dcc_ext import (
     install_blender, uninstall_blender,
@@ -58,6 +59,7 @@ from install_dcc_ext import (
     install_substance_painter, uninstall_substance_painter,
     install_substance_designer, uninstall_substance_designer,
     install_comfyui, uninstall_comfyui,
+    find_blender_versions, find_houdini_versions,
 )
 
 
@@ -243,11 +245,16 @@ def main():
         parser.print_help()
         return
 
-    # --all 展开: 所有 7 个 DCC + 平台配置
+    # --all 展开: 所有 7 个 DCC + 平台配置，版本参数改为 auto（自动搜索已安装版本）
     if args.all:
         args.maya = args.max = args.ue = True
         args.blender = args.houdini = args.sp = args.sd = args.comfyui = True
         args.openclaw = True
+        if args.maya_version == "2023":   args.maya_version = "auto"
+        if args.max_version == "2024":    args.max_version = "auto"
+        if args.blender_version == "5.1": args.blender_version = "auto"
+        if args.houdini_version == "20.5": args.houdini_version = "auto"
+        # comfyui_path 空则自动检测（install_comfyui 内部已支持）
 
     # 设置安装模式
     set_copy_mode(args.copy)
@@ -340,14 +347,34 @@ def _run_installs(args, pt: str, installed: list[str], uninstalled: list[str]):
         installed.append("UE 插件")
     if args.ue_mcp_only and install_ue_mcp_only(pt):
         installed.append("UE MCP 配置 + 依赖 (无插件部署)")
-    if args.maya and install_maya(args.maya_version, args.force, pt):
-        installed.append(f"Maya {args.maya_version} 插件")
-    if args.max and install_max(args.max_version, args.force, pt):
-        installed.append(f"3ds Max {args.max_version} 插件")
-    if args.blender and install_blender(args.blender_version, args.force, pt):
-        installed.append(f"Blender {args.blender_version} 插件")
-    if args.houdini and install_houdini(args.houdini_version, args.force, pt):
-        installed.append(f"Houdini {args.houdini_version} 插件")
+    if args.maya:
+        maya_vers = [args.maya_version] if args.maya_version != "auto" else find_maya_versions()
+        if not maya_vers:
+            cprint("警告", "未自动检测到 Maya 安装，跳过", "yellow")
+        for ver in maya_vers:
+            if install_maya(ver, args.force, pt):
+                installed.append(f"Maya {ver} 插件")
+    if args.max:
+        max_vers = [args.max_version] if args.max_version != "auto" else find_max_versions()
+        if not max_vers:
+            cprint("警告", "未自动检测到 3ds Max 安装，跳过", "yellow")
+        for ver in max_vers:
+            if install_max(ver, args.force, pt):
+                installed.append(f"3ds Max {ver} 插件")
+    if args.blender:
+        blender_vers = [args.blender_version] if args.blender_version != "auto" else find_blender_versions()
+        if not blender_vers:
+            cprint("警告", "未自动检测到 Blender 安装，跳过", "yellow")
+        for ver in blender_vers:
+            if install_blender(ver, args.force, pt):
+                installed.append(f"Blender {ver} 插件")
+    if args.houdini:
+        houdini_vers = [args.houdini_version] if args.houdini_version != "auto" else find_houdini_versions()
+        if not houdini_vers:
+            cprint("警告", "未自动检测到 Houdini 安装，跳过", "yellow")
+        for ver in houdini_vers:
+            if install_houdini(ver, args.force, pt):
+                installed.append(f"Houdini {ver} 插件")
     if args.sp and install_substance_painter(args.force, pt):
         installed.append("Substance Painter 插件")
     if args.sd and install_substance_designer(args.force, pt):

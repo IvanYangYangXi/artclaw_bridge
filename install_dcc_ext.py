@@ -36,6 +36,23 @@ from install_utils import (
 # ===========================================================================
 
 
+def find_blender_versions() -> list[str]:
+    """自动搜索本机已安装的 Blender 版本列表。
+
+    扫描 %APPDATA%/Blender Foundation/Blender/ 下的版本目录。
+    返回降序排列的版本列表，未找到时返回空列表。
+    """
+    appdata = os.environ.get("APPDATA", os.path.expanduser("~/AppData/Roaming"))
+    blender_base = os.path.join(appdata, "Blender Foundation", "Blender")
+    if not os.path.isdir(blender_base):
+        return []
+    versions = []
+    for entry in os.scandir(blender_base):
+        if entry.is_dir() and entry.name[0].isdigit():
+            versions.append(entry.name)
+    return sorted(versions, reverse=True)
+
+
 def install_blender(blender_version: str, force: bool, platform_type: str = "openclaw"):
     """安装 Blender 插件"""
     print()
@@ -211,6 +228,24 @@ def _find_blender_python(blender_version: str) -> str | None:
 # ===========================================================================
 # Houdini
 # ===========================================================================
+
+
+def find_houdini_versions() -> list[str]:
+    """自动搜索本机已安装的 Houdini 版本列表。
+
+    扫描 ~/Documents/ 下 houdini{version} 格式的目录（如 houdini20.5）。
+    返回降序排列的版本号列表（不含 houdini 前缀），未找到时返回空列表。
+    """
+    docs = os.path.expanduser("~/Documents")
+    if not os.path.isdir(docs):
+        return []
+    versions = []
+    for entry in os.scandir(docs):
+        if entry.is_dir() and entry.name.startswith("houdini"):
+            ver = entry.name[len("houdini"):]
+            if ver and ver[0].isdigit():
+                versions.append(ver)
+    return sorted(versions, reverse=True)
 
 
 def install_houdini(houdini_version: str, force: bool, platform_type: str = "openclaw"):
