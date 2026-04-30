@@ -387,8 +387,8 @@ class OpenClawBridge:
                 async with websockets.connect(
                     self.gateway_url,
                     max_size=10 * 1024 * 1024,
-                    ping_interval=30,
-                    ping_timeout=10,
+                    ping_interval=60,
+                    ping_timeout=30,
                 ) as ws:
                     self._ws = ws
                     if await self._handshake(ws):
@@ -412,18 +412,24 @@ class OpenClawBridge:
                     fut.set_exception(ConnectionError("WebSocket disconnected"))
             self._pending.clear()
 
-            if was_connected and self.on_ai_message:
-                try:
-                    self.on_ai_message(
-                        "error",
-                        "[连接中断] OpenClaw Gateway 已断开（可能正在重启）。"
-                        "请点击 Connect 按钮或输入 /connect 重新连接。",
-                    )
-                except Exception:
-                    pass
-
             if self._stop_event.is_set():
+                # 手动停止 — 通知 UI
+                if was_connected and self.on_ai_message:
+                    try:
+                        self.on_ai_message(
+                            "error",
+                            "[连接中断] OpenClaw Gateway 已断开。"
+                            "请点击 Connect 按钮或输入 /connect 重新连接。",
+                        )
+                    except Exception:
+                        pass
                 break
+
+            # 自动重连 — 仅日志提示，不弹错误
+            if was_connected:
+                self._log.info(
+                    f"OpenClaw Bridge: disconnected, auto-reconnecting in {backoff:.0f}s"
+                )
 
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
