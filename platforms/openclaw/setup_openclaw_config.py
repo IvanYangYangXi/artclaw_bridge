@@ -148,49 +148,49 @@ def main():
     servers = {}
     if args.ue:
         servers["ue-editor"] = {
-            "transport": "websocket",
+            "type": "websocket",
             "url": f"ws://127.0.0.1:{args.ue_port}",
         }
     if args.maya:
         servers["maya-primary"] = {
-            "transport": "websocket",
+            "type": "websocket",
             "url": f"ws://127.0.0.1:{args.maya_port}",
         }
     if args.max:
         servers["max-primary"] = {
-            "transport": "websocket",
+            "type": "websocket",
             "url": f"ws://127.0.0.1:{args.max_port}",
         }
     if args.blender:
         servers["blender-editor"] = {
-            "transport": "websocket",
+            "type": "websocket",
             "url": f"ws://127.0.0.1:{args.blender_port}",
         }
     if args.houdini:
         servers["houdini-editor"] = {
-            "transport": "websocket",
+            "type": "websocket",
             "url": f"ws://127.0.0.1:{args.houdini_port}",
         }
     if args.sp:
         servers["sp-editor"] = {
-            "transport": "websocket",
+            "type": "websocket",
             "url": f"ws://127.0.0.1:{args.sp_port}",
         }
     if args.sd:
         servers["sd-editor"] = {
-            "transport": "websocket",
+            "type": "websocket",
             "url": f"ws://127.0.0.1:{args.sd_port}",
         }
     if args.comfyui:
         servers["comfyui-editor"] = {
-            "transport": "websocket",
+            "type": "websocket",
             "url": f"ws://127.0.0.1:{args.comfyui_port}",
         }
 
     if not servers:
         print("  没有指定任何 server，使用默认 UE 配置")
         servers["ue-editor"] = {
-            "transport": "websocket",
+            "type": "websocket",
             "url": "ws://127.0.0.1:8080",
         }
 
