@@ -360,7 +360,7 @@ class MemoryManagerV2:
             return rules
         
         import re
-        tag_pattern = re.compile(r'\[(?:UE|Maya|Max|All|Python|Windows)\]\s*')
+        tag_pattern = re.compile(r'\[(?:UE|Maya|Max|Blender|Houdini|SP|SD|ComfyUI|All|Python|Windows)\]\s*')
         
         def strip_tags(text: str) -> str:
             return tag_pattern.sub('', text).strip().lower()
@@ -506,7 +506,7 @@ class MemoryManagerV2:
         all_file_rules = self._read_all_rules_from_file(fpath)
         
         import re
-        tag_pattern = re.compile(r'\[(?:UE|Maya|Max|All|Python|Windows)\]\s*')
+        tag_pattern = re.compile(r'\[(?:UE|Maya|Max|Blender|Houdini|SP|SD|ComfyUI|All|Python|Windows)\]\s*')
         clean_new = tag_pattern.sub('', full_rule).strip().lower()
         
         for existing in all_file_rules:
@@ -1883,15 +1883,28 @@ class MemoryManagerV2:
             
             add_section("PERSONAL CRASH RULES", crash_entries[:10], "\u26a0\ufe0f")
             
-            # P3: 个人 pattern (反直觉行为/经验教训)
+            # P3: 个人 pattern (反直觉行为/经验教训) - 按 DCC 过滤
             pattern_entries = []
+            dcc_lower = self.dcc_name.lower()
             for layer_name in ["long_term", "mid_term", "short_term"]:
                 layer_storage = self._get_layer_by_name(layer_name)
                 for key, entry in sorted(layer_storage.items(),
                                        key=lambda x: x[1].importance, reverse=True):
                     if entry.tag == "pattern":
+                        # 按 DCC 过滤：只保留当前 DCC 或通用 [All] 的
+                        inferred_tag = self._infer_dcc_tag(entry)
+                        if inferred_tag != "[All]":
+                            # 有明确 DCC 标签，检查是否属于当前 DCC
+                            _DCC_TAG_MAP = {
+                                "unreal_engine": "[UE]", "maya": "[Maya]", "max": "[Max]",
+                                "blender": "[Blender]", "houdini": "[Houdini]",
+                                "substance_painter": "[SP]", "substance_designer": "[SD]",
+                                "comfyui": "[ComfyUI]",
+                            }
+                            my_tag = _DCC_TAG_MAP.get(dcc_lower, "[All]")
+                            if inferred_tag != my_tag:
+                                continue
                         if isinstance(entry.value, dict):
-                            # RetryTracker 自动提取的 pattern
                             val = entry.value.get("fix", str(entry.value))[:80]
                         else:
                             val = str(entry.value)[:80]
