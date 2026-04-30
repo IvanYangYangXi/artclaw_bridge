@@ -311,7 +311,7 @@ def find_maya_versions() -> list[str]:
     return sorted(versions, reverse=True)
 
 
-
+def install_maya(maya_version: str, force: bool, platform_type: str = "openclaw"):
     """安装 Maya 插件（自动包含 zh_CN 等 locale 副本）"""
     print()
     print("  ── Maya 插件安装 ───────────────────────────────────")
@@ -456,7 +456,7 @@ def find_max_versions() -> list[str]:
     return sorted(versions, reverse=True)
 
 
-
+def _find_max_scripts_dirs(max_version: str) -> list[str]:
     """查找 3ds Max 所有可能的 scripts 目录。
 
     Max 的用户配置目录有两种格式：
