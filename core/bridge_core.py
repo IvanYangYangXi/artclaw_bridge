@@ -69,6 +69,7 @@ class OpenClawBridge:
         client_id: str = "",
         logger: Optional[BridgeLogger] = None,
         on_status_changed: Optional[Callable[[bool, str], None]] = None,
+        tools_allow: Optional[list] = None,
     ):
         config = load_config()
         gw_config = config.get("gateway", {})
@@ -80,6 +81,7 @@ class OpenClawBridge:
 
         self._log = logger or BridgeLogger()
         self._on_status_changed = on_status_changed
+        self.tools_allow: Optional[list] = tools_allow
 
         self._ws = None
         self._connected = False
@@ -753,6 +755,8 @@ class OpenClawBridge:
             "message": message,
             "idempotencyKey": str(uuid.uuid4()),
         }
+        if self.tools_allow:
+            params["toolsAllow"] = self.tools_allow
 
         try:
             result = await self._rpc_request("chat.send", params, timeout=300.0)
@@ -800,6 +804,8 @@ class OpenClawBridge:
             "message": message,
             "idempotencyKey": str(uuid.uuid4()),
         }
+        if self.tools_allow:
+            params["toolsAllow"] = self.tools_allow
 
         try:
             result = await self._rpc_request("chat.send", params, timeout=300.0)
