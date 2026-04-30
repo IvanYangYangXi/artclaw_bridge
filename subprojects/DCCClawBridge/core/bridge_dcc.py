@@ -259,57 +259,59 @@ class DCCBridgeManager:
         self._bridge.send_message_async(enriched, _on_result)
 
     def _enrich_with_briefing(self, message: str) -> str:
-        """在用户消息前附加 DCC 上下文 + 记忆摘要"""
+        """在用户消息前附加 DCC 上下文 + 记忆摘要（仅 session 首条消息注入）"""
+        # 所有上下文信息只在会话首条消息注入，后续消息不再重复发送
+        if self._context_injected:
+            return message
+
         prefix_parts = []
 
-        # DCC 环境上下文（只在 session 首条消息注入）
-        if not self._context_injected:
-            try:
-                import builtins
-                adapter = getattr(builtins, '_artclaw_adapter', None)
-                if adapter:
-                    sw_name = adapter.get_software_name()
-                    sw_ver = adapter.get_software_version()
-                    # 工具前缀映射（必须与 openclaw.json mcp-bridge servers 名一致）
-                    _PREFIX_MAP = {
-                        "maya": "mcp_maya-primary_",
-                        "3dsmax": "mcp_max-primary_",
-                        "max": "mcp_max-primary_",
-                        "substance_designer": "mcp_sd-editor_",
-                        "substance_painter": "mcp_sp-editor_",
-                        "blender": "mcp_blender-editor_",
-                        "houdini": "mcp_houdini-editor_",
-                        "comfyui": "mcp_comfyui-editor_",
-                    }
-                    my_prefix = _PREFIX_MAP.get(sw_name.lower(), f"mcp_{sw_name.lower()}-primary_")
-                    # 构建其他工具列表（排除当前软件）
-                    _ALL_TOOLS = {
-                        "mcp_ue-editor-agent_": "UE",
-                        "mcp_maya-primary_": "Maya",
-                        "mcp_max-primary_": "Max",
-                        "mcp_sd-editor_": "Substance Designer",
-                        "mcp_sp-editor_": "Substance Painter",
-                        "mcp_blender-editor_": "Blender",
-                        "mcp_houdini-editor_": "Houdini",
-                        "mcp_comfyui-editor_": "ComfyUI",
-                    }
-                    other_tools = "、".join(
-                        f"{prefix}（{label}）"
-                        for prefix, label in _ALL_TOOLS.items()
-                        if prefix != my_prefix
-                    )
-                    prefix_parts.append(
-                        f"[DCC Context - 重要]\n"
-                        f"当前对话环境: {sw_name} {sw_ver}\n"
-                        f"当前软件工具前缀: {my_prefix}\n\n"
-                        f"工具使用规则:\n"
-                        f"- {sw_name} 场景/资产的查询与操作使用 {my_prefix}run_python\n"
-                        f"- 涉及其他 DCC 软件（{other_tools}）时，使用对应软件的工具\n"
-                        f"- 本地文件读写、以及其他不依赖 {sw_name} 环境的任务，直接使用自身能力处理"
-                    )
-                    self._context_injected = True
-            except Exception:
-                pass
+        # DCC 环境上下文
+        try:
+            import builtins
+            adapter = getattr(builtins, '_artclaw_adapter', None)
+            if adapter:
+                sw_name = adapter.get_software_name()
+                sw_ver = adapter.get_software_version()
+                # 工具前缀映射（必须与 openclaw.json mcp-bridge servers 名一致）
+                _PREFIX_MAP = {
+                    "maya": "mcp_maya-primary_",
+                    "3dsmax": "mcp_max-primary_",
+                    "max": "mcp_max-primary_",
+                    "substance_designer": "mcp_sd-editor_",
+                    "substance_painter": "mcp_sp-editor_",
+                    "blender": "mcp_blender-editor_",
+                    "houdini": "mcp_houdini-editor_",
+                    "comfyui": "mcp_comfyui-editor_",
+                }
+                my_prefix = _PREFIX_MAP.get(sw_name.lower(), f"mcp_{sw_name.lower()}-primary_")
+                # 构建其他工具列表（排除当前软件）
+                _ALL_TOOLS = {
+                    "mcp_ue-editor-agent_": "UE",
+                    "mcp_maya-primary_": "Maya",
+                    "mcp_max-primary_": "Max",
+                    "mcp_sd-editor_": "Substance Designer",
+                    "mcp_sp-editor_": "Substance Painter",
+                    "mcp_blender-editor_": "Blender",
+                    "mcp_houdini-editor_": "Houdini",
+                    "mcp_comfyui-editor_": "ComfyUI",
+                }
+                other_tools = "、".join(
+                    f"{prefix}（{label}）"
+                    for prefix, label in _ALL_TOOLS.items()
+                    if prefix != my_prefix
+                )
+                prefix_parts.append(
+                    f"[DCC Context - 重要]\n"
+                    f"当前对话环境: {sw_name} {sw_ver}\n"
+                    f"当前软件工具前缀: {my_prefix}\n\n"
+                    f"工具使用规则:\n"
+                    f"- {sw_name} 场景/资产的查询与操作使用 {my_prefix}run_python\n"
+                    f"- 涉及其他 DCC 软件（{other_tools}）时，使用对应软件的工具\n"
+                    f"- 本地文件读写、以及其他不依赖 {sw_name} 环境的任务，直接使用自身能力处理"
+                )
+        except Exception:
+            pass
 
         # 记忆摘要
         try:
@@ -326,6 +328,9 @@ class DCCBridgeManager:
         pinned_hint = self._build_pinned_hint()
         if pinned_hint:
             prefix_parts.append(pinned_hint)
+
+        # 标记已注入，后续消息不再重复
+        self._context_injected = True
 
         if prefix_parts:
             prefix = "\n\n".join(prefix_parts)
