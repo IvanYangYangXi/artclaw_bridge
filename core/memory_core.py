@@ -286,17 +286,13 @@ class MemoryManagerV2:
         # DCC 名称到标签的映射
         dcc_lower = self.dcc_name.lower()
         _DCC_TAG_MAP = {
-            "ue": ["[UE]", "[All]"],
-            "unreal": ["[UE]", "[All]"],
+            "unreal_engine": ["[UE]", "[All]"],
             "maya": ["[Maya]", "[All]"],
-            "3dsmax": ["[Max]", "[All]"],
             "max": ["[Max]", "[All]"],
             "blender": ["[Blender]", "[All]"],
             "houdini": ["[Houdini]", "[All]"],
-            "substance painter": ["[SP]", "[All]"],
-            "sp": ["[SP]", "[All]"],
-            "substance designer": ["[SD]", "[All]"],
-            "sd": ["[SD]", "[All]"],
+            "substance_painter": ["[SP]", "[All]"],
+            "substance_designer": ["[SD]", "[All]"],
             "comfyui": ["[ComfyUI]", "[All]"],
         }
         allowed_tags = _DCC_TAG_MAP.get(dcc_lower, ["[All]"])
