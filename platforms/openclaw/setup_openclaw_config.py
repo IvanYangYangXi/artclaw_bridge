@@ -209,42 +209,25 @@ def main():
     # 合并
     changed = ensure_mcp_bridge(config, servers)
 
-    # 自动注入 MCP 工具到全局 tools.allow
-    # DCC 连接使用 main agent + 不同 session key，所以工具权限加在全局
+    # 自动注入 MCP 工具到全局 tools.alsoAllow
+    # tools.alsoAllow 在 tools.profile 基础上追加，不会覆盖基础工具
+    # 注意：tools.allow 是绝对白名单（替换 profile），不能用！
     tools_allow_patterns = []
     for server_name in servers:
         pattern = f"mcp_{server_name}_*"
         tools_allow_patterns.append(pattern)
 
-    # 确保 agents.defaults.tools.allow 包含所有 MCP 工具通配符
-    if "agents" not in config:
-        config["agents"] = {}
-    if "defaults" not in config["agents"]:
-        config["agents"]["defaults"] = {}
-    defaults = config["agents"]["defaults"]
-    if "tools" not in defaults:
-        defaults["tools"] = {}
-    if "allow" not in defaults["tools"]:
-        defaults["tools"]["allow"] = []
-
-    existing_allow = defaults["tools"]["allow"]
-    for pattern in tools_allow_patterns:
-        if pattern not in existing_allow:
-            existing_allow.append(pattern)
-            changed = True
-            print(f"  添加工具权限: {pattern}")
-
-    # 同时确保全局 tools.allow 也包含（兼容无 agents.list 配置的场景）
     if "tools" not in config:
         config["tools"] = {}
-    if "allow" not in config["tools"]:
-        config["tools"]["allow"] = []
-    global_allow = config["tools"]["allow"]
+    if "alsoAllow" not in config["tools"]:
+        config["tools"]["alsoAllow"] = []
+
+    also_allow = config["tools"]["alsoAllow"]
     for pattern in tools_allow_patterns:
-        if pattern not in global_allow:
-            global_allow.append(pattern)
+        if pattern not in also_allow:
+            also_allow.append(pattern)
             changed = True
-            print(f"  全局工具权限: {pattern}")
+            print(f"  添加工具权限 (tools.alsoAllow): {pattern}")
 
     if changed:
         save_config(config)
