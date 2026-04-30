@@ -136,9 +136,16 @@ _context_injected: bool            = False
 _cancel_flag:      threading.Event = threading.Event()
 _stream_lock:      threading.Lock  = threading.Lock()
 
-# 启动时从 config 恢复 last_agent_id，若无则从平台配置取第一个 Agent
+# 启动时从 config 恢复 last_agent_id，并校验 agents_cache 一致性
 try:
-    _agent_id = _load_artclaw_config().get("last_agent_id", "") or ""
+    _cfg_boot = _load_artclaw_config()
+    _agent_id = _cfg_boot.get("last_agent_id", "") or ""
+    # 校验：如果 last_agent_id 不在 agents_cache 里，fallback 到 cache 第一个或 "main"
+    _agents_cache = _cfg_boot.get("agents_cache", [])
+    if _agents_cache:
+        _cache_ids = {a.get("id", "") for a in _agents_cache if isinstance(a, dict)}
+        if _agent_id not in _cache_ids:
+            _agent_id = next((a.get("id", "") for a in _agents_cache if isinstance(a, dict)), "main") or "main"
     if not _agent_id:
         # 从平台配置文件读取 agents.list[0].id
         try:
@@ -146,6 +153,8 @@ try:
             _agent_id = _bc.get_default_agent_id()
         except Exception:
             pass
+    if not _agent_id:
+        _agent_id = "main"
 except Exception:
     pass
 

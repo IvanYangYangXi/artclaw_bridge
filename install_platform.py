@@ -180,6 +180,15 @@ def write_artclaw_config(platform_type: str):
 
     existing["project_root"] = str(ROOT_DIR)
 
+    # 校正 agent 相关字段：安装时统一 fallback 到 "main"，避免旧残留值导致连接失败
+    # DCC 插件首次运行后会通过 list_agents → agents_cache 自动刷新到真实 agent 列表
+    existing["current_agent_id"] = "main"
+    existing["last_agent_id"] = "main"
+    existing["ue_agent_id"] = "main"
+    existing["agents_cache"] = [{"id": "main", "name": "main", "emoji": ""}]
+    import datetime
+    existing["agents_cache_updated"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
     # 动态读取 Gateway token（从平台配置文件获取，每台机器不同）
     gateway_token = _read_gateway_token(platform_type, pcfg)
 
