@@ -1092,7 +1092,7 @@ void SUEAgentDashboard::RebuildPlatformListUI()
 			[
 				SAssignNew(PortInputBox, SEditableTextBox)
 				.Text(Plat.GatewayPort > 0
-					? FText::AsNumber(Plat.GatewayPort)
+					? FText::FromString(FString::FromInt(Plat.GatewayPort))
 					: FText::GetEmpty())
 				.MinDesiredWidth(50.0f)
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
