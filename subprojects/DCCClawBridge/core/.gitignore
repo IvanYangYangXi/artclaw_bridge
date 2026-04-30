@@ -13,5 +13,6 @@ version_manager.py
 openclaw_ws.py
 openclaw_chat.py
 openclaw_diagnose.py
+device_auth.py
 interfaces/
 schemas/
