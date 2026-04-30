@@ -684,6 +684,7 @@ def setup_openclaw_env(
     model: str | None = None,
     dccs: list[str] | None = None,
     from_platform: str | None = None,
+    no_interactive: bool = False,
 ) -> bool:
     """
     OpenClaw 环境一键安装主流程。
@@ -710,8 +711,10 @@ def setup_openclaw_env(
         if not handle_unsupported_platform(from_platform):
             return False
 
+    step_count = "4" if no_interactive else "5"
+
     # ── Step 1: Node.js ──
-    cprint("步骤 1/5", "检测 Node.js...", "cyan")
+    cprint(f"步骤 1/{step_count}", "检测 Node.js...", "cyan")
     if not check_nodejs():
         if not install_nodejs():
             print()
@@ -720,35 +723,45 @@ def setup_openclaw_env(
 
     # ── Step 2: OpenClaw ──
     print()
-    cprint("步骤 2/5", "检测 OpenClaw...", "cyan")
+    cprint(f"步骤 2/{step_count}", "检测 OpenClaw...", "cyan")
     if not check_openclaw():
         if not install_openclaw_package():
             return False
 
     # ── Step 3: 配置 ──
     print()
-    cprint("步骤 3/5", "写入 OpenClaw 配置...", "cyan")
+    cprint(f"步骤 3/{step_count}", "写入 OpenClaw 配置...", "cyan")
 
-    # 如果没有预设 provider/key，进入交互式
+    # 如果没有预设 provider/key
     if not api_key:
-        result = prompt_api_key(provider)
-        if result:
-            provider, api_key = result
+        if no_interactive:
+            # 对外模式：跳过 API Key 交互，只写基础配置
+            cprint("跳过", "API Key 配置已跳过（--no-interactive），用户可稍后运行 openclaw configure", "yellow")
+        else:
+            result = prompt_api_key(provider)
+            if result:
+                provider, api_key = result
 
-    write_minimal_config(provider, api_key, model)
+    if no_interactive and not api_key:
+        write_minimal_config(None, None, None)
+    else:
+        write_minimal_config(provider, api_key, model)
 
     # ── Step 4: MCP 配置 ──
     print()
-    cprint("步骤 4/5", "配置 MCP Bridge...", "cyan")
+    cprint(f"步骤 4/{step_count}", "配置 MCP Bridge...", "cyan")
     inject_mcp_config(dccs)
 
     # ── Step 5: 启动 Gateway ──
     print()
-    cprint("步骤 5/5", "启动 Gateway...", "cyan")
-    if skip_gateway:
-        cprint("跳过", "Gateway 启动已跳过 (--skip-gateway)", "yellow")
+    if no_interactive:
+        cprint("步骤 5/5", "跳过 Gateway 启动（对外模式，由 install.bat 在优化后启动）...", "cyan")
     else:
-        start_gateway()
+        cprint("步骤 5/5", "启动 Gateway...", "cyan")
+        if skip_gateway:
+            cprint("跳过", "Gateway 启动已跳过 (--skip-gateway)", "yellow")
+        else:
+            start_gateway()
 
     # ── 完成 ──
     print()
@@ -786,6 +799,8 @@ def main():
     )
     parser.add_argument("--skip-gateway", action="store_true",
                         help="不自动启动 OpenClaw Gateway")
+    parser.add_argument("--no-interactive", action="store_true",
+                        help="对外模式：跳过 API Key 交互式配置，只写入基础配置")
     parser.add_argument("--provider", choices=list(MODEL_PROVIDERS.keys()),
                         help="预设模型提供商 (跳过选择): openrouter/aliyun/zhipu/siliconflow/anthropic/openai")
     parser.add_argument("--api-key",
@@ -814,12 +829,13 @@ def main():
             dccs.append(dcc)
 
     success = setup_openclaw_env(
-        skip_gateway=args.skip_gateway,
+        skip_gateway=args.skip_gateway or args.no_interactive,
         provider=args.provider,
         api_key=args.api_key,
         model=args.model,
         dccs=dccs or None,
         from_platform=args.from_platform,
+        no_interactive=args.no_interactive,
     )
 
     sys.exit(0 if success else 1)

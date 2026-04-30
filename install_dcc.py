@@ -187,6 +187,62 @@ def _install_ue_python_deps():
         cprint("提示", f"请手动运行: \"{ue_python}\" -m pip install {' '.join(missing)}", "yellow")
 
 
+def install_ue_mcp_only(platform_type: str = "openclaw"):
+    """
+    仅安装 UE MCP 配置 + Python 依赖 + Skills，不部署 UEClawBridge 插件。
+    适用于通过版本管理（SVN/Git）拉取插件源码的团队工作流。
+    """
+    print()
+    print("  ── Unreal Engine MCP 配置安装 (无插件部署) ─────────")
+    print()
+    cprint("信息", "仅安装 MCP 配置 + Python 依赖 + Skills (插件通过版本管理获取)")
+    cprint("信息", f"平台: {platform_type}")
+    print()
+
+    # 1) 安装 UE Python 依赖 (websockets, pydantic)
+    cprint("步骤 1/3", "检查 UE Python 依赖...", "cyan")
+    _install_ue_python_deps()
+
+    # 2) 安装 DCC Skills
+    print()
+    cprint("步骤 2/3", "安装 UE Skills...", "cyan")
+    install_dcc_skills(["unreal", "universal"], platform_type)
+
+    # 3) 写入 ~/.artclaw/config.json (确保 project_root 正确)
+    print()
+    cprint("步骤 3/3", "更新 artclaw 配置...", "cyan")
+    _write_artclaw_project_root()
+
+    print()
+    cprint("完成", "UE MCP 配置安装成功!", "green")
+    cprint("提示", "确保 UE 项目中已有 UEClawBridge 插件 (通过版本管理拉取)", "yellow")
+    return True
+
+
+def _write_artclaw_project_root():
+    """确保 ~/.artclaw/config.json 中 project_root 字段指向项目根目录"""
+    import json
+
+    config_path = os.path.expanduser("~/.artclaw/config.json")
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+
+    existing = {}
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+
+    from install_utils import ROOT_DIR
+    existing["project_root"] = str(ROOT_DIR)
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(existing, f, indent=2, ensure_ascii=False)
+
+    cprint("OK", f"project_root = {ROOT_DIR}", "green")
+
+
 def _find_ue_python() -> str | None:
     """查找 UE 内置 Python（注册表 > 常见路径 > 环境变量）"""
     if platform.system() != "Windows":
