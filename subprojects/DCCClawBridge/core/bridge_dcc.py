@@ -168,6 +168,7 @@ class DCCBridgeManager:
             client_id=f"{self._dcc_name}-editor",
             logger=_DCCBridgeLogger(),
             on_status_changed=self._on_status_changed,
+            tools_allow=[f"mcp_{self._dcc_name}-editor_*"],
         )
 
         connected = self._bridge.start()
