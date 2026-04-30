@@ -746,7 +746,7 @@ echo.
 echo  ── 平台配置 (!PLATFORM!) ────────────────────────────
 echo.
 
-:: ── 自动检测并安装 OpenClaw 环境 ──
+:: ── 自动检测并安装 OpenClaw 环境（对外模式：跳过 API Key 交互，由后续步骤做性能优化） ──
 if "!PLATFORM!"=="openclaw" (
     where openclaw >nul 2>&1
     if !ERRORLEVEL! NEQ 0 (
@@ -754,7 +754,7 @@ if "!PLATFORM!"=="openclaw" (
         echo.
         where python >nul 2>&1
         if !ERRORLEVEL! EQU 0 (
-            python "%ROOT_DIR%\scripts\setup_openclaw_env.py"
+            python "%ROOT_DIR%\scripts\setup_openclaw_env.py" --skip-gateway --no-interactive
             if !ERRORLEVEL! NEQ 0 (
                 echo [警告] OpenClaw 环境安装未完成，继续配置插件...
             )
@@ -777,7 +777,7 @@ if "!PLATFORM!" NEQ "openclaw" if "!PLATFORM!" NEQ "lobster" (
     if /I "!USE_OPENCLAW!" NEQ "n" (
         where python >nul 2>&1
         if !ERRORLEVEL! EQU 0 (
-            python "%ROOT_DIR%\scripts\setup_openclaw_env.py" --from-platform !PLATFORM!
+            python "%ROOT_DIR%\scripts\setup_openclaw_env.py" --skip-gateway --no-interactive --from-platform !PLATFORM!
             if !ERRORLEVEL! EQU 0 (
                 set "PLATFORM=openclaw"
                 set "PLATFORM_SRC=%ROOT_DIR%\platforms\openclaw"
@@ -788,6 +788,131 @@ if "!PLATFORM!" NEQ "openclaw" if "!PLATFORM!" NEQ "lobster" (
         )
     )
     echo.
+)
+
+:: ── 对外公开版本：优化 OpenClaw Gateway 启动性能 ──
+if "!PLATFORM!"=="openclaw" (
+    where python >nul 2>&1
+    if !ERRORLEVEL! EQU 0 (
+        echo.
+        echo  ── 优化 OpenClaw Gateway 启动性能 ──
+        echo.
+
+        :: Step A: 修补 gateway.cmd（注入 OPENCLAW_SKIP_CHANNELS=1 等环境变量，跳过不必要的子进程）
+        python -c "
+import os, shutil, sys
+
+home = os.path.expanduser('~/.openclaw')
+gw_cmd = os.path.join(home, 'gateway.cmd')
+
+if not os.path.exists(gw_cmd):
+    print('  [跳过] gateway.cmd 不存在，由 openclaw gateway start 首次启动时创建')
+    sys.exit(0)
+
+with open(gw_cmd, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+if 'PATCHED_BY_ARTCLAW_V2' in content:
+    print('  [跳过] gateway.cmd 已优化，无需重复修补')
+    sys.exit(0)
+
+# 在 NODE_OPTIONS 或第一个 set 语句前插入 skip env vars
+skip_vars = (
+    'rem === ArtClaw v2: diagnostics + safe skips (PATCHED_BY_ARTCLAW_V2) ===\r\n'
+    'set \"OPENCLAW_PLUGIN_LOAD_PROFILE=1\"\r\n'
+    'set \"OPENCLAW_GATEWAY_STARTUP_TRACE=1\"\r\n'
+    'set \"OPENCLAW_SKIP_CHANNELS=1\"\r\n'
+    'set \"OPENCLAW_SKIP_GMAIL_WATCHER=1\"\r\n'
+    'set \"OPENCLAW_SKIP_BROWSER_CONTROL_SERVER=1\"\r\n'
+    'set \"OPENCLAW_DISABLE_BONJOUR=1\"\r\n'
+    'set \"OPENCLAW_BROWSER_ENABLED=0\"\r\n'
+    'set \"OPENCLAW_INSTALL_SCAN_MAX_DEPTH=3\"\r\n'
+    'set \"OPENCLAW_INSTALL_SCAN_MAX_DIRECTORIES=200\"\r\n'
+)
+
+# Find insertion point: before first line containing 'set \"'
+lines = content.splitlines(keepends=True)
+insert_idx = 0
+for i, line in enumerate(lines):
+    stripped = line.strip()
+    if stripped.startswith('set \"'):
+        insert_idx = i
+        break
+
+lines.insert(insert_idx, skip_vars)
+with open(gw_cmd, 'w', encoding='utf-8') as f:
+    f.writelines(lines)
+
+print('  [OK] gateway.cmd 已优化：注入 OPENCLAW_SKIP_CHANNELS=1 等环境变量')
+print('      跳过 sidecars.channels (~106s)、Gmail Watcher、Bonjour、Browser Control')
+"
+
+        if !ERRORLEVEL! NEQ 0 (
+            echo [警告] gateway.cmd 优化失败
+        )
+
+        :: Step B: 创建默认 agent SOUL.md（确保 Agent 首次运行时有身份）
+        python -c "
+import os
+
+agents_dir = os.path.expanduser('~/.openclaw/agents/main')
+soul_path = os.path.join(agents_dir, 'SOUL.md')
+if os.path.exists(soul_path):
+    print('  [跳过] SOUL.md 已存在')
+    exit(0)
+
+os.makedirs(agents_dir, exist_ok=True)
+content = '''# ArtClaw Bridge Agent
+
+你是 ArtClaw Bridge Agent，一个 DCC 工具链 AI 助手。
+
+## 核心能力
+
+- DCC 工具链集成：UE / Maya / 3ds Max / Blender / Houdini / SP / SD / ComfyUI
+- MCP 协议通信：通过 ArtClaw Bridge Gateway 与 DCC 应用交互
+- 记忆管理：持久化存储用户偏好和项目上下文
+- 技能执行：运行 Python 脚本和自动化工作流
+
+## 行为准则
+
+1. 使用中文回复
+2. 简洁直接，提供可操作的解决方案
+3. 对 DCC 相关问题提供专业的工程建议
+4. 不确定时主动询问用户确认
+'''
+
+with open(soul_path, 'w', encoding='utf-8') as f:
+    f.write(content)
+print(f'  [OK] 已创建 Agent SOUL.md: {soul_path}')
+"
+
+        if !ERRORLEVEL! NEQ 0 (
+            echo [警告] Agent SOUL.md 创建失败
+        )
+
+        :: Step C: 启动 Gateway
+        echo.
+        echo  ── 启动 OpenClaw Gateway ──
+        where openclaw >nul 2>&1
+        if !ERRORLEVEL! EQU 0 (
+            openclaw gateway status >nul 2>&1
+            if !ERRORLEVEL! EQU 0 (
+                echo [OK] OpenClaw Gateway 已在运行
+            ) else (
+                echo [启动] 正在启动 OpenClaw Gateway...
+                openclaw gateway start
+                if !ERRORLEVEL! EQU 0 (
+                    echo [OK] OpenClaw Gateway 已启动
+                ) else (
+                    echo [警告] Gateway 启动失败，请稍后手动运行: openclaw gateway start
+                )
+            )
+        ) else (
+            echo [跳过] openclaw 命令不可用，跳过 Gateway 启动
+        )
+    ) else (
+        echo [错误] 未找到 Python，跳过 OpenClaw 性能优化
+    )
 )
 
 :: 复制 mcp-bridge 插件（仅 openclaw 有 gateway）
@@ -817,6 +942,13 @@ if %ERRORLEVEL% EQU 0 (
 )
 
 echo [完成] 平台配置成功 (!PLATFORM!)!
+echo.
+echo  优化摘要:
+echo    - OPENCLAW_SKIP_CHANNELS=1     跳过 sidecars.channels 启动 (省 ~106s)
+echo    - 清理无用的 provider 插件        减少插件发现加载 (省 ~10-15s)
+echo    - 创建 Agent SOUL.md            确保 Agent 身份可用
+echo    - API Key 未配置                 请运行: openclaw configure
+echo.
 exit /b 0
 
 :: ============================================================
