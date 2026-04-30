@@ -267,8 +267,16 @@ def _chat_worker(message: str, stream_file: str, response_file: str) -> None:
 
 def connect(gateway_url: str = "", token: str = "") -> bool:
     """测试 Gateway 是否可达（socket 探测）。"""
-    gw   = _get_gateway_config()
-    port = gw.get("port", _GATEWAY_PORT)
+    # 优先从 gateway_url（含用户在 UI 修改后的端口）解析 port
+    # 不能用 _get_gateway_config()，那个读的是平台 config 文件里的旧端口
+    url = _get_gateway_url()
+    port = _GATEWAY_PORT
+    try:
+        port_str = url.rsplit(":", 1)[-1].split("/")[0]
+        port = int(port_str)
+    except Exception:
+        gw = _get_gateway_config()
+        port = gw.get("port", _GATEWAY_PORT)
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(2.0)
     try:
