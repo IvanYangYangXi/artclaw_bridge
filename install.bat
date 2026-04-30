@@ -106,38 +106,38 @@ echo.
 :main_menu
 echo  请选择操作:
 echo.
-echo    [1] 安装 Unreal Engine 插件
-echo    [2] 安装 Maya 插件
-echo    [3] 安装 3ds Max 插件
-echo    [4] 安装 Blender 插件
-echo    [5] 安装 Houdini 插件
-echo    [6] 安装 Substance Painter 插件
-echo    [7] 安装 Substance Designer 插件
-echo    [8] 安装 ComfyUI 插件 (含节点包+依赖)
-echo    [9] 配置平台 (Gateway + Skills + config)
+echo    [1] 全部安装 (所有 DCC + 平台配置，自动搜索已安装版本)
+echo    [2] 安装 Unreal Engine 插件
+echo    [3] 安装 Maya 插件
+echo    [4] 安装 3ds Max 插件
+echo    [5] 安装 Blender 插件
+echo    [6] 安装 Houdini 插件
+echo    [7] 安装 Substance Painter 插件
+echo    [8] 安装 Substance Designer 插件
+echo    [9] 安装 ComfyUI 插件 (含节点包+依赖)
+echo    [0] 配置平台 (Gateway + Skills + config)
 echo    [T] 安装 Tool Manager 依赖 (Python + Node.js)
-echo    [A] 全部安装 (所有 DCC + 平台配置)
 echo    [U] 卸载菜单
-echo    [0] 退出
+echo    [Q] 退出
 echo.
 set /p CHOICE="  请输入选项: "
 
-if "%CHOICE%"=="0" goto :exit_ok
-if "%CHOICE%"=="1" goto :install_ue
-if "%CHOICE%"=="2" goto :install_maya
-if "%CHOICE%"=="3" goto :install_max
-if "%CHOICE%"=="4" goto :install_blender
-if "%CHOICE%"=="5" goto :install_houdini
-if "%CHOICE%"=="6" goto :install_sp
-if "%CHOICE%"=="7" goto :install_sd
-if "%CHOICE%"=="8" goto :install_comfyui
-if "%CHOICE%"=="9" goto :install_openclaw
+if /I "%CHOICE%"=="Q" goto :exit_ok
+if "%CHOICE%"=="1" goto :install_all
+if "%CHOICE%"=="2" goto :install_ue
+if "%CHOICE%"=="3" goto :install_maya
+if "%CHOICE%"=="4" goto :install_max
+if "%CHOICE%"=="5" goto :install_blender
+if "%CHOICE%"=="6" goto :install_houdini
+if "%CHOICE%"=="7" goto :install_sp
+if "%CHOICE%"=="8" goto :install_sd
+if "%CHOICE%"=="9" goto :install_comfyui
+if "%CHOICE%"=="0" goto :install_openclaw
 if /I "%CHOICE%"=="T" goto :install_tool_manager_deps
-if /I "%CHOICE%"=="A" goto :install_all
 if /I "%CHOICE%"=="U" goto :uninstall_menu
 echo [错误] 无效选项: %CHOICE%
 pause
-exit /b 1
+goto :main_menu
 
 :: ============================================================
 :: 安装全部
@@ -152,12 +152,12 @@ echo  请输入 UE 项目路径 (包含 .uproject 文件的目录，不需要 UE
 set /p UE_PROJECT_DIR="  > "
 
 set "COMFYUI_PATH="
-echo  请输入 ComfyUI 安装目录 (不需要 ComfyUI 可留空):
+echo  请输入 ComfyUI 安装目录 (留空自动搜索):
 set /p COMFYUI_PATH="  > "
 
-set "INSTALL_ARGS=--maya --max --blender --houdini --sp --sd --openclaw --platform !PLATFORM! --force"
-if not "!UE_PROJECT_DIR!"=="" set "INSTALL_ARGS=!INSTALL_ARGS! --ue --ue-project "!UE_PROJECT_DIR!""
-if not "!COMFYUI_PATH!"=="" set "INSTALL_ARGS=!INSTALL_ARGS! --comfyui --comfyui-path "!COMFYUI_PATH!""
+set "INSTALL_ARGS=--all --platform !PLATFORM! --force"
+if not "!UE_PROJECT_DIR!"=="" set "INSTALL_ARGS=!INSTALL_ARGS! --ue-project "!UE_PROJECT_DIR!""
+if not "!COMFYUI_PATH!"=="" set "INSTALL_ARGS=!INSTALL_ARGS! --comfyui-path "!COMFYUI_PATH!""
 
 where python >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
@@ -256,16 +256,18 @@ echo  ── Maya 插件安装 ────────────────�
 echo.
 
 :: 获取 Maya 版本
-set "MAYA_VER=2023"
-echo  请输入 Maya 版本 (默认 2023):
+set "MAYA_VER="
+echo  请输入 Maya 版本 (留空自动搜索所有已安装版本):
 set /p MAYA_VER_INPUT="  > "
-if not "%MAYA_VER_INPUT%"=="" set "MAYA_VER=%MAYA_VER_INPUT%"
+if not "!MAYA_VER_INPUT!"=="" set "MAYA_VER=!MAYA_VER_INPUT!"
 
-:: 委托给 install.py [精细化引用安装: junction/symlink]
-echo [安装] 正在安装 Maya !MAYA_VER! 插件 (精细引用模式)...
+set "MAYA_ARGS=--maya --platform !PLATFORM! --force"
+if "!MAYA_VER!"=="" (set "MAYA_ARGS=!MAYA_ARGS! --maya-version auto") else (set "MAYA_ARGS=!MAYA_ARGS! --maya-version !MAYA_VER!")
+
+echo [安装] 正在安装 Maya 插件...
 where python >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
-    python "%ROOT_DIR%\install.py" --maya --maya-version !MAYA_VER! --platform !PLATFORM! --force
+    python "%ROOT_DIR%\install.py" !MAYA_ARGS!
     if !ERRORLEVEL! EQU 0 (
         echo [完成] Maya 插件安装成功!
     ) else (
@@ -381,16 +383,18 @@ echo  ── 3ds Max 插件安装 ───────────────�
 echo.
 
 :: 获取 Max 版本
-set "MAX_VER=2024"
-echo  请输入 3ds Max 版本 (默认 2024):
+set "MAX_VER="
+echo  请输入 3ds Max 版本 (留空自动搜索所有已安装版本):
 set /p MAX_VER_INPUT="  > "
-if not "%MAX_VER_INPUT%"=="" set "MAX_VER=%MAX_VER_INPUT%"
+if not "!MAX_VER_INPUT!"=="" set "MAX_VER=!MAX_VER_INPUT!"
 
-:: 委托给 install.py [精细化引用安装: junction/symlink]
-echo [安装] 正在安装 3ds Max !MAX_VER! 插件 (精细引用模式)...
+set "MAX_ARGS=--max --platform !PLATFORM! --force"
+if "!MAX_VER!"=="" (set "MAX_ARGS=!MAX_ARGS! --max-version auto") else (set "MAX_ARGS=!MAX_ARGS! --max-version !MAX_VER!")
+
+echo [安装] 正在安装 3ds Max 插件...
 where python >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
-    python "%ROOT_DIR%\install.py" --max --max-version !MAX_VER! --platform !PLATFORM! --force
+    python "%ROOT_DIR%\install.py" !MAX_ARGS!
     if !ERRORLEVEL! EQU 0 (
         echo [完成] 3ds Max 插件安装成功!
     ) else (
@@ -507,14 +511,18 @@ goto :summary
 echo.
 echo  -- Blender 插件安装 --
 echo.
-set "BLENDER_VER=5.1"
-echo  请输入 Blender 版本 (默认 5.1):
+set "BLENDER_VER="
+echo  请输入 Blender 版本 (留空自动搜索所有已安装版本):
 set /p BLENDER_VER_INPUT="  > "
 if not "!BLENDER_VER_INPUT!"=="" set "BLENDER_VER=!BLENDER_VER_INPUT!"
-echo [安装] 正在安装 Blender !BLENDER_VER! 插件...
+
+set "BLENDER_ARGS=--blender --platform !PLATFORM! --force"
+if "!BLENDER_VER!"=="" (set "BLENDER_ARGS=!BLENDER_ARGS! --blender-version auto") else (set "BLENDER_ARGS=!BLENDER_ARGS! --blender-version !BLENDER_VER!")
+
+echo [安装] 正在安装 Blender 插件...
 where python >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
-    python "%ROOT_DIR%\install.py" --blender --blender-version !BLENDER_VER! --platform !PLATFORM! --force
+    python "%ROOT_DIR%\install.py" !BLENDER_ARGS!
     if !ERRORLEVEL! EQU 0 (
         echo [完成] Blender 插件安装成功!
     ) else (
@@ -536,14 +544,18 @@ goto :summary
 echo.
 echo  -- Houdini 插件安装 --
 echo.
-set "HOUDINI_VER=20.5"
-echo  请输入 Houdini 版本 (默认 20.5):
+set "HOUDINI_VER="
+echo  请输入 Houdini 版本 (留空自动搜索所有已安装版本):
 set /p HOUDINI_VER_INPUT="  > "
 if not "!HOUDINI_VER_INPUT!"=="" set "HOUDINI_VER=!HOUDINI_VER_INPUT!"
-echo [安装] 正在安装 Houdini !HOUDINI_VER! 插件...
+
+set "HOUDINI_ARGS=--houdini --platform !PLATFORM! --force"
+if "!HOUDINI_VER!"=="" (set "HOUDINI_ARGS=!HOUDINI_ARGS! --houdini-version auto") else (set "HOUDINI_ARGS=!HOUDINI_ARGS! --houdini-version !HOUDINI_VER!")
+
+echo [安装] 正在安装 Houdini 插件...
 where python >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
-    python "%ROOT_DIR%\install.py" --houdini --houdini-version !HOUDINI_VER! --platform !PLATFORM! --force
+    python "%ROOT_DIR%\install.py" !HOUDINI_ARGS!
     if !ERRORLEVEL! EQU 0 (
         echo [完成] Houdini 插件安装成功!
     ) else (
@@ -616,23 +628,23 @@ echo.
 echo  -- ComfyUI 插件安装 --
 echo.
 set "COMFYUI_PATH="
-echo  请输入 ComfyUI 安装目录 (包含 main.py 的目录):
+echo  请输入 ComfyUI 安装目录 (包含 main.py 的目录，留空自动搜索):
 set /p COMFYUI_PATH="  > "
-if "!COMFYUI_PATH!"=="" (
-    echo [错误] 未输入 ComfyUI 路径
-    exit /b 1
-)
+
+set "COMFYUI_ARGS=--comfyui --platform !PLATFORM! --force"
+if not "!COMFYUI_PATH!"=="" set "COMFYUI_ARGS=!COMFYUI_ARGS! --comfyui-path "!COMFYUI_PATH!""
+
 echo [安装] 正在安装 ComfyUI 插件...
 where python >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
-    python "%ROOT_DIR%\install.py" --comfyui --comfyui-path "!COMFYUI_PATH!" --platform !PLATFORM! --force
+    python "%ROOT_DIR%\install.py" !COMFYUI_ARGS!
     if !ERRORLEVEL! EQU 0 (
         echo [完成] ComfyUI 插件安装成功!
     ) else (
         echo [错误] ComfyUI 插件安装失败
     )
 ) else (
-    echo [错误] 未找到 Python，请手动运行: python install.py --comfyui --comfyui-path "path"
+    echo [错误] 未找到 Python，请手动运行: python install.py --comfyui
 )
 exit /b 0
 

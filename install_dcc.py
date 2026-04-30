@@ -295,7 +295,23 @@ def _find_ue_python() -> str | None:
 # ===========================================================================
 
 
-def install_maya(maya_version: str, force: bool, platform_type: str = "openclaw"):
+def find_maya_versions() -> list[str]:
+    """自动搜索本机已安装的 Maya 版本列表。
+
+    扫描 ~/Documents/maya/ 下的版本目录（如 2023、2024、2025）。
+    返回降序排列的版本列表，未找到时返回空列表。
+    """
+    maya_base = os.path.join(os.path.expanduser("~"), "Documents", "maya")
+    if not os.path.isdir(maya_base):
+        return []
+    versions = []
+    for entry in os.scandir(maya_base):
+        if entry.is_dir() and entry.name.isdigit():
+            versions.append(entry.name)
+    return sorted(versions, reverse=True)
+
+
+
     """安装 Maya 插件（自动包含 zh_CN 等 locale 副本）"""
     print()
     print("  ── Maya 插件安装 ───────────────────────────────────")
@@ -417,7 +433,30 @@ def uninstall_maya(maya_version: str):
 # ===========================================================================
 
 
-def _find_max_scripts_dirs(max_version: str) -> list[str]:
+def find_max_versions() -> list[str]:
+    """自动搜索本机已安装的 3ds Max 版本列表。
+
+    扫描 %LOCALAPPDATA%/Autodesk/3dsMax/ 下的版本目录。
+    支持旧格式（2024）和新格式（2024 - 64bit）。
+    返回降序排列的版本列表，未找到时返回空列表。
+    """
+    local_app = os.environ.get("LOCALAPPDATA", "")
+    max_base = os.path.join(local_app, "Autodesk", "3dsMax")
+    if not os.path.isdir(max_base):
+        return []
+    versions = set()
+    for entry in os.scandir(max_base):
+        if not entry.is_dir():
+            continue
+        name = entry.name
+        # 旧格式: "2024"，新格式: "2024 - 64bit"
+        ver = name.split(" ")[0]
+        if ver.isdigit():
+            versions.add(ver)
+    return sorted(versions, reverse=True)
+
+
+
     """查找 3ds Max 所有可能的 scripts 目录。
 
     Max 的用户配置目录有两种格式：
