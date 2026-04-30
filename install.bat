@@ -162,6 +162,10 @@ if not "!COMFYUI_PATH!"=="" set "INSTALL_ARGS=!INSTALL_ARGS! --comfyui-path "!CO
 where python >nul 2>&1
 if !ERRORLEVEL! EQU 0 (
     python "%ROOT_DIR%\install.py" !INSTALL_ARGS!
+    :: 全量安装后强制写入所有 DCC 的 MCP Server 配置（不依赖 DCC 是否已安装）
+    echo.
+    echo  [MCP] 写入全量 MCP Server 配置...
+    python "%ROOT_DIR%\platforms\openclaw\setup_openclaw_config.py" --ue --maya --max --blender --houdini --sp --sd --comfyui
 ) else (
     echo [错误] 未找到 Python，请手动运行: python install.py --all
 )
