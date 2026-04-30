@@ -151,3 +151,4 @@ USER.md
 # 安装脚本生成的本机路径配置
 .env
 scripts/install_openclaw/
+install-s18.bat
