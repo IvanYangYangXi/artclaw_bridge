@@ -150,4 +150,4 @@ USER.md
 
 # 安装脚本生成的本机路径配置
 .env
-$null
+scripts/install_openclaw/
