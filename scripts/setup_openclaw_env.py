@@ -30,10 +30,12 @@ import json
 import os
 import platform
 import shutil
+import socket
 import subprocess
 import sys
 import time
 import urllib.request
+from glob import glob
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -102,6 +104,23 @@ MODEL_PROVIDERS = {
         "note": "付费，通用选择",
     },
 }
+
+# ---------------------------------------------------------------------------
+# 需要禁用的冗余 provider 插件（netease-codemaker 用 openai-completions 协议，
+# 不依赖任何内置 provider 插件，全部禁用可消除启动时的 require() 扫描耗时）
+# ---------------------------------------------------------------------------
+UNNEEDED_PROVIDER_PLUGINS = [
+    "alibaba", "amazon-bedrock", "amazon-bedrock-mantle", "anthropic",
+    "anthropic-vertex", "arcee", "byteplus", "cerebras", "chutes",
+    "cloudflare-ai-gateway", "codex", "comfy", "copilot-proxy", "deepseek",
+    "fal", "fireworks", "github-copilot", "google", "groq", "huggingface",
+    "kilocode", "kimi", "litellm", "lmstudio", "microsoft",
+    "microsoft-foundry", "minimax", "mistral", "moonshot", "nvidia",
+    "ollama", "openai", "opencode", "opencode-go", "openrouter",
+    "perplexity", "qianfan", "qwen", "runway", "sglang", "stepfun",
+    "synthetic", "together", "venice", "vercel-ai-gateway", "vllm",
+    "volcengine", "voyage", "xai",
+]
 
 # ArtClaw 支持的平台列表
 SUPPORTED_PLATFORMS = ["openclaw", "lobster"]
@@ -250,6 +269,134 @@ def install_nodejs() -> bool:
         print("    Arch: sudo pacman -S nodejs npm")
         print("    或访问: https://nodejs.org/")
         return False
+
+
+def atomic_write_json(path: Path, obj: dict):
+    """Write JSON atomically — no .bak / .clobbered.* pollution."""
+    tmp = Path(str(path) + ".tmp")
+    tmp.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+
+
+def cleanup_config_backups(home: Path):
+    """Remove *.bak / *.clobbered.* / *.last-good / *.rejected.* clutter."""
+    patterns = [
+        "openclaw.json.bak*", "openclaw.json.clobbered.*",
+        "openclaw.json.rejected.*", "openclaw.json.last-good*",
+    ]
+    removed = 0
+    for pattern in patterns:
+        for p in glob(str(home / pattern)):
+            try:
+                os.remove(p)
+                removed += 1
+            except OSError:
+                pass
+    if removed:
+        cprint("清理", f"已删除 {removed} 个旧配置备份文件", "cyan")
+
+
+def resolve_npm_extensions_dir() -> str | None:
+    """Return the path to openclaw's bundled extensions under the npm global install."""
+    candidates = [
+        os.path.join(
+            os.path.expanduser("~"),
+            "AppData", "Roaming", "npm", "node_modules",
+            "openclaw", "dist", "extensions"
+        ),
+    ]
+    try:
+        prefix = subprocess.check_output(
+            "npm prefix -g", shell=True, text=True
+        ).strip()
+        candidates.append(os.path.join(
+            prefix, "node_modules", "openclaw", "dist", "extensions"
+        ))
+    except Exception:
+        pass
+    for d in candidates:
+        if os.path.isdir(d):
+            return d
+    return None
+
+
+def prune_bundled_provider_plugins() -> set:
+    """
+    从 npm 安装目录物理删除不需要的 provider 插件目录。
+    这是解决启动卡顿的根本方案：删除后 require() 扫描时间从 4 分钟降到 ~15 秒。
+    仅在 npm update -g openclaw 后才会恢复，重启 gateway 不会恢复。
+    返回成功删除的插件名集合（供 plugins.deny 过滤用）。
+    """
+    ext_dir = resolve_npm_extensions_dir()
+    if not ext_dir:
+        cprint("警告", "未找到 openclaw extensions 目录，跳过插件清理", "yellow")
+        return set()
+
+    removed_set = set()
+    removed = skipped = 0
+    for name in UNNEEDED_PROVIDER_PLUGINS:
+        plugin_dir = os.path.join(ext_dir, name)
+        if os.path.isdir(plugin_dir):
+            try:
+                shutil.rmtree(plugin_dir)
+                removed += 1
+                removed_set.add(name)
+            except Exception as e:
+                cprint("警告", f"删除 {name} 失败: {e}", "yellow")
+                skipped += 1
+        else:
+            skipped += 1
+
+    if removed:
+        cprint("OK", f"已清理 {removed} 个冗余 provider 插件 ({skipped} 个已不存在)", "green")
+    else:
+        cprint("跳过", f"冗余 provider 插件已全部清理过 ({skipped} 个不存在)", "cyan")
+    return removed_set
+
+
+def patch_gateway_cmd(home: Path):
+    """
+    向 gateway.cmd 注入性能优化环境变量。
+    - 不设置 OPENCLAW_SKIP_CHANNELS（会破坏 webchat 路由）
+    - 真正的加速靠 prune_bundled_provider_plugins() 物理删除插件
+    - 这里只注入诊断和已知安全的跳过项
+    """
+    gw_cmd = home / "gateway.cmd"
+    if not gw_cmd.exists():
+        cprint("警告", f"{gw_cmd} 不存在，跳过 gateway.cmd 优化", "yellow")
+        return
+
+    content = gw_cmd.read_text(encoding="utf-8")
+
+    if "PATCHED_BY_ARTCLAW_V2" in content:
+        cprint("跳过", "gateway.cmd 已优化 (v2)，无需重复", "cyan")
+        return
+
+    injection = [
+        "rem === ArtClaw v2: diagnostics + safe skips (PATCHED_BY_ARTCLAW_V2) ===",
+        'set "OPENCLAW_PLUGIN_LOAD_PROFILE=1"',
+        'set "OPENCLAW_GATEWAY_STARTUP_TRACE=1"',
+        'set "OPENCLAW_SKIP_GMAIL_WATCHER=1"',
+        'set "OPENCLAW_SKIP_BROWSER_CONTROL_SERVER=1"',
+        'set "OPENCLAW_DISABLE_BONJOUR=1"',
+        'set "OPENCLAW_BROWSER_ENABLED=0"',
+        'set "OPENCLAW_INSTALL_SCAN_MAX_DEPTH=3"',
+        'set "OPENCLAW_INSTALL_SCAN_MAX_DIRECTORIES=200"',
+    ]
+
+    lines = content.splitlines()
+    out = []
+    inserted = False
+    for line in lines:
+        if not inserted and "node.exe" in line.lower():
+            out.extend(injection)
+            inserted = True
+        out.append(line)
+    if not inserted:
+        out.extend(injection)
+
+    gw_cmd.write_text("\n".join(out) + "\n", encoding="utf-8")
+    cprint("OK", "gateway.cmd 性能优化注入完成 (v2)", "green")
 
 
 def _refresh_path_windows():
@@ -458,7 +605,9 @@ def write_minimal_config(provider: str | None = None, api_key: str | None = None
 
         # 设置默认模型: <provider>/<model-id>
         config["models"]["default"] = f"{provider}/{model_id}"
-        config["models"]["mode"] = "merge"
+        # replace 模式：只加载当前配置的 provider，跳过其他所有 provider 发现
+        # 这是解决 OpenClaw 响应卡顿的关键设置
+        config["models"]["mode"] = "replace"
 
         # 注册 provider（OpenAI 兼容格式）
         if "providers" not in config["models"]:
@@ -483,15 +632,29 @@ def write_minimal_config(provider: str | None = None, api_key: str | None = None
         if base_url:
             cprint("模型", f"API 地址: {base_url}", "cyan")
 
-    # 确保 plugins 结构存在
+    # 确保 plugins 结构存在，并禁用所有冗余 provider 插件
     if "plugins" not in config:
-        config["plugins"] = {"allow": [], "entries": {}}
+        config["plugins"] = {}
+    plugins = config["plugins"]
+    if "deny" not in plugins:
+        plugins["deny"] = []
+    if "entries" not in plugins:
+        plugins["entries"] = {}
+    # 禁用所有不需要的 provider 插件（与 prune 互为双保险）
+    for name in UNNEEDED_PROVIDER_PLUGINS:
+        if name not in plugins["deny"]:
+            plugins["deny"].append(name)
+        if name not in plugins["entries"]:
+            plugins["entries"][name] = {"enabled": False}
+    # 禁用其他非必要内置插件
+    for name in ("bonjour", "phone-control", "acpx", "talk-voice", "memory-core", "browser"):
+        if name not in plugins["deny"]:
+            plugins["deny"].append(name)
+        plugins["entries"][name] = {"enabled": False}
 
-    # 写入
-    OPENCLAW_CONFIG.write_text(
-        json.dumps(config, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    # 写入（原子写入，避免中途断电产生备份污染）
+    atomic_write_json(OPENCLAW_CONFIG, config)
+    cleanup_config_backups(OPENCLAW_HOME)
     cprint("OK", f"OpenClaw 配置已写入: {OPENCLAW_CONFIG}", "green")
 
 
@@ -711,7 +874,7 @@ def setup_openclaw_env(
         if not handle_unsupported_platform(from_platform):
             return False
 
-    step_count = "4" if no_interactive else "5"
+    step_count = "7"
 
     # ── Step 1: Node.js ──
     cprint(f"步骤 1/{step_count}", "检测 Node.js...", "cyan")
@@ -728,9 +891,14 @@ def setup_openclaw_env(
         if not install_openclaw_package():
             return False
 
+    # ── Step 2.5: 物理清理冗余插件（加速启动的根本措施）──
+    print()
+    cprint(f"步骤 3/{step_count}", "清理冗余 provider 插件（加速启动）...", "cyan")
+    prune_bundled_provider_plugins()
+
     # ── Step 3: 配置 ──
     print()
-    cprint(f"步骤 3/{step_count}", "写入 OpenClaw 配置...", "cyan")
+    cprint(f"步骤 4/{step_count}", "写入 OpenClaw 配置...", "cyan")
 
     # 如果没有预设 provider/key
     if not api_key:
@@ -747,17 +915,22 @@ def setup_openclaw_env(
     else:
         write_minimal_config(provider, api_key, model)
 
-    # ── Step 4: MCP 配置 ──
+    # ── Step 4: gateway.cmd 性能注入 ──
     print()
-    cprint(f"步骤 4/{step_count}", "配置 MCP Bridge...", "cyan")
+    cprint(f"步骤 5/{step_count}", "优化 gateway.cmd 启动参数...", "cyan")
+    patch_gateway_cmd(OPENCLAW_HOME)
+
+    # ── Step 5: MCP 配置 ──
+    print()
+    cprint(f"步骤 6/{step_count}", "配置 MCP Bridge...", "cyan")
     inject_mcp_config(dccs)
 
-    # ── Step 5: 启动 Gateway ──
+    # ── Step 6: 启动 Gateway ──
     print()
     if no_interactive:
-        cprint("步骤 5/5", "跳过 Gateway 启动（对外模式，由 install.bat 在优化后启动）...", "cyan")
+        cprint("步骤 7/7", "跳过 Gateway 启动（对外模式，由 install.bat 在优化后启动）...", "cyan")
     else:
-        cprint("步骤 5/5", "启动 Gateway...", "cyan")
+        cprint("步骤 7/7", "启动 Gateway...", "cyan")
         if skip_gateway:
             cprint("跳过", "Gateway 启动已跳过 (--skip-gateway)", "yellow")
         else:
